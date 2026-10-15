@@ -1,0 +1,16 @@
+[package]
+name = "test-machine-plugin"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+description = "A do-nothing machine plugin used only by retroclawd's own unit tests (no machine code lives in this repository)"
+
+[lib]
+name = "test_machine_plugin_impl"
+
+[dependencies]
+machine = { path = "../../../shared/crates/machine" }
+plugin-api = { path = "../../../shared/crates/plugin-api" }
+dsk = { path = "../../../shared/crates/formats/dsk" }
+serde = { version = "1", features = ["derive"] }

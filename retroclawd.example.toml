@@ -1,0 +1,214 @@
+# Persistent RetroClawd GUI settings.
+#
+# This file is loaded automatically from the current directory. Pass
+# `--config <path>` to use a different file. Command-line flags override the
+# corresponding values here.
+#
+# Bundled shader names: "passthrough", "crt", "scanlines", "sharp-bilinear",
+# "crt-geom", "zfast-crt", and "crt-potato". Any other shader value is
+# treated as a path to a custom WGSL file. "crt-royale" and "mame_hlsl" are
+# deferred because their upstream libretro presets need multi-pass rendering.
+#
+# Supported parameters:
+# - shader_intensity: 0.0-1.0. Used by crt, crt-geom, zfast-crt, and
+#   crt-potato. Ignored by passthrough, scanlines, and sharp-bilinear.
+# - scanline_intensity: 0.0-1.0. Used by crt, scanlines, crt-geom, zfast-crt,
+#   and crt-potato. Ignored by passthrough and sharp-bilinear.
+#
+# New shader ports keep upstream calibration values internally. No additional
+# shader-specific TOML keys exist yet: crt-geom has fixed progressive geometry
+# and classic aperture mask, zfast-crt has fixed scanline/mask defaults, and
+# crt-potato uses a procedural mask instead of its upstream PNG mask.
+#
+# ROM paths below point into the family repositories checked out as submodules under
+# machines/ (retroclawd-sinclair / -amstrad / -commodore, see tools/build_all.sh); point
+# them at your own copies if you keep the ROMs elsewhere.
+#
+# Each [machines.<id>] section holds everything for that machine, flat in one
+# place: the host settings (shader, shader_intensity, scanline_intensity,
+# fullscreen, vsync, max_fps) beside the machine's own plugin-declared options
+# (ROM paths, tape mode, RAM banks, speaker type, etc.) -- run
+# `retroclawd <id> --help` or `retroclawd -lp` to see the exact keys/flags/
+# value shapes a given machine declares. Setting ROM paths here is what lets a
+# machine boot from just its id and media, e.g. `retroclawd cpc6128 --disk
+# game.dsk` once `rom = "..."` is set below. Unknown keys in a machine section
+# are a clear runtime error naming the machine's real available options, not a
+# silent no-op. `--game-config`'s own `[options]` table uses the same keys and
+# overrides this file's per-machine values.
+#
+# Paths: forward slashes work on Windows, Linux and macOS alike -- prefer them.
+# A backslash is an escape in a normal TOML string, so write "roms\\cpc\\x.rom"
+# or use a literal string 'roms\cpc\x.rom'. Relative paths are resolved from
+# the directory retroclawd is started in, not from this file's location.
+
+[default]
+shader = "crt-potato"
+shader_intensity = 0.6
+scanline_intensity = 0.8
+# Global only: per-machine window_scale_percent values are rejected.
+window_scale_percent = 60
+# Window / frame pacing (GUI only). Also settable per machine; the command-line
+# flags --fullscreen, --no-vsync and --max-fps override these.
+# fullscreen = false           # borderless fullscreen at startup (F11 toggles live)
+vsync = false                 # false = no display VSync (defaults max_fps to 60)
+# max_fps = 60                 # cap render/update rate, >= 1
+
+# Each machine section may override shader, shader_intensity, scanline_intensity,
+# fullscreen, vsync and max_fps, and carries that machine's own options.
+# Uncomment the settings wanted for that machine.
+
+[machines.zx81]
+# shader = "crt"
+# shader_intensity = 0.6
+# scanline_intensity = 0.3
+# rom = "machines/sinclair/roms/zx81/zx81.rom"
+
+[machines.zx-spectrum]
+# shader = "crt"
+# shader_intensity = 0.6
+# scanline_intensity = 0.3
+rom = "machines/sinclair/roms/zx-spectrum/48.rom"
+# speaker_type = "unfiltered"  # unfiltered | beeper | tv-speaker
+# joystick_type = "kempston"   # kempston | sinclair1 | sinclair2 | cursor | fuller
+# fast_tape_load = false
+
+[machines.zx-spectrum-128]
+# shader = "crt"
+# shader_intensity = 0.6
+scanline_intensity = 0.3
+# rom = "machines/sinclair/roms/zx-spectrum/128.rom"
+# speaker_type = "unfiltered"
+# joystick_type = "kempston"
+# fast_tape_load = false
+# turbosound = false           # 128K/+2A/+3 only, no AY on plain 48K
+
+[machines.zx-spectrum-2a3]
+# shader = "crt"
+# shader_intensity = 0.6
+# scanline_intensity = 0.3
+# No +2A/+3 ROM is committed; supply one: rom = "machines/sinclair/roms/zx-spectrum/2a3.rom"
+# speaker_type = "unfiltered"
+# joystick_type = "kempston"
+# fast_tape_load = false
+# turbosound = false
+
+[machines.c64]
+# shader = "crt"
+# shader_intensity = 0.6
+# scanline_intensity = 0.3
+kernal = "machines/commodore/roms/c64/kernal.bin"
+basic = "machines/commodore/roms/c64/basic.bin"
+char = "machines/commodore/roms/c64/chargen.bin"
+
+# US keyboard -> C64 key map (+ : @ * ^ pound and the shifted number row type what
+# their keycaps say). Replace it with your own file for another keyboard.
+[machines.c64.input]
+keymap = "machines/commodore/keyboard/us_c64.toml"
+
+[machines.cpc464]
+# shader = "crt"
+# shader_intensity = 0.6
+# scanline_intensity = 0.3
+rom = "machines/amstrad/roms/cpc/cpc464.rom"
+# tape_mode = "caprice"        # caprice | zesarux
+
+[machines.cpc664]
+# shader = "crt"
+# shader_intensity = 0.6
+# scanline_intensity = 0.3
+rom = "machines/amstrad/roms/cpc/cpc664.rom"
+# tape_mode = "caprice"
+
+[machines.cpc6128]
+# shader = "crt"
+# shader_intensity = 0.6
+# scanline_intensity = 0.3
+rom = "machines/amstrad/roms/cpc/cpc6128.rom"
+# tape_mode = "caprice"
+# ram_banks = 0                # 0-7, additional 64K Standard Memory Expansion banks
+#
+# Expansion ROM slots (1-6 or 8-15) are a nested slot=path table, not a
+# single value, mirroring the CLI's repeatable `--rom-slot N=path`:
+# [machines.cpc6128.rom_slot]
+# 7 = "machines/amstrad/roms/cpc/amsdos.rom"
+
+# Emulator hotkeys: action = "chord". Keys are QMK keycodes
+# (https://docs.qmk.fm/keycodes_basic): KC_F12, KC_PAUS, KC_PSCR, KC_RALT, ...
+# Layers: built-in defaults, this table, then [machines.<id>.hotkeys], per
+# binding; "none" unbinds, a list binds several chords. `retroclawd
+# --list-hotkeys [machine]` prints the effective table. A chord is a key or
+# modifiers + key: "KC_F12", "shift+KC_F11", "ctrl+shift+KC_Q" (modifiers: ctrl,
+# shift, alt, super, or KC_LCTL/KC_LSFT/KC_LALT/KC_LGUI -- either side matches).
+# The older lower-case spellings ("f12", "alt_right") still work. Defaults shown;
+# they avoid every key a machine uses (the C64's F1/F3/F5/F7 included).
+[hotkeys]
+# modifier = "KC_RALT"         # hold this key to trigger any hotkey
+reset = "KC_F12"             # CPU reset, RAM kept
+# fullscreen = "KC_F11"
+# mute = "KC_F9"
+# volume_down = "ctrl+KC_F9"
+# volume_up = "ctrl+KC_F10"
+overlay = "KC_F10"           # show / hide the debug overlay
+pause = "KC_PAUS"
+# screenshot = "KC_PSCR"       # screenshots/<machine>-<date>-<time>.png (UTC)
+quick_save = "shift+KC_F11"  # states/<machine>-slotN.state
+quick_load = "shift+KC_F12"
+# state_slot_next = "shift+KC_F10"
+# state_slot_prev = "none"
+# fast_forward = "KC_SCRL"     # hold: run faster, also speeds up tape loading
+shader_next = "ctrl+KC_F11"
+# shader_prev = "none"
+quit = "ctrl+KC_F12"
+
+# File dialogs (the machine pauses while one is open): choose a file to put in,
+# or where to save. Unbound ones: eject_tape, eject_disk, load_state, save_state,
+# save_tape, save_disk -- bind them here, e.g.
+# eject_disk = "ctrl+shift+KC_E"
+# load_tape = "ctrl+shift+KC_F9"
+# load_disk = "ctrl+shift+KC_F10"
+# load_snapshot = "ctrl+shift+KC_F11"
+# save_snapshot = "ctrl+shift+KC_F12"
+
+# Per-machine overrides, e.g. when a machine needs a default chord's key:
+# [machines.c64.hotkeys]
+# reset = "ctrl+KC_F8"
+
+# Key bindings: which emulated key a host key presses. `host key or chord =
+# "machine key"` (or a list pressed together, or "none"). Machine key names
+# are checked at startup; `retroclawd <machine> --list-keys` lists them and the
+# host key names. A chord's modifiers are consumed: "shift+2" = "at" presses At
+# without a stray Shift. [keys] applies to every machine,
+# [machines.<id>.keys] overrides it per machine.
+[keys]
+# KC_SCLN = "colon"
+# KC_AT = "at"                 # Shift+2 on a US keyboard; the Shift is not sent
+# KC_GRV = "none"
+
+# [machines.zx-spectrum.keys]
+# KC_CAPS = "symbol_shift"
+# [machines.c64.keys]
+# KC_LBRC = "at"
+
+# Keyboard layout. "positional" (default): a host key is the machine key at the
+# same physical position. "symbolic": what the key types picks the machine key
+# (German/French keyboards type the right letters and punctuation). Per machine
+# in [machines.<id>.input]. `keymap` lists extra keymap files ([keys] tables in a
+# file of their own, paths relative to this file, e.g. machines/commodore/keyboard/us_c64.toml);
+# --keymap/--layout override.
+[input]
+# layout = "symbolic"
+# keymap = ["keymaps/german.toml"]
+
+# Gamepads: with no configuration pad 1 drives the machine's Joy1* keys and pad
+# 2 its Joy2* keys (D-pad/left stick = directions, south/east = Fire1, west =
+# Fire2, north = Fire3). [pads.N] rebinds a button of pad N to any machine key
+# (same names as [keys]; a list presses several, "none" unbinds).
+# `retroclawd <machine> --list-keys` shows the buttons and the bindings.
+[pads]
+# deadzone = 0.5
+# [pads.1]
+# start = "enter"
+# east = "none"
+
+# [machines.c64.pads.1]
+# west = "Joy2Fire1"

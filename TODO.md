@@ -1,0 +1,1070 @@
+# TODO / Roadmap
+
+Updated 2026-09-28.
+
+This file is the current backlog, not a development diary. Completed implementation detail belongs
+in `CLAUDE.md`, source comments, `CREDITS.md`, and git history.
+
+Status labels:
+
+- **NEXT** — actionable and prioritized.
+- **BACKLOG** — valid work, but not currently prioritized.
+- **BLOCKED** — requires verified external information or another prerequisite.
+- **PARKED** — deliberately inactive; do not let it drive unrelated design.
+- **DONE** — retained only when it defines the baseline for remaining work.
+
+## Current direction
+
+**Per-family repositories and a shared-crates repository (2026-10-12, done).** Machine code left this repository:
+`retroclawd-sinclair` (ZX81, ZX Spectrum), `retroclawd-amstrad` (CPC family) and `retroclawd-commodore` (C64, C128,
+drives) each hold their machines, plugin libraries, chips/formats, ROMs and software with the full git history of
+those paths. The crates more than one repository uses (`machine`, `plugin-api` + its ABI policy, `z80`, `mos6502`,
+`ay-3-8910`, `nec765`, `dsk`, `zx-tape`) live together in `retroclawd-crates` (decision: keep them together rather
+than scatter them across the families), checked out here as `shared/`; the app uses them by path, the families pin
+a commit. The machine roadmaps moved with their repositories (their `TODO.md`). Follow-ups:
+- **DONE (2026-10-12)**: cross-repository smoke test -- `tools/smoke_test.sh` builds everything (`tools/build_all.sh`),
+  boots zx81, Spectrum 48/128, CPC464/6128, C64 and C128 headless with the real ROMs from the submodules and compares
+  the boot-screen hashes with `tools/smoke/baseline.sha256` (`--update` rewrites the baseline on purpose); it also
+  notes when a family pins a different `retroclawd-crates` commit than `shared/`.
+  `.github/workflows/smoke.yml` runs it weekly/manually (secret `FAMILY_REPOS_TOKEN`). The baseline was recorded
+  from a Linux debug build and passes unchanged on Linux release, Windows release and a GitHub runner, so the
+  hashes do not depend on build profile or platform. Not covered: media loading, audio, GUI.
+- **DONE (2026-10-12)**: pin-bump script -- `tools/bump_pin.sh` (push the new commit in `shared/`, run it; `--push`
+  publishes the family commits): checks the commit is on GitHub, prints the plugin ABI/protocol constants and the
+  shared-crate diff between the old and new rev, rewrites the `rev` in every family manifest and lockfile, runs each
+  family's tests, commits, and records the new submodule commits here.
+- **DONE (2026-10-12)**: PowerShell entry points (`tools\*.ps1`, run the bash scripts through Git for Windows);
+  checked on Windows (build and smoke test).
+- **DONE (2026-10-12)**: 6502 disassembly in the debugger. `mos6502::disassemble` (shared/) decodes all 256 opcodes and
+  assembles one instruction; the C64/C128 plugins return it from `GetDisassembly` (the C128 follows its running CPU, 8502
+  or Z80); the host's debugger had been showing `DB $xx` for *every* machine because `debugger.rs` disassembled with a
+  stub instead of asking the machine plugin -- it now uses the plugin's disassembly, picks the assembler (Z80 or 6502)
+  from the machine's CPU family, and steps over `JSR` as well as `CALL`/`RST`. Verified live through the GUI and the
+  debug-ui HTTP API on a C64 (real KERNAL idle loop, assemble-and-poke).
+- **DONE (2026-10-12)**: debugger follow-ups. (1) Z80 disassembly checked live on a ZX Spectrum (and ZX81/CPC). (2) Symbols:
+  `machine::SymbolTable` annotates any CPU's disassembly text (`; NAME` after a `$1234`/`$12`/`0x1234` operand);
+  `debug_symbols.rs` has built-in tables (C64/C128 KERNAL jump table, vectors, VIC/SID/CIA registers; Spectrum ROM entries
+  and system variables) and `--symbols <file>` (repeatable; assembler listings, map files, VICE labels; path, URL or
+  `zip#entry`) overrides them. (3) Z80 `JR`/`DJNZ` now show and accept the absolute target like 6502 branches
+  (`z80::disassemble::disassemble_at`/`assemble_one_at`, applied by the host so the family plugins did not change). (4) The
+  ZRCP `assemble` help is CPU-agnostic and its test host accepts 6502 as well as Z80. Verified live under Xvfb on a C64
+  (`JSR $FFD2 ; CHROUT`, user label beating a built-in) and a Spectrum (`CALL 0x0556 ; LD_BYTES`, `LD A,(0x5C78) ; FRAMES`).
+  Not done: symbols are not used on the *input* side (`assemble JSR CHROUT`), per-game symbol files in `--game-config`,
+  and the Spectrum table is the 48K ROM's (on a 128K machine with ROM 0 paged in the names can be wrong).
+- **DONE (2026-10-13)**: `retroclawd-tools` (<https://github.com/elpapimango/retroclawd-tools>, private) -- command-line
+  tools on top of the crates. It is a **standalone workspace** (not a submodule here; this repository does not build,
+  pin or smoke-test it) that pins `retroclawd-crates` by rev (and, with the media tools, the machine repositories'
+  format crates); its CI needs the secret `FAMILY_REPOS_TOKEN` (read access to the four repositories). Done: `rcasm`
+  (two-pass 6502/Z80 assembler, one syntax, flat/.prg/per-segment output, symbol file the debugger's `--symbols`
+  reads, listing; the Z80 encoder is built by enumerating `z80::disassemble`, the 6502 reuses `assemble_one`, so there
+  is no second opcode table -- every opcode of both CPUs round-trips) and `rcdis` (linear or flow disassembly, labels,
+  symbol files, output that `rcasm` assembles back to the same bytes -- checked on random bytes and on the Spectrum,
+  ZX81, CPC464, C64 KERNAL/BASIC and 1541 DOS ROMs). Programs built with `rcasm` were run in this emulator (C64 and
+  Spectrum) and left the expected bytes in memory. `rcdisk` is done too (list, info, validate, extract, add, rm, rename,
+  create, convert for `.d64/.d64-40/.x64/.d71/.d81`, CP/M `.dsk` in the CPCEMU layouts with AMSDOS and +3DOS headers,
+  `.g64` read-only): it runs on the new generic CBM DOS operations in `cbm-dos` (commodore repo) and `dsk::cpm`
+  (crates repo). Checked in the emulator: a real 1541 DOS loads files from disks `rcdisk` created, converted and
+  edited, and a real AMSDOS on a CPC6128 lists and runs (`RUN"DISC"`) files from a `rcdisk`-made `.dsk`. `rctape` is
+  done as well (list, info, validate, extract, cat with hex / BASIC listing, cut, rm, merge, split, cleanup, add,
+  convert): ZX Spectrum `.tzx` is kept block by block (byte-exact round trip of every block kind; the playing time
+  agrees with `zx-tape`'s player), `.tap` is converted to and from it, Commodore `.t64` is listed and extracted as
+  `.prg` files and a Commodore `.tap` is described; tapes made by it load through the Spectrum ROM's own `LD-BYTES` in
+  this emulator. `rcsnap` is done too (info, convert, dump, extract, create): ZX Spectrum `.z80`/`.sna`/`.szx` convert
+  into each other (48K, 128K, +2A/+3) and say what the target format cannot keep, ZX81 `.p`/`.81`/`.p81` (with the
+  name), CPC `.sna` (versions 1-3), C64 `.crt` and CPC Plus `.cpr` (list, extract chips / pages, plain cartridges
+  from and to raw ROM images). Checked in this emulator: snapshots made by `rcsnap create` start in all three
+  formats, 48K and 128K snapshots the emulator wrote convert to the other formats and load again, and an 8K `.crt`
+  made from a raw ROM starts on the C64. `rcld` is done too (the last of the planned tools): a TOML layout names sources
+  (assembled together), binaries, `.prg` files, symbol files, regions and reserved ranges; it checks overlaps, regions
+  and holes by name and writes C64 `.prg` (with a `10 SYS` line), `.d64`, `.d81`, `.crt`; Spectrum `.tap`/`.tzx` (with
+  a BASIC loader and an optional loading screen), `.sna`/`.z80`/`.szx`, +3 `.dsk`; CPC AMSDOS `.dsk`; flat `.bin`.
+  Checked in this emulator: the Spectrum ROM's own `LD-BYTES` loads a tape `rcld` made, the C64 KERNAL loads its `.prg`
+  from a `.d64`, a `.crt` and the snapshots start, and in the GUI the real BASIC loaders ran -- a C64 `.prg` with
+  `--run` (`SYS` into the program), a Spectrum tape through `LOAD ""` / `CLEAR` / `LOAD ""CODE` / `RANDOMIZE USR`, a CPC
+  disk with `RUN"HELLO`. Finding (fixed 2026-10-14, see below): the emulator started a Spectrum tape at power-on, so
+  `LOAD ""` typed later missed the first block. Remaining ideas, none
+  planned: `rcdis` reading a file out of a disk or tape image; in `rcdisk` writing `.g64` from a `.d64`, copying REL
+  files, a BASIC tokenizer, zip/URL inputs; in `rctape` decoding a Commodore `.tap` (KERNAL / turbo loaders),
+  `.wav/.csw/.pzx/.voc`, a BASIC tokenizer; in `rcsnap` 128K `create`, patching registers, ZX81 BASIC listing; in
+  `rcld` CPC tape / ZX81 / `.cpr` output, 128K snapshots, separately assembled modules. The brief with the decisions is
+  `docs/prompts/retroclawd-tools.md`; the tools' CI runs on every push (secret `FAMILY_REPOS_TOKEN`).
+- **DONE (2026-10-14)**: `z80` executor/disassembler for `DD CB d op` with `op & 7` = 4 or 5 copied the result into
+  IXH/IXL (IYH/IYL); the undocumented-Z80 literature (The Undocumented Z80 Documented 4.1) and FUSE copy into the real H / L.
+  Fixed in both (`retroclawd-crates` `75cd75e`) with tests for the executor and the printed text; ZEXALL still passes.
+  Found by `retroclawd-tools` while enumerating the disassembler.
+- **DONE (2026-10-14)**: a Spectrum tape no longer starts at power-on. The ROM's keyboard scan reads port 0xFE from boot,
+  which started every loaded tape at once, so a typed `LOAD ""` found its first blocks gone (found while checking
+  `rcld`'s loaders live). Play is now pressed when execution reaches `LD-BYTES` (0x0556); `--tape-start any-read` brings
+  the old rule back for a custom loader started from a snapshot. Checked live: a tape with no lead-in pause loaded after
+  `LOAD ""` was typed 40 s after start. (`retroclawd-sinclair` `c31a779`, pins moved by `tools/bump_pin.sh`.)
+- **DONE (2026-10-15), step 3 of the RomM plan**: `--firmware auto` / `[romm] firmware = "auto"` fills the ROM options nothing
+  else names from the server's firmware by SHA-1, from a `firmware.toml` per family (`retroclawd-sinclair`/`-amstrad`/
+  `-commodore`, staged as `<family>.firmware.toml` next to the libraries), with `retroclawd romm match [machine]` to see
+  the result; downloads are hash-checked; entries may carry `when` conditions (drive ROM per `--drive-type`) and `parts`
+  (the C128's BASIC halves). Not covered yet: the +2A/+3 64K ROM (no dump to take a hash from), CPC+ firmware of its own,
+  firmware that RomM stores as an ordinary ROM entry rather than firmware.
+- **DONE (2026-10-14/15), steps 2 of the same plan**: `retroclawd romm ...`, `romm:<id>` sources, cache commands.
+- **PLANNING (2026-10-14)**: RomM integration -- fetch firmware and games from the owner's RomM server by id, command line
+  only (no browser/UI in the desktop binary): list platforms / games / firmware as text, copy an id into the next command.
+  Notes and open questions in the session that started it; nothing built yet. Constraints decided so far: the host
+  contains no ROM or game data; the RomM token is never in the repository (read-only client API token, from the
+  environment or a local config, separate token for CI); machines stay separate repositories because of possible takedowns.
+- **DONE (2026-10-15): cleanup before going public.** No ROM image or commercial software is in any repository
+  or history any more. What was done, so the next session starts from facts:
+  - Tests that read `roms/` / `software/` skip when the file is absent (the CPC tape tests use `software_tape()`);
+    each family git-ignores `roms/` and `software/` for local copies and documents the files in `docs/firmware.md`.
+    `retroclawd --firmware auto` fetches firmware from a RomM server by SHA-1 (`firmware.toml` per family).
+  - Licence **GPL-3.0-or-later** (`LICENSE` in every repository, `license` in every manifest); the CRT shaders and the
+    6502 / ZEXALL suites keep their own notices (`CREDITS.md`, fixture READMEs).
+  - Removed: `docs/Altirra-4.40-src.7z` (the Atari 8-bit references are links below), the generated prompts, the old
+    split scripts, the pre-split plans, `smoke.yml` (needs ROMs), the token-based CI clone steps, `zesinfo.json`.
+    `retroclawd.toml` became `retroclawd.example.toml` (the real one is git-ignored).
+  - **History: every repository was deleted and recreated from one fresh commit** (author: the GitHub noreply address).
+    The old private histories (host, crates, the three families, tools) are kept as bare mirrors outside the repositories
+    (`retroclawd-archive/`) and are not on GitHub. The families pin the new `retroclawd-crates` commit.
+  - Still unverified against the real RomM server: `romm match` and `--firmware auto` for every machine (only tried
+    against a throwaway fake server); the c128 `parts` join and the drive-ROM `when` rules; hashes not in any family
+    (the +2A/+3 64K ROM, CPC+ own firmware). Run `retroclawd romm match` and fix the `firmware.toml` hashes.
+  - Next, in the owner's order: (1) the per-machine test suites incl. the ZX81 one; (2) the Atari 8-bit family.
+    Everything needed is described below; nothing of them is started.
+  - Environment notes: a cloud session's disk is small (the build needs ~17 GB); local sessions have `ROMM_URL` /
+    `ROMM_TOKEN` in the Windows environment.
+- **TODO (separate note, 2026-10-14; references added 2026-10-15)**: a full test suite per machine built with the
+  `retroclawd-tools` programs: programs from `rcasm` / `rcld` in every output (`.prg`, `.d64`, `.d81`, `.crt`, `.tap`, `.tzx`,
+  `.sna`, `.z80`, `.szx`, `.dsk`) started headlessly on each machine, disks / tapes / snapshots / cartridges made with
+  `rcdisk` / `rctape` / `rcsnap` / `rcld` loaded and compared, boot screens per ROM revision, and the known CPU / chip test
+  programs; firmware fetched from RomM by hash (`--firmware auto`). Runs where the firmware is available (locally, and in CI
+  through the RomM token), skips otherwise. Existing diagnostic suites to use as models and, where their licence allows,
+  as test inputs (assembled with our own tools, or run from their released images fetched from RomM):
+  - ZX Spectrum: <https://github.com/brendanalford/zx-diagnostics> (ROM, RAM, ULA, contention, keyboard, tape, AY, 128K
+    paging and +2A/+3 tests) -- one result screen per model as the expected output.
+  - Amstrad CPC: <https://github.com/llopis/amstrad-diagnostics> (Gate Array, CRTC, PPI, PSG, FDC, keyboard).
+  - Commodore 64: <https://github.com/crystalct/C64UnifDiagCart> (a diagnostic cartridge: RAM, ROM, VIC-II, SID, CIA, ports);
+    also usable as a `.crt` test of our cartridge loader.
+  Each suite is a list of (program, machine, option set, frames to run, expected screen hash or memory check); a failure
+  names the area (CPU, video, sound, timers, I/O, media). The expected results come from the real hardware behaviour the
+  diagnostic documents, not from our own output.
+- **TODO (2026-10-15): ZX81 test suite**, separate from the diagnostics above because the ZX81 is the odd machine (no ULA
+  interrupt, the CPU makes the picture): a program set that exercises every area of the emulator and checks it works --
+  ROM boot to the stable loop with NMIs waking `HALT`; FAST and SLOW mode timing (frame length, NMI generator on and off,
+  the display-file generation through the `R`/`I` trick and the 64K wrap of the video fetch); keyboard matrix (every key,
+  shifted combinations, the `NEW`/`CLS` echo); `.p` and `.81` loading and saving (`rcsnap` / `rcld` made), tape
+  in/out through the EAR/MIC bit; 1K/2K/16K/32K/56K RAM sizes and the memory map mirrors; RAM-pack and ROM-shadow
+  behaviour; character set and inverse video; ZXPAND-style extras the emulator claims to support. Assemble the programs with
+  `rcasm`/`rcld`, run headless, compare screens (`--dump-screen`) and memory (`--dump-memory`). Real-hardware facts go
+  in as expected values with their source; our own output is never the oracle.
+- **DONE (2026-10-14)**: the debugger plugins (`debug-ui`, `debug-zrcp`, `debug-log`) are ordinary modules of the
+  application behind cargo features (`apps/retroclawd/src/debuggers/`); the debugger half of `plugin-api` is deleted and the
+  machine plugin ABI (what separates the machines) is untouched. See CLAUDE.md "Debuggers are modules, not plugins".
+- **BACKLOG**: this repository's history still contains the moved files (they were stripped from the tip only).
+
+Pluginization baseline, diagnostic cleanup, and the CLI rework are complete -- see
+"Plugin host and debugger plugin architecture" below for the mechanism.
+
+1. Machines are shared libraries only (2026-10-12): the shipped `retroclawd` links no machine code
+   and loads every machine from a plugin library -- see "DONE: machines are shared libraries".
+2. Debugger plugins stay compiled into the app (with real library builds alongside).
+3. Preserve plugin-level boot, media, state, debug, and input smoke coverage.
+4. Resume machine-specific parity backlog (CPC/C64/ZX) -- see per-machine roadmap sections below.
+5. Any new machine (Enterprise 64/128, MSX, Atari 400/800, or anything under "Future machine
+   roadmaps" below) integrates through the plugin/debug/fast-path contract as-is -- see "Checklist:
+   new machine plugin integration" under "Plugin host and debugger plugin architecture" below before
+   starting one.
+
+## Plugin host and debugger plugin architecture
+
+### DONE: pluginization baseline
+
+`retroclawd` is the host/orchestrator; machine and debugger capabilities are discovered through a
+versioned C-ABI plugin boundary (`crates/plugin-api`); machines load as shared libraries, debugger
+plugins are compiled in (and also built as libraries).
+`AnyMachine` is gone -- CLI machine selection and lifecycle route entirely through plugin
+discovery. Every active machine plugin (ZX81, ZX Spectrum, CPC, C64) exposes the full required
+debug contract (registers/flags, memory, execution control, disassembly, media state, chip-level
+snapshots, save-state parity) and declares its own creation-time options
+(`plugin_api::MachineOptionInfo`, see `CLAUDE.md`'s `retroclawd` bullet). Browser and TCP/ZRCP
+debuggers both run as `DebuggerPlugin`s over the same host debug API and
+`DebuggerCommand`/`DebuggerState` vocabulary. `debug-log` owns all tracing output; no second
+app-side host log sink exists (2026-10-01: `run_gui` still filtered `debug-log` out of the launch list
+on the assumption a host-side sink existed, so `--plugin debug-log:...` never started -- no file, no
+stdout; fixed, with a bridge-level test, plus an `engine_level` cap that keeps third-party shader/engine
+chatter out of `level=debug` logs). The actual protocol/ABI contract lives in
+`crates/plugin-api/src/{protocol.rs,abi.rs}` -- that source, not a draft, is now authoritative.
+
+### DONE: debug-contract genericity cleanup (memory/architecture reassessment)
+
+Prompted by a direct architecture reassessment: memory usage was unaffected by the plugin split
+(bundled mode -- the default -- statically links every machine plugin into one binary regardless
+of `--machine` selection, so a single-machine run carries every other machine's code either way;
+only dynamic mode, an opt-in dev/deployment path, could reduce this), and debugging had become
+harder because some flows bypassed the generic plugin contract with hardcoded, per-machine
+special cases instead of extending it. Two concrete bypasses were found and fixed -- see
+`CLAUDE.md`'s own "Debug-contract genericity cleanup" paragraph (under `retroclawd`'s ZRCP
+section) for the full account:
+
+1. CPC exposed a second, CPC-only `ChipSnapshot` (`"cpc.overlay"`) alongside the shared generic
+   one (`"overlay"`), read by a host function requiring 5 specific field names all present (or it
+   silently returned nothing) and gated to `machine_id.starts_with("cpc")` -- which meant
+   `get-paging-state` always replied "unavailable" for ZX Spectrum 128K too, a real, live bug,
+   despite its own help text and `machine_id` gate both claiming Spectrum support. Fixed by
+   merging CPC's fields into its own `"overlay"` chip and making every host-side reader
+   (`--debug`'s diagnostic log, ZRCP's `get-paging-state`/`get-io-ports`/`get-cpc-io`) format
+   whatever fields are actually present generically, no fixed field-name list or `machine_id`
+   gate.
+2. The debugger's `PokeBank` command (banked/paged poke, the `.POK` trainer importer's main use)
+   was pre-rejected by the host for any `machine_id` not starting with `"zx-spectrum"`, before
+   ever asking the plugin -- while the other three plugins' own `WriteMemory` handlers silently
+   discarded an unrecognized `space` and wrote flat memory anyway, meaning simply deleting the
+   host gate would have made a banked poke on C64/ZX81/CPC write to the wrong place instead of
+   erroring. Fixed both ends: those three plugins now explicitly reject a banked-write request
+   they don't support, and the host gate is gone entirely -- the plugin's own answer is now the
+   sole authority, delegated exactly like every other machine-specific `MachineCommand` behavior
+   already is.
+
+Explicitly not attempted in this pass (real, separate future work, not part of this cleanup):
+real CPC banked-write support (`WriteMemory` with a `space`) for its own 128K/expansion RAM, and
+building a general "closed contract" declared-capability mechanism for the *rest* of the
+codebase's remaining machine-specific special cases (e.g. `debug-zrcp-plugin`'s own CPU-family/
+clock-rate/keyboard-quoting `machine_id` branches) -- those are real, narrow facts about specific
+machines (which CPU family, what a keyboard layout can type), not instances of a debug contract
+that could have been generic but wasn't, so they were deliberately left as-is rather than
+generalized for its own sake.
+
+### DONE: machines are shared libraries (2026-10-12, supersedes the feature-gated bundling below)
+
+Found when the Windows `*_machine_plugin.dll` files turned out to be ~10 KB: they were empty. The
+plugin crates exported their entry point only when built `dynamic` and not `bundled`, and
+`retroclawd` depended on them as `bundled`; cargo unifies features across a workspace build, so a
+normal `cargo build --release` produced libraries with no exported entry (the linker then dropped all
+the code), while the real emulation sat inside `retroclawd.exe`. Fixed structurally rather than by
+flags: each plugin is now an ordinary library crate (`crates/plugins/<name>-plugin`, lib name
+`<name>_plugin_impl`, no exported symbols, `entry_v1()` returns the descriptor) plus a thin
+`crates/plugin-dlls/<id>` crate (`<name>-plugin-dll`, `crate-type = ["cdylib"]`, lib name
+`<name>_plugin`) whose whole source is `plugin_api::export_plugin!(<impl>::entry_v1)`. The
+`dynamic`/`bundled` features are gone. `retroclawd` no longer depends on any machine plugin (the
+shipped binary contains no machine code: `nm` finds no `zx81::`/`c64::`/`cpc::`/`vic_ii` symbols) and
+finds them at startup in `RETROCLAWD_MACHINE_PLUGIN_DIRS`, else `<exe dir>/plugins`, `<exe dir>` (where
+`cargo build --workspace` leaves them) and `./plugins`; a missing machine is "unknown machine ...;
+discovered machines: ...", and no libraries at all is an error naming the searched folders. Removing a
+machine from a build or a release is deleting its library. (The debuggers were later made plain modules of the
+app, 2026-10-14, and no longer have libraries.)
+Unit tests of the app link the plugin implementation libraries directly (dev-dependencies; unit
+tests never scan folders) and `a_built_machine_library_loads_on_its_own_and_lists_its_machines`
+loads the real built `.so`/`.dll` when `cargo build --workspace` has produced it. The plugin screenshot
+script builds the `-dll` packages and runs the four machines from them (`--verify` still needs the
+missing `plugin-screen-baseline.sha256`). **Not done / honest limits**: the machine source still
+lives in this repository (and its history) and the app crate still lists the machine plugins as
+dev-dependencies for tests, so a takedown request would still need the source moved to its own
+repository -- the next step is splitting each machine (plugin, machine crate, its formats, ROMs,
+software) into a separate repo that builds only its library, with this repository keeping the host,
+`plugin-api` and the shared cores/chips.
+
+### SUPERSEDED: feature-gated bundled machine plugins (memory/architecture reassessment)
+
+Companion fix from the same reassessment, addressing the memory half of the concern rather than
+the debugging half above. Bundled mode (the default, and what actually ships -- dynamic loading is
+opt-in, dev/deployment-only) previously linked all four machine plugins into one binary
+unconditionally regardless of `--machine` selection, so a single-machine build was never actually
+possible despite the bundled/dynamic split nominally existing to make that kind of choice
+available. `apps/retroclawd/Cargo.toml` now gates each `*-machine-plugin` dependency behind its own
+cargo feature (`machine-zx81`/`machine-zx-spectrum`/`machine-cpc`/`machine-c64`), all four still on
+by default (a plain `cargo build` is unchanged); `plugin_bridge.rs`'s `bundled_machine_plugin_entries`
+builds its `Vec` from four independently `#[cfg]`-gated pushes instead of a fixed 4-element array
+unconditionally naming all four crates. Verified live, not just type-checked: `cargo build -p
+retroclawd --no-default-features --features machine-c64` links and its `--list-machine`/`--help`
+correctly show only `c64`; `cargo clippy`/`cargo test --workspace` both stay clean across the
+default and several reduced feature combinations. See `CLAUDE.md`'s own "Feature-gated bundled
+machine plugins" paragraph for the full account, including the honest caveat: this fixes binary
+size/link time/"can I build just one machine" (previously not possible at all), not necessarily
+single-machine runtime memory (RSS) -- unreached code mostly never gets paged in either way, and
+Bevy's own footprint dominates regardless. Debugger plugins were left bundled unconditionally --
+only the four machine plugins were the ones actually flagged as always-linked-regardless-of-
+selection.
+
+### DONE: fast-path step/halted/pc ABI bypass (speed/architecture reassessment)
+
+Third fix from the same reassessment, addressing speed rather than memory or debuggability --
+prompted directly by "I don't care about a huge binary in the end, I care that it's accurate,
+fast, easy to debug and expandable." Every emulated CPU instruction was paying a full
+`bincode`-encode + FFI call + `bincode`-decode round trip (`HostedMachine::step()` through
+`instance_call`), even in bundled mode where no real process/address-space boundary exists to
+justify one -- a real, measured cost, not a hypothetical. `MachinePluginVTableV1` gained 3 new
+raw scalar-in/scalar-out fields (`step`/`halted`/`pc`, no serialization at all), gated safely by
+an `ABI_MINOR_V1` bump (0 -> 1) since the host's major/minor check runs strictly before any
+vtable memory access. Every machine plugin implements the 3 new functions against its own
+existing instance registry; `plugin_bridge.rs` threads them straight through
+`HostedMachine`/`HostedBackend`/`PluginV1MachineBackend`/`PluginHost` to the raw vtable call.
+Deliberately scoped to only these 3 methods -- `clock_hz`/`frame_hz` are called once per tick,
+`render_frame`/`drain_audio` are already `Vec<u8>`-returning calls at 50-60Hz -- see `CLAUDE.md`'s
+own "Fast-path `step`/`halted`/`pc` ABI bypass" paragraph for the full account. The slower
+`MachineCommand::Step`/`IsHalted`/`GetPc` protocol variants remain in place for `DebugCommand`-
+driven paths (e.g. debugger step-over); this is an additional fast lane, not a replacement.
+
+### DONE: plugin ABI hardening and compatibility policy (2026-10-12)
+
+The written policy is `docs/plugin-abi.md` (four versions and what each means: ABI major/minor,
+`PROTOCOL_VERSION`, profile contract; what is frozen; what a change requires; failure containment;
+release layout and naming per platform). Enforced in code and tests, not just prose:
+* `plugin_api::compat` -- the one place the host's accept/refuse rules live, used by the machine and
+  debugger loaders: the descriptor's `abi_major`/`abi_minor` are read first (frozen offsets) so a
+  descriptor of another major is refused without being interpreted; same major, plugin minor >= host
+  minor, kind, non-null vtable, vtable `size` >= the host's.
+* `codec::decode_message` checks the protocol version **before** decoding the payload (a skewed plugin
+  is reported as "protocol version mismatch", never decoded against the wrong schema), and decoding is
+  capped at 256 MiB so a mismatched length prefix cannot allocate the machine away. Plugins now answer
+  codec errors with the readable text (`CodecError::into_call_result`).
+* `plugin_api::guard` -- every exported function of all eight plugins runs under `catch_unwind`: a panic
+  no longer aborts the process (verified live with a deliberate panic in a real `.so`: the run exited 0);
+  the first panic text is kept, later calls return `InternalError`, and a crashed machine's `step`
+  idles (4 cycles) / `halted` reads 1 so the host cannot spin. A crashed plugin stays dead until restart.
+* Tests: `abi.rs` pins every offset/size on 64-bit; `tests/protocol_schema.rs` fingerprints
+  `protocol.rs` against `PROTOCOL_VERSION` (mutation-checked: adding a constant fails it); host-side
+  skew tests with stub plugins (newer minor + larger vtable loads, minor-0 refused without reading its
+  short vtable, protocol skew reported, contract skew both ways).
+* `--list-plugins` prints the host's ABI/protocol/contract numbers and each plugin's ABI.
+* Release artifacts: `.github/scripts/package_release.sh [--debug]` builds the workspace and stages
+  `retroclawd-<version>-<target>/{retroclawd[.exe], plugins/, PLUGINS.txt, SHA256SUMS}` (verifies the
+  staged layout loads every library); `.github/workflows/release-artifacts.yml` runs it on the three
+  platforms by hand. **Only the Linux path has been run**; the Windows/macOS branches are unverified.
+* Not done: a host-side toast/log when a plugin crashes (today the panic message on stderr and the
+  frozen machine are the only signs; `instance_call` errors do carry the text), and real-library skew
+  tests (a fixture plugin built with a different ABI/protocol) -- the stub-vtable tests cover the
+  host's decisions but not an actual second build.
+
+### Checklist: new machine plugin integration (read first for Enterprise/MSX/Atari/any future machine)
+
+Every future machine in this file (Enterprise 64/128, MSX family, Atari 400/800, and anything added
+after them) integrates through the same plugin/debug contract the four current machines
+(zx81/zx-spectrum/cpc/c64) already prove out, not through a bespoke path invented per machine. Read
+this checklist before scoping a new machine's own roadmap section below, and treat each future
+roadmap's "app integration"/"CLI" step as shorthand for the items here, not a separate mechanism:
+
+1. **Own machine-plugin crate** under `crates/plugins/<name>-machine-plugin`, implementing
+   `plugin_api::PluginDescriptorV1`/`MachinePluginVTableV1` directly -- copy the shape of any
+   existing `*-machine-plugin/src/lib.rs`: a `state()`-backed `Mutex<PluginState>` instance
+   registry (`next_instance`/`instances: HashMap<MachineInstanceHandle, InstanceRecord>`), the 5
+   base vtable functions (`plugin_list_profiles_v1`/`plugin_create_instance_v1`/
+   `plugin_destroy_instance_v1`/`plugin_instance_call_v1`/`plugin_free_buffer_v1`), and both
+   `entry_v1` (the library exports no symbols; the `plugin-dlls` crate adds the C entry points,
+   see item 6). Keep the actual machine (CPU/bus/chips)
+   in its own `crates/machines/<name>` library crate that the plugin only wraps -- same
+   "plugin crate is a thin host-facing adapter, the machine crate is the real implementation"
+   split every current machine already has; do not fold machine logic into the plugin crate itself.
+2. **The 3 fast-path vtable fields are mandatory, not optional**: `MachinePluginVTableV1` (ABI
+   minor 1) requires `step`/`halted`/`pc` raw `extern "C" fn(instance) -> {u32,u8,u16}` fields with
+   zero serialization -- the vtable struct literal will not compile without them, so this can't
+   silently be skipped. Implement them exactly like every existing plugin does (`plugin_step_v1`/
+   `plugin_halted_v1`/`plugin_pc_v1`, looking the instance up in the same registry
+   `instance_call` already uses, returning `0`/`1`/`0` for a handle that somehow doesn't resolve).
+   Never route a new machine's hot per-instruction loop back through `MachineCommand::Step` instead
+   of these -- that per-instruction `bincode` round trip is exactly what the 2026-09-28 fast-path
+   fix removed; see `CLAUDE.md`'s "Fast-path `step`/`halted`/`pc` ABI bypass" paragraph.
+3. **Full required debug contract from day one**: `MachineProfile::debug_capabilities` must include
+   every entry in `plugin_api::REQUIRED_MACHINE_DEBUG_CAPABILITIES` (registers/flags, memory,
+   execution control, disassembly, media state, chip-level snapshots, save-state parity) -- a
+   partial contract silently discovered later is exactly what the 2026-09-28 debug-contract
+   genericity cleanup (see `CLAUDE.md`) had to fix for two existing machines; don't reintroduce
+   the same gap for a new one.
+4. **One generic `"overlay"` `ChipSnapshot`, never a second machine-specific chip id**: whatever
+   diagnostic fields a new machine wants surfaced in `--show-overlay`/`--debug`/ZRCP's
+   `get-paging-state` go on the shared `chip_id: "overlay"` snapshot as plain `NamedValue`
+   key/value pairs (see `cpc-machine-plugin::overlay_chip_snapshot` for the richest current
+   example, folding PPI/keyboard/PSG/tape/disk telemetry into that one chip). A second, bespoke
+   `chip_id` the host needs its own reader for is the exact mistake found and fixed for CPC's old
+   `"cpc.overlay"` chip (see `CLAUDE.md`) -- don't reintroduce it for Enterprise's `nick`/`dave`
+   state, MSX's VDP/PSG/slot state, or Atari's ANTIC/GTIA/POKEY state.
+5. **`WriteMemory`'s `space` field**: if the new machine has no real debugger-addressable banked-
+   memory concept yet, its handler must explicitly reject a `Some(space)` request with a clear
+   error, the same way `zx81`/`c64`-machine-plugin already do (CPC and ZX Spectrum implement
+   `ram-bank:N` now) -- never silently fall through
+   to a flat write, which would poke the wrong bank/segment/slot. Only add real banked-write
+   support (Enterprise paging segments, MSX slot/subslot addressing, Atari PORTB/cartridge banking)
+   once an actual debugger use case needs it, mirroring ZX Spectrum 128K's own `PokeBank` support --
+   the host-side gate for this is generic already (see the same cleanup), so a new plugin needs no
+   host change to add real support later, only its own handler.
+6. **A shared library of its own**: add a `crates/plugin-dlls/<id>` crate (copy any existing one: a
+   `cdylib` whose only source is `plugin_api::export_plugin!(<name>_machine_plugin_impl::entry_v1)`,
+   lib name `<name>_machine_plugin` so the file name matches the host's `*machine*plugin*` scan) and
+   list it in the workspace `members`. Do **not** add the machine to `apps/retroclawd/Cargo.toml`
+   (only as a dev-dependency for unit tests, if wanted): the app finds it as a library at startup.
+7. **Options via `MachineOptionInfo`, not new CLI flags or `MachineCommand` variants**: every
+   ROM/RAM/BIOS input is a declared `File`/`FileSet` option (read from disk by the host into a
+   `BinaryBlob`); every scalar knob (region, RAM size, VDP/paging variant, etc.) is
+   `Bool`/`Int`/`Text`/`Enum`, sent once in `MachineCreateRequest::options` at creation time --
+   never a new post-creation `MachineCommand::Set*` variant (that whole pattern was deleted from
+   `zx-spectrum`/`cpc` in favor of this one, see `CLAUDE.md`'s "Machine-owned options" paragraph).
+8. **Own format crate per real file format, no shared `Loader`/`Snapshot` trait** -- an Enterprise
+   `.dtf`, MSX `.cas`, or Atari `.atr`/`.xfd`/`.cas` parser is its own crate under
+   `crates/formats/`, same as `d64`/`d71`/`d81`/`dsk`/`zx-tape` already are; do not invent a shared
+   trait across them from only one or two future data points.
+9. **Save states**: bincode-derive a private `SaveState` the same shape `c64`/`cpc` already use --
+   a direct serde derive for anything with no external-media entanglement, a small mirror struct
+   plus `dump_state`/`restore_state` for anything wrapping external media (a loaded tape/disk) --
+   excluding ROM/disk/tape bytes exactly like every existing machine's save state already does.
+10. **Verify live through the real binary before marking any milestone done**, not just unit
+    tests: `--headless --dump-screen`/`--dump-memory` boot proof at minimum, the same bar every
+    current machine met, plus whatever media/input proof that machine's own roadmap step calls
+    for.
+
+## Input, hotkeys and file dialogs roadmap (design agreed 2026-10-10; all five phases done)
+
+Replaces the thin `[keymap.default]`/`[keymap.machines.<id>]` host-key-to-machine-key map and the
+hard-coded F11/F12 with a layered input configuration in `retroclawd.toml`. References: Caprice32
+(`kbd_layout=keymap_us.map`, lines `CPC_A<tab>SDLK_a<tab>[MOD_PC_SHIFT]`, global only), RetroArch
+(hotkeys separate from core input, optional hotkey-enable button, `.rmp` remaps scoped core/folder/game),
+VICE (`.vkm` `keysym row col shiftflag`, positional vs symbolic variants, a map patches the current
+one, `!CLEAR`). Three separate concerns, each layered CLI > `--game-config` > `[machines.<id>.*]` >
+global > built-in defaults, per-binding override, `"none"` unbinds:
+
+- **Decisions made:** per-machine bindings are sub-tables (`[machines.<id>.keys]`,
+  `[machines.<id>.hotkeys]`) beside the flat `[machines.<id>]`; hotkeys are plain keys by default with an
+  optional `hotkeys.modifier` (hold-to-enable, for machines that use every F-key); key maps are inline
+  in `retroclawd.toml` only (no external keymap files yet); gamepads come after phases 1-2.
+- Today's gaps: unknown machine key names pass through silently (`canonical_machine_key_name`'s
+  `other => other`), the `[keymap]` comment in the committed `retroclawd.toml` still says "reserved",
+  no chords/modifiers, no unbind, joystick aliasing (arrows+Space) is hard-coded per machine plugin.
+
+1. **Hotkeys and actions (phase 1) -- DONE (2026-10-10).** `[hotkeys]` / `[machines.<id>.hotkeys]`,
+   chords, hold `modifier`, `--list-hotkeys [machine]`; actions `reset`, `fullscreen`, `mute`,
+   `volume_up`/`volume_down`, `overlay` (runtime toggle), `pause`, `screenshot`, `quick_save`/`quick_load`
+   with `state_slot_next`/`state_slot_prev`, `fast_forward` (hold, 8x, renders every 8th tick),
+   `shader_next`/`shader_prev` (live WGSL swap), `quit`, plus one-line toast messages. Details and the
+   defaults rationale in `CLAUDE.md` ("Hotkeys"). Verified live through the real GUI under Xvfb (overlay,
+   mute toast, pause, screenshot file, state save/slots/load, shader swap, reset, quit, hold modifier).
+   Not done: hotkeys under `--headless`, a CLI override of the table, per-game state file names, volume
+   shown anywhere but the toast, "turbo tape" as a separate runtime tape-speed action (fast-forward covers
+   loading time).
+2. **Keyboard remap (phase 2) -- DONE (2026-10-10).** `[keys]` / `[machines.<id>.keys]` replace `[keymap.*]`
+   (clean cutover, old section is a clear error), host-side chords with modifier consumption, lists and
+   `"none"`, startup validation against plugin-reported key names (`MachineProfile::key_names`, protocol
+   v7; the plugins build the list from the tables their handlers use), `--list-keys <machine>`; the host
+   lost its hard-coded per-machine name table. Details in `CLAUDE.md` ("Key bindings"). Not done: modifier
+   keys cannot be the target of chord bindings, no per-game `[keys]` in `--game-config`, no CLI override.
+3. **File dialogs with `rfd` (phase 4) -- DONE (2026-10-10).** Hotkey actions `load_tape`, `load_disk`,
+   `eject_tape`, `eject_disk`, `load_snapshot`, `save_snapshot`, `load_state`, `save_state`, `save_tape`,
+   `save_disk`; the machine pauses (silent) while a dialog is open; last folder per file type in
+   `retroclawd.state.toml` next to the config; XDG portal backend on Linux with in-app confirmation (the
+   portal has no message boxes) -- ejecting or swapping a modified disk asks Save As / overwrite original /
+   discard / cancel, a swapped-in disk keeps the never-silent exit policy. Eject uses the existing
+   `MachineCommand::DetachMedia` (no protocol bump), implemented in the CPC, ZX Spectrum and C64 plugins.
+   Details in `CLAUDE.md` ("File dialogs"). Verified live up to the dialog itself (the prompt, cancel,
+   discard, no hang without a portal); **an actual native dialog window was never seen** (no desktop portal
+   in the sandbox), nor macOS/Windows. Not done: dialogs under `--headless`, drag and drop, recent-files
+   list, a second drive (only drive 0 exists), per-game folders.
+4. **Joystick and gamepad layer (phase 3) -- DONE (2026-10-10).** `[pads]` / `[machines.<id>.pads]`
+   (`[pads.N]` per pad slot, `deadzone`), pad buttons -> machine key names through the same refcounted router
+   as the keyboard, defaults pad N -> the machine's `Joy{N}*` keys, `Joy1*` names added to the Spectrum plugin
+   and a real joystick on both C64 control ports, `--list-keys` prints the buttons and bindings. Differs from
+   the original sketch: the arrow-key/Space joystick aliases in the Spectrum and CPC plugins were *kept*
+   (replacing them with host-side defaults would have needed per-machine cursor-key knowledge in the host) and
+   there was no plugin-api bump (pads reuse `KeyEvent`). Verified by unit tests including a Bevy `App` test
+   spawning `Gamepad` entities; **never run with a physical pad** (no `/dev/uinput`/evdev in the sandbox).
+   Not done: pad buttons as hotkey triggers, right stick/analog triggers, rumble, per-game pad maps.
+5. **Layouts and keymap files (phase 5) -- DONE (2026-10-10).** `[input] layout = "positional" | "symbolic"`
+   (also `[machines.<id>.input]` and `--layout`), keymap files (`[input] keymap`, repeatable `--keymap`;
+   `[keys]`/`[machines.<id>.keys]` plus an optional `layout`), layered below/above the inline `[keys]`.
+   Symbolic works from the characters each machine plugin declares its keys type (protocol v8,
+   `MachineKeyInfo::chars`) plus letters/digits by identity; the C64 plugin gained the shifted-legend keys
+   (verified against the KERNAL's own shift decode table). Details in `CLAUDE.md` ("Keyboard layouts and
+   keymap files"). **Verified live** under Xvfb by re-mapping the X keymap so the QWERTY-`Y` position types
+   `z` (a German keyboard): positional sent `KeyY` (differs), symbolic sent `KeyZ` and the screen was
+   pixel-identical to a US-layout run typing `z`. Not done: dead keys and non-ASCII characters, the CPC
+   punctuation row (the plugin maps only `, . /` so symbolic helps letters/digits there), ZX81 punctuation,
+   per-game layout in `--game-config`, VICE-style matrix-position keymap files, a real non-US keyboard.
+
+## Validation priority
+
+### DONE: external 6502 validation
+
+`mos6502` passes Klaus Dormann's documented-opcode functional test and Tom Seddon's exhaustive
+NMOS decimal/illegal-opcode suite. Fixtures include matching source, licenses, pinned revisions,
+checksums, and execution instructions under `crates/core/6502/tests/fixtures/`.
+
+The external suite found and fixed two real bugs: decimal `ADC` derived N/V from the wrong
+intermediate result, and decimal-mode `ARR` omitted NMOS nibble corrections. Focused regression
+tests preserve both cases. The chip-dependent unstable opcodes still use deterministic common-case
+formulas; no single result can represent every physical chip and operating condition.
+
+### BACKLOG: machine boot integration checks
+
+Add deterministic machine-level checks only when they defend a real boot invariant rather than
+retesting plumbing. Execute in this order:
+
+1. ZX81 ROM reaches its stable interactive loop while NMIs continue waking `HALT`.
+2. Each ZX Spectrum model reaches its expected ROM screen.
+3. CPC 464/664/6128 reach their model-specific firmware `Ready` screens.
+4. C64 reaches the BASIC `READY.` prompt.
+
+Keep ROM licensing constraints in mind; tests requiring private ROMs cannot be mandatory for public
+CI.
+
+## Debugger and application UX
+
+### DONE: debugger capabilities
+
+Completed debugger features:
+
+1. **DONE** Reverse debugging and instruction-history backstep navigation.
+2. **DONE** Watch expressions and conditional breakpoints.
+3. **DONE** Step-over using temporary breakpoints and decoded instruction flow.
+4. **DONE** `.POK` import through existing address-space and banked poke commands.
+5. **DONE** Typed register editing for Z80 and 6502 plugin machines.
+6. **DONE** Bitmap Explorer machine palettes and per-machine defaults from plugin metadata.
+7. **DONE** ZRCP transport for DeZog-oriented workflows.
+
+### DONE: keyboard mapping and input coverage
+
+Completed:
+
+1. **DONE** Typed stable host key names with per-machine keymap overrides.
+2. **DONE** ZX Spectrum punctuation, Caps Shift, and Symbol Shift mappings.
+3. **DONE** C64 punctuation, semantic keys, and shifted function keys.
+4. **DONE** Preserve F11 fullscreen and F12 reset as host controls.
+
+### BACKLOG: host features (added 2026-10-12)
+
+1. **DONE (2026-10-12) Clipboard paste into the emulator window** -- `paste` hotkey (default
+   `shift+insert`), `apps/retroclawd/src/gui/paste.rs`, see `CLAUDE.md`. Verified live under Xvfb
+   (a real X11 clipboard, Shift+Insert injected through XTest) typing a three-line BASIC program
+   into the C64 that then ran. Still open: the Windows/macOS clipboard paths and Wayland were not
+   run (arboard supports them; only the text -> key conversion is unit-tested for those), the
+   in-app prompt line does not accept paste, there is no size cap beyond cancelling with the hotkey
+   again, characters a machine cannot type are counted and shown in the toast but not listed, and
+   cancel-on-real-key was not added (only the second hotkey press cancels).
+2. **ROMM integration** (<https://github.com/rommapp/romm>, a self-hosted ROM manager with a REST
+   API). Direction not decided -- ask the user before designing. Candidate shapes to put to them:
+   (a) a read-only client: configure `[romm] url/token`, `retroclawd --romm-list <platform>` and a
+   `--romm <id>` launch that downloads the ROM/media through the API into a cache and starts the
+   matching machine; (b) a platform-slug map (ROMM platform slugs -> `machine_id` + media kind, e.g.
+   `zxs`, `acpc`, `c64`) so ROMM's library knows which retroclawd profile plays a title; (c) hash
+   matching (ROMM stores MD5/SHA1/CRC) against the media retroclawd was given; (d) sync of save states,
+   screenshots and playtime back to ROMM saves/states endpoints; (e) ROMM launching retroclawd
+   through a custom-protocol/CLI link. Whatever is chosen: tokens come from the config/env, never
+   the command line; downloads go through the same media loading as local files; nothing in the
+   emulator core depends on the network.
+
+### BACKLOG: headless interrupt-driven execution
+
+Preserve the current default (`HALT` as completion) for standalone test programs. If this backlog is
+implemented, execute in this order:
+
+1. Add an explicit opt-in mode that continues through `HALT` until `--max-cycles`.
+2. Keep existing batch semantics unchanged when that mode is not enabled.
+
+## Cross-platform targets
+
+### PARKED: native CI
+
+Parked. Resume when release automation, target toolchains, and platform runners are available. Do not
+claim cross-platform runtime support from local Windows verification alone.
+
+### BACKLOG: browser/WASM frontend
+
+Do not compile the native CLI unchanged for WASM. Execute in this order:
+
+1. Add a separate app under `apps/` that reuses the machine crates.
+2. Provide:
+   - `requestAnimationFrame`-driven pacing instead of blocking sleep.
+   - Browser file selection/fetch for ROMs and media instead of `std::fs` and CLI arguments.
+   - Web-compatible audio, input, debugger access, and save downloads.
+   - A `wasm32-unknown-unknown` build check.
+3. Factor a shared runner library only when both native and browser frontends prove the common API.
+
+## Future machine roadmaps — PARKED
+
+Do not generalize current APIs in preparation for these systems -- the plugin/debug/options
+contract these roadmaps integrate through already exists and is already generic (see "Checklist:
+new machine plugin integration" under "Plugin host and debugger plugin architecture" above); a
+future machine's job is to *use* that contract correctly, not to reshape it further in advance.
+
+## Enterprise 64/128 roadmap — PARKED
+
+### DONE: baseline
+
+No Enterprise machine is implemented in retroclawd yet.
+
+### BACKLOG: external parity execution sequence (PARKED; gap vs ep128emu/libretro)
+
+Primary source material:
+
+- https://docs.libretro.com/library/ep128emu/
+- https://github.com/libretro/ep128emu-core
+- https://github.com/istvan-v/ep128emu
+- https://github.com/libretro/ep128emu-core/blob/master/core/sample.ep128cfg
+
+### BACKLOG: core parity track — Enterprise 64/128 one-go implementation
+
+Strict sequence for a later one-pass implementation (do not reorder; read together with "Checklist:
+new machine plugin integration" above -- items below that say "app integration"/"CLI" mean that
+checklist's items 6-7, not a separate mechanism):
+
+1. Scope lock: start with Enterprise 128 only. Treat TVC/CPC/ZX modes in ep128emu as reference
+   sources, not part of this implementation pass.
+2. Crate layout: add `crates/machines/enterprise` for machine wiring (checklist item 1) and keep new
+   chip behavior in dedicated crates only where there is clear chip-level reuse (`nick` video,
+   `dave` system/audio/IO); add `crates/plugins/enterprise-machine-plugin` as the thin C-ABI
+   adapter over it (checklist item 1), including its own `step`/`halted`/`pc` fast-path vtable
+   functions from the start (checklist item 2) and its `machine-enterprise` Cargo feature
+   (checklist item 6).
+3. Machine construction and memory map: implement Enterprise 128 paging model, default RAM/ROM
+   wiring, and deterministic reset/boot path from externally supplied ROM(s).
+4. Bus/timing foundation: implement Z80 wait-state and memory-contention behavior needed to keep CPU
+   execution synchronized with Enterprise video timing.
+5. Video baseline (`nick`): implement the minimum documented modes and timing needed for real ROM boot
+   screens and stable frame output.
+6. System/audio baseline (`dave`): implement timer/interrupt plumbing, keyboard+joystick port wiring,
+   and baseline audio output path compatible with existing GUI audio delivery.
+7. Input mapping: add Enterprise keyboard matrix mapping and joystick mappings (internal + external)
+   plugin host dispatch without regressing existing machine hotkeys.
+8. Tape/media phase A: add Enterprise tape loading path (`.tap`, optional WAV-as-tape semantics,
+   own `crates/formats/` crate per checklist item 8) with real-time behavior and debug diagnostics
+   matching existing tape observability style (the generic `"overlay"` chip, checklist item 4).
+9. Disk/media phase B: evaluate and implement Enterprise disk/hard-image attach workflow (`.img`,
+   `.dsk`, `.vhd`, own format crate(s) per checklist item 8) with explicit read/write policy and
+   persistence semantics.
+10. Enterprise-native convenience media: evaluate `.dtf` and direct executable file startup
+    (`.bas/.com/.trn/.128`) only after base boot/media paths are stable.
+11. Save states: add machine-specific internal save-state coverage for Enterprise paging, timers,
+    video/audio state, and attached-media position metadata (media bytes remain external; shape
+    per checklist item 9).
+12. App integration: declare Enterprise's `MachineProfile`/`MachineOptionInfo` options (ROM
+    file(s), any Enterprise-specific scalar knobs) and full `REQUIRED_MACHINE_DEBUG_CAPABILITIES`
+    contract per checklist items 3/7 -- `retroclawd enterprise128` needs no bespoke CLI code, only
+    a correctly declared profile.
+13. Verification matrix: require boot-to-ROM prompt proof, keyboard input proof, tape load proof,
+    disk attach proof, and save-state round-trip proof before marking support done, all via the
+    real binary (checklist item 10).
+14. Cross-machine follow-through: when Enterprise-driven work touches CPC or ZX logic, update the CPC
+    and ZX emulator-comparison checklists in this TODO during the same change.
+15. Documentation/citations: add exact references used for each accepted behavior to `CREDITS.md` and
+    keep TODO sequence numbering aligned with delivered milestones.
+
+### BACKLOG: parity extensions (PARKED)
+
+After Enterprise 128 baseline is complete, evaluate follow-up scope in this order: TVC support,
+Enterprise expansions, and only then overlap features for CPC/ZX modes that belong in their own
+machine roadmaps.
+
+### BACKLOG: cross-emulator comparison addendum (PARKED; ep128emu as additional source)
+
+When this roadmap is resumed, keep an explicit feature-delta checklist against ep128emu/libretro and
+require hardware-backed behavior or executable tests whenever sources disagree.
+
+## MSX family roadmap — PARKED
+
+### DONE: baseline
+
+No MSX-family machine is implemented in retroclawd yet.
+
+### BACKLOG: external parity execution sequence (PARKED; gap vs blueMSX/libretro)
+
+Primary source material:
+
+- https://docs.libretro.com/library/bluemsx/
+- https://github.com/libretro/blueMSX-libretro
+- https://sourceforge.net/projects/bluemsx/files/
+- https://sourceforge.net/projects/bluemsx/
+
+### BACKLOG: core parity track — MSX family one-go implementation
+
+Strict sequence for a later one-pass implementation (do not reorder; read together with "Checklist:
+new machine plugin integration" above -- items below that say "app integration"/"CLI" mean that
+checklist's items 6-7, not a separate mechanism):
+
+1. Scope lock: start with MSX1 and MSX2 baseline compatibility on Z80. Keep non-MSX platforms in
+   blueMSX docs (SVI/Coleco/SG-1000) out of this pass.
+2. Crate layout: add `crates/machines/msx` for machine wiring and keep reusable chips in dedicated
+   crates when there is clear second-consumer value (`tms99xx` VDP family, PSG reuse where
+   possible); add `crates/plugins/msx-machine-plugin` as the thin C-ABI adapter over it (checklist
+   item 1), including its own `step`/`halted`/`pc` fast-path vtable functions from the start
+   (checklist item 2) and its `machine-msx` Cargo feature (checklist item 6).
+3. Machine profile model: define explicit machine profiles (MSX1, MSX2, MSX2+) with ROM slot map,
+   RAM sizing, VDP selection, and regional timing -- as real `MachineProfile`/`MachineOptionInfo`
+   declarations per checklist item 7, not a bespoke config path.
+4. Slot/bus foundation: implement primary/secondary slot decoding and cartridge slot mapping before
+   adding media loaders.
+5. Video baseline: implement TMS9918A-class behavior first, then MSX2-class VDP deltas required for
+   real software boot and stable rendering.
+6. Audio baseline: wire PSG and mandatory machine sound paths with the existing audio queue/resampling
+   pipeline.
+7. Input baseline: add MSX keyboard matrix + joystick mapping through plugin host dispatch,
+   preserving host controls (F11/F12 and debugger hotkeys).
+8. Cartridge/media phase A: add ROM loader with mapper detection and an explicit override path for
+   unknown mappers; keep mapper implementations local to MSX machine code. If a debugger use case
+   later needs banked-poke support for slot-mapped RAM, follow checklist item 5's real-support path
+   rather than silently accepting an unrecognized `space`.
+9. Disk/media phase B: add `.dsk` attach path (own format crate per checklist item 8, reusing `dsk`
+   only if MSX's own on-disk layout is genuinely byte-identical, never by loosening `dsk`'s own
+   CPC-specific assumptions) plus multi-disk workflow (`.m3u`) and deterministic disk index
+   switching semantics.
+10. Cassette phase C: add `.cas` loading flow (own format crate per checklist item 8) with
+    auto-rewind behavior policy and observability logs via the generic `"overlay"` chip (checklist
+    item 4).
+11. Save states: add machine-specific internal save-state coverage for slot state, VDP/PSG/interrupt
+    state, and media position metadata (external media bytes remain external; shape per checklist
+    item 9).
+12. App integration: declare MSX's `MachineProfile`/`MachineOptionInfo` options (BIOS/machine-type
+    selection, any MSX-specific scalar knobs) and full `REQUIRED_MACHINE_DEBUG_CAPABILITIES`
+    contract per checklist items 3/7 -- `retroclawd msx*` profiles need no bespoke CLI code, only
+    correctly declared profiles.
+13. Verification matrix: require ROM boot proof, keyboard input proof, cartridge mapper proof,
+    multi-disk swap proof, cassette load proof, and save-state round-trip proof, all via the real
+    binary (checklist item 10).
+14. Documentation/citations: record accepted behavior references in `CREDITS.md` and keep roadmap
+    step numbering synchronized with delivered milestones.
+
+### BACKLOG: parity extensions (PARKED)
+
+After MSX1/MSX2/MSX2+ baseline, evaluate in order: turboR/R800 path, advanced cartridge ecosystems,
+and non-MSX blueMSX targets (SVI/Coleco/SG-1000) as separate roadmap sections.
+
+### BACKLOG: cross-emulator comparison addendum (PARKED; blueMSX as additional source)
+
+Keep an explicit feature-delta checklist against blueMSX/libretro and hardware references. If source
+sets disagree, require executable tests or primary hardware documentation before selecting behavior.
+
+## Atari 400/800 roadmap — PARKED
+
+### TODO (2026-10-15): the Atari 8-bit family as one new family repository
+
+Scope, decided by the owner: **Atari 400, 800, 1200XL, 600XL, 800XL, 130XE, XEGS and the 5200** as one family
+(`retroclawd-atari`, a fourth submodule beside sinclair / amstrad / commodore, same layout: `crates/machines`, chips,
+formats, `crates/plugins`, `crates/plugin-dlls`, a `firmware.toml`, no ROMs in the tree). The 5200 is the same chip set
+(ANTIC, GTIA, POKEY, a 6502C at 1.79 MHz) with a different memory map, joystick/paddle controllers and cartridge-only
+software, so it belongs here rather than in a separate family; the XL/XE models add banked RAM, the PORTB register, the
+built-in BASIC and self-test switches, and the XEGS adds a detachable keyboard and its built-in game cartridge.
+
+References, in order of authority:
+
+1. **Altirra** (Avery Lee) <https://virtualdub.org/altirra.html> -- the main reference for cycle-exact ANTIC, GTIA and POKEY
+   behaviour, DMA and CPU stealing, and the hardware manual it ships; read its source when work starts.
+2. **atari800** <https://github.com/atari800/atari800> -- the second reference: models, memory maps, cartridge and disk
+   formats, the 5200 specifics, behaviour of real software.
+
+Validation: **Altirra's Acid800** (<https://virtualdub.org/downloads/Acid800-1.2.7z>, v1.2.7) is the hardware-compliance
+suite for ANTIC / GTIA / POKEY / the CPU / the SIO and the XL/XE banking; every test must pass, and a failure is a bug in
+the emulator, not in the suite -- same stance as ZEXALL/ZEXDOC and the 6502 suites. Wire it into the machine test suite
+above (a `.xex` / cartridge image fetched from RomM by hash, because we must not commit it: check its licence before
+vendoring any part), one expected result per model and per video standard (PAL and NTSC) and per memory size.
+
+Shared chips follow the repository rule: ANTIC, GTIA and POKEY as their own crates under the family repository (not in
+`retroclawd-crates`, no other family uses them), the `mos6502` core from `retroclawd-crates` reused as is (check the
+6502C halt line / DMA stalling hook that `Bus::dummy_cycle` already gives the C64 cycle engine). Media: `.atr` / `.xfd`
+disks, `.xex` executables, `.car` / `.rom` cartridges, `.cas` tapes (`rctape`, `rcdisk` and `rcld` get Atari outputs
+for the test suite), `.atari800` state is not needed.
+
+
+### DONE: baseline
+
+No Atari 400/800 (or XL/XE) machine is implemented in retroclawd yet.
+
+### BACKLOG: external parity execution sequence (PARKED; gap vs Atari800/Altirra/libretro)
+
+Primary source material:
+
+- https://docs.libretro.com/library/atari800/
+- https://github.com/libretro/atari800
+- https://github.com/atari800/atari800
+- https://sourceforge.net/projects/atari800/
+- https://www.virtualdub.org/altirra.html -- Avery Lee's Altirra, the reference-tier Atari 8-bit
+  emulator for cycle-exact ANTIC/GTIA/POKEY behavior specifically (its own documentation is widely
+  cited as more precise on DMA/timing edge cases than Atari800's); read its real source directly
+  when this roadmap resumes, same "shallow-clone and read, not a doc summary" standard this
+  project already holds VICE/ep128emu/blueMSX to.
+- acid800 v1.2 -- the Atari 8-bit hardware-compliance test suite (ANTIC/GTIA/POKEY timing and DMA
+  edge cases, analogous in role to this project's own ZEXALL/ZEXDOC and Klaus Dormann/Tom Seddon
+  6502 suites); required, not optional, for this roadmap's own verification matrix (step 13 below)
+  once real ANTIC/GTIA/POKEY work begins -- treat a suite failure as a real bug to fix, not a
+  suite quirk to work around, same stance this project already takes toward its own external Z80/
+  6502 test suites.
+
+### BACKLOG: core parity track — Atari 400/800 family one-go implementation
+
+Strict sequence for a later one-pass implementation (do not reorder; read together with "Checklist:
+new machine plugin integration" above -- items below that say "app integration"/"CLI" mean that
+checklist's items 6-7, not a separate mechanism):
+
+1. Scope lock: start with Atari 800 (48K, NTSC or PAL selectable) on the existing `mos6502` core --
+   real 8-bit Atari hardware is 6502-family (6502C "Sally" variant, no documented behavioral
+   difference from stock NMOS 6502 that this project's own core doesn't already model), the actual
+   second real-world proof point this project's `mos6502` track was already built to find. Treat
+   400/1200XL/XL/XE variants as later scope, not part of this first pass.
+2. Crate layout: add `crates/machines/atari800` for machine wiring and dedicated chip crates for
+   genuine second-consumer value (`antic` display-list/DMA video chip, `gtia` color/player-missile
+   graphics, `pokey` sound+serial+keyboard chip -- `pokey` in particular has no existing analog in
+   this codebase, unlike `antic`/`gtia`'s rough kinship to `vic-ii`'s own raster-DMA shape); add
+   `crates/plugins/atari800-machine-plugin` as the thin C-ABI adapter over it (checklist item 1),
+   including its own `step`/`halted`/`pc` fast-path vtable functions from the start (checklist item
+   2) and its `machine-atari800` Cargo feature (checklist item 6).
+3. Machine construction and memory map: implement the real Atari 800 memory map (OS ROM at
+   `$D800`-`$FFFF`, hardware register windows for ANTIC/GTIA/PIA/POKEY at `$D000`-`$D7FF`, cartridge
+   window at `$A000`-`$BFFF`, BASIC ROM optionally mapped in when no cartridge is present) and a
+   deterministic reset/boot path from externally supplied OS ROM (+ optional BASIC ROM) -- both are
+   real, separate ROM images on real hardware, same "several ROM files, not one" shape `c64` already
+   established for its own KERNAL/BASIC/char-ROM split.
+4. Bus/timing foundation: implement ANTIC DMA cycle-stealing from the CPU (a real, well-documented
+   hardware fact -- ANTIC halts the 6502 during active display-list fetch/refresh cycles) using the
+   same "the caller's outer real-time pacing loop trusts `step`'s own returned cycle count"
+   substitution shape `vic-ii`'s own bad-line cycle stealing already established for a different CPU
+   family, not a new mechanism.
+5. Video baseline (`antic`+`gtia`): implement the minimum documented display-list instruction set and
+   GTIA color/priority modes needed for real OS ROM boot screens and stable frame output; defer
+   player/missile (sprite) graphics and any raster-interrupt-driven display-list tricks until a real
+   ROM/game boot needs them, mirroring `vic-ii`'s own "base mode first, sprites/raster IRQ later"
+   sequencing.
+6. System/audio baseline (`pokey`): implement the 4-channel sound generation, the serial I/O
+   controller (SIO -- the real protocol every Atari disk/cassette device speaks), keyboard scanning,
+   and POKEY's own interrupt sources (IRQ on keyboard/serial/timer events) wired into `mos6502::Cpu::
+   request_irq`; wire baseline audio output through the existing audio queue/resampling pipeline.
+7. Input mapping: add Atari keyboard matrix mapping plus digital joystick (PIA-connected, not a
+   separate port chip the way C64's CIA-scanned keyboard differs from its own joystick wiring)
+   through plugin host dispatch, without regressing existing machine hotkeys.
+8. Cartridge/media phase A: add `.rom`/`.car`/`.bin` cartridge loading (own format crate per
+   checklist item 8) with mapper/bank-switching detection and an explicit override path for unknown
+   mappers, mirroring MSX's own cartridge-phase caution about not silently guessing a mapper.
+9. Disk/media phase B: add `.atr`/`.xfd` disk image attach (own format crate per checklist item 8,
+   real Atari sector layout -- 128-byte single-density or 256-byte double-density sectors, a 16-byte
+   `.atr` header -- not reused from `d64`/`dsk`, a genuinely different disk format family) through
+   the real SIO protocol POKEY's own baseline already models, plus multi-disk workflow parity with
+   MSX's own `.m3u` approach.
+10. Cassette phase C: add `.cas` loading (own format crate per checklist item 8) with real SIO-level
+    timing semantics and observability logs via the generic `"overlay"` chip (checklist item 4).
+11. Save states: add machine-specific internal save-state coverage for ANTIC/GTIA/POKEY state,
+    cartridge bank-switch state, and attached-media position metadata (external media bytes remain
+    external; shape per checklist item 9).
+12. App integration: declare Atari's `MachineProfile`/`MachineOptionInfo` options (OS ROM, optional
+    BASIC ROM, model/region selection, any Atari-specific scalar knobs) and full
+    `REQUIRED_MACHINE_DEBUG_CAPABILITIES` contract per checklist items 3/7 -- `retroclawd atari800`
+    needs no bespoke CLI code, only a correctly declared profile.
+13. Verification matrix: require boot-to-ROM-prompt/BASIC-ready proof, keyboard input proof,
+    cartridge boot proof, disk load proof, cassette load proof, and save-state round-trip proof
+    before marking support done, all via the real binary (checklist item 10) -- plus a clean run of
+    acid800 v1.2 against `antic`/`gtia`/`pokey`, the accuracy baseline for this machine the same way
+    ZEXALL/ZEXDOC and Klaus Dormann/Tom Seddon's suites already are for `z80`/`mos6502`; a failure
+    is diagnosed and fixed, not silently accepted.
+14. Documentation/citations: add exact references used for each accepted behavior to `CREDITS.md`
+    (Altirra's own source/docs and acid800's own test descriptions in particular, wherever they
+    were the deciding reference for a specific timing/behavior choice) and keep TODO sequence
+    numbering aligned with delivered milestones.
+
+### BACKLOG: parity extensions (PARKED)
+
+After Atari 800 baseline is complete, evaluate follow-up scope in this order: Atari 400 (same
+hardware, different case/keyboard -- likely memory-identical the same way Spectrum's +2 was to
+128K), XL/XE models (real, different memory-map/banking facts -- extra RAM under the OS ROM, a new
+PORTB-driven banking register, a real BASIC-disable pin), and only then peripheral extras (real
+printer/850 interface emulation, hard-disk-style SIO devices).
+
+### BACKLOG: cross-emulator comparison addendum (PARKED; Atari800/Altirra/libretro as additional source)
+
+When this roadmap is resumed, keep an explicit feature-delta checklist against Atari800/Altirra/
+libretro and require hardware-backed behavior, acid800 v1.2 results, or executable tests whenever
+sources disagree -- Altirra is the preferred tie-breaker specifically for ANTIC/GTIA/POKEY cycle
+timing, matching its own documented emphasis on that accuracy tier.
+
+## Next-wave machine roadmaps (added 2026-10-12) — PARKED
+
+Requested systems, all to the same spec as the existing machines: a machine crate under
+`crates/machines/`, shared chip crates under `crates/chips/` when a second user exists, format
+crates under `crates/formats/`, a `*-machine-plugin` implementing the `plugin-api` contract
+(options, `key_names`, media kinds, save states, debugger state, overlay chip), a `machine-*` cargo
+feature in `apps/retroclawd`, ROM-gated boot proof tests, per-machine docs in `CLAUDE.md`/`README.md`/
+`CREDITS.md`, and the same close-out discipline as CPC/C64 (a documented feature-delta checklist
+against the reference emulator, every deliberate gap named). Read "Checklist: new machine plugin
+integration" first. Everything below is a *scope note*: each item must be re-researched from primary
+sources (data sheets, reference emulator source) before its first line of code, and promoted to its own
+`## <name> roadmap` section with a DONE/BACKLOG split.
+
+Suggested order, by reuse (not a commitment): BBC Micro -> Acorn Electron (shares 6502, ROM paging,
+tape/disk formats), Apple II family (6502/65C02, new disk formats), Oric (6502 + AY + VIA reuse),
+ZX Spectrum Next (extends the Spectrum), Commodore 128 (extends the C64 crates), Dragon 32/64 (new
+6809 core), TI-99/4A (new TMS9900 core), Sinclair QL (68008; shares the 68000 core decision with
+Genesis), RP6502 (W65C02S + RP2040-side devices), Commander X16 (65C02 + VERA + YM2151).
+
+- **ZX Spectrum Next** (full emulation): Z80N (the Z80 plus extra opcodes -- add to `z80` behind a
+  CPU-variant flag, validated by its own exhaustive opcode test), NextReg-driven hardware, 8K-page
+  MMU over up to 2 MB RAM, ULA/Timex/LoRes/Layer 2/tilemap modes, 128 hardware sprites, Copper,
+  zxnDMA, three AY (TurboSound Next) + DAC audio, 3.5/7/14/28 MHz speeds, SD card (esxDOS/NextZXOS
+  file API), RTC, `.nex` loading plus `.sna`/`.z80`/`.tap`/`.tzx`, joysticks/mouse, Next keyboard.
+  Reuses `zx-spectrum` video contention knowledge, `ay-3-8910`, `zx-tape`, snapshot crates.
+- **Apple II series** (II, II+, IIe, enhanced IIe, IIc; IIgs is a separate later phase needing a
+  65C816, the Mega II and the Ensoniq 5503): 6502/65C02 (`mos6502` gains a 65C02 variant), soft-switch
+  memory/video map (text/lo-res/hi-res/double hi-res, 40/80 columns, Language Card, aux memory),
+  Disk II controller with GCR (`.dsk/.do/.po`, `.nib`, `.woz`), cassette, speaker, paddles/joystick,
+  slot cards (Mockingboard, mouse, Thunderclock, Super Serial), keyboard variants.
+- **BBC Micro Model B** (then B+, Master 128 as variants): 6502 at 2 MHz, 6845 CRTC + Video ULA
+  (modes 0-7) + SAA5050 teletext, two 6522 VIAs (system/user), 8271 FDC (B) / WD1770 (B+/Master),
+  SN76489 sound, 6850 serial/cassette, paged sideways ROM/RAM, 1 MHz bus, Tube later, `.ssd/.dsd`,
+  `.uef`/tape, keyboard matrix + joystick/ADC, OS 1.2 + BASIC.
+- **Commodore 128**: DONE and closed (2026-10-12), see `CLAUDE.md`'s `c128`/`vdc8563`/`drive-link`
+  notes: 8502 + Z80 on one bus behind the MMU 8722, Z80 boot hand-off, VIC-IIe + VDC 80 columns, SID,
+  two CIAs, C128 and C64 mode, save states, real 1571/1581/1541 DOS over IEC (`--true-drive`), plugin
+  `c128-machine-plugin`, `--run`/`--mode c64`/BASIC `.prg` injection, `vic_accuracy = cycle`, and
+  CP/M Plus booting to `A>` from the CBM-format system disk (`BOOT`, 80 columns). Proven with the real
+  ROMs (`roms/c128`): BASIC 7.0 `READY.` in 40 and 80 columns, `GO64`, typed keys, directories from real
+  drive DOS ROMs. **Left open, deliberately**: burst/fast serial (CIA1 SDR + the 1571/1581 sides), the
+  1571's WD1770 (MFM) mode that CP/M data disks need, external function ROM slots, REU/cartridge/printer/
+  datasette parity with the C64 plugin, `.lnx`/`.tap` media, the 128D/128DCR variants and VDC light
+  pen/interlace.
+- **Acorn Electron**: 6502A (2 MHz bus-throttled to 1 MHz RAM access), single ULA doing video, sound,
+  tape and ROM paging, 32 KB RAM, BASIC + sideways ROMs, `.uef`/cassette, Plus 1/Plus 3 (ADFS/DFS
+  via 1770) later. Shares almost everything with the BBC Micro crates.
+- **Oric-1 / Oric Atmos**: 6502 at 1 MHz, 6522 VIA, AY-3-8912, the ULA's text/hires attribute
+  video, cassette (`.tap`, `.wav`), Microdisc/Jasmin disk interfaces (`.dsk`), printer port, ROM
+  variants (1.0/1.1, Atmos), keyboard via VIA + AY.
+- **TI-99/4A**: a new TMS9900 core (16-bit, workspace-register architecture, memory-mapped registers
+  in RAM, 3 MHz with the 8-bit multiplexed bus wait states), TMS9918A VDP (graphics I/II, text,
+  multicolour, sprites), TMS9919 sound, GROMs with auto-incrementing address pointer, 256 bytes
+  scratchpad, console + cartridge ROM/GROM banking (`.rpk`/`.bin`), cassette, TI Disk Controller
+  card (`.dsk`), speech synthesizer (TMS5220) and peripheral expansion box later.
+- **Dragon 32/64**: a new MC6809E core (full instruction set, cycle timing, interrupts, validated
+  with a published 6809 test suite), MC6847 VDG, MC6883 SAM, two 6821 PIAs, cassette, cartridge
+  (`.rom`), DragonDOS/Delta disk with WD2793 (`.vdk/.dmk/.dsk`), 64's 64 KB RAM map and serial
+  port; CoCo-compatible variants are cheap once the 6809 core and SAM/VDG exist.
+- **Sinclair QL**: a 68008 core (reuse the 68000 core if Genesis lands first; one core with a
+  data-bus-width option rather than two), ZX8301 (video/display modes 4 and 8, 512x256/256x256) and
+  ZX8302 (RTC, microdrive, network, serial), the 8049 IPC (keyboard, sound, joysticks) with its
+  serial protocol to the ZX8302, Microdrives (`.mdv`), QDOS/SMSQ ROM, 128 KB RAM and expansion,
+  `.win`/`.qlf` disk and file formats.
+- **RP6502 (Picocomputer)** (<https://picocomputer.github.io/emu.html>, reference emulator in the
+  browser): W65C02S CPU, the RP2040-side RIA (registers at `$FFC0-$FFFF`, 64 KB XRAM, USB
+  keyboard/mouse/gamepad, file API, `.rp6502` ROM packaging) and VGA video processor
+  (modes 1-4, character/tile/bitmap, sprites, 3D-ish affine tiles), YM2151-style/PSG sound per the
+  firmware docs. Read the firmware documentation and the emulator source before scoping; the
+  platform changes between firmware releases, so pin a version and record it in `CREDITS.md`.
+- **Commander X16** (full emulation): W65C02S at up to 8 MHz (`mos6502` 65C02 variant, shared with
+  the Apple II work), 512 KB banked RAM (`$A000-$BFFF`, 8 KB windows) and up to 2 MB banked ROM
+  (KERNAL, BASIC, DOS, GEOS, CodeX, charsets), two 65C22 VIAs (keyboard/mouse via PS/2-style bit-banged
+  or the SMC/I2C system management controller, SNES pads, IEC), the **VERA** video chip (own 128 KB VRAM,
+  320x240/640x480 VGA, layer 0/1 in tile and bitmap modes, 128 sprites, palette of 256 12-bit entries,
+  composer/scaling, FX/affine helper, SPI/SD card access, PSG with 16 voices + PCM FIFO, UART-style
+  access via the data ports with auto-increment), YM2151 FM (OPM) audio, the `.prg`/`.bas`/`.crt`-style
+  program loading from an FAT32 SD image (`.img`) or a host directory (hostfs, as the reference
+  emulator does), 65C02 `STP`/`WAI` handling, the RTC and NVRAM on the SMC, and the emulator debug
+  ports. Reference: the official `x16-emulator` source and ROM repo; pin a ROM release (R4x) and record
+  it in `CREDITS.md`. Needs new chip crates (`vera`, `ym2151`), a FAT-image/hostfs format layer, and the
+  keyboard layouts the ROM expects.
+
+## Other future systems (brief scope notes) — PARKED
+
+Not full roadmaps -- placeholders for systems mentioned but not yet sequenced in detail. When one of
+these is promoted to an active roadmap, give it its own `## <name> roadmap — PARKED` section
+following the same DONE/BACKLOG template as Enterprise/MSX/Atari above, and read "Checklist: new
+machine plugin integration" first, same as every roadmap in this file.
+
+- NES: reuse `mos6502` with 2A03 decimal behavior supplied by the machine, then add PPU, APU,
+  controller protocol, iNES parsing, and mapper implementations local to the NES crate.
+- Sega Master System: reuse the Z80; add its VDP, PSG, cartridge, and controller hardware.
+- Sega Genesis: add a 68000 core, YM2612, PSG, VDP, and an internally scheduled secondary Z80.
+
+Decision for a future Genesis implementation: keep `Machine::step` unchanged initially. The machine
+coordinates both CPUs internally, as it already coordinates CPUs and peripherals. Add a separate
+multi-core debugger surface only if real debugger requirements demand it; do not widen every
+single-CPU `Machine` implementation preemptively.
+
+## Shared peripheral chips
+
+Implemented shared-chip crates are `ay-3-8910`, `nec765`, `sinclair-keyboard`, `vic-ii`, `i8255`,
+and `sid`. Keep their interfaces chip-specific; machine crates own address decode and host wiring.
+
+Potential chips such as SN76489, YM2612, Z80 PIO, and Z80 CTC get separate crates when a real
+machine starts using them. Do not create speculative chip crates without a consumer.
+
+## Interrupts
+
+### DONE: baseline
+
+- The Z80 core has distinct maskable IRQ and NMI paths, with NMI priority and correct IFF behavior.
+- ZX Spectrum raises its maskable interrupt once per video frame.
+- ZX81 raises NMIs at the modeled scanline cadence while its NMI generator is enabled.
+- C64 CIA1 (Timer A) and VIC-II (raster-compare only) both can request their CPU interrupts; the
+  CPC Gate Array can too.
+
+The remaining headless `HALT` execution concern is tracked under Debugger and application UX. New
+machine timing work must preserve these established interrupt-delivery contracts.
+
+## Display shaders
+
+### DONE: selected single-pass CRT presets
+
+Bundled WGSL presets now include `crt-geom`, `zfast-crt`, and `crt-potato`, alongside the earlier
+`crt`, `scanlines`, and `sharp-bilinear` choices. These use one `Material2d` fragment pass and the
+shared `shader_intensity`/`scanline_intensity` controls. See `CREDITS.md` for upstream sources and
+the deliberate procedural-mask/progressive-rendering simplifications.
+
+### PARKED: full crt-royale and mame_hlsl ports
+
+Libretro's `crt-royale` preset is a 12-pass pipeline with bloom/halation intermediates and six mask
+textures. `mame_hlsl` is an 11-pass pipeline with NTSC encode/decode, phosphor/chroma stages, and a
+mask texture. Full ports need render-to-texture pass orchestration and multi-texture materials;
+single-pass approximations are intentionally not substituted without a user decision.
+
+## Architecture guardrails
+
+- `machine` remains CPU-agnostic and must not depend on concrete CPUs or machines.
+- CPU-visible addresses remain `u16`; banked physical memory belongs inside each machine bus.
+- CPU cores depend only on `machine::Bus`.
+- Format crates parse and write their own concrete formats; do not invent a shared
+  `Loader`/`Snapshot` trait across snapshots, tapes, and disks.
+- Peripheral crates expose chip-specific interfaces, not `machine::Bus` implementations.
+- Machine crates own address decode and chip-to-chip wiring.
+- Do not extract a shared component from one consumer or from two structurally different consumers.
+- Clean cutovers only: migrate callers and remove obsolete paths rather than keeping aliases.
+
+## ROM and legal handling
+
+The private development repository currently contains copyrighted ROM files for personal backup and
+verification. It must not be made public while those files remain anywhere in git history.
+
+Any public distribution must:
+
+- Remove copyrighted ROMs from the complete published history, not only the working tree.
+- Require users to supply legally obtained ROMs.
+- Keep user-facing ROM size/layout instructions current for every machine.
+- Review bundled shader and third-party fixture licenses before declaring a project license.
+
+## Verification standard
+
+- Bug fix: reproduce the failure, fix the source, and confirm the reproduction no longer fails.
+- Hardware behavior: cite an authoritative source in `CREDITS.md` and verify against real software
+  or a focused behavioral test.
+- UI: exercise the real surface and visually inspect it.
+- Performance: profile before changing hot code and benchmark the exact path afterward.
+- Permanent tests must defend observable behavior or a plausible regression; use throwaway probes
+  for one-time evidence.
+- Run focused checks during development, then workspace formatting, linting, and relevant tests once
+  integration is complete.
+
+## Performance
+
+Recorded baselines that still guide future work:
+
+- Generic `Cpu::step<B: Bus>` removed dynamic dispatch from the Z80 hot path and reduced the
+  measured ZEXDOC runtime from about 59.4s to 27.7s before later interrupt costs. Do not reintroduce
+  trait-object bus access on the instruction path.
+- `vic_ii::render_text` gained about 1.40x from precomputed SIMD mask/palette tables; constructing
+  SIMD lanes per cell was slower than scalar code. Preserve the precomputation strategy.
+- Use `cargo build --profile profiling` for optimized binaries with symbols.
+- Release profile size optimization is intentional; hot emulator crates have package-level
+  `opt-level = 3` overrides in the workspace manifest.
+
+No optimization task is active without a current profile showing a real bottleneck.
+
+## Completed baseline
+
+These are complete and should not reappear as open work:
+
+- Z80 core validated by ZEXALL/ZEXDOC, including documented and undocumented behavior.
+- ZX Spectrum 48K, 128K/+2, and +2A/+3 memory models.
+- Spectrum memory/I/O contention and floating bus.
+- `.z80`, `.sna`, and `.szx` snapshot loading/saving; ZX81 `.p`/`.p81` loading.
+- `.tap`, `.tzx`, `.pzx`, and `.csw` tape playback; fast-load trap.
+- Standard and Extended DSK parsing/writing; +3 and CPC NEC765 controller with write/format support.
+- Beeper, AY-3-8910, Turbosound, CPC AY audio, and Bevy audio output/resampling.
+- Kempston, Sinclair 1/2, Cursor, Fuller, and Kempston mouse input.
+- Internal save states, reset, run-ahead, shaders, aspect-preserving scaling, and persistent app
+  settings.
+- Browser debugger with disassembly, memory view, Bitmap Explorer, breakpoints, pause/step,
+  assemble-and-poke, and save/load operations.
+- CPC 464 firmware boot and C64 KERNAL/BASIC boot.
+

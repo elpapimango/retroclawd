@@ -1,0 +1,37 @@
+name: Release artifacts
+
+# Manual: builds the app (and the debugger plugin libraries) on each platform and
+# uploads the archives made by .github/scripts/package_release.sh (layout and
+# naming: docs/plugin-abi.md, "Release artifacts"). The machine libraries come
+# from the family repositories (retroclawd-sinclair / -amstrad / -commodore),
+# whose own CI uploads them; unpack them into a `plugins/` folder beside the app
+# or pass their folder to the script with --machines. Only the Linux leg has been
+# run by hand so far; check the Windows and macOS legs the first time they are used.
+on:
+  workflow_dispatch:
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: check out shared/ (retroclawd-crates)
+        shell: bash
+        run: git submodule update --init shared
+      - if: matrix.os == 'ubuntu-latest'
+        uses: ./.github/actions/setup-rust-linux
+      - run: bash .github/scripts/package_release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: retroclawd-${{ matrix.os }}
+          path: dist/*.tar.gz
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: retroclawd-${{ matrix.os }}-zip
+          path: dist/*.zip
+          if-no-files-found: ignore

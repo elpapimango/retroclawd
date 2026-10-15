@@ -1,0 +1,52 @@
+[package]
+name = "retroclawd"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "wrap_help", "string"] }
+png = "0.18"
+winit = "0.30"
+cpal = "0.17"
+rfd = "0.17"
+# Clipboard text for the paste hotkey (no image support needed).
+arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
+bevy = { version = "0.19", default-features = false, features = ["2d", "keyboard", "mouse", "bevy_ui", "bevy_text", "bevy_ui_render", "default_font", "bevy_audio"] }
+tracing = "0.1"
+libloading = "0.8"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+sha1 = "0.10"
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls-native-roots"] }
+machine = { path = "../../shared/crates/machine" }
+z80 = { path = "../../shared/crates/core/z80" }
+mos6502 = { path = "../../shared/crates/core/6502" }
+plugin-api = { path = "../../shared/crates/plugin-api" }
+game-config = { path = "../../crates/formats/game-config" }
+app-config = { path = "../../crates/formats/app-config" }
+file-loader = { path = "../../crates/formats/file-loader" }
+pok = { path = "../../crates/formats/pok", optional = true }
+tiny_http = { version = "0.12", optional = true }
+tracing-subscriber = { version = "0.3", features = ["fmt", "time"], optional = true }
+
+[features]
+default = ["debug-ui", "debug-zrcp", "debug-log"]
+# The debuggers are modules of the application, not plugins (`src/debuggers/`).
+# Each is optional; a build without them has no `--debugger`, ZRCP or `--plugin debug-log`.
+debug-ui = ["dep:tiny_http", "dep:pok"]
+debug-zrcp = []
+debug-log = ["dep:tracing-subscriber"]
+profiling = ["bevy/trace_tracy"]
+
+
+[build-dependencies]
+winresource = "0.1"
+
+[dev-dependencies]
+# A do-nothing machine for the unit tests: no machine code lives in this repository.
+test-machine-plugin = { path = "../../crates/plugins/test-machine-plugin" }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+dsk = { path = "../../shared/crates/formats/dsk" }
+tempfile = "3"

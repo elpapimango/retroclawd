@@ -1,0 +1,34 @@
+[workspace]
+# The shared crates (machine, plugin-api, z80, ...) come from the `shared` submodule
+# (retroclawd-crates) and are used by path; `shared` and `machines` are their own workspaces.
+resolver = "2"
+# The family repositories are checked out below machines/ (git submodules); each is its own workspace.
+exclude = ["machines", "shared"]
+members = ["crates/plugins/test-machine-plugin", "crates/formats/game-config", "crates/formats/app-config", "crates/formats/file-loader", "crates/formats/pok", "apps/retroclawd"]
+
+# `cargo build --release` strips symbol names (debug = false), which makes
+# profiling need a workaround (see TODO.md's Performance section). Use this
+# profile instead when profiling: same optimization level as release, but
+# with debug info so tools can resolve real function names.
+[profile.profiling]
+inherits = "release"
+debug = true
+
+[profile.release]
+strip = true
+opt-level = "s"
+
+# The bulk of the release binary's size comes from Bevy/wgpu/winit (the
+# GUI/rendering stack), not the emulation core -- so `opt-level = "s"`
+# above applies everywhere by default (shrinking that stack, and
+# retroclawd's own non-hot-path GUI glue), but the actual per-instruction
+# hot path (everything `emu_thread::advance_one_frame`'s step loop calls
+# into every real *and* speculative run-ahead frame, 50-60 times/sec) is
+# pinned back to full optimization -- a real, measured tradeoff, not
+# guessed: see the ZEXALL/zx-spectrum-step timing comparison this was
+# verified against before committing to it.
+[profile.release.package.z80]
+opt-level = 3
+
+[profile.release.package.machine]
+opt-level = 3

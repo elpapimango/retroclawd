@@ -1,0 +1,1135 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>retroclawd debugger</title>
+<style>
+  :root {
+    --bg: #14161c;
+    --panel: #1b1e26;
+    --panel-header: #21242e;
+    --border: #2e3140;
+    --text: #d8dae0;
+    --dim: #8a8d9a;
+    --accent: #e8792c;
+    --accent-fg: #1a1a1a;
+    --pc-row: #4a2f16;
+    --pc-arrow: #e8792c;
+    --bp: #e05555;
+    --selected: #2a3550;
+    --running: #6fcf6f;
+    --paused: #e0b04a;
+    --flag-on-bg: #3a5a9a;
+    --flag-on-fg: #fff;
+    --flag-off-bg: #24262f;
+    --flag-off-fg: #666;
+    --addr: #7fb0e0;
+    --bytes: #8a8d9a;
+    --asciicol: #7ab87a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: Consolas, "Courier New", monospace;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+  }
+  button {
+    background: #2a2d38; color: var(--text); border: 1px solid #3d4152; border-radius: 4px;
+    padding: 6px 14px; cursor: pointer; font-family: inherit; font-size: 12px;
+  }
+  button:hover:not(:disabled) { background: #343849; }
+  button:active:not(:disabled) { background: #3d4152; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  input[type=text] {
+    background: #0e0f13; color: var(--text); border: 1px solid #3d4152; border-radius: 4px;
+    padding: 5px 8px; font-family: inherit; font-size: 12px;
+  }
+  label.file-btn {
+    background: #2a2d38; color: var(--text); border: 1px solid #3d4152; border-radius: 4px;
+    padding: 6px 14px; cursor: pointer; font-size: 12px;
+  }
+  label.file-btn:hover { background: #343849; }
+  input[type=file] { display: none; }
+
+  /* Title bar */
+  .titlebar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px; background: var(--panel-header); border-bottom: 1px solid var(--border);
+  }
+  .titlebar h1 { font-size: 14px; margin: 0; color: var(--text); font-weight: 600; flex: 0 0 auto; }
+  .titlebar .status { font-size: 12px; margin-left: auto; }
+  .mode-running { color: var(--running); font-weight: 600; }
+  .mode-paused { color: var(--paused); font-weight: 600; }
+  .status .sep { display: inline-block; width: 12px; }
+
+  /* Tabs */
+  .tabbar { display: flex; gap: 4px; padding: 8px 16px 0 16px; background: var(--bg); }
+  .tab {
+    display: flex; align-items: center; gap: 6px;
+    padding: 10px 18px; border-radius: 6px 6px 0 0; cursor: pointer;
+    color: var(--dim); font-size: 13px; font-weight: 600; user-select: none;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--accent); color: var(--accent-fg); }
+  .tab .icon { font-size: 14px; }
+
+  /* Main area -- flex-fills the space between the tab bar and the bottom
+     toolbar; every tab page below stretches to its full height rather than
+     sizing to content, so the scrollable region inside each (disassembly/
+     hex/bitmap canvas) grows and shrinks with the real browser window
+     instead of a guessed vh percentage. */
+  .main { flex: 1; min-height: 0; overflow: hidden; padding: 16px; display: flex; flex-direction: column; }
+  .page { display: none; flex: 1; min-height: 0; flex-direction: column; }
+  .page.active { display: flex; }
+
+  .grid2 {
+    display: grid;
+    grid-template-columns: minmax(420px, 2fr) minmax(260px, 1fr);
+    gap: 12px;
+    align-items: stretch;
+    flex: 1;
+    min-height: 0;
+  }
+  .col { display: flex; flex-direction: column; min-width: 0; gap: 12px; overflow-y: auto; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  /* Panels default to sizing themselves to their own content (registers,
+     poke, breakpoints, bitmap controls). The one panel per tab that should
+     instead stretch to fill the available browser-window height -- and
+     scroll its own contents once they don't fit -- opts in with `.fill`. */
+  .panel.fill { flex: 1; min-height: 0; }
+  /* In a scrolling column a content-sized panel must keep its full height and
+     let the column scroll, not shrink and clip its own body (the breakpoint
+     lists were cut off once enough panels were stacked). */
+  .col > .panel:not(.fill) { flex-shrink: 0; }
+  .panel-title {
+    font-weight: 700; color: var(--accent); font-size: 13px;
+    padding: 12px 14px 4px 14px;
+  }
+  .panel-hint { color: var(--dim); font-size: 11px; padding: 0 14px 10px 14px; }
+  .panel-legend { color: var(--dim); font-size: 11px; padding: 0 14px 10px 14px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .panel-legend .arrow { color: var(--pc-arrow); }
+  .panel-legend .dot-bp { color: var(--bp); }
+  .panel-legend .dot-sel { color: #6a8fe0; }
+
+  table.grid-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  table.grid-table td { padding: 3px 10px; white-space: pre; cursor: default; }
+  #disasmTable { display: block; flex: 1; min-height: 0; overflow-y: auto; }
+  #disasmTable table { width: 100%; }
+  table.grid-table th {
+    text-align: left; padding: 3px 10px; color: var(--dim); font-weight: 600;
+    font-size: 10px; text-transform: uppercase; border-bottom: 1px solid var(--border);
+  }
+  #disasmTable thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+  #disasmBody tr:hover { background: #23262f; }
+  #disasmBody tr.pc-row { background: var(--pc-row); }
+  #disasmBody tr.pc-row td.col-addr { color: var(--pc-arrow); }
+  #disasmBody tr.selected-row { background: var(--selected); }
+  .bp-marker { display: inline-block; width: 14px; text-align: center; cursor: pointer; }
+  .bp-marker.set { color: var(--bp); }
+  .bp-marker.unset { color: #444; }
+  .bp-marker:hover { color: var(--bp); }
+  .pc-arrow-cell { color: var(--pc-arrow); width: 18px; }
+  .col-addr { color: var(--addr); }
+  .col-bytes { color: var(--bytes); }
+  .col-text { color: var(--asciicol); }
+
+  .asm-row { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); align-items: center; }
+  .asm-row input[type=text] { flex: 1; }
+  .error { color: var(--bp); padding: 0 14px 10px 14px; font-size: 11px; }
+
+  /* Registers panel */
+  .regs-title-row { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 14px 4px 14px; }
+  .regs-title-row .panel-title { padding: 0; }
+  .regs-hint { color: var(--dim); font-size: 11px; }
+  .regs-section-label { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 14px 4px 14px; }
+  .regs-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; padding: 0 14px; }
+  .reg-field { display: flex; flex-direction: column; gap: 3px; padding: 5px 0; }
+  .reg-field label { color: var(--dim); font-size: 10px; text-transform: uppercase; }
+  .reg-field input { width: 100%; text-align: left; }
+  .pcsp-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; padding: 8px 14px 4px 14px; }
+
+  .flags-panel { padding: 10px 14px 14px 14px; }
+  .flags-title-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .flags-title-row .label { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .flags-title-row .value { color: var(--accent); font-weight: 700; }
+  .flags-row { display: flex; gap: 4px; }
+  .flag-box {
+    flex: 1; text-align: center; font-weight: 700; font-size: 11px;
+    border-radius: 3px; padding: 6px 0; background: var(--flag-off-bg); color: var(--flag-off-fg);
+  }
+  .flag-box.on { background: var(--flag-on-bg); color: var(--flag-on-fg); }
+
+  #bpList, #portBpList { padding: 8px 14px 14px 14px; }
+  #portBpStatus { padding: 0 14px 10px 14px; }
+  .bp-entry {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 3px 0; font-size: 12px;
+  }
+  .bp-entry button { padding: 2px 8px; font-size: 11px; }
+  .bp-empty { color: var(--dim); font-style: italic; padding: 2px 0; }
+
+  .watch-toolbar { display: flex; gap: 8px; padding: 10px 14px 8px 14px; }
+  .watch-toolbar input[type=text] { flex: 1; }
+  .watch-toolbar button { white-space: nowrap; }
+  #watchList, #historyList { padding: 0 14px 14px 14px; max-height: 170px; overflow-y: auto; }
+  .watch-entry, .history-entry {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 8px; padding: 3px 0; font-size: 12px;
+  }
+  .watch-entry .expr { color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .watch-entry .value { color: var(--dim); }
+  .watch-entry.error .value { color: var(--bp); }
+  .history-entry { color: var(--dim); justify-content: flex-start; gap: 10px; }
+  .history-entry .addr { color: var(--addr); }
+  #historyMeta { padding: 0 14px 8px 14px; color: var(--dim); font-size: 11px; }
+  /* Memory page */
+  .mem-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 0 14px 10px 14px; }
+  .mem-toolbar .grow { flex: 1; }
+  #hexTableWrap { flex: 1; min-height: 0; overflow-y: auto; padding: 0 4px 8px 4px; }
+  #hexTable td { font-size: 12.5px; }
+
+  /* Bitmap Explorer page */
+  .bitmap-layout { display: grid; grid-template-columns: minmax(400px, 2fr) minmax(240px, 1fr); gap: 12px; align-items: stretch; flex: 1; min-height: 0; }
+  .bitmap-canvas-wrap { flex: 1; min-height: 0; overflow: auto; background: #000; border: 1px solid var(--border); border-radius: 4px; }
+  #bitmapCanvas { image-rendering: pixelated; display: block; }
+  .bitmap-field { display: flex; flex-direction: column; gap: 3px; padding: 6px 14px; }
+  .bitmap-field label { color: var(--dim); font-size: 10px; text-transform: uppercase; }
+  .bitmap-field .stepper { display: flex; gap: 4px; }
+  .bitmap-field .stepper input { flex: 1; }
+  .bitmap-field .stepper button { padding: 4px 8px; }
+  .bitmap-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; }
+  .bitmap-toggle-row label { font-size: 11px; color: var(--dim); }
+  .bitmap-info { padding: 6px 14px 14px 14px; color: var(--dim); font-size: 11px; line-height: 1.6; }
+  .bitmap-info strong { color: var(--text); }
+  .bitmap-palette { display: flex; flex-wrap: wrap; gap: 3px; padding: 0 14px 14px 14px; }
+  .bitmap-palette .swatch { width: 20px; height: 20px; border-radius: 2px; border: 1px solid var(--border); }
+  .bitmap-toolbar { display: flex; gap: 8px; padding: 0 14px 14px 14px; flex-wrap: wrap; }
+
+  /* Bottom toolbar */
+  .bottombar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 10px 16px; background: var(--panel-header); border-top: 1px solid var(--border);
+  }
+  .bottombar .sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
+  .bottombar .grow { flex: 1; }
+  .bottombar input[type=text] { width: 110px; }
+  #btnContinue {
+    background: var(--accent); color: var(--accent-fg); font-weight: 700;
+    border: none; padding: 8px 22px;
+  }
+  #btnContinue:hover { filter: brightness(1.08); }
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <h1>retroclawd debugger</h1>
+  <label class="file-btn">Load<input type="file" id="loadFile"></label>
+  <button id="btnSaveState">Save .state</button>
+  <button id="btnSaveZ80">Save .z80</button>
+  <div class="status" id="status">connecting...</div>
+</div>
+
+<div class="tabbar">
+  <div class="tab active" data-page="cpu"><span class="icon">&#9881;</span> CPU</div>
+  <div class="tab" data-page="memory"><span class="icon">&#9638;</span> Memory</div>
+  <div class="tab" data-page="bitmap"><span class="icon">&#129513;</span> Bitmap Explorer</div>
+</div>
+
+<div class="main">
+
+  <div class="page active" id="page-cpu">
+    <div class="grid2">
+      <div class="panel fill">
+        <div class="panel-title">Disassembly</div>
+        <div class="panel-hint">Select an instruction to navigate or assemble at that address.</div>
+        <div class="panel-legend">
+          <span><span class="arrow">&#8594;</span> Current PC</span>
+          <span><span class="dot-bp">&#9679;</span> Breakpoint (click marker to toggle)</span>
+          <span><span class="dot-sel">&#9632;</span> Selected line</span>
+        </div>
+        <div id="disasmTable">
+          <table class="grid-table">
+            <thead><tr><th></th><th></th><th>Address</th><th>Mnemonic</th><th>Bytes</th><th>Text</th></tr></thead>
+            <tbody id="disasmBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="panel">
+          <div class="regs-title-row">
+            <div class="panel-title">Registers</div>
+            <div class="regs-hint">Enter commits the field</div>
+          </div>
+          <div class="pcsp-row">
+            <div class="reg-field"><label>PC</label><input type="text" id="regPC" readonly></div>
+            <div class="reg-field"><label>SP</label><input type="text" id="regSP" readonly></div>
+          </div>
+          <div class="regs-section-label">Main / Shadow</div>
+          <div class="regs-cols" id="regsMain"></div>
+          <div class="regs-section-label">Index / Interrupt</div>
+          <div class="regs-cols" id="regsIndex"></div>
+
+          <div class="flags-panel">
+            <div class="flags-title-row"><span class="label">Status register (F)</span><span class="value" id="flagsHex"></span></div>
+            <div class="flags-row" id="flags"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Poke</div>
+          <div class="panel-hint">Click a disassembly row, then assemble one instruction to write at that address.</div>
+          <div class="asm-row">
+            <input type="text" id="asmText" placeholder="LD A,5">
+            <button id="btnAssemblePoke">Assemble &amp; Poke</button>
+          </div>
+          <div id="asmError" class="error"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">POK trainer import</div>
+          <div class="panel-hint">Load a Spectrum .POK trainer file, choose one trainer, then apply its address-space pokes.</div>
+          <div class="asm-row">
+            <input type="file" id="pokFile" accept=".pok">
+            <select id="pokTrainer" disabled><option>No file loaded</option></select>
+            <button id="btnApplyPok" disabled>Apply trainer</button>
+          </div>
+          <div id="pokStatus" class="error"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Breakpoints</div>
+          <div id="bpList"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Port breakpoints (IN / OUT)</div>
+          <div class="panel-hint">Pause after an IN/OUT whose port matches <code>port &amp; mask</code> (hex). Mask 0xFFFF = exact port; a smaller mask also matches the machine's mirrors.</div>
+          <div class="watch-toolbar">
+            <input type="text" id="portBpPort" placeholder="port, e.g. 7FFD">
+            <input type="text" id="portBpMask" placeholder="mask (FFFF)">
+            <label><input type="checkbox" id="portBpIn"> IN</label>
+            <label><input type="checkbox" id="portBpOut" checked> OUT</label>
+            <button id="btnAddPortBp">Add</button>
+            <button id="btnClearPortBps">Clear</button>
+          </div>
+          <div id="portBpList"></div>
+          <div id="portBpStatus" class="error"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Watches</div>
+          <div class="watch-toolbar">
+            <input type="text" id="watchExpr" placeholder="e.g. PC==0x4000 or [0x5C08]">
+            <button id="btnAddWatch">Add</button>
+            <button id="btnClearWatches">Clear</button>
+          </div>
+          <div id="watchList"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Instruction history</div>
+          <div id="historyMeta"></div>
+          <div id="historyList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page" id="page-memory">
+    <div class="panel fill">
+      <div class="panel-title">Memory</div>
+      <div class="mem-toolbar">
+        <button id="btnMemPrev">&larr; Page</button>
+        <button id="btnMemNext">Page &rarr;</button>
+        <span class="grow"></span>
+        <span>Address</span>
+        <input type="text" id="memAddr" placeholder="0x4000" size="10">
+        <button id="btnMemGo">Go</button>
+      </div>
+      <div id="hexTableWrap">
+        <table class="grid-table" id="hexTable"><tbody id="hexBody"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <div class="page" id="page-bitmap">
+    <div class="bitmap-layout">
+      <div class="panel fill">
+        <div class="panel-title">Bitmap Explorer</div>
+        <div class="panel-hint">Reads RAM as interleaved bitplanes and paints it with the running machine's palette when available. Use it to hunt for sprites, tiles, and screen buffers anywhere in memory.</div>
+        <div class="bitmap-canvas-wrap">
+          <canvas id="bitmapCanvas" width="320" height="200"></canvas>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="panel">
+          <div class="bitmap-field">
+            <label>Start address</label>
+            <div class="stepper">
+              <input type="text" id="bmAddr" value="0x4000">
+              <button id="bmAddrUp" title="Previous line">&and;</button>
+              <button id="bmAddrDown" title="Next line">&or;</button>
+            </div>
+          </div>
+          <div class="bitmap-field">
+            <label>Bytes width</label>
+            <input type="text" id="bmWidth" value="32">
+          </div>
+          <div class="bitmap-field">
+            <label>Bitplanes</label>
+            <input type="text" id="bmPlanes" value="1">
+          </div>
+          <div class="bitmap-field">
+            <label>Zoom</label>
+            <input type="text" id="bmZoom" value="3">
+          </div>
+          <div class="bitmap-toggle-row">
+            <label for="bmSingleStrip">Wrap &#8594; single strip</label>
+            <input type="checkbox" id="bmSingleStrip">
+          </div>
+          <div class="bitmap-info" id="bmInfo"></div>
+          <div class="bitmap-palette" id="bmPalette"></div>
+          <div class="bitmap-toolbar">
+            <button id="bmFromCursor">From memory cursor</button>
+            <button id="bmReset">Address 0x0000</button>
+            <button id="bmExport">Export PNG...</button>
+          </div>
+          <div class="panel-hint">Wheel: scroll one line. Shift+wheel: 8 lines. Ctrl+wheel: 1
+            byte (align to a different bitplane).</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="bottombar">
+  <button id="btnStepInto">Step into (F7)</button>
+  <button id="btnStepOver">Step over (F10)</button>
+  <button id="btnBackstep">Backstep (F8)</button>
+  <button id="btnBreakpoint">Breakpoint</button>
+  <button id="btnRunUntilBp">Run until breakpoint</button>
+  <button id="btnClearBps">Clear breakpoints</button>
+  <div class="sep"></div>
+  <button id="btnSaveListing">Save listing...</button>
+  <button id="btnBackToPc">Back to PC</button>
+  <div class="sep"></div>
+  <span>Address</span>
+  <input type="text" id="jumpAddr" placeholder="0x8000">
+  <button id="btnJump">Go</button>
+  <span class="grow"></span>
+  <button id="btnPause">Pause</button>
+  <button id="btnContinue">Continue</button>
+</div>
+
+<script>
+let lastState = null;
+let memBase = 0x4000;
+const MEM_LEN = 1024;
+let selectedDisasmAddr = null;
+let lastDisassemblyLineCount = 0;
+
+function hex2(n) { return n.toString(16).toUpperCase().padStart(2, '0'); }
+function hex4(n) { return n.toString(16).toUpperCase().padStart(4, '0'); }
+function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+function parseAddr(raw) {
+  raw = raw.trim();
+  if (raw === '') return NaN;
+  return parseInt(raw, 16);
+}
+
+async function post(path, body) {
+  const opts = { method: 'POST' };
+  if (body !== undefined) {
+    opts.headers = { 'Content-Type': 'application/json' };
+    opts.body = JSON.stringify(body);
+  }
+  return fetch(path, opts);
+}
+
+// ---------- Tabs ----------
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('page-' + tab.dataset.page).classList.add('active');
+    if (tab.dataset.page === 'bitmap') refreshBitmap();
+  };
+});
+
+// ---------- Polling ----------
+async function poll() {
+  try {
+    const res = await fetch('/api/state');
+    const s = await res.json();
+    lastState = s;
+    render(s);
+  } catch (e) {
+    document.getElementById('status').textContent = 'disconnected: ' + e;
+  }
+  setTimeout(poll, 200);
+}
+
+function breakpointConditionByAddr(s) {
+  const byAddr = new Map();
+  (s.breakpoint_details || []).forEach(bp => {
+    byAddr.set(bp.addr, bp.condition ?? null);
+  });
+  return byAddr;
+}
+
+function render(s) {
+  const statusEl = document.getElementById('status');
+  statusEl.innerHTML = '<span class="mode-' + s.mode + '">' + s.mode.toUpperCase() + '</span>' +
+    (s.halted ? ' <span class="sep"></span>HALTED' : '') +
+    (s.last_break !== null && s.last_break !== undefined ? ' <span class="sep"></span>breakpoint @ 0x' + hex4(s.last_break) : '') +
+    (s.last_port_hit
+      ? ' <span class="sep"></span>port breakpoint: ' + escapeHtml(formatPortHit(s.last_port_hit))
+      : (s.last_event ? ' <span class="sep"></span>' + escapeHtml(s.last_event) : '')) +
+    ' <span class="sep"></span>PC 0x' + hex4(s.pc);
+
+  applyBitmapMetadata(s);
+
+  document.getElementById('btnPause').disabled = s.mode === 'paused';
+  document.getElementById('btnContinue').disabled = s.mode === 'running';
+  document.getElementById('btnStepInto').disabled = s.mode !== 'paused';
+  document.getElementById('btnStepOver').disabled = s.mode !== 'paused';
+  document.getElementById('btnBackstep').disabled = s.mode !== 'paused' || (s.reverse_depth || 0) === 0;
+  document.getElementById('btnRunUntilBp').disabled = s.mode === 'running' || (s.breakpoints || []).length === 0;
+  document.getElementById('btnBackToPc').disabled = !!s.following_pc;
+
+  renderRegisters(s);
+  renderFlags(s);
+  renderDisassembly(s);
+  renderBreakpoints(s);
+  renderPortBreakpoints(s);
+  renderWatches(s);
+  renderHistory(s);
+  renderMemory(s);
+}
+
+function renderRegisters(s) {
+  const r = s.registers || {};
+  const g16 = (name) => r[name] !== undefined ? hex4(r[name]) : '----';
+  const g8 = (name) => r[name] !== undefined ? hex2(r[name]) : '--';
+
+  document.getElementById('regPC').value = hex4(s.pc);
+  document.getElementById('regSP').value = g16('SP');
+
+  const mainFields = [
+    ['AF', g16('AF')], ["AF'", g16("AF'")],
+    ['BC', g16('BC')], ["BC'", g16("BC'")],
+    ['DE', g16('DE')], ["DE'", g16("DE'")],
+    ['HL', g16('HL')], ["HL'", g16("HL'")],
+  ];
+  document.getElementById('regsMain').innerHTML = mainFields.map(([name, val]) =>
+    '<div class="reg-field"><label>' + name + '</label><input type="text" readonly value="' + val + '"></div>'
+  ).join('');
+
+  const idxFields = [
+    ['IX', g16('IX')], ['IY', g16('IY')],
+    ['I', g8('I')], ['R', g8('R')],
+    ['IM', r['IM'] !== undefined ? String(r['IM']) : '-'],
+    ['IFF1/2', (r['IFF1'] ?? '-') + '/' + (r['IFF2'] ?? '-')],
+  ];
+  document.getElementById('regsIndex').innerHTML = idxFields.map(([name, val]) =>
+    '<div class="reg-field"><label>' + name + '</label><input type="text" readonly value="' + val + '"></div>'
+  ).join('');
+}
+
+function renderFlags(s) {
+  const af = (s.registers && s.registers['AF']) || 0;
+  const f = af & 0xFF;
+  document.getElementById('flagsHex').textContent = '$' + hex2(f);
+  const flagBits = [['S', 0x80], ['Z', 0x40], ['5', 0x20], ['H', 0x10], ['3', 0x08], ['V', 0x04], ['N', 0x02], ['C', 0x01]];
+  document.getElementById('flags').innerHTML = flagBits.map(([name, bit]) =>
+    '<div class="flag-box' + ((f & bit) ? ' on' : '') + '">' + name + '</div>'
+  ).join('');
+}
+
+function renderDisassembly(s) {
+  const body = document.getElementById('disasmBody');
+  const bps = new Set(s.breakpoints || []);
+  const bpByAddr = breakpointConditionByAddr(s);
+  body.innerHTML = (s.disassembly || []).map(line => {
+    const isPc = line.addr === s.pc;
+    const isBp = bps.has(line.addr);
+    const isSel = line.addr === selectedDisasmAddr;
+    const bytesHex = line.bytes.map(hex2).join(' ');
+    const chars = line.bytes.map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
+    const cls = [isPc ? 'pc-row' : '', isSel ? 'selected-row' : ''].filter(Boolean).join(' ');
+    return '<tr class="' + cls + '" data-addr="' + line.addr + '">' +
+      '<td class="pc-arrow-cell">' + (isPc ? '&#8594;' : '') + '</td>' +
+      '<td><span class="bp-marker ' + (isBp ? 'set' : 'unset') + '" data-addr="' + line.addr + '">' + (isBp ? '&#9679;' : '&#183;') + '</span></td>' +
+      '<td class="col-addr">0x' + hex4(line.addr) + '</td>' +
+      '<td>' + escapeHtml(line.text) + '</td>' +
+      '<td class="col-bytes">' + bytesHex + '</td>' +
+      '<td class="col-text">' + escapeHtml(chars) + '</td>' +
+      '</tr>';
+  }).join('');
+
+  body.querySelectorAll('tr').forEach(tr => {
+    tr.onclick = () => { selectedDisasmAddr = parseInt(tr.dataset.addr, 10); render(lastState); };
+  });
+  body.querySelectorAll('.bp-marker').forEach(marker => {
+    marker.onclick = (ev) => {
+      ev.stopPropagation();
+      const addr = parseInt(marker.dataset.addr, 10);
+      if (marker.classList.contains('set')) {
+        post('/api/breakpoint/clear', { addr });
+      } else {
+        post('/api/breakpoint/set', { addr, condition: bpByAddr.get(addr) ?? null });
+      }
+    };
+  });
+
+  measureAndSyncDisassemblyLineCount();
+}
+
+// Measures how many disassembly rows actually fit in the panel's current
+// (browser-window-driven) height and, if that differs from what the
+// server is currently sending, asks for that many instead -- this is what
+// makes a taller window show more code instead of leaving blank space
+// below a fixed-size list. Only measures while the CPU tab is actually
+// visible -- a hidden `display: none` page reports a `0` height, which
+// would otherwise ratchet the request down to the 1-line clamp floor.
+function measureAndSyncDisassemblyLineCount() {
+  const page = document.getElementById('page-cpu');
+  if (!page.classList.contains('active')) return;
+  const container = document.getElementById('disasmTable');
+  const headerRow = container.querySelector('thead tr');
+  const sampleRow = container.querySelector('tbody tr');
+  if (!sampleRow) return;
+  const headerHeight = headerRow ? headerRow.getBoundingClientRect().height : 0;
+  const rowHeight = sampleRow.getBoundingClientRect().height || 21;
+  const available = container.clientHeight - headerHeight;
+  const count = Math.max(10, Math.floor(available / rowHeight));
+  if (count !== lastDisassemblyLineCount) {
+    lastDisassemblyLineCount = count;
+    post('/api/disassembly-line-count', { count });
+  }
+}
+
+function renderBreakpoints(s) {
+  const list = document.getElementById('bpList');
+  const details = ((s.breakpoint_details || []).length > 0)
+    ? (s.breakpoint_details || [])
+    : (s.breakpoints || []).map(addr => ({ addr, condition: null }));
+  const sorted = details.slice().sort((a, b) => a.addr - b.addr);
+  if (sorted.length === 0) {
+    list.innerHTML = '<div class="bp-empty">none set</div>';
+    return;
+  }
+  list.innerHTML = sorted.map((bp, i) =>
+    '<div class="bp-entry">' +
+      '<span class="col-addr">0x' + hex4(bp.addr) + '</span>' +
+      '<input type="text" data-cond-index="' + i + '" value="' + escapeAttr(bp.condition || '') + '" placeholder="condition (optional)">' +
+      '<button data-save-index="' + i + '">set cond</button>' +
+      '<button data-clear-addr="' + bp.addr + '">clear</button>' +
+    '</div>'
+  ).join('');
+
+  list.querySelectorAll('button[data-save-index]').forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.saveIndex, 10);
+      const bp = sorted[idx];
+      const input = list.querySelector('input[data-cond-index="' + idx + '"]');
+      const value = input ? input.value.trim() : '';
+      post('/api/breakpoint/condition', { addr: bp.addr, condition: value === '' ? null : value });
+    };
+  });
+  list.querySelectorAll('button[data-clear-addr]').forEach(btn => {
+    btn.onclick = () => post('/api/breakpoint/clear', { addr: parseInt(btn.dataset.clearAddr, 10) });
+  });
+}
+
+function formatPortHit(hit) {
+  const port = '0x' + hex4(hit.port);
+  const value = '0x' + hit.value.toString(16).toUpperCase().padStart(2, '0');
+  return hit.write ? 'OUT (' + port + '),' + value : 'IN (' + port + ') -> ' + value;
+}
+
+function renderPortBreakpoints(s) {
+  const list = document.getElementById('portBpList');
+  const entries = s.port_breakpoints || [];
+  if (entries.length === 0) {
+    list.innerHTML = '<div class="bp-empty">none set</div>';
+    return;
+  }
+  list.innerHTML = entries.map((bp, i) =>
+    '<div class="bp-entry">' +
+      '<span class="col-addr">0x' + hex4(bp.port) + ' &amp; 0x' + hex4(bp.mask) + '</span>' +
+      '<span>' + (bp.on_read && bp.on_write ? 'IN/OUT' : bp.on_read ? 'IN' : 'OUT') + '</span>' +
+      '<button data-port-index="' + i + '">remove</button>' +
+    '</div>'
+  ).join('');
+  list.querySelectorAll('button[data-port-index]').forEach(btn => {
+    btn.onclick = () => {
+      const bp = entries[parseInt(btn.dataset.portIndex, 10)];
+      post('/api/port-breakpoint/set', { port: bp.port, mask: bp.mask, on_read: false, on_write: false });
+    };
+  });
+}
+
+function renderWatches(s) {
+  const list = document.getElementById('watchList');
+  const watches = s.watches || [];
+  if (watches.length === 0) {
+    list.innerHTML = '<div class="bp-empty">none set</div>';
+    return;
+  }
+  list.innerHTML = watches.map((w, i) =>
+    '<div class="watch-entry' + (w.error ? ' error' : '') + '">' +
+      '<span class="expr">' + escapeHtml(w.expr) + '</span>' +
+      '<span class="value">' + escapeHtml(w.display || '') + '</span>' +
+      '<button data-watch-remove="' + i + '">remove</button>' +
+    '</div>'
+  ).join('');
+  list.querySelectorAll('button[data-watch-remove]').forEach(btn => {
+    btn.onclick = () => post('/api/watch/remove', { index: parseInt(btn.dataset.watchRemove, 10) });
+  });
+}
+
+function renderHistory(s) {
+  const meta = document.getElementById('historyMeta');
+  const list = document.getElementById('historyList');
+  const history = (s.history || []).slice().reverse();
+  meta.textContent = history.length + ' shown, reverse depth: ' + (s.reverse_depth || 0);
+  if (history.length === 0) {
+    list.innerHTML = '<div class="bp-empty">none recorded yet</div>';
+    return;
+  }
+  list.innerHTML = history.map(item =>
+    '<div class="history-entry">' +
+      '<span class="addr">' + hex4(item.before_pc) + ' → ' + hex4(item.after_pc) + '</span>' +
+      '<span>' + escapeHtml(item.text || '') + '</span>' +
+    '</div>'
+  ).join('');
+}
+
+function renderMemory(s) {
+  const hexBody = document.getElementById('hexBody');
+  const mem = s.memory || [];
+  let rows = '';
+  for (let row = 0; row < mem.length; row += 16) {
+    const bytes = mem.slice(row, row + 16);
+    const addr = s.memory_addr + row;
+    const hexPart = bytes.map(hex2).join(' ');
+    const asciiPart = bytes.map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
+    rows += '<tr><td class="col-addr">0x' + hex4(addr) + '</td><td class="col-bytes">' +
+      hexPart + '</td><td class="col-text">' + escapeHtml(asciiPart) + '</td></tr>';
+  }
+  hexBody.innerHTML = rows;
+}
+
+// ---------- Bottom toolbar ----------
+document.getElementById('btnPause').onclick = () => post('/api/pause');
+document.getElementById('btnContinue').onclick = () => post('/api/resume');
+document.getElementById('btnRunUntilBp').onclick = () => post('/api/resume');
+document.getElementById('btnStepInto').onclick = () => post('/api/step');
+document.getElementById('btnStepOver').onclick = () => post('/api/step-over');
+document.getElementById('btnBackstep').onclick = () => post('/api/backstep');
+
+document.getElementById('btnBreakpoint').onclick = () => {
+  const addr = selectedDisasmAddr !== null ? selectedDisasmAddr : (lastState ? lastState.pc : null);
+  if (addr === null) return;
+  const bps = new Set((lastState && lastState.breakpoints) || []);
+  const details = breakpointConditionByAddr(lastState || {});
+  if (bps.has(addr)) {
+    post('/api/breakpoint/clear', { addr });
+  } else {
+    post('/api/breakpoint/set', { addr, condition: details.get(addr) ?? null });
+  }
+};
+
+document.getElementById('btnClearBps').onclick = () => post('/api/breakpoint/clear-all');
+
+const portBpStatus = document.getElementById('portBpStatus');
+document.getElementById('btnAddPortBp').onclick = async () => {
+  const port = parseAddr(document.getElementById('portBpPort').value);
+  const maskText = document.getElementById('portBpMask').value;
+  const mask = maskText.trim() === '' ? 0xFFFF : parseAddr(maskText);
+  const on_read = document.getElementById('portBpIn').checked;
+  const on_write = document.getElementById('portBpOut').checked;
+  if (Number.isNaN(port) || port < 0 || port > 0xFFFF || Number.isNaN(mask) || mask < 0 || mask > 0xFFFF) {
+    portBpStatus.textContent = 'port and mask must be hex values up to FFFF';
+    return;
+  }
+  if (!on_read && !on_write) {
+    portBpStatus.textContent = 'choose IN, OUT or both';
+    return;
+  }
+  const res = await post('/api/port-breakpoint/set', { port, mask, on_read, on_write });
+  portBpStatus.textContent = res.ok ? '' : await res.text();
+};
+document.getElementById('btnClearPortBps').onclick = async () => {
+  const res = await post('/api/port-breakpoint/clear-all');
+  portBpStatus.textContent = res.ok ? '' : await res.text();
+};
+
+document.getElementById('btnAddWatch').onclick = () => {
+  const input = document.getElementById('watchExpr');
+  const expr = input.value.trim();
+  if (expr === '') return;
+  post('/api/watch/add', { expr });
+  input.value = '';
+};
+document.getElementById('btnClearWatches').onclick = () => post('/api/watch/clear');
+document.getElementById('watchExpr').addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    document.getElementById('btnAddWatch').click();
+  }
+});
+
+document.getElementById('btnBackToPc').onclick = () => {
+  selectedDisasmAddr = null;
+  post('/api/disassembly-follow-pc');
+};
+
+document.getElementById('btnSaveListing').onclick = () => {
+  if (!lastState) return;
+  const lines = (lastState.disassembly || []).map(line =>
+    '0x' + hex4(line.addr) + '  ' + line.bytes.map(hex2).join(' ').padEnd(12) + '  ' + line.text
+  );
+  const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'listing.txt';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
+document.getElementById('btnJump').onclick = () => {
+  const addr = parseAddr(document.getElementById('jumpAddr').value);
+  if (!isNaN(addr)) {
+    selectedDisasmAddr = addr & 0xFFFF;
+    post('/api/disassembly-window', { addr: addr & 0xFFFF });
+  }
+};
+
+document.getElementById('btnAssemblePoke').onclick = async () => {
+  const text = document.getElementById('asmText').value;
+  const errEl = document.getElementById('asmError');
+  errEl.textContent = '';
+  if (selectedDisasmAddr === null) {
+    errEl.textContent = 'click a disassembly row first to pick an address';
+    return;
+  }
+  const res = await post('/api/assemble', { text });
+  if (!res.ok) {
+    errEl.textContent = await res.text();
+    return;
+  }
+  const { bytes } = await res.json();
+  await post('/api/poke', { addr: selectedDisasmAddr, bytes });
+};
+
+let pokBytes = null;
+const pokFile = document.getElementById('pokFile');
+const pokTrainer = document.getElementById('pokTrainer');
+const pokApply = document.getElementById('btnApplyPok');
+const pokStatus = document.getElementById('pokStatus');
+
+pokFile.onchange = async () => {
+  const file = pokFile.files[0];
+  if (!file) return;
+  pokStatus.textContent = 'reading ' + file.name + '...';
+  pokBytes = new Uint8Array(await file.arrayBuffer());
+  const res = await fetch('/api/pok/parse', { method: 'POST', body: pokBytes });
+  if (!res.ok) {
+    pokStatus.textContent = await res.text();
+    pokBytes = null;
+    pokTrainer.disabled = true;
+    pokApply.disabled = true;
+    return;
+  }
+  const parsed = await res.json();
+  pokTrainer.innerHTML = parsed.trainers.map((trainer, index) =>
+    `<option value="${index}">${escapeHtml(trainer.name)} (${trainer.entries.length} pokes)</option>`
+  ).join('');
+  pokTrainer.disabled = parsed.trainers.length === 0;
+  pokApply.disabled = parsed.trainers.length === 0;
+  pokStatus.textContent = parsed.trainers.length + ' trainer(s) loaded';
+};
+
+pokApply.onclick = async () => {
+  if (!pokBytes) return;
+  pokStatus.textContent = 'applying...';
+  const res = await fetch('/api/pok/apply?trainer=' + encodeURIComponent(pokTrainer.value), {
+    method: 'POST', body: pokBytes
+  });
+  pokStatus.textContent = res.ok ?
+    ('applied ' + (await res.json()).applied + ' poke(s)') : await res.text();
+};
+
+document.addEventListener('keydown', (ev) => {
+  const tag = ev.target && ev.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (ev.key === 'F7') {
+    ev.preventDefault();
+    post('/api/step');
+  } else if (ev.key === 'F8') {
+    ev.preventDefault();
+    post('/api/backstep');
+  } else if (ev.key === 'F10') {
+    ev.preventDefault();
+    post('/api/step-over');
+  }
+});
+
+// ---------- Memory tab ----------
+document.getElementById('btnMemGo').onclick = () => {
+  const addr = parseAddr(document.getElementById('memAddr').value);
+  if (!isNaN(addr)) {
+    memBase = addr & 0xFFFF;
+    post('/api/memory-window', { addr: memBase, len: MEM_LEN });
+  }
+};
+document.getElementById('btnMemPrev').onclick = () => {
+  memBase = (memBase - MEM_LEN) & 0xFFFF;
+  post('/api/memory-window', { addr: memBase, len: MEM_LEN });
+};
+document.getElementById('btnMemNext').onclick = () => {
+  memBase = (memBase + MEM_LEN) & 0xFFFF;
+  post('/api/memory-window', { addr: memBase, len: MEM_LEN });
+};
+
+// ---------- Bitmap Explorer ----------
+// Reads raw memory bytes client-side. Machine plugins provide palette and
+// useful starting values; fallback values keep older or incomplete plugins usable.
+const FALLBACK_BITMAP_PALETTE = [
+  '#000000', '#ffffff', '#e03c3c', '#3ca0e0', '#3ce05a', '#e0d23c',
+  '#a03ce0', '#e08a3c', '#3ce0c0', '#e03c9e', '#7a5230', '#909090',
+  '#505050', '#c8c8c8', '#5050ff', '#50ff50',
+];
+let bitmapPalette = FALLBACK_BITMAP_PALETTE;
+let bitmapPaletteSignature = '';
+let bitmapDefaultsApplied = false;
+
+function rgbHex(rgb) {
+  return '#' + rgb.map(value => Number(value).toString(16).padStart(2, '0')).join('');
+}
+
+function applyBitmapMetadata(s) {
+  const colors = Array.isArray(s.bitmap_palette) ? s.bitmap_palette : [];
+  const nextPalette = colors.length ? colors.map(color => rgbHex(color.rgb)) : FALLBACK_BITMAP_PALETTE;
+  const signature = JSON.stringify(nextPalette);
+  const changed = signature !== bitmapPaletteSignature;
+  bitmapPalette = nextPalette;
+  bitmapPaletteSignature = signature;
+
+  if (!bitmapDefaultsApplied && s.bitmap_defaults) {
+    const defaults = s.bitmap_defaults;
+    document.getElementById('bmAddr').value = '0x' + hex4(defaults.address);
+    document.getElementById('bmWidth').value = defaults.bytes_width;
+    document.getElementById('bmPlanes').value = defaults.bitplanes;
+    document.getElementById('bmZoom').value = defaults.zoom;
+    bitmapDefaultsApplied = true;
+  }
+  if (changed && document.getElementById('page-bitmap').classList.contains('active')) {
+    refreshBitmap();
+  }
+}
+
+let bmBytes = new Uint8Array(0);
+let bmRowBytes = 0; // bytes per row actually used to decode `bmBytes`
+let bmRows = 0;
+
+function bmParams() {
+  const addr = parseAddr(document.getElementById('bmAddr').value) & 0xFFFF;
+  const width = Math.max(1, parseInt(document.getElementById('bmWidth').value, 10) || 1);
+  const planes = Math.min(4, Math.max(1, parseInt(document.getElementById('bmPlanes').value, 10) || 1));
+  const zoom = Math.max(1, parseInt(document.getElementById('bmZoom').value, 10) || 1);
+  const singleStrip = document.getElementById('bmSingleStrip').checked;
+  return { addr, width, planes, zoom, singleStrip };
+}
+
+async function refreshBitmap() {
+  const { addr, width, planes, zoom, singleStrip } = bmParams();
+  const rowBytes = width * planes;
+  // How many rows fit in one request: GET /api/memory-bytes' `len` is a
+  // u16, so cap total bytes at 0xFFFF; a canvas-height budget keeps single
+  // requests from asking for an unreasonably tall image too.
+  const maxRows = singleStrip ? 1 : Math.max(1, Math.min(400, Math.floor(0xFFFF / rowBytes)));
+  const totalLen = singleStrip ? Math.min(0xFFFF, rowBytes * 64) : rowBytes * maxRows;
+
+  const res = await fetch(`/api/memory-bytes?addr=0x${addr.toString(16)}&len=${totalLen}`);
+  if (!res.ok) {
+    document.getElementById('bmInfo').textContent = 'error: ' + (await res.text());
+    return;
+  }
+  bmBytes = new Uint8Array(await res.arrayBuffer());
+  bmRowBytes = singleStrip ? bmBytes.length : rowBytes;
+  bmRows = singleStrip ? 1 : Math.floor(bmBytes.length / rowBytes);
+  drawBitmap(addr, width, planes, zoom, singleStrip);
+}
+
+function drawBitmap(addr, width, planes, zoom, singleStrip) {
+  const pxWidth = singleStrip ? bmBytes.length * 8 : width * 8;
+  const pxHeight = Math.max(1, bmRows);
+  const canvas = document.getElementById('bitmapCanvas');
+  canvas.width = pxWidth * zoom;
+  canvas.height = pxHeight * zoom;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+
+  const img = ctx.createImageData(pxWidth, pxHeight);
+  const rowBytes = singleStrip ? bmBytes.length : width * planes;
+
+  for (let row = 0; row < pxHeight; row++) {
+    const rowStart = row * rowBytes;
+    const byteWidth = singleStrip ? bmBytes.length : width;
+    for (let col = 0; col < byteWidth; col++) {
+      for (let bit = 0; bit < 8; bit++) {
+        let colorIndex = 0;
+        const planeCount = singleStrip ? 1 : planes;
+        for (let p = 0; p < planeCount; p++) {
+          const byteIdx = rowStart + p * byteWidth + col;
+          const byte = bmBytes[byteIdx] || 0;
+          const bitVal = (byte >> (7 - bit)) & 1;
+          colorIndex |= bitVal << p;
+        }
+        const hex = bitmapPalette[colorIndex % bitmapPalette.length];
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        const x = col * 8 + bit;
+        const pixelIdx = (row * pxWidth + x) * 4;
+        img.data[pixelIdx] = r;
+        img.data[pixelIdx + 1] = g;
+        img.data[pixelIdx + 2] = b;
+        img.data[pixelIdx + 3] = 255;
+      }
+    }
+  }
+
+  // Draw at native resolution then let CSS/canvas backing size handle zoom
+  // via nearest-neighbor (`image-rendering: pixelated`) -- avoids scaling
+  // blur that `drawImage` with a smoothing context would introduce.
+  const off = document.createElement('canvas');
+  off.width = pxWidth;
+  off.height = pxHeight;
+  off.getContext('2d').putImageData(img, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(off, 0, 0, pxWidth, pxHeight, 0, 0, canvas.width, canvas.height);
+
+  const endAddr = (addr + bmBytes.length - 1) & 0xFFFF;
+  const colours = 1 << (singleStrip ? 1 : planes);
+  document.getElementById('bmInfo').innerHTML =
+    `$${hex4(addr)} - $${hex4(endAddr)}<br>` +
+    `${rowBytes} bytes/line, ${pxWidth}x${pxHeight} px, ${colours} colours`;
+
+  const paletteEl = document.getElementById('bmPalette');
+  paletteEl.innerHTML = bitmapPalette.slice(0, colours).map((hex, index) =>
+    `<div class="swatch" style="background:${hex}" title="${hex}"></div>`
+  ).join('');
+}
+
+function bmStepAddr(deltaRows) {
+  const { addr, width, planes, singleStrip } = bmParams();
+  const rowBytes = singleStrip ? 1 : width * planes;
+  const next = (addr + deltaRows * rowBytes) & 0xFFFF;
+  document.getElementById('bmAddr').value = '0x' + hex4(next);
+  refreshBitmap();
+}
+
+document.getElementById('bmAddrUp').onclick = () => bmStepAddr(-1);
+document.getElementById('bmAddrDown').onclick = () => bmStepAddr(1);
+document.getElementById('bmFromCursor').onclick = () => {
+  document.getElementById('bmAddr').value = '0x' + hex4(memBase);
+  refreshBitmap();
+};
+document.getElementById('bmReset').onclick = () => {
+  document.getElementById('bmAddr').value = '0x0000';
+  refreshBitmap();
+};
+document.getElementById('bmExport').onclick = () => {
+  const canvas = document.getElementById('bitmapCanvas');
+  const a = document.createElement('a');
+  a.href = canvas.toDataURL('image/png');
+  a.download = 'bitmap.png';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+};
+['bmWidth', 'bmPlanes', 'bmZoom', 'bmSingleStrip'].forEach(id => {
+  document.getElementById(id).addEventListener('change', refreshBitmap);
+});
+document.getElementById('bmAddr').addEventListener('change', refreshBitmap);
+
+document.getElementById('bitmapCanvas').addEventListener('wheel', (ev) => {
+  ev.preventDefault();
+  const { width, planes, singleStrip } = bmParams();
+  const lineBytes = singleStrip ? 1 : width * planes;
+  let deltaBytes;
+  if (ev.ctrlKey) {
+    deltaBytes = Math.sign(ev.deltaY) || 1;
+  } else if (ev.shiftKey) {
+    deltaBytes = (Math.sign(ev.deltaY) || 1) * lineBytes * 8;
+  } else {
+    deltaBytes = (Math.sign(ev.deltaY) || 1) * lineBytes;
+  }
+  const { addr } = bmParams();
+  document.getElementById('bmAddr').value = '0x' + hex4((addr + deltaBytes) & 0xFFFF);
+  refreshBitmap();
+}, { passive: false });
+
+// ---------- File load / save ----------
+document.getElementById('loadFile').onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const ext = file.name.split('.').pop().toLowerCase();
+  const isState = ext === 'state';
+  const path = isState ? '/api/load-state' : ('/api/load-snapshot?ext=' + encodeURIComponent(ext));
+  await fetch(path, { method: 'POST', body: bytes });
+};
+
+async function downloadFrom(path, filename) {
+  const res = await fetch(path);
+  if (!res.ok) {
+    alert(await res.text());
+    return;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('btnSaveState').onclick = () => downloadFrom('/api/save-state', 'snapshot.state');
+document.getElementById('btnSaveZ80').onclick = () => downloadFrom('/api/save-snapshot?ext=z80', 'snapshot.z80');
+
+post('/api/memory-window', { addr: memBase, len: MEM_LEN });
+poll();
+</script>
+</body>
+</html>

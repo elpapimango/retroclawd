@@ -1,0 +1,12 @@
+[submodule "machines/sinclair"]
+	path = machines/sinclair
+	url = https://github.com/elpapimango/retroclawd-sinclair
+[submodule "machines/amstrad"]
+	path = machines/amstrad
+	url = https://github.com/elpapimango/retroclawd-amstrad
+[submodule "machines/commodore"]
+	path = machines/commodore
+	url = https://github.com/elpapimango/retroclawd-commodore
+[submodule "shared"]
+	path = shared
+	url = https://github.com/elpapimango/retroclawd-crates

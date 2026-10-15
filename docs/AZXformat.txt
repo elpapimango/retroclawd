@@ -1,0 +1,225 @@
+
+
+             ZX Audio file format specifications (revision 1.03)
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+ Introduction
+~~~~~~~~~~~~~~
+
+ The "ZX Audio" (here and after - AZX) file format intended to be used to store
+audio information from sound devices of Zx-Spectrum  computer emulators. I beat
+you are thinking something like this right now:
+
+ "And why someone needs yet another sound data logging file format ? We've got
+ an OUT, several types of PSG, YM, VTX and WAV".
+
+ Well, you're right here. We've got some formats for such porpose. But only WAV
+may be used to replay the sound which is EXACTLY the same as it played  in your
+favorite  game,  demo of music editor. Information stored in other  formats can
+not be used to achieve such result. The only exception is one types of PSG. But
+PSG can't be used to store additional information - author(s) name, song title,
+commentary, etc. Also there are other disadvantages of these formats, e.g. they
+can not be used to store an audio data from more than one sound device. And  so
+I tried to develop a format which can be used to store audio data from  several
+devices [Beeper, AY, GS, SounDrive] and  all  possible  information  (author[s]
+name, song title, year when it was composed, commentary, etc) and which  should
+allow to store information what can be used to  replay the EXACT sound. Despite
+AZX format has been made for use with emulators of  Zx-Spectrum, it is flexible
+enought to store data from probably any other machine (especially when you  are
+using "Custom block"). Some data may look useless, but from my point of view it
+is necessary to reproduce sound of best quality.
+
+
+------------------------------------------------[End of introduction into AZX]-
+
+ Basic information
+~~~~~~~~~~~~~~~~~~~
+
+ * The files of ZX Audio format must have "AZX" extension
+ * Almost all  values which  require more than one  byte to be stored should be
+   presented in little-endian  format. The only exception is "Timing"  value in
+   ID15. It is stored  in  following  way - MSBh,LSBh,MSBl,LSBl (e.g. long word
+   0x87654321 will be stored as 0x87,0x65,0x43,0x21)
+ * All timings are given in CPU T-states (e.g. 1/3500000 in case of Z80@3.5Mhz)
+ * All unused bits, bytes, short words and long words should be set to zero
+ * It is not necessary to store IDs in 1...15 order but data of ID15(Chip audio
+   data) *MUST* be stored as last ID in file on case of emulator crash-exit
+ * All numbers are in hex (including ID numbers)
+ * All values in the format description are as follows:
+ 
+   offset  size  purpose
+   ------  ----  -------
+
+ * All ASCIIZ texts must include only characters from 32 to 127 (decimal), some
+   of them can have several lines, which should be separated by ASCII 13 (dec)
+ * Legend:
+ 
+   MSB - Most Significant Byte
+   LSB - Least Significant Byte
+
+   MSBh - Most Significant Byte of high word  (0x1F...0x18)
+   LSBh - Least Significant Byte of high word (0x17...0x10)
+   MSBl - Most Significant Byte of low word   (0x0F...0x08)
+   LSBl - Least Significant Byte of low word  (0x07...0x00)
+
+   ASCIIZ - ASCII text terminated by zero byte (there  must be  at  least  zero
+            byte if there are no any text)
+
+
+----------------------------------------------------[End of basic information]-
+
+
+ 0x00 8 - "ZXAudio!" identification text
+ 0x08 1 - 0x1A (EOF mark)
+ 0x09 1 - Major version number (currently 0x01)
+ 0x0A 1 - Minor version number (currently 0x03)
+
+ 0x0B 1 - ID of first block
+ 0x0C X - Data of first block
+ ....
+
+
+ ID 10 : Tune information
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+  0x00 02 - length of ID 10 data (up to 65.535 bytes)
+
+  0x02 XX - text  in  ASCIIZ  format  (song  title, author name, commentary and
+            utility information). It is recommended to organize the information
+            input window as 40 characters wide (each line  must  be  terminated
+            with 0x0D). There must be at least  0x00 byte if are no information
+            presents.
+
+            0xXX 1 - Information SubID
+
+                     0x01 - Full title
+                     0x02 - Author(s)
+                     0x03 - Year
+                     0x04 - Game/Demo/Utility  title (where the tune was logged
+                            from)
+                     0xFF - Comments
+
+
+ ID 11 : Machine Information
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  0x00 2 - Length of ID 11 data (up to 65.535 bytes)
+
+  0x02 1 - Chip type:
+
+        0x00 - GI AY-3-8910
+        0x01 - GI AY-3-8912
+        0x02 - YM 2149(f)
+        0x03 - Custom chip
+
+               0x00 X - Chip title in  ASCIIZ  format (0x00 if there are no any
+                         data presents).
+
+  0xXX 1 - Major chip frequency (e.g. 1 of 1,75Mhz)
+  0xXX 4 - Minor chip frequency (e.g. 75 of 1,75Mhz)
+  0xXX 1 - Number of chip registers (e.g. 0x0F for 3-8910)
+  0xXX 1 - Number of sound channels (e.g. 0x03 for AY-3-8910(12) and YM2149)
+
+  0xXX 1 - Major CPU frequency (e.g. 3 of 3,5Mhz)
+  0xXX 4 - Minor CPU frequency (e.g. 5 of 3,5Mhz)
+  0xXX 4 - Number of T-States per frame
+  0xXX 1 - Machine "frames per second" rate:
+
+           0x00 - 50 fps (PAL)
+           0x01 - 60 fps (NTSC)
+           0x02 - Custom fps rate (just in case)
+
+                  0x00 1 - Major custom fps rate
+                  0x01 4 - Minor custom fps rate
+
+
+ ID 12 : Sound chip stereo base
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  0x00 2 - Length of ID 12 data (up to 65.535 bytes)
+
+  0x02 1 - Number of 'right' channels
+  0x03 X - List of 'right' channels numbers
+  0x0X 1 - Number of 'left' channels
+  0x0X X - List of 'left' channels numbers
+
+    NOTE: Those channels which aren't listed in 'right' and 'left'  lists  must
+          be replayed simultaneously on right and left :)
+
+
+ ID 13 : Restart position (song loop)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  0x00 1 - Length of ID 13 data (up to 255 bytes)
+
+  0x01 4 - Frame number
+  0x05 2 - "Register write" position in that frame
+
+
+ ID 14 : Custom block
+~~~~~~~~~~~~~~~~~~~~~~
+  0x00 4 - Block size (Length of ID 14 data [up to 65.535 bytes])
+
+  0x04 X - Identification string in ASCIIZ format (0x00 if there are no data)
+  0x0X X - Block data
+
+
+ ID 15 : Chip audio data
+~~~~~~~~~~~~~~~~~~~~~~~~~
+  0x00 4 - Length of ID 15 data (up to 4.294.836.225 bytes)
+
+  0x04 1 - 0xFF (frame begin mark)
+  0x05 4 - Timing (in T-states from frame beginning)
+  0x09 1 - Sound chip register number
+  0x0A 1 - Value sent to sound chip register
+  ....
+  0xXX 4 - Timing (in T-states from frame beginning)
+  0xXX 1 - Sound chip register number
+  0xXX 1 - Value sent to sound chip register
+  0xXX 4 - Timing (in T-states from frame beginning)
+  0xXX 1 - Sound chip register number
+  0xXX 1 - Value sent to sound chip register
+  ....
+  0xXX 1 - 0xFF (frame begin mark)
+
+   NOTE: In case when MSB of high word (MSBh) of 'Timing' field  equal  to 0xFE
+         then rest 3 bytes will contain number of  'empty'  frames (frames when
+         no data was sent to the Sound Chip registers).
+
+
+--------------------------------------[End of ZXAudio file format description]-
+
+
+ History of changes:
+~~~~~~~~~~~~~~~~~~~~~
+
+ * 12-Sep-1999 - first version  (release 0.01)  of  AZX  format  specifications
+                 released
+
+ * 25-Nov-1999 - next  version  (release  1.00)  of  AZX  format specifications
+                 released
+
+ * 08-Mar-2000 - next  version  (release  1.01)  of  AZX  format specifications
+                 publically released
+
+ * 12-Mar-2000 - serious typo found in release  1.01 of AZX  format (there  was
+                 0xFF mark  instead 0xFE  in  'empty'  frames  note  to  ID15).
+                 Fixed. AZX format version changed to 1.01f
+
+ * 27-Mar-2000 - yet another important  note  missing  in  previous  AZX format
+                 specifications  (releases  0.01  --  1.01f)  -  about "Timing"
+                 value of ID15, this value should be stored  in  different  way
+                 (MSBh,LSBh,MSBl,LSBl).  Fixed. Version  of  AZX specifications
+                 changed to 1.02
+
+ * 11-Apr-2000 - several  examples  added; ID13  "Restart position (song loop)"
+                 description changed to  better one;  added  "PAL"  and  "NTSC"
+                 notes to Machine "frames per second rate" field of ID11.
+
+ * 21-Jun-2000 - 'Length of ID data' added to each ID, so this version  is  not
+                 compatible to older ones
+
+---------------------------------------------------[End of history of changes]-
+
+ ZXAudio (c) 1999-2000 Mac Buster^Extreme Entertainment  (01:44 - 25-Jun-2000)
+
+-----------------------------------------[End of ZXAudio file format document]-
+
+

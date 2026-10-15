@@ -1,0 +1,5 @@
+# Shell scripts must keep LF line endings on Windows too (Git Bash fails on CRLF).
+*.sh text eol=lf
+
+# The baseline is compared as text by the smoke test; keep LF on Windows.
+*.sha256 text eol=lf

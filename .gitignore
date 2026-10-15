@@ -1,0 +1,17 @@
+/target
+
+# ROM images and software are copyrighted and never committed; the families git-ignore their own
+# roms/ and software/ (see each family's docs/firmware.md). Keep a personal config out too:
+/retroclawd.toml
+/retroclawd.state.toml
+zx81_1.png
+
+# --debug-file output (retroclawd's own --debug-file <path> flag), local
+# dev scratch, never meant to be committed -- any filename, not just the
+# debug_output*.log convention (e.g. this session's own audio_debug.log).
+*.log
+dist/
+
+# Scratch folder for reference checkouts (zesarux, libspectrum, ...); never commit it
+/tmp/
+__pycache__/
