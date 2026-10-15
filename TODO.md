@@ -122,6 +122,11 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
   - **History: every repository was deleted and recreated from one fresh commit** (author: the GitHub noreply address).
     The old private histories (host, crates, the three families, tools) are kept as bare mirrors outside the repositories
     (`retroclawd-archive/`) and are not on GitHub. The families pin the new `retroclawd-crates` commit.
+  - **Public since 2026-10-15** (order: crates, sinclair, amstrad, commodore, tools, host; each switched after its CI was
+    green). Issues, wiki, projects and discussions are off; secret scanning and push protection are on (they are only
+    available on public repositories). The CI workflows use no secrets. Actions are on Node 24 (`checkout@v6`,
+    `upload-artifact@v6`) and run on `ubuntu-24.04` instead of `ubuntu-latest`. `tools/smoke_test.sh` with real ROMs
+    matched the baseline hashes for all seven machines on the fresh build.
   - Still unverified against the real RomM server: `romm match` and `--firmware auto` for every machine (only tried
     against a throwaway fake server); the c128 `parts` join and the drive-ROM `when` rules; hashes not in any family
     (the +2A/+3 64K ROM, CPC+ own firmware). Run `retroclawd romm match` and fix the `firmware.toml` hashes.

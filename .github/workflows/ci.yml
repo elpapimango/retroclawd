@@ -9,9 +9,9 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       # The shared crates are the submodule `shared/` (retroclawd-crates).
       - name: check out shared/
         run: git submodule update --init shared
