@@ -61,9 +61,9 @@ if [[ -f $C/c128/basiclo-318018-04.bin ]]; then
   cat $C/c128/basiclo-318018-04.bin $C/c128/basichi-318019-04.bin > "$OUT/c128-basic.bin"
 fi
 
-# case-name | family | max cycles | machine + arguments
+# case-name | family | max cycles (or Nf = N frames) | machine + arguments
 CASES=(
-  "zx81|sinclair|200000|zx81 --rom $S/zx81/zx81-550-original.rom"
+  "zx81|sinclair|100f|zx81 --rom $S/zx81/zx81-550-original.rom"
   "zx-spectrum-48|sinclair|2000000|zx-spectrum --rom $S/zx-spectrum/spec48.rom"
   "zx-spectrum-128|sinclair|3000000|zx-spectrum-128 --rom $S/zx-spectrum/128.rom"
   "cpc464|amstrad|4000000|cpc464 --rom $A/cpc/cpc464.rom"
@@ -85,7 +85,10 @@ for entry in "${CASES[@]}"; do
   first_rom="$(grep -oE "machines/[^ ]+" <<< "$args" | head -1)"
   if [[ -n $first_rom && ! -f $first_rom ]]; then echo "skip  $name: $first_rom not present"; continue; fi
   # shellcheck disable=SC2086
-  if ! "$APP" $args --headless --max-cycles "$cycles" --dump-screen "$png" >"$OUT/$name.log" 2>&1; then
+  # "100f" = 100 whole frames (a ROM that HALTs for the next frame, like the ZX81's, needs them); a plain number
+  # is --max-cycles.
+  if [[ $cycles == *f ]]; then run_limit=(--frames "${cycles%f}"); else run_limit=(--max-cycles "$cycles"); fi
+  if ! "$APP" $args --headless "${run_limit[@]}" --dump-screen "$png" >"$OUT/$name.log" 2>&1; then
     echo "FAIL  $name: the app did not boot the machine (see target/smoke/$name.log)"; fail=1; continue
   fi
   hash="$(sha "$png")"; NEW+=("$name $hash")

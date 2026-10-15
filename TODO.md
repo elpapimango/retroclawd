@@ -149,6 +149,17 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
   Each suite is a list of (program, machine, option set, frames to run, expected screen hash or memory check); a failure
   names the area (CPU, video, sound, timers, I/O, media). The expected results come from the real hardware behaviour the
   diagnostic documents, not from our own output.
+- **STARTED (2026-10-15): the suites live in `retroclawd-tools`, crate `rc-suite`** (`crates/rc-suite`): a harness that runs the
+  real `retroclawd` headless (`--frames N` runs whole frames like the window) and checks memory, registers and the picture
+  against cited hardware facts. A case for a missing feature is a *gap*: it must fail, and the run fails when it starts passing, so
+  the list only shrinks on purpose. Run: `RETROCLAWD_BIN=... RETROCLAWD_MACHINE_PLUGIN_DIRS=... RC_ROMS=.../machines cargo test -p
+  rc-suite -- --nocapture` (skips without them). **ZX81: 9 cases, all passing**: boot to the `K` prompt (sysvars and the glyph
+  from the ROM's own character set), FAST mode at 3.25 MHz, SLOW mode `FRAMES` at 50 a second, ROM shadow and write protection,
+  RAM mirrors, the echo area above `0x8000`, `--ram-kb`. Writing them found that the ZX81 had no memory mirrors, no RAM packs, no
+  opcode-fetch echo and no `R`-driven interrupt (the ROM's display routine never ran; the old smoke baseline was a blank
+  screen): all fixed, see the sinclair TODO. Still to do in the ZX81 suite: keyboard (needs a way to press keys headless), tape,
+  `.p`/`.81` round trips, SLOW-mode effective speed (0.8046 MHz), RAM-pack boot per size. Then CPC, C128, boot screens per ROM
+  revision, and the third-party diagnostics.
 - **TODO (2026-10-15): ZX81 test suite**, separate from the diagnostics above because the ZX81 is the odd machine (no ULA
   interrupt, the CPU makes the picture): a program set that exercises every area of the emulator and checks it works --
   ROM boot to the stable loop with NMIs waking `HALT`; FAST and SLOW mode timing (frame length, NMI generator on and off,
