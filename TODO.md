@@ -163,8 +163,13 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
   (13312 T), RAM configurations C0-C7 on the 6128, lower ROM and the RAM under it, a disk `rcld` made and a 3000-byte file `rcdisk`
   added both read back by the firmware's AMSDOS (through `Resident`: boot, snapshot, patch code in, resume), and `.sna` versions
   1-3. No emulator bug was found. Not yet: CRTC types 0-4, video modes from screen RAM, `.cdt` (the tools make none for the CPC),
-  upper-ROM selection (the ROM numbers could not be sourced), keyboard and sound (not reachable headless). Then C128, boot
-  screens per ROM revision, and the third-party diagnostics.
+  upper-ROM selection (the ROM numbers could not be sourced), sound (not reachable headless).
+  **C128: 12 cases, all passing** (`tests/c128.rs`): the BASIC 7.0 banner, MMU version register (`$20`), ROMs shown with the RAM under
+  them, `$FF01` loading CR from PCRA, RAM banks 0 and 1, the 19656-cycle frame, 2 MHz mode (58 batches a frame at 1 MHz, 116 at 2), BASIC
+  evaluating a typed `PRINT 12*34`, the C64-mode banner, and a file `rcdisk` put on a `.d64`/`.d71`/`.d81` loaded by a real emulated
+  1541/1571/1581 through `LOAD"NAME",8,1`. No emulator bug was found. Not yet: the VDC (80 columns), the Z80 side, the 1571's MFM mode.
+  Headless typing is new (`--type`, README), so the keyboard is now reachable: a keyboard-matrix case for the ZX81 and a
+  `RUN"` case for the CPC can be written. Then boot screens per ROM revision, and the third-party diagnostics.
 - **TODO (2026-10-15): ZX81 test suite**, separate from the diagnostics above because the ZX81 is the odd machine (no ULA
   interrupt, the CPU makes the picture): a program set that exercises every area of the emulator and checks it works --
   ROM boot to the stable loop with NMIs waking `HALT`; FAST and SLOW mode timing (frame length, NMI generator on and off,

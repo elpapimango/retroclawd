@@ -506,6 +506,10 @@ still double as the Spectrum/CPC joystick as before.
   interrupt each, no stop at `HALT`), then dump; for ROMs that `HALT` while
   they wait for the next frame (the ZX81, `EI`/`HALT` game loops).
   Conflicts with `--max-cycles`
+- `--type <TEXT>` (needs `--frames`) -- type TEXT on the emulated keyboard, the way the paste hotkey does (the machine's own
+  key names, shifts and pacing); `\n` is Enter. `--type-after <FRAMES>` (default 150) is how long to wait for the prompt: a
+  C128 with a real drive (`--true-drive`) probes it for a boot sector first and needs about 500. For example
+  `retroclawd c128 ... --headless --frames 400 --type 'PRINT 12*34\n' --dump-memory 0x0400:1000` leaves `408` on the screen
 - `--dump-memory <START:LEN>` (alias `-dm`) -- hex-dump memory after the
   run stops, e.g. `--dump-memory 0x4000:16`
 - `--dump-screen <path>` -- write the current video frame as a PNG after

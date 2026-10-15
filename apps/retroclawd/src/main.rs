@@ -369,6 +369,21 @@ struct CommonArgs {
     /// this way; `--max-cycles` ends the run at the first HALT.
     #[arg(long, requires = "headless", conflicts_with = "max_cycles")]
     frames: Option<u32>,
+    /// With `--frames`: type this text on the emulated keyboard, the way the
+    /// paste hotkey does (the same key names, shifts and pacing), starting
+    /// `--type-after` frames in. `\n` is Enter. Lets a batch run drive BASIC
+    /// (`LOAD"*",8`, `RUN`) or check the keyboard.
+    #[arg(long = "type", value_name = "TEXT", requires = "frames")]
+    type_text: Option<String>,
+    /// Frames to run before `--type` starts typing, long enough for the
+    /// machine to reach its prompt.
+    #[arg(
+        long,
+        value_name = "FRAMES",
+        default_value_t = 150,
+        requires = "type_text"
+    )]
+    type_after: u32,
     /// Write the current video frame as a PNG to this path after the run
     /// stops (halt or --max-cycles cutoff)
     #[arg(long, requires = "headless")]
@@ -2549,7 +2564,42 @@ fn main() -> ExitCode {
                 "warning: --plugin debug-log/debug-ui/debug-zrcp selections are ignored with --headless (they attach to the GUI emulation thread)"
             );
         }
-        run_headless(machine, &args, &resolved.machine_id)
+        let typing = match &args.type_text {
+            Some(text) => {
+                let router = gui::keys::KeyRouter::new(app_settings.key_bindings.clone())
+                    .with_layout(app_settings.layout, app_settings.symbols.clone());
+                let plan = gui::paste::plan(
+                    &unescape_typed(text),
+                    router.symbols(),
+                    &router.plain_names(bevy::input::keyboard::KeyCode::Enter),
+                    &router.plain_names(bevy::input::keyboard::KeyCode::ShiftLeft),
+                    app_settings.paste_case,
+                );
+                if plan.typed == 0 {
+                    eprintln!(
+                        "--type: {} has no key for any of the {} characters",
+                        resolved.machine_id, plan.skipped
+                    );
+                    return ExitCode::FAILURE;
+                }
+                if plan.skipped > 0 {
+                    eprintln!(
+                        "warning: --type: {} character(s) have no key on {} and are skipped",
+                        plan.skipped, resolved.machine_id
+                    );
+                }
+                // One key event per `paste_delay_ms`, like the paste hotkey, but in whole frames.
+                let frame_ms = 1000 / machine.frame_hz().max(1);
+                let pace = (app_settings.paste_delay_ms / frame_ms.max(1)).max(1) as u32;
+                Some(Typing {
+                    events: plan.events,
+                    after: args.type_after,
+                    pace,
+                })
+            }
+            None => None,
+        };
+        run_headless(machine, &args, &resolved.machine_id, typing)
     } else {
         if machine.render_frame().is_none() {
             eprintln!(
@@ -2667,15 +2717,52 @@ fn tape_save_policy(args: &CommonArgs) -> Result<Option<plugin_bridge::TapeExitP
     }))
 }
 
+/// Key events for `--type`, sent one every `pace` frames from frame `after`.
+struct Typing {
+    events: std::collections::VecDeque<(String, bool)>,
+    after: u32,
+    pace: u32,
+}
+
+/// `\n` in a `--type` argument is Enter (a shell cannot easily pass a newline) and `\\` a backslash.
+fn unescape_typed(text: &str) -> String {
+    let mut out = String::new();
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('\\') => out.push('\\'),
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
 fn run_headless(
     mut machine: plugin_bridge::HostedMachine,
     args: &CommonArgs,
     machine_id: &str,
+    mut typing: Option<Typing>,
 ) -> ExitCode {
     if let Some(frames) = args.frames {
         let started = std::time::Instant::now();
         let mut cycles = 0u64;
-        for _ in 0..frames {
+        for frame in 0..frames {
+            if let Some(t) = typing.as_mut()
+                && frame >= t.after
+                && (frame - t.after) % t.pace == 0
+                && let Some((key, pressed)) = t.events.pop_front()
+            {
+                machine.key_event_name(&key, pressed);
+            }
             cycles += emu_thread::advance_one_frame(&mut machine, |_| false);
         }
         println!(
@@ -3224,6 +3311,58 @@ mod tests {
         );
         let args = try_parse(&["--headless", "--frames", "50"]).unwrap();
         assert_eq!(args.frames, Some(50));
+    }
+
+    #[test]
+    fn type_needs_frames_and_type_after_needs_type() {
+        let try_parse = |flags: &[&str]| {
+            let mut argv = vec!["retroclawd"];
+            argv.extend_from_slice(flags);
+            CommonArgs::try_parse_from(argv)
+        };
+        assert!(
+            try_parse(&["--headless", "--type", "RUN"]).is_err(),
+            "--type needs --frames: a run that stops at the first HALT never reaches the prompt"
+        );
+        assert!(
+            try_parse(&["--frames", "50", "--type", "RUN"]).is_err(),
+            "needs --headless"
+        );
+        assert!(
+            try_parse(&["--headless", "--frames", "50", "--type-after", "9"]).is_err(),
+            "--type-after without --type"
+        );
+        let args = try_parse(&["--headless", "--frames", "400", "--type", "RUN"]).unwrap();
+        assert_eq!(args.type_text.as_deref(), Some("RUN"));
+        assert_eq!(args.type_after, 150, "default");
+        let args = try_parse(&[
+            "--headless",
+            "--frames",
+            "900",
+            "--type",
+            "RUN",
+            "--type-after",
+            "500",
+        ])
+        .unwrap();
+        assert_eq!(args.type_after, 500);
+    }
+
+    #[test]
+    fn typed_text_understands_backslash_n_and_backslash_backslash() {
+        assert_eq!(unescape_typed("RUN\\n"), "RUN\n");
+        assert_eq!(unescape_typed("A\\\\B"), "A\\B");
+        assert_eq!(
+            unescape_typed("a\\qb"),
+            "a\\qb",
+            "an unknown escape is kept"
+        );
+        assert_eq!(
+            unescape_typed("end\\"),
+            "end\\",
+            "a trailing backslash is kept"
+        );
+        assert_eq!(unescape_typed("plain"), "plain");
     }
 
     fn resolved_with_media(media: Option<&str>) -> Resolved {
