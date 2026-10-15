@@ -160,7 +160,7 @@ const SLOW_TICK_THRESHOLD: Duration = Duration::from_millis(10);
 /// precedent as `run_ahead_frames == 0`. The speculative run-ahead call
 /// site always passes `|_| false`, unconditionally, so a speculative clone
 /// can never trigger or be stopped by a real-machine breakpoint.
-fn advance_one_frame(
+pub(crate) fn advance_one_frame(
     m: &mut dyn Machine,
     mut should_break: impl FnMut(&dyn Machine) -> bool,
 ) -> u64 {

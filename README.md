@@ -502,6 +502,10 @@ still double as the Spectrum/CPC joystick as before.
 - `--headless` -- batch mode (see above) instead of opening a window
 - `--max-cycles <N>` (alias `-mc`) -- stop after N instructions even if
   never halted
+- `--frames <N>` -- run N emulated frames the way the window does (a frame
+  interrupt each, no stop at `HALT`), then dump; for ROMs that `HALT` while
+  they wait for the next frame (the ZX81, `EI`/`HALT` game loops).
+  Conflicts with `--max-cycles`
 - `--dump-memory <START:LEN>` (alias `-dm`) -- hex-dump memory after the
   run stops, e.g. `--dump-memory 0x4000:16`
 - `--dump-screen <path>` -- write the current video frame as a PNG after

@@ -362,6 +362,13 @@ struct CommonArgs {
     /// for booting a real ROM with no video/keyboard, which spins forever)
     #[arg(long, requires = "headless")]
     max_cycles: Option<u64>,
+    /// Run this many emulated frames the way the window does -- a frame
+    /// interrupt every frame, the full cycle budget each, no stop at HALT --
+    /// then dump. A ROM that HALTs while it waits for the next frame (the
+    /// ZX81's display routine, an EI/HALT game loop) only gets past that
+    /// this way; `--max-cycles` ends the run at the first HALT.
+    #[arg(long, requires = "headless", conflicts_with = "max_cycles")]
+    frames: Option<u32>,
     /// Write the current video frame as a PNG to this path after the run
     /// stops (halt or --max-cycles cutoff)
     #[arg(long, requires = "headless")]
@@ -2665,39 +2672,51 @@ fn run_headless(
     args: &CommonArgs,
     machine_id: &str,
 ) -> ExitCode {
-    let mut executed = 0u64;
-    let stats = machine.run(&mut |m| {
-        if m.halted() {
-            return false;
+    if let Some(frames) = args.frames {
+        let started = std::time::Instant::now();
+        let mut cycles = 0u64;
+        for _ in 0..frames {
+            cycles += emu_thread::advance_one_frame(&mut machine, |_| false);
         }
-        if args.max_cycles.is_some_and(|max| executed >= max) {
-            return false;
-        }
-        executed += 1;
-        true
-    });
-
-    let avg_hz = if stats.elapsed.as_secs_f64() > 0.0 {
-        stats.cycles as f64 / stats.elapsed.as_secs_f64()
-    } else {
-        0.0
-    };
-
-    if machine.halted() {
-        println!("halted");
-    } else {
         println!(
-            "stopped: reached --max-cycles limit ({}) without halting",
-            args.max_cycles.unwrap()
+            "ran {frames} frames, {cycles} cycles, {:.3}s elapsed",
+            started.elapsed().as_secs_f64()
+        );
+    } else {
+        let mut executed = 0u64;
+        let stats = machine.run(&mut |m| {
+            if m.halted() {
+                return false;
+            }
+            if args.max_cycles.is_some_and(|max| executed >= max) {
+                return false;
+            }
+            executed += 1;
+            true
+        });
+
+        let avg_hz = if stats.elapsed.as_secs_f64() > 0.0 {
+            stats.cycles as f64 / stats.elapsed.as_secs_f64()
+        } else {
+            0.0
+        };
+
+        if machine.halted() {
+            println!("halted");
+        } else {
+            println!(
+                "stopped: reached --max-cycles limit ({}) without halting",
+                args.max_cycles.unwrap()
+            );
+        }
+        println!(
+            "{} instructions, {} cycles, {:.3}s elapsed (~{:.0} Hz effective)",
+            stats.instructions,
+            stats.cycles,
+            stats.elapsed.as_secs_f64(),
+            avg_hz
         );
     }
-    println!(
-        "{} instructions, {} cycles, {:.3}s elapsed (~{:.0} Hz effective)",
-        stats.instructions,
-        stats.cycles,
-        stats.elapsed.as_secs_f64(),
-        avg_hz
-    );
 
     println!("registers:");
     for (name, value) in machine.registers() {
@@ -3189,6 +3208,22 @@ mod tests {
             "mutually exclusive"
         );
         assert!(try_parse(&["--disk", "g.dsk", "--disk-writeback"]).is_ok());
+    }
+
+    #[test]
+    fn frames_is_headless_only_and_excludes_max_cycles() {
+        let try_parse = |flags: &[&str]| {
+            let mut argv = vec!["retroclawd"];
+            argv.extend_from_slice(flags);
+            CommonArgs::try_parse_from(argv)
+        };
+        assert!(try_parse(&["--frames", "50"]).is_err(), "needs --headless");
+        assert!(
+            try_parse(&["--headless", "--frames", "50", "--max-cycles", "9"]).is_err(),
+            "mutually exclusive"
+        );
+        let args = try_parse(&["--headless", "--frames", "50"]).unwrap();
+        assert_eq!(args.frames, Some(50));
     }
 
     fn resolved_with_media(media: Option<&str>) -> Resolved {
