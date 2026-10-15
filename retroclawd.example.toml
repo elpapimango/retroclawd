@@ -58,6 +58,9 @@ vsync = false                 # false = no display VSync (defaults max_fps to 60
 # Uncomment the settings wanted for that machine.
 
 [machines.zx81]
+# The ZX81 ROM scans the keyboard once a frame and debounces it, so pasting at the default 60 ms loses keys:
+# [machines.zx81.input]
+# paste_delay_ms = 160
 # shader = "crt"
 # shader_intensity = 0.6
 # scanline_intensity = 0.3

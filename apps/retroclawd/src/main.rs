@@ -384,6 +384,12 @@ struct CommonArgs {
         requires = "type_text"
     )]
     type_after: u32,
+    /// Milliseconds between two `--type` key events (a press, then a release,
+    /// each one event); default: the paste delay of the configuration (60). A
+    /// machine whose ROM scans the keyboard once a frame and debounces it,
+    /// like the ZX81, loses keys typed that fast and wants about 160.
+    #[arg(long, value_name = "MS", requires = "type_text")]
+    type_delay: Option<u64>,
     /// Write the current video frame as a PNG to this path after the run
     /// stops (halt or --max-cycles cutoff)
     #[arg(long, requires = "headless")]
@@ -2590,7 +2596,8 @@ fn main() -> ExitCode {
                 }
                 // One key event per `paste_delay_ms`, like the paste hotkey, but in whole frames.
                 let frame_ms = 1000 / machine.frame_hz().max(1);
-                let pace = (app_settings.paste_delay_ms / frame_ms.max(1)).max(1) as u32;
+                let delay_ms = args.type_delay.unwrap_or(app_settings.paste_delay_ms);
+                let pace = (delay_ms / frame_ms.max(1)).max(1) as u32;
                 Some(Typing {
                     events: plan.events,
                     after: args.type_after,
@@ -3346,6 +3353,25 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(args.type_after, 500);
+        assert_eq!(
+            args.type_delay, None,
+            "defaults to the configuration's paste delay"
+        );
+        let args = try_parse(&[
+            "--headless",
+            "--frames",
+            "900",
+            "--type",
+            "RUN",
+            "--type-delay",
+            "160",
+        ])
+        .unwrap();
+        assert_eq!(args.type_delay, Some(160));
+        assert!(
+            try_parse(&["--headless", "--frames", "9", "--type-delay", "160"]).is_err(),
+            "--type-delay without --type"
+        );
     }
 
     #[test]

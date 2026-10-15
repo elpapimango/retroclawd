@@ -169,7 +169,12 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
   evaluating a typed `PRINT 12*34`, the C64-mode banner, and a file `rcdisk` put on a `.d64`/`.d71`/`.d81` loaded by a real emulated
   1541/1571/1581 through `LOAD"NAME",8,1`. No emulator bug was found. Not yet: the VDC (80 columns), the Z80 side, the 1571's MFM mode.
   Headless typing is new (`--type`, README), so the keyboard is now reachable: a keyboard-matrix case for the ZX81 and a
-  `RUN"` case for the CPC can be written. Then boot screens per ROM revision, and the third-party diagnostics.
+  `RUN"` case for the CPC can be written. **ZX81 keyboard: 3 more cases, all passing (12 in all)**: every one of the 39 typable keys
+  (letters, digits, Space, `.`, Enter) and the 15 shifted symbols pulls exactly its matrix line(s) low (the positions are read from
+  the ROM's own key tables at 0x007E and 0x00A5), and typed `PRINT 12`, `12*34`, `1.5+1` and `7-2*3` run in the ROM. This found that the
+  ZX81's `.` key had no name and the shifted symbols (`+ - * / = ( ) : ; ? , " $ < >`) were not reachable, so BASIC could not be
+  typed or pasted; both are fixed in the plugin (`Period` and the combo keys, see the sinclair CLAUDE.md), and `--type-delay` was added
+  because the ROM drops keys typed faster than about 160 ms. Then boot screens per ROM revision, and the third-party diagnostics.
 - **TODO (2026-10-15): ZX81 test suite**, separate from the diagnostics above because the ZX81 is the odd machine (no ULA
   interrupt, the CPU makes the picture): a program set that exercises every area of the emulator and checks it works --
   ROM boot to the stable loop with NMIs waking `HALT`; FAST and SLOW mode timing (frame length, NMI generator on and off,

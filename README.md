@@ -508,7 +508,8 @@ still double as the Spectrum/CPC joystick as before.
   Conflicts with `--max-cycles`
 - `--type <TEXT>` (needs `--frames`) -- type TEXT on the emulated keyboard, the way the paste hotkey does (the machine's own
   key names, shifts and pacing); `\n` is Enter. `--type-after <FRAMES>` (default 150) is how long to wait for the prompt: a
-  C128 with a real drive (`--true-drive`) probes it for a boot sector first and needs about 500. For example
+  C128 with a real drive (`--true-drive`) probes it for a boot sector first and needs about 500. `--type-delay <MS>` sets the time
+  between key events (default: the paste delay, 60); the ZX81 ROM scans keys once a frame and loses them that fast: use 160. For example
   `retroclawd c128 ... --headless --frames 400 --type 'PRINT 12*34\n' --dump-memory 0x0400:1000` leaves `408` on the screen
 - `--dump-memory <START:LEN>` (alias `-dm`) -- hex-dump memory after the
   run stops, e.g. `--dump-memory 0x4000:16`
