@@ -158,8 +158,13 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
   RAM mirrors, the echo area above `0x8000`, `--ram-kb`. Writing them found that the ZX81 had no memory mirrors, no RAM packs, no
   opcode-fetch echo and no `R`-driven interrupt (the ROM's display routine never ran; the old smoke baseline was a blank
   screen): all fixed, see the sinclair TODO. Still to do in the ZX81 suite: keyboard (needs a way to press keys headless), tape,
-  `.p`/`.81` round trips, SLOW-mode effective speed (0.8046 MHz), RAM-pack boot per size. Then CPC, C128, boot screens per ROM
-  revision, and the third-party diagnostics.
+  `.p`/`.81` round trips, SLOW-mode effective speed (0.8046 MHz), RAM-pack boot per size.
+  **CPC: 7 cases, all passing** (`tests/cpc.rs`): instructions in whole microseconds, the Gate Array interrupt every 52 lines
+  (13312 T), RAM configurations C0-C7 on the 6128, lower ROM and the RAM under it, a disk `rcld` made and a 3000-byte file `rcdisk`
+  added both read back by the firmware's AMSDOS (through `Resident`: boot, snapshot, patch code in, resume), and `.sna` versions
+  1-3. No emulator bug was found. Not yet: CRTC types 0-4, video modes from screen RAM, `.cdt` (the tools make none for the CPC),
+  upper-ROM selection (the ROM numbers could not be sourced), keyboard and sound (not reachable headless). Then C128, boot
+  screens per ROM revision, and the third-party diagnostics.
 - **TODO (2026-10-15): ZX81 test suite**, separate from the diagnostics above because the ZX81 is the odd machine (no ULA
   interrupt, the CPU makes the picture): a program set that exercises every area of the emulator and checks it works --
   ROM boot to the stable loop with NMIs waking `HALT`; FAST and SLOW mode timing (frame length, NMI generator on and off,
