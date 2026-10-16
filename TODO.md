@@ -136,9 +136,9 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     `--firmware auto` filled nothing on the C64/C128 although `romm match` looked fine. Fixed in
     `retroclawd-commodore` `74f5b73` (pinned here). Also: the same dump can be listed twice on the server with one entry's file gone
     (`missing_from_fs`, content 404); `firmware_index` now skips such entries (it picked firmware 34 for the C128 KERNAL).
-    Still open: `romm match` prints the toml's option names, not the plugin's keys, so this mismatch is invisible in
-    its output -- check the key against `MachineOptionInfo` there (and a test that every `option` in a family's
-    `firmware.toml` is declared by one of its plugins). Hashes not in any family: the +2A/+3 64K ROM, CPC+ own firmware.
+    `romm match` and `--firmware auto` now flag an entry whose `option` the plugin does not declare as a file option
+    (`OPTION NOT DECLARED by the plugin (file options: ...)`, a stderr warning; unit test `an_entry_must_name_a_declared_file_option`).
+    Not done: a check in each family's own CI against its plugins' profiles. Hashes not in any family: the +2A/+3 64K ROM, CPC+ own firmware.
   - **Work-laptop networking (2026-10-16)**: both HTTP clients (`romm`, `file-loader`) honour `HTTP_PROXY`/`HTTPS_PROXY`/
     `NO_PROXY` and now use the **system certificate store** (`rustls-tls-native-roots`), because Zscaler re-signs TLS and
     the bundled Mozilla roots failed with `invalid peer certificate: UnknownIssuer`. HTTP errors show their cause chain.

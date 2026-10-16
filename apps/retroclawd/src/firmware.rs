@@ -262,6 +262,24 @@ fn realize(files: &[(&RemoteFirmware, String)]) -> Result<Vec<u8>, String> {
     Ok(image)
 }
 
+/// Whether `entry` names a file option the machine does not declare -- the
+/// toml and the plugin disagree on a key, so the entry could never apply.
+fn names_undeclared_option(entry: &Entry, declared: &[MachineOptionInfo]) -> bool {
+    !declared
+        .iter()
+        .any(|i| i.kind == MachineOptionKind::File && i.key == entry.option)
+}
+
+/// The declared file option keys, for messages.
+fn declared_file_keys(declared: &[MachineOptionInfo]) -> String {
+    let keys: Vec<&str> = declared
+        .iter()
+        .filter(|i| i.kind == MachineOptionKind::File)
+        .map(|i| i.key.as_str())
+        .collect();
+    keys.join(", ")
+}
+
 /// `--firmware auto`: fills `have`-less file options from RomM. Returns the
 /// blobs to add to the machine's ROMs and the keys of required options that
 /// nothing satisfied (with what was looked for), already worded for the user.
@@ -284,6 +302,16 @@ pub(crate) fn auto_fill(
              (searched {})",
             searched.join(", ")
         ));
+    }
+    for entry in &entries {
+        if entry.machines.iter().any(|m| m == machine) && names_undeclared_option(entry, declared) {
+            eprintln!(
+                "firmware: \"{}\" names option \"{}\", which {machine} does not declare (file options: {}); fix the firmware.toml",
+                entry.label,
+                entry.option,
+                declared_file_keys(declared)
+            );
+        }
     }
     let remote = romm::firmware_index()?;
     let mut blobs = Vec::new();
@@ -343,6 +371,9 @@ pub(crate) fn print_matches(machine: Option<&str>, out: &mut impl Write) -> Resu
         ));
     }
     let remote = romm::firmware_index()?;
+    let profiles = crate::plugin_bridge::startup_report()
+        .map(|r| r.profiles)
+        .unwrap_or_default();
     let mut rows = Vec::new();
     for entry in &entries {
         for id in &entry.machines {
@@ -356,7 +387,15 @@ pub(crate) fn print_matches(machine: Option<&str>, out: &mut impl Write) -> Resu
                     entry.when.iter().map(|(k, v)| format!("{k}={v}")).collect();
                 format!("{} [{}]", entry.label, cond.join(", "))
             };
+            let declared = profiles
+                .iter()
+                .find(|p| p.machine_id == *id)
+                .map(|p| p.options.as_slice());
             let status = match find(&entry.wants, &remote) {
+                _ if declared.is_some_and(|d| names_undeclared_option(entry, d)) => format!(
+                    "OPTION NOT DECLARED by the plugin (file options: {})",
+                    declared_file_keys(declared.unwrap_or_default())
+                ),
                 Some(files) => files
                     .iter()
                     .map(|(f, _)| format!("{} {}", f.id, f.name))
@@ -410,6 +449,30 @@ mod tests {
             required,
             description: String::new(),
         }
+    }
+
+    fn entry_for(option: &str) -> Entry {
+        Entry {
+            machines: vec!["c64".into()],
+            option: option.into(),
+            label: "C64 KERNAL".into(),
+            wants: Wants::Any(vec![H1.into()]),
+            when: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn an_entry_must_name_a_declared_file_option() {
+        // The commodore plugins declare `kernal`; a manifest saying `rom_kernal`
+        // never matched anything.
+        let declared = [file_option("kernal", true), file_option("rom_1541", false)];
+        assert!(!names_undeclared_option(&entry_for("kernal"), &declared));
+        assert!(names_undeclared_option(&entry_for("rom_kernal"), &declared));
+        assert_eq!(declared_file_keys(&declared), "kernal, rom_1541");
+        // A non-file option of that name does not count.
+        let mut text = file_option("kernal", false);
+        text.kind = MachineOptionKind::Text;
+        assert!(names_undeclared_option(&entry_for("kernal"), &[text]));
     }
 
     const TOML: &str = r#"
