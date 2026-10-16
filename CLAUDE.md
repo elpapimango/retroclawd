@@ -803,8 +803,16 @@ guessing.
   once per emu-thread tick: one toast and a console line, and the machine is held like a pause with its last picture, instead of the
   emu thread panicking on the next clock query. Unit-tested: the argument parsing/layering, the names, the substitution and the
   crash-error predicate; **not** exercised with a live crashing plugin (the stub plugin shares the process-wide crash flag with every
-  other test, so inducing a panic there would poison them). Not done: per-game `[pads]`/`[hotkeys]`, symbol names inside
-  expressions (`CHROUT+1`).
+  other test, so inducing a panic there would poison them). Not done: per-game `[pads]`/`[hotkeys]`.
+  **Headless actions and symbol arithmetic (2026-10-16)**: `--at FRAME:ACTION[=FILE]` (`apps/retroclawd/src/scripted.rs`, needs
+  `--frames`) runs the hotkey/dialog actions of a batch run: `scripted::Runner` owns a real `HostControl` and feeds it the same
+  `EmuCommand`s (`Reset`, `QuickSave`, `Media(MediaOp)`, `Export` ...) the window sends, with files read through `inputs::load` (zips
+  and URLs work) and written where the command line says; actions are sorted by frame (stable), run before that frame executes
+  (`frames` itself = after the last frame), their toasts are printed as `frame N: ...`, and a failure message (or an unreadable /
+  empty export) makes the exit code 1. Window-only actions are refused by name. Tested with the stub machine (order, file round trip,
+  failure) and live on a Spectrum 48K. `SymbolTable::substitute` (shared) also folds a constant offset after a known name
+  (`CHROUT+1`, `BORDER - $10`, decimal/`$`/`0x`/`h`, chained, wrapping at 64K) and `#<NAME`/`#>NAME` (6502 low/high byte, applied after
+  the offset); a register's displacement (`(IX+5)`) and an unknown name are untouched. No general expressions (`*`, parentheses).
   **Debugger symbols (2026-10-12)**: `machine::SymbolTable` (shared crates) is a CPU-agnostic address->name table that
   annotates disassembly *text* (`  ; NAME` after the first known `$1234`/`$12` (6502) or `0x1234` (Z80) operand; text
   that already has a `;` or an immediate `#$12` is left alone) and parses symbol files (`NAME = $1234`, `NAME EQU

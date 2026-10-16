@@ -328,7 +328,9 @@ of the disk image while the machine runs.
   failed: ..."). Tape and disk slots exist where the machine has them (ZX81:
   snapshots only; C64 has no snapshots; disks on the +3, CPC664/6128 and C64;
   only drive 0 exists).
-- Not done: dialogs under `--headless`, drag and drop, a recent-files list,
+- In a `--headless --frames` run the same actions are `--at FRAME:ACTION[=FILE]` (see below): no dialog, the file is named
+  on the command line.
+- Not done: drag and drop, a recent-files list,
   more than one drive. macOS and Windows use rfd's native dialogs, which were not
   exercised here (this was built and tested on Linux without a desktop portal:
   the hotkeys, the machine pause, the prompt and every command behind them are
@@ -515,6 +517,13 @@ still double as the Spectrum/CPC joystick as before.
   C128 with a real drive (`--true-drive`) probes it for a boot sector first and needs about 500. `--type-delay <MS>` sets the time
   between key events (default: the paste delay, 60); the ZX81 ROM scans keys once a frame and loses them that fast: use 160. For example
   `retroclawd c128 ... --headless --frames 400 --type 'PRINT 12*34\n' --dump-memory 0x0400:1000` leaves `408` on the screen
+- `--at <FRAME:ACTION[=FILE]>` (repeatable, needs `--frames`) -- run a hotkey or file-dialog action at the start of a frame
+  (`FRAMES` itself means after the last frame, before the dumps): `reset`, `freeze`, `screenshot[=FILE]`, `quick_save`,
+  `quick_load`, `state_slot_next`, `state_slot_prev`, `load_tape|load_disk|load_snapshot|load_state=FILE`, `eject_tape`,
+  `eject_disk`, `save_snapshot|save_state|save_tape|save_disk=FILE`. It is the window's own code (a quick save goes to
+  `states/` as usual) with the file named here instead of asked for; each action prints `frame N: <message>`, and a failed one
+  (missing file, nothing to save) makes the run exit 1. Actions with no meaning without a window (`pause`, `mute`, `quit`...)
+  are refused. For example `--frames 300 --at 100:save_state=a.state --at 200:reset --at 250:load_state=a.state`
 - `--dump-memory <START:LEN>` (alias `-dm`) -- hex-dump memory after the
   run stops, e.g. `--dump-memory 0x4000:16`
 - `--dump-screen <path>` -- write the current video frame as a PNG after

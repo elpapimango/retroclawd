@@ -15,6 +15,7 @@ mod overrides;
 mod playlist;
 mod plugin_bridge;
 mod romm;
+mod scripted;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::ffi::OsString;
@@ -396,6 +397,12 @@ struct CommonArgs {
     /// like the ZX81, loses keys typed that fast and wants about 160.
     #[arg(long, value_name = "MS", requires = "type_text")]
     type_delay: Option<u64>,
+    /// With `--frames`: run a hotkey / file-dialog action at the start of a frame, `FRAME:ACTION[=FILE]` (repeatable): `reset`,
+    /// `freeze`, `screenshot[=FILE]`, `quick_save`, `quick_load`, `state_slot_next|prev`, `load_tape|load_disk|load_snapshot|
+    /// load_state=FILE`, `eject_tape|eject_disk`, `save_snapshot|save_state|save_tape|save_disk=FILE`. The same code as the
+    /// window's hotkeys and dialogs, with the file named here instead of asked for; an action that fails makes the run exit 1.
+    #[arg(long = "at", value_name = "FRAME:ACTION", requires = "frames", value_parser = scripted::parse)]
+    at: Vec<scripted::Scripted>,
     /// Write the current video frame as a PNG to this path after the run
     /// stops (halt or --max-cycles cutoff)
     #[arg(long, requires = "headless")]
@@ -2627,7 +2634,32 @@ fn main() -> ExitCode {
             }
             None => None,
         };
-        run_headless(machine, &args, &resolved.machine_id, typing)
+        if let Some(frames) = args.frames
+            && let Some(late) = args.at.iter().find(|a| a.frame > frames)
+        {
+            eprintln!(
+                "--at: frame {} is after the last frame ({frames})",
+                late.frame
+            );
+            return ExitCode::from(2);
+        }
+        let actions = scripted::Runner::new(
+            &resolved.machine_id,
+            emu_thread::MediaSettings {
+                tape_speed: resolved.tape_speed,
+                disk_writeback: args.disk_writeback,
+                disk_save: args.disk_save.as_ref().map(std::path::PathBuf::from),
+                disk_path: args.disk.as_ref().map(std::path::PathBuf::from),
+                game: resolved
+                    .media
+                    .as_deref()
+                    .or(args.program.as_deref())
+                    .or(args.cartridge.as_deref())
+                    .and_then(host_files::game_stem),
+            },
+            args.at.clone(),
+        );
+        run_headless(machine, &args, &resolved.machine_id, typing, actions)
     } else {
         if machine.render_frame().is_none() {
             eprintln!(
@@ -2788,11 +2820,13 @@ fn run_headless(
     args: &CommonArgs,
     machine_id: &str,
     mut typing: Option<Typing>,
+    mut actions: scripted::Runner,
 ) -> ExitCode {
     if let Some(frames) = args.frames {
         let started = std::time::Instant::now();
         let mut cycles = 0u64;
         for frame in 0..frames {
+            actions.run_due(frame, &mut machine);
             if let Some(t) = typing.as_mut()
                 && frame >= t.after
                 && (frame - t.after) % t.pace == 0
@@ -2802,6 +2836,7 @@ fn run_headless(
             }
             cycles += emu_thread::advance_one_frame(&mut machine, |_| false);
         }
+        actions.run_due(frames, &mut machine); // `--at FRAMES:...`: after the last frame, before the dumps
         println!(
             "ran {frames} frames, {cycles} cycles, {:.3}s elapsed",
             started.elapsed().as_secs_f64()
@@ -2906,6 +2941,10 @@ fn run_headless(
         println!("wrote {} bytes to {path}", bytes.len());
     }
 
+    if actions.failed {
+        eprintln!("an --at action failed");
+        return ExitCode::FAILURE;
+    }
     ExitCode::SUCCESS
 }
 

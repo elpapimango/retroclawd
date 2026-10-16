@@ -252,7 +252,9 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     ZX80 machine needs its own 4K ROM (none is in RomM) and is a separate project.
   - Host (see CLAUDE.md "Per-run settings, per-game file names..."): screenshots/quick-save states named after the game, `--hotkey
     ACTION=CHORD`, `[keys]`/`layout`/`symbols` in `--game-config`, symbol names in the debugger's `assemble`, and a toast + hold when a
-    plugin crashes. **Still open:** hotkeys and dialogs under `--headless`, drag and drop, recent files, a second drive, pad buttons
+    plugin crashes. **Since (same day):** `--headless --frames N --at FRAME:ACTION[=FILE]` runs the hotkey/dialog actions headless
+    (`scripted.rs`, reusing `HostControl::apply`; failures exit 1), and `SymbolTable::substitute` folds `NAME+1`/`NAME-$10` and
+    `#<NAME`/`#>NAME`. **Still open:** hotkeys that need a window (`--at pause` etc. are refused), drag and drop, recent files, a second drive, pad buttons
     as hotkey triggers, per-game `[pads]`/`[hotkeys]`, dead keys/non-ASCII, a live crash test.
 - **DONE (2026-10-16): GX4000 diagnostics cartridge and the CPC diagnostics suite.**
   - Real bug: a CPC+/GX4000 ignored classic Gate Array ink writes (colours come from the ASIC palette only), so any program setting

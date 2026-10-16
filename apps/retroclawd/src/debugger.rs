@@ -1273,6 +1273,20 @@ mod tests {
             assemble_with_symbols(&CpuFamily::Z80, "zx-spectrum", "CALL LD_BYTES", 0x8000).unwrap(),
             assemble_for(&CpuFamily::Z80, "CALL 0x0556", 0x8000).unwrap()
         );
+        // Constant offsets and the 6502's low/high byte selectors fold into the operand.
+        assert_eq!(
+            assemble_with_symbols(&CpuFamily::Mos6502, "c64", "JMP CHROUT+1", 0xC000).unwrap(),
+            assemble_for(&CpuFamily::Mos6502, "JMP $FFD3", 0xC000).unwrap()
+        );
+        assert_eq!(
+            assemble_with_symbols(&CpuFamily::Mos6502, "c64", "LDA #>CHROUT", 0xC000).unwrap(),
+            assemble_for(&CpuFamily::Mos6502, "LDA #$FF", 0xC000).unwrap()
+        );
+        assert_eq!(
+            assemble_with_symbols(&CpuFamily::Z80, "zx-spectrum", "CALL LD_BYTES+3", 0x8000)
+                .unwrap(),
+            assemble_for(&CpuFamily::Z80, "CALL 0x0559", 0x8000).unwrap()
+        );
         // A name the machine does not have is still the assembler's error.
         assert!(assemble_with_symbols(&CpuFamily::Mos6502, "c64", "JSR NOWHERE", 0).is_err());
         assert_eq!(stub_machine().cpu_family(), CpuFamily::Z80);

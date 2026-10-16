@@ -395,7 +395,7 @@ pub(crate) fn post_message(messages: &Messages, message: impl Into<String>) {
 }
 
 impl HostControl {
-    fn new(
+    pub(crate) fn new(
         run_ahead_frames: u32,
         machine_id: &str,
         messages: Messages,
@@ -424,7 +424,7 @@ impl HostControl {
     /// Carries out one command. Returns `true` if the machine's picture or
     /// state may have changed outside a normal step (so the caller should
     /// republish the frame even while paused).
-    fn apply(&mut self, command: EmuCommand, machine: &mut HostedMachine) -> bool {
+    pub(crate) fn apply(&mut self, command: EmuCommand, machine: &mut HostedMachine) -> bool {
         match command {
             EmuCommand::Reset => {
                 tracing::warn!("machine reset requested: source=reset_hotkey");
