@@ -267,6 +267,15 @@ mod tests {
         out.into_inner()
     }
 
+    /// The input loader and its temporary folder are process-wide, so tests that unpack zips or check that
+    /// folder (`cleanup`) must not run at the same time: a zip unpacked by one test would make another's
+    /// "nothing is left" check fail.
+    fn serial() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: Mutex<()> = Mutex::new(());
+        LOCK.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     fn temp(name: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("retroclawd-inputs-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -275,6 +284,7 @@ mod tests {
 
     #[test]
     fn a_plain_file_is_read_as_is() {
+        let _serial = serial();
         let path = temp("plain.d64");
         std::fs::write(&path, b"abc").unwrap();
         let source = path.to_string_lossy().into_owned();
@@ -284,6 +294,7 @@ mod tests {
 
     #[test]
     fn a_zip_is_unpacked_and_its_entry_names_the_format() {
+        let _serial = serial();
         let path = temp("game.zip");
         std::fs::write(&path, zip_bytes("Some Game (19xx).D64", b"disk bytes")).unwrap();
         let source = path.to_string_lossy().into_owned();
@@ -293,6 +304,7 @@ mod tests {
 
     #[test]
     fn a_missing_file_is_a_clear_error_and_keeps_its_own_extension() {
+        let _serial = serial();
         let source = temp("missing.tap").to_string_lossy().into_owned();
         assert!(load(&source).unwrap_err().contains("failed to read"));
         assert_eq!(extension(&source), "tap");
@@ -320,6 +332,7 @@ mod tests {
 
     #[test]
     fn a_url_is_fetched_and_a_zip_behind_it_is_unpacked() {
+        let _serial = serial();
         let url = format!("{}/files/a.zip", serve(zip_bytes("inner.prg", b"prg")));
         assert_eq!(load(&url).unwrap().bytes, b"prg");
         assert_eq!(extension(&url), "prg");
@@ -337,6 +350,7 @@ mod tests {
 
     #[test]
     fn one_entry_of_a_multi_file_zip_is_picked_with_a_hash() {
+        let _serial = serial();
         let path = temp("multi.zip");
         let mut out = std::io::Cursor::new(Vec::new());
         {
@@ -358,6 +372,7 @@ mod tests {
 
     #[test]
     fn cleanup_removes_the_unzipped_files() {
+        let _serial = serial();
         let path = temp("cleanup.zip");
         std::fs::write(&path, zip_bytes("inner.bin", b"x")).unwrap();
         load(&path.to_string_lossy()).unwrap();

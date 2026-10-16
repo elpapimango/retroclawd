@@ -212,11 +212,12 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
   real ROM. Side effects worth knowing: an idle port `0xFE` read is now `0x7F` (bit 7 = tape input, 0 = normal; it was `0xFF`),
   and `OUT (0xFF)` no longer starts the NMI generator (`SAVE` writes it for every pulse). Open: a fast-load trap (a 16K program
   takes minutes at the real 307 bit/s), tape position in `.state` files, `.wav` / `.tzx` input, ZX80.
-- **TODO (2026-10-16): flaky host tests** -- `inputs::tests::cleanup_removes_the_unzipped_files` and, less often,
-  `plugin_bridge::tests::a_library_that_is_not_a_plugin_is_skipped_with_a_warning_and_nothing_else_is_loaded` fail in about one
-  of three `cargo test -p retroclawd` runs (also on a clean checkout, so not from any recent change) and pass alone or with
-  `--test-threads=1`: the tests share process-global state (the input loader's temp folder, the plugin search path) and
-  need to be made independent or serialised.
+- **DONE (2026-10-16): flaky host tests fixed.** `inputs::tests::cleanup_removes_the_unzipped_files` asserted that the process-wide
+  input loader holds no unpacked files right after `cleanup()`, which any parallel test unpacking a zip broke: the zip tests of
+  `inputs::tests` now take one lock (`serial()`). `plugin_bridge`'s bogus-library test set `RETROCLAWD_MACHINE_PLUGIN_DIRS` while
+  other tests could initialise the shared machine catalog (and another test removed the same variable): discovery now has
+  `discover_runtime_catalog_from(candidates, explicit, searched_dirs)` and the test calls it with the file, no environment
+  variable at all. 30 parallel runs of the 279 tests: 0 failures (about one in three failed before).
 - **TODO (2026-10-15): ZX81 test suite**, separate from the diagnostics above because the ZX81 is the odd machine (no ULA
   interrupt, the CPU makes the picture): a program set that exercises every area of the emulator and checks it works --
   ROM boot to the stable loop with NMIs waking `HALT`; FAST and SLOW mode timing (frame length, NMI generator on and off,

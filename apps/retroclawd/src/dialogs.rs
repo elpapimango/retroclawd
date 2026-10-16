@@ -1477,7 +1477,10 @@ mod tests {
         );
         assert_eq!(extensions_for(FileKind::Tape, "zx81"), ["p", "p81", "81"]);
         assert_eq!(default_save_extension(FileAction::SaveTape, "zx81"), "p");
-        assert_eq!(default_save_extension(FileAction::SaveTape, "cpc6128"), "cdt");
+        assert_eq!(
+            default_save_extension(FileAction::SaveTape, "cpc6128"),
+            "cdt"
+        );
         assert_eq!(extensions_for(FileKind::State, "anything"), ["state"]);
         assert!(filters_for(FileKind::Disk, "zx81").is_empty());
     }

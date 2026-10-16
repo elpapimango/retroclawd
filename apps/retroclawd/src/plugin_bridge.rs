@@ -894,9 +894,23 @@ fn load_backend_candidates(
 }
 
 fn discover_runtime_catalog() -> Result<RuntimeCatalog, String> {
-    let candidates = plugin_candidate_paths();
     let explicit_dynamic = env::var_os(MACHINE_PLUGIN_ENV_VAR).is_some()
         || env::var_os(MACHINE_PLUGINS_ENV_VAR).is_some();
+    discover_runtime_catalog_from(
+        plugin_candidate_paths(),
+        explicit_dynamic,
+        plugin_search_dirs(),
+    )
+}
+
+/// The discovery proper, with its inputs given: the library files to try, whether the user named libraries
+/// explicitly, and the folders to mention when nothing is found. (Separate from the environment so a test can run it
+/// without touching process-wide variables.)
+fn discover_runtime_catalog_from(
+    candidates: Vec<PathBuf>,
+    explicit_dynamic: bool,
+    searched_dirs: Vec<PathBuf>,
+) -> Result<RuntimeCatalog, String> {
     if candidates.is_empty() && explicit_dynamic {
         return Err(
             "no machine plugin candidates found from RETROCLAWD_MACHINE_PLUGIN or RETROCLAWD_MACHINE_PLUGINS"
@@ -926,7 +940,7 @@ fn discover_runtime_catalog() -> Result<RuntimeCatalog, String> {
         let mut message = format!(
             "no machine plugins found: put the machine plugin libraries (*_machine_plugin.{}) in one of {} (searched; set RETROCLAWD_MACHINE_PLUGIN_DIRS to look elsewhere)",
             plugin_file_extension(),
-            plugin_search_dirs()
+            searched_dirs
                 .iter()
                 .map(|d| d.display().to_string())
                 .collect::<Vec<_>>()
@@ -2412,15 +2426,9 @@ mod tests {
         ));
         std::fs::write(&bogus, b"not a real dynamic library").expect("write bogus plugin file");
 
-        // SAFETY: test-only env var, scoped to this process; no other test
-        // reads RETROCLAWD_MACHINE_PLUGIN_DIRS.
-        unsafe {
-            std::env::set_var("RETROCLAWD_MACHINE_PLUGIN_DIRS", &dir);
-        }
-        let result = super::discover_runtime_catalog();
-        unsafe {
-            std::env::remove_var("RETROCLAWD_MACHINE_PLUGIN_DIRS");
-        }
+        // The discovery is given the file directly: no process-wide environment variable is touched, so no other
+        // test (several initialise the shared machine catalog) can see this bogus library.
+        let result = super::discover_runtime_catalog_from(vec![bogus], false, vec![dir.clone()]);
         std::fs::remove_dir_all(&dir).ok();
 
         let Err(error) = result else {
