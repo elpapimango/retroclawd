@@ -255,7 +255,7 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     plugin crashes. **Since (same day):** `--headless --frames N --at FRAME:ACTION[=FILE]` runs the hotkey/dialog actions headless
     (`scripted.rs`, reusing `HostControl::apply`; failures exit 1), and `SymbolTable::substitute` folds `NAME+1`/`NAME-$10` and
     `#<NAME`/`#>NAME`. **Still open:** hotkeys that need a window (`--at pause` etc. are refused), drag and drop, recent files, a second drive, pad buttons
-    as hotkey triggers, per-game `[pads]`/`[hotkeys]`, dead keys/non-ASCII, a live crash test.
+    as hotkey triggers, dead keys/non-ASCII, a live crash test.
 - **DONE (2026-10-16): GX4000 diagnostics cartridge and the CPC diagnostics suite.**
   - Real bug: a CPC+/GX4000 ignored classic Gate Array ink writes (colours come from the ASIC palette only), so any program setting
     colours the old way showed black; `Asic::set_legacy_ink` fixes it. The earlier "cartridge parks in a VSYNC wait" diagnosis was wrong
@@ -610,7 +610,7 @@ global > built-in defaults, per-binding override, `"none"` unbinds:
    (replacing them with host-side defaults would have needed per-machine cursor-key knowledge in the host) and
    there was no plugin-api bump (pads reuse `KeyEvent`). Verified by unit tests including a Bevy `App` test
    spawning `Gamepad` entities; **never run with a physical pad** (no `/dev/uinput`/evdev in the sandbox).
-   Not done: pad buttons as hotkey triggers, right stick/analog triggers, rumble, per-game pad maps.
+   Not done: pad buttons as hotkey triggers, right stick/analog triggers, rumble.
 5. **Layouts and keymap files (phase 5) -- DONE (2026-10-10).** `[input] layout = "positional" | "symbolic"`
    (also `[machines.<id>.input]` and `--layout`), keymap files (`[input] keymap`, repeatable `--keymap`;
    `[keys]`/`[machines.<id>.keys]` plus an optional `layout`), layered below/above the inline `[keys]`.

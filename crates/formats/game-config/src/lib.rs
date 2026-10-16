@@ -56,6 +56,30 @@ pub struct GameConfig {
     pub layout: Option<String>,
     /// Symbol file(s) for the debugger's disassembly (`--symbols`), loaded before the command line's own.
     pub symbols: Option<OneOrMany>,
+    /// `[hotkeys]`: `action = "chord"` (or a list, or `"none"`) for this game only, plus the optional hold-to-enable `modifier`;
+    /// layered over the machine's own `[machines.<id>.hotkeys]`. Action names are validated by the host.
+    #[serde(default)]
+    pub hotkeys: GameHotkeys,
+    /// `[pads]` / `[pads.<slot>]`: gamepad button -> machine key name(s) for this game only, layered over `retroclawd.toml`'s
+    /// pad bindings. Slot numbers, button names and machine keys are validated by the host.
+    #[serde(default)]
+    pub pads: GamePads,
+}
+
+/// `[hotkeys]` of a game config (the same shape as `retroclawd.toml`'s).
+#[derive(Debug, Deserialize, PartialEq, Default, Clone)]
+pub struct GameHotkeys {
+    pub modifier: Option<String>,
+    #[serde(flatten)]
+    pub bindings: HashMap<String, OneOrMany>,
+}
+
+/// `[pads]` of a game config (the same shape as `retroclawd.toml`'s): `deadzone` plus `[pads.<slot>]` tables.
+#[derive(Debug, Deserialize, PartialEq, Default, Clone)]
+pub struct GamePads {
+    pub deadzone: Option<f32>,
+    #[serde(flatten)]
+    pub slots: HashMap<String, HashMap<String, OneOrMany>>,
 }
 
 /// Parses toml text into a `GameConfig`. Unknown keys are a hard error
@@ -92,6 +116,32 @@ mod tests {
             config.options.get("rom"),
             Some(&toml::Value::String("roms/zx-spectrum/2a3.rom".to_string()))
         );
+    }
+
+    #[test]
+    fn hotkeys_and_pads_are_per_game_settings() {
+        let config = parse(
+            r#"
+            [hotkeys]
+            modifier = "alt_right"
+            pause = "KC_F8"
+            reset = ["KC_F12", "ctrl+r"]
+
+            [pads]
+            deadzone = 0.4
+
+            [pads.1]
+            a = "fire"
+            dpad_up = ["up", "none"]
+            "#,
+        )
+        .unwrap();
+        assert_eq!(config.hotkeys.modifier.as_deref(), Some("alt_right"));
+        assert_eq!(config.hotkeys.bindings["pause"].to_vec(), ["KC_F8"]);
+        assert_eq!(config.hotkeys.bindings["reset"].to_vec().len(), 2);
+        assert_eq!(config.pads.deadzone, Some(0.4));
+        assert_eq!(config.pads.slots["1"]["a"].to_vec(), ["fire"]);
+        assert_eq!(parse("").unwrap().pads, GamePads::default());
     }
 
     #[test]

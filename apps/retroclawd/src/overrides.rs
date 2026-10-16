@@ -58,19 +58,45 @@ pub(crate) fn apply_hotkey_flags(
 
 /// Applies a game config's `[keys]` and `layout` to `machine`'s section (bindings of the same host key replace the machine's).
 pub(crate) fn apply_game_config(config: &mut AppConfig, machine: &str, game: &GameConfig) {
-    if game.keys.is_empty() && game.layout.is_none() {
+    if game.keys.is_empty()
+        && game.layout.is_none()
+        && game.hotkeys == game_config::GameHotkeys::default()
+        && game.pads == game_config::GamePads::default()
+    {
         return;
     }
     let section = config.machines.entry(machine.to_string()).or_default();
     for (host_key, target) in &game.keys {
-        let value = match target {
-            game_config::OneOrMany::One(name) => OneOrMany::One(name.clone()),
-            game_config::OneOrMany::Many(names) => OneOrMany::Many(names.clone()),
-        };
-        section.keys.insert(host_key.clone(), value);
+        section.keys.insert(host_key.clone(), convert(target));
+    }
+    // Per action / per button, like every machine layer: what the game names replaces, the rest stays.
+    if let Some(modifier) = &game.hotkeys.modifier {
+        section.hotkeys.modifier = Some(modifier.clone());
+    }
+    for (action, chords) in &game.hotkeys.bindings {
+        section
+            .hotkeys
+            .bindings
+            .insert(action.clone(), convert(chords));
+    }
+    if let Some(deadzone) = game.pads.deadzone {
+        section.pads.deadzone = Some(deadzone);
+    }
+    for (slot, buttons) in &game.pads.slots {
+        let target = section.pads.slots.entry(slot.clone()).or_default();
+        for (button, keys) in buttons {
+            target.insert(button.clone(), convert(keys));
+        }
     }
     if let Some(layout) = &game.layout {
         section.input.layout = Some(layout.clone());
+    }
+}
+
+fn convert(value: &game_config::OneOrMany) -> OneOrMany {
+    match value {
+        game_config::OneOrMany::One(name) => OneOrMany::One(name.clone()),
+        game_config::OneOrMany::Many(names) => OneOrMany::Many(names.clone()),
     }
 }
 
@@ -167,6 +193,75 @@ mod tests {
             "other bindings stay"
         );
         assert_eq!(section.input.layout.as_deref(), Some("symbolic"));
+    }
+
+    #[test]
+    fn a_game_config_layers_its_hotkeys_over_the_machine_section_and_the_flags_beat_it() {
+        let mut config = app_config::parse(
+            r#"
+            [hotkeys]
+            pause = "pause"
+
+            [machines.c64.hotkeys]
+            quick_save = "f9"
+            "#,
+        )
+        .unwrap();
+        let game = game_config::parse(
+            r#"
+            [hotkeys]
+            quick_save = "ctrl+q"
+            reset = "none"
+            "#,
+        )
+        .unwrap();
+        apply_game_config(&mut config, "c64", &game);
+        apply_hotkey_flags(&mut config, "c64", &flags(&["quick_save=ctrl+w"])).unwrap();
+        let hotkeys = crate::gui::hotkeys::Hotkeys::resolve(&config, "c64").unwrap();
+        let chords = |name: &str| -> Vec<String> {
+            hotkeys
+                .chords_for(crate::gui::hotkeys::Action::from_name(name).unwrap())
+                .iter()
+                .map(|c| c.to_text().to_lowercase())
+                .collect()
+        };
+        assert_eq!(chords("quick_save").len(), 1);
+        assert!(
+            chords("quick_save")[0].contains('w'),
+            "--hotkey wins over the game"
+        );
+        assert!(chords("reset").is_empty(), "the game unbinds the default");
+        assert_eq!(chords("pause").len(), 1, "other bindings stay");
+    }
+
+    #[test]
+    fn a_game_config_layers_its_pad_buttons() {
+        let mut config = app_config::parse(
+            r#"
+            [pads.1]
+            south = "space"
+            east = "none"
+            "#,
+        )
+        .unwrap();
+        let game = game_config::parse(
+            r#"
+            [pads]
+            deadzone = 0.3
+            [pads.1]
+            south = "KeyA"
+            "#,
+        )
+        .unwrap();
+        apply_game_config(&mut config, "m", &game);
+        let section = &config.machines["m"];
+        assert_eq!(section.pads.deadzone, Some(0.3));
+        assert_eq!(section.pads.slots["1"]["south"].as_slice(), ["KeyA"]);
+        assert!(
+            !section.pads.slots["1"].contains_key("east"),
+            "the shared [pads] layer is untouched; the machine layer only holds the game's buttons"
+        );
+        assert_eq!(config.pads.slots["1"]["south"].as_slice(), ["space"]);
     }
 
     #[test]

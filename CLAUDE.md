@@ -641,7 +641,7 @@ guessing.
   events `pad_input` sends; **not verified with a physical pad** -- this sandbox
   has no `/dev/uinput` or evdev, so gilrs itself was not exercised live. Not
   done: pad buttons as hotkey triggers, right stick/analog triggers, rumble,
-  per-game pad maps in `--game-config`.
+  (per-game pad maps are in `--game-config` since 2026-10-16).
   **Keyboard layouts and keymap files** (2026-10-10, phase 5): `gui::keys::Layout`
   (`positional`, the default and the old behaviour; `symbolic`), `[input]
   layout`/`keymap` and `[machines.<id>.input]` (`app_config::InputConfig`;
@@ -803,7 +803,7 @@ guessing.
   once per emu-thread tick: one toast and a console line, and the machine is held like a pause with its last picture, instead of the
   emu thread panicking on the next clock query. Unit-tested: the argument parsing/layering, the names, the substitution and the
   crash-error predicate; **not** exercised with a live crashing plugin (the stub plugin shares the process-wide crash flag with every
-  other test, so inducing a panic there would poison them). Not done: per-game `[pads]`/`[hotkeys]`.
+  other test, so inducing a panic there would poison them). A game config also takes `[hotkeys]` (incl. `modifier`) and `[pads]`/`[pads.N]` (incl. `deadzone`), folded into the machine's own sections per action / per button below `--hotkey`.
   **Headless actions and symbol arithmetic (2026-10-16)**: `--at FRAME:ACTION[=FILE]` (`apps/retroclawd/src/scripted.rs`, needs
   `--frames`) runs the hotkey/dialog actions of a batch run: `scripted::Runner` owns a real `HostControl` and feeds it the same
   `EmuCommand`s (`Reset`, `QuickSave`, `Media(MediaOp)`, `Export` ...) the window sends, with files read through `inputs::load` (zips

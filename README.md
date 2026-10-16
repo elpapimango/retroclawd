@@ -219,7 +219,9 @@ batch mode means it spins forever) -- `--max-cycles` caps it, or Ctrl+C.
   those also given directly on the command line overrides the toml's value
   for that setting, rather than conflicting with it. It also takes, for this game only, a `[keys]` table (host key ->
   machine key name(s), layered over `retroclawd.toml`'s `[keys]` and the machine's own), `layout = "symbolic"`
-  (`--layout` still wins) and `symbols = "game.sym"` (or a list; loaded before `--symbols`)
+  (`--layout` still wins), `symbols = "game.sym"` (or a list; loaded before `--symbols`), a `[hotkeys]` table
+  (`action = "chord"`, a list or `"none"`, plus `modifier`; `--hotkey` still wins) and `[pads]`/`[pads.1]`
+  (`button = "machine key"`, plus `deadzone`). Each replaces only the actions / buttons it names
 - `--list-machine` (alias `-lm`) -- print discovered machine ids and exit
 - `--list-plugins` (alias `-lp`) -- print discovered machine/debugger
   plugin libraries and exit (debugger entries include selector names and
