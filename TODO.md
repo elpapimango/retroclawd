@@ -240,6 +240,9 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     `firmware_toml_names_only_file_options_the_plugin_declares` (it reads the family's `firmware.toml` and checks every `option`
     against the plugin's declared file options; mutation-checked with the old `rom_kernal` bug). A machine id in the manifest
     that no plugin serves is still not caught.
+- **DONE (2026-10-16): Spectrum frame length** -- every model ran a 70 938 T frame; now 69 888 (48K) and 70 908 (128K family) through
+  per-model effective clocks (3 494 400 / 3 545 400 Hz at the host's 50 Hz tick), no trait or ABI change; the three gap cases closed.
+  Details and the 0.16% / 0.04% wall-clock trade in the sinclair TODO.
 - **DONE (2026-10-16): +2A/+3 and more ROMs.** RomM gained the +2A/+3 64K ROMs (`plus3.rom`, `plus2a.rom`), a +2 UK ROM, two more 128K
   variants, Interface 1 v1/v2 and the `zx81-550-kludge` ZX81 ROM. `retroclawd-sinclair` `firmware.toml` now lists the +2A/+3 ROM
   (`romm match zx-spectrum-2a3` and `--firmware auto` work; the +3 boots) and the kludge ZX81 ROM, which joins the suite's revision

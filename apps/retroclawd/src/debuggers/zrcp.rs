@@ -533,7 +533,10 @@ fn machine_cpu_name(machine_id: &str) -> &'static str {
 }
 
 fn machine_clock_hz(machine_id: &str) -> Option<u64> {
-    if machine_id.starts_with("zx-spectrum") {
+    if machine_id == "zx-spectrum" {
+        // The 48K's real crystal-derived CPU clock (the machine runs an effective 3.4944 MHz so that a frame is exactly 69888 T).
+        Some(3_500_000)
+    } else if machine_id.starts_with("zx-spectrum") {
         Some(3_546_900)
     } else if machine_id.starts_with("cpc") {
         Some(4_000_000)
