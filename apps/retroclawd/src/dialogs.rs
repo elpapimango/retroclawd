@@ -127,6 +127,7 @@ pub(crate) fn extensions_for(kind: FileKind, machine_id: &str) -> &'static [&'st
         FileKind::Tape if spectrum => &["tap", "tzx", "pzx", "csw", "voc"],
         FileKind::Tape if cpc => &["cdt", "tzx", "voc"],
         FileKind::Tape if machine_id == "c64" => &["tap", "t64"],
+        FileKind::Tape if machine_id == "zx81" => &["p", "p81", "81"],
         FileKind::Disk if spectrum || cpc => &["dsk", "edsk"],
         FileKind::Disk if machine_id == "c64" || machine_id == "c128" => {
             &["d64", "d71", "d81", "g64", "x64"]
@@ -170,6 +171,7 @@ fn filters_for(kind: FileKind, machine_id: &str) -> Vec<Filter> {
 fn default_save_extension(action: FileAction, machine_id: &str) -> &'static str {
     match action {
         FileAction::SaveState => "state",
+        FileAction::SaveTape if machine_id == "zx81" => "p",
         FileAction::SaveTape => "cdt",
         FileAction::SaveDisk => "dsk",
         _ => extensions_for(FileKind::Snapshot, machine_id)
@@ -1473,7 +1475,9 @@ mod tests {
             extensions_for(FileKind::Snapshot, "zx81"),
             ["p", "p81", "81"]
         );
-        assert!(extensions_for(FileKind::Tape, "zx81").is_empty());
+        assert_eq!(extensions_for(FileKind::Tape, "zx81"), ["p", "p81", "81"]);
+        assert_eq!(default_save_extension(FileAction::SaveTape, "zx81"), "p");
+        assert_eq!(default_save_extension(FileAction::SaveTape, "cpc6128"), "cdt");
         assert_eq!(extensions_for(FileKind::State, "anything"), ["state"]);
         assert!(filters_for(FileKind::Disk, "zx81").is_empty());
     }

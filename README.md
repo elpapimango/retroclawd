@@ -569,6 +569,9 @@ still double as the Spectrum/CPC joystick as before.
   `--disk-save <path>` or `--disk-writeback`. `.d71`/`.d81` are writable too (shared CBM DOS allocator). C64 `--disk` also takes `.g64` (decoded to sectors; not written back), `.x64`, a single-file `.zip`, and an `.m3u` playlist (first disk attached; bind the `next_disk`/`prev_disk` hotkeys to swap). `.nib` is refused with a clear error.
 - `.tap` cassettes load instantly through the KERNAL (`--run` types `LOAD` and `RUN`); BASIC `SAVE"x",1` records to
   `--tape-save out.tap`. `--fast-tape-load false` (config) plays every pulse in real time instead.
+- ZX81: `--tape game.p` (also `.81`, `.p81`) plays the file as the cassette signal for `LOAD ""` (real speed, about 307 bit/s: a
+  small program takes seconds, a 16K one minutes); BASIC `SAVE "NAME"` is recorded and written by `--tape-save out.p`
+  (or `.81`, `.p81` with the name). The ZX81 `.p` can also be saved straight from memory with `--dump-snapshot out.p`.
 - `mouse = "1351-port1"` (or `1351-port2`, `paddle-port1`, `paddle-port2`) in `[machines.c64]` turns the host mouse into a 1351
   or a paddle pair; keys `Paddle1AInc` etc. drive paddles from the keyboard or a pad.
 - `--reu off|128|256|512` fits a Commodore REU (1700/1764/1750) on the expansion

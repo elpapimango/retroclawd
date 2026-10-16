@@ -513,8 +513,9 @@ struct CommonArgs {
     /// Record everything the program writes to the cassette output (a real
     /// `SAVE`) and write it to this file when the session ends. The format
     /// follows the extension: `.cdt`/`.tzx` (pulse blocks) or `.voc` (8-bit
-    /// PCM at 44.1 kHz). Only CPC models record tape output; a run that
-    /// never wrote to the cassette reports so and writes nothing.
+    /// PCM at 44.1 kHz) for the CPC, `.tap` for the C64, `.p`/`.81`/`.p81`
+    /// (the file a ZX81 `SAVE` made, read back from the pulses) for the ZX81.
+    /// A run that never wrote to the cassette reports so and writes nothing.
     #[arg(long, value_name = "PATH")]
     tape_save: Option<String>,
 
@@ -2713,9 +2714,12 @@ fn tape_save_policy(args: &CommonArgs) -> Result<Option<plugin_bridge::TapeExitP
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .to_lowercase();
-    if !matches!(format.as_str(), "cdt" | "tzx" | "voc" | "tap") {
+    if !matches!(
+        format.as_str(),
+        "cdt" | "tzx" | "voc" | "tap" | "p" | "81" | "p81"
+    ) {
         return Err(format!(
-            "--tape-save {path}: the extension must be .cdt, .tzx or .voc (CPC) or .tap (C64)"
+            "--tape-save {path}: the extension must be .cdt, .tzx or .voc (CPC), .tap (C64) or .p, .81 or .p81 (ZX81)"
         ));
     }
     Ok(Some(plugin_bridge::TapeExitPolicy {
@@ -3269,6 +3273,9 @@ mod tests {
             ("b.TZX", "tzx"),
             ("c.voc", "voc"),
             ("d.tap", "tap"),
+            ("e.p", "p"),
+            ("f.81", "81"),
+            ("g.P81", "p81"),
         ] {
             let policy = tape_save_policy(&args_with(&["--tape-save", path]))
                 .unwrap()

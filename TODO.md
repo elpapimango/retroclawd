@@ -192,13 +192,12 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
   ZX81's `.` key had no name and the shifted symbols (`+ - * / = ( ) : ; ? , " $ < >`) were not reachable, so BASIC could not be
   typed or pasted; both are fixed in the plugin (`Period` and the combo keys, see the sinclair CLAUDE.md), and `--type-delay` was added
   because the ROM drops keys typed faster than about 160 ms.
-  **ZX81 (2026-10-16): 18 cases passing + 1 gap**, after the keyboard ones: RAMTOP for `--ram-kb` 1/2/16/32/56 (4400h, 4800h, then
+  **ZX81 (2026-10-16): 21 cases passing, no gaps**, after the keyboard ones: RAMTOP for `--ram-kb` 1/2/16/32/56 (4400h, 4800h, then
   8000h: ZXDOCS says the ROM's detection ends at 8000h), the first and last cell of the 16K/32K/56K machines are separate RAM (the
   56K one from 2000h), a hand-built `.p` (`1 PRINT "A"`, NXTLIN on the line) loads at 4009h and autostarts -- the `A` appears in
   the top-left cell, drawn from the ROM's own character set --, **saving a `.p` / `.81`** (found missing, built the same day:
   the file is memory 4009h..E_LINE-1, `.81` equals `.p`, a reload runs again) and all three ROM revisions in RomM boot to the
-  same `K` prompt. `tools/fetch_roms.sh` fetches `zx81.rom` and `zx81b.rom` for it. **Gap: ZX81 tape** (`LOAD ""` from a
-  tape input; the plugin refuses `--tape`), recorded in the sinclair TODO. **Not done, deliberately:** SLOW-mode effective speed
+  same `K` prompt. `tools/fetch_roms.sh` fetches `zx81.rom` and `zx81b.rom` for it. **ZX81 tape** (built the same day, see below): `LOAD ""`, `SAVE "A"` and save-then-load through the real ROM. **Not done, deliberately:** SLOW-mode effective speed
   (ZXDOCS: 0.8046 MHz = 108 free lines x 149 cycles a frame) -- that figure is for BASIC running under the ROM's display
   routine; machine code run with `USR` in SLOW mode loses the display and only pays for the NMIs, so a machine-code loop is the
   wrong probe and a BASIC loop needs an oracle for how many cycles an interpreted loop costs. And the third-party diagnostics:
@@ -206,6 +205,18 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
 - **DONE (2026-10-16): ZX81 `.p` / `.81` save** (`retroclawd-sinclair`): `--dump-snapshot x.p` / `.81` and the save hotkey
   write memory from 4009h up to E_LINE-1; the suite checks the file against memory, `.81` against `.p`, and a reload. `.p81`
   is not saved (no program name; `rcsnap convert --name`). The host's save dialog already proposed `.p`.
+- **DONE (2026-10-16): ZX81 tape** (`retroclawd-sinclair`, host: `--tape-save` accepts `.p` / `.81` / `.p81`, the tape dialog offers
+  them): `--tape x.p` plays a `.p` / `.81` / `.p81` as the cassette signal (ZXDOCS: 150 us pulses, 4 = `0`, 9 = `1`, 1300 us
+  between bits), `LOAD ""` reads it, `SAVE "A"` is recorded from the MIC output (the retrace latch) and decoded back into the
+  file. Suite: 3 cases (load, save as `.p` and `.p81`, save-then-load through the ROM), all passing on the first run against the
+  real ROM. Side effects worth knowing: an idle port `0xFE` read is now `0x7F` (bit 7 = tape input, 0 = normal; it was `0xFF`),
+  and `OUT (0xFF)` no longer starts the NMI generator (`SAVE` writes it for every pulse). Open: a fast-load trap (a 16K program
+  takes minutes at the real 307 bit/s), tape position in `.state` files, `.wav` / `.tzx` input, ZX80.
+- **TODO (2026-10-16): flaky host tests** -- `inputs::tests::cleanup_removes_the_unzipped_files` and, less often,
+  `plugin_bridge::tests::a_library_that_is_not_a_plugin_is_skipped_with_a_warning_and_nothing_else_is_loaded` fail in about one
+  of three `cargo test -p retroclawd` runs (also on a clean checkout, so not from any recent change) and pass alone or with
+  `--test-threads=1`: the tests share process-global state (the input loader's temp folder, the plugin search path) and
+  need to be made independent or serialised.
 - **TODO (2026-10-15): ZX81 test suite**, separate from the diagnostics above because the ZX81 is the odd machine (no ULA
   interrupt, the CPU makes the picture): a program set that exercises every area of the emulator and checks it works --
   ROM boot to the stable loop with NMIs waking `HALT`; FAST and SLOW mode timing (frame length, NMI generator on and off,
