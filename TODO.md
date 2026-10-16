@@ -240,6 +240,16 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     `firmware_toml_names_only_file_options_the_plugin_declares` (it reads the family's `firmware.toml` and checks every `option`
     against the plugin's declared file options; mutation-checked with the old `rom_kernal` bug). A machine id in the manifest
     that no plugin serves is still not caught.
+- **DONE (2026-10-16): more 128K ROMs, ZX81 pulse tapes, Spectrum diagnostics.**
+  - The `firmware.toml` 128K entry also accepts `plus2uk.rom`, `spec128uk_4.02.rom` and `spec128uk_derby1.4.rom` (after the preferred
+    `128.rom`); a suite case checks that every cached 128K-family ROM boots with its frame interrupt running. `tools/fetch_roms.sh`
+    fetches them.
+  - `retroclawd-crates` `zx-tape`: `Tape::rescaled(from_hz, to_hz)`; the ZX81 plugin plays `.tzx` / `.pzx` / `.csw` / `.voc` rescaled to
+    3.25 MHz (unit-tested per format; a suite `.tzx` case loads through the real ROM). The families' pins moved to include it.
+  - Third-party diagnostics: `tools/fetch_diagnostics.sh` (pinned, SHA-256 checked, git-ignored cache) and a Spectrum suite case that runs
+    zx-diagnostics v0.37's ROM and reads its documented pass colours (every test PASS, bright-green "48K RAM Tests Passed" bar). **Not
+    done:** the CPC diagnostics (malformed `.cpr`, needs `"` typed -- the CPC plugin cannot type it headless -- and a menu) and the C64
+    cartridge; see the tools `CLAUDE.md`. A real follow-up they point at: map the CPC punctuation row so `--type` can type BASIC.
 - **DONE (2026-10-16): Spectrum frame length** -- every model ran a 70 938 T frame; now 69 888 (48K) and 70 908 (128K family) through
   per-model effective clocks (3 494 400 / 3 545 400 Hz at the host's 50 Hz tick), no trait or ABI change; the three gap cases closed.
   Details and the 0.16% / 0.04% wall-clock trade in the sinclair TODO.

@@ -572,6 +572,7 @@ still double as the Spectrum/CPC joystick as before.
 - ZX81: `--tape game.p` (also `.81`, `.p81`) plays the file as the cassette signal for `LOAD ""` (real speed, about 307 bit/s: a
   small program takes seconds, a 16K one minutes); BASIC `SAVE "NAME"` is recorded and written by `--tape-save out.p`
   (or `.81`, `.p81` with the name). The ZX81 `.p` can also be saved straight from memory with `--dump-snapshot out.p`.
+  `.tzx`, `.pzx`, `.csw` and `.voc` tapes play too (real time; rescaled to the ZX81's 3.25 MHz clock).
   `--fast-tape-load` makes `LOAD` store the file at once after the ROM has matched its name from the real signal (a 16K
   program is otherwise minutes of tape). A machine with a 16K or larger pack (`--ram-kb 16`) takes about 2.4 s to reach its prompt.
 - `mouse = "1351-port1"` (or `1351-port2`, `paddle-port1`, `paddle-port2`) in `[machines.c64]` turns the host mouse into a 1351
