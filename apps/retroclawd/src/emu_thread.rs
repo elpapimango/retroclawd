@@ -347,6 +347,9 @@ pub(crate) struct MediaSettings {
     pub(crate) disk_save: Option<std::path::PathBuf>,
     /// The `--disk` file the session started with.
     pub(crate) disk_path: Option<std::path::PathBuf>,
+    /// What was loaded, as a file-name friendly stem (`host_files::game_stem`): screenshots and quick-save states are named
+    /// `<machine>-<game>-...` so two games on one machine keep separate slots. `None` when nothing was loaded.
+    pub(crate) game: Option<String>,
 }
 
 /// Short messages for the player ("State saved: slot 2", "Paused", errors),
@@ -375,6 +378,8 @@ pub(crate) struct HostControl {
     /// A file dialog or prompt is open (`EmuCommand::Dialog`).
     dialog_open: bool,
     media: MediaSettings,
+    /// The plugin has crashed (reported once): the machine is held like a pause, since every further call would only fail.
+    crashed: bool,
 }
 
 /// Queues a one-line message for the player (the GUI's toast shows it).
@@ -396,11 +401,13 @@ impl HostControl {
         messages: Messages,
         media: MediaSettings,
     ) -> Self {
+        let file_tag = crate::host_files::game_tag(machine_id, media.game.as_deref());
         HostControl {
             dialog_open: false,
+            crashed: false,
             media,
             run_ahead_frames,
-            machine_id: machine_id.to_string(),
+            machine_id: file_tag,
             paused: false,
             fast_forward: false,
             fast_forward_ticks: 0,
@@ -759,7 +766,17 @@ fn tick(
     let debugger_paused = debugger.as_ref().is_some_and(|d| d.is_paused());
     // A hotkey pause freezes everything like a debugger pause does, but
     // without the debugger's single-step requests.
-    let is_paused = debugger_paused || control.paused || control.dialog_open;
+    // A crashed plugin answers every call with an error, and the step loop's clock query would panic this thread: say so once and
+    // hold the machine (its last picture stays up) instead.
+    if !control.crashed
+        && let Some(message) = machine.crash_message()
+    {
+        control.crashed = true;
+        tracing::error!(target: "retroclawd::plugin", "{message}");
+        eprintln!("the machine plugin crashed: {message}");
+        control.say("The machine crashed (see the console); reset the app to continue");
+    }
+    let is_paused = debugger_paused || control.paused || control.dialog_open || control.crashed;
 
     let m = &mut *machine;
 
@@ -1515,6 +1532,27 @@ mod tests {
         assert_eq!(rig.said(), ["Disk loaded: second.dsk", "Disk ejected"]);
         assert_eq!(rig.export(Export::Disk), Ok(None));
         assert_eq!(rig.disk_status().original, None);
+    }
+
+    #[test]
+    fn quick_save_states_are_named_after_the_game() {
+        let dir = std::env::temp_dir().join(format!("rc-emu-states-{}", std::process::id()));
+        for (game, file) in [
+            (Some("Elite"), "stub-machine-Elite-slot0.state"),
+            (None, "stub-machine-slot0.state"),
+        ] {
+            let mut rig = Rig::new(MediaSettings {
+                game: game.map(str::to_string),
+                ..MediaSettings::default()
+            });
+            rig.control.base_dir = dir.clone();
+            rig.apply(EmuCommand::QuickSave);
+            assert!(
+                dir.join("states").join(file).exists(),
+                "{file} was not written"
+            );
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

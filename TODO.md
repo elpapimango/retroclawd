@@ -240,6 +240,20 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     `firmware_toml_names_only_file_options_the_plugin_declares` (it reads the family's `firmware.toml` and checks every `option`
     against the plugin's declared file options; mutation-checked with the old `rom_kernal` bug). A machine id in the manifest
     that no plugin serves is still not caught.
+- **DONE (2026-10-16): the remaining queue -- 128K variants, the ZX80 layout, the C64 dead test, host gaps.**
+  - Suite: every 128K-family ROM variant (128K, +2, 4.02, Derby 1.4) pages both 16K halves at 0x0000 exactly as the file holds them (the
+    boot/frame-interrupt case already covered each); the C64 dead test (crystalct/C64UnifDiagCart's modified 781220 ROM, fetched by
+    `tools/fetch_diagnostics.sh` from a pinned commit into the git-ignored folder -- the repository is CERN-OHL-W-2.0, the code inside
+    Commodore's, so it is never committed or redistributed) boots from an Ultimax `.crt` and prints OK for the zero page and the stack
+    page (about 50 s in a debug build). Its full cycle (and the unified cartridge's mode switch, which is the author's own flip-flop
+    hardware) was not run.
+  - ZX80: `zx81-snapshot::parse_o`/`write_o` (`.o` = memory from 0x4000 up to `E_LINE` at offset 0x0A, no name; a file that disagrees
+    with its own `E_LINE` is refused) and the ZX81 plugin now names a ZX80 program as such and refuses it ("no ZX80 is emulated"). A
+    ZX80 machine needs its own 4K ROM (none is in RomM) and is a separate project.
+  - Host (see CLAUDE.md "Per-run settings, per-game file names..."): screenshots/quick-save states named after the game, `--hotkey
+    ACTION=CHORD`, `[keys]`/`layout`/`symbols` in `--game-config`, symbol names in the debugger's `assemble`, and a toast + hold when a
+    plugin crashes. **Still open:** hotkeys and dialogs under `--headless`, drag and drop, recent files, a second drive, pad buttons
+    as hotkey triggers, per-game `[pads]`/`[hotkeys]`, dead keys/non-ASCII, a live crash test.
 - **DONE (2026-10-16): GX4000 diagnostics cartridge and the CPC diagnostics suite.**
   - Real bug: a CPC+/GX4000 ignored classic Gate Array ink writes (colours come from the ASIC palette only), so any program setting
     colours the old way showed black; `Asic::set_legacy_ink` fixes it. The earlier "cartridge parks in a VSYNC wait" diagnosis was wrong

@@ -11,6 +11,7 @@ mod firmware;
 mod gui;
 mod host_files;
 mod inputs;
+mod overrides;
 mod playlist;
 mod plugin_bridge;
 mod romm;
@@ -289,6 +290,11 @@ struct CommonArgs {
     /// own `[keys]`. Repeatable; later files win.
     #[arg(long = "keymap", value_name = "FILE")]
     keymap: Vec<PathBuf>,
+
+    /// Bind a hotkey for this run: `ACTION=CHORD` (`pause=ctrl+p`, `reset=none`, `modifier=alt_right`; `--list-hotkeys` shows the
+    /// actions). The first flag for an action replaces what `retroclawd.toml` bound, further ones add chords. Repeatable.
+    #[arg(long = "hotkey", value_name = "ACTION=CHORD")]
+    hotkey: Vec<String>,
 
     /// A symbol file naming addresses in the debugger's disassembly (`; NAME` beside an operand).
     /// Repeatable, later files win. Accepts assembler listings (`NAME = $1234`, `NAME EQU 0x1234`),
@@ -2008,7 +2014,7 @@ fn main() -> ExitCode {
     }
 
     if args.list_hotkeys {
-        let config = match load_app_config(args.config.as_ref()) {
+        let mut config = match load_app_config(args.config.as_ref()) {
             Ok(config) => config,
             Err(e) => {
                 eprintln!("{e}");
@@ -2016,6 +2022,10 @@ fn main() -> ExitCode {
             }
         };
         let machine = args.machine.as_deref().unwrap_or("");
+        if let Err(e) = overrides::apply_hotkey_flags(&mut config, machine, &args.hotkey) {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
         return match gui::hotkeys::Hotkeys::resolve(&config, machine) {
             Ok(hotkeys) => {
                 if machine.is_empty() {
@@ -2154,7 +2164,7 @@ fn main() -> ExitCode {
     // in the current directory is loaded automatically if present (unlike
     // --game-config, which is per-session and always explicit) -- see
     // `CommonArgs::config`'s own doc comment.
-    let app_config = match load_app_config(args.config.as_ref()) {
+    let mut app_config = match load_app_config(args.config.as_ref()) {
         Ok(config) => config,
         Err(e) => {
             eprintln!("{e}");
@@ -2165,6 +2175,15 @@ fn main() -> ExitCode {
     romm::configure(&app_config.romm);
 
     if let Err(e) = validate_app_config(&app_config) {
+        eprintln!("{e}");
+        return ExitCode::FAILURE;
+    }
+
+    // This run's own settings sit on top of the machine's sections: the game config's `[keys]`/`layout`, then `--hotkey`.
+    overrides::apply_game_config(&mut app_config, &resolved.machine_id, &config);
+    if let Err(e) =
+        overrides::apply_hotkey_flags(&mut app_config, &resolved.machine_id, &args.hotkey)
+    {
         eprintln!("{e}");
         return ExitCode::FAILURE;
     }
@@ -2318,7 +2337,8 @@ fn main() -> ExitCode {
             }
         };
 
-    if let Err(e) = debug_symbols::load_user_files(&args.symbols) {
+    if let Err(e) = debug_symbols::load_user_files(&overrides::symbol_files(&config, &args.symbols))
+    {
         eprintln!("--symbols: {e}");
         return ExitCode::FAILURE;
     }
@@ -2631,6 +2651,12 @@ fn main() -> ExitCode {
             disk_writeback: args.disk_writeback,
             disk_save: args.disk_save.as_ref().map(std::path::PathBuf::from),
             disk_path: args.disk.as_ref().map(std::path::PathBuf::from),
+            game: resolved
+                .media
+                .as_deref()
+                .or(args.program.as_deref())
+                .or(args.cartridge.as_deref())
+                .and_then(host_files::game_stem),
         };
         app_settings.dialogs = dialogs::DialogSettings {
             machine_id: resolved.machine_id.clone(),

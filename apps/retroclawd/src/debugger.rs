@@ -579,7 +579,12 @@ impl DebuggerLink {
                     let _ = reply.send(self.apply_port_breakpoints(machine, Vec::new()));
                 }
                 DebuggerCommand::Assemble { addr, text, reply } => {
-                    match assemble_for(&machine.cpu_family(), &text, addr) {
+                    match assemble_with_symbols(
+                        &machine.cpu_family(),
+                        machine.machine_id(),
+                        &text,
+                        addr,
+                    ) {
                         Ok(bytes) => {
                             machine.load(addr, &bytes);
                             let _ = reply.send(Ok(bytes));
@@ -910,6 +915,19 @@ fn disassemble_one(machine: &HostedMachine, addr: u16) -> (String, usize) {
 
 /// Assembles one instruction for the CPU that is running. The assemblers live with their CPU cores;
 /// the host only picks one by the machine's reported CPU family.
+/// `assemble_for` after names from the machine's symbol tables (built-ins and `--symbols` files) are replaced by their addresses:
+/// `JSR CHROUT` on a C64, `CALL LD_BYTES` on a Spectrum.
+fn assemble_with_symbols(
+    family: &CpuFamily,
+    machine_id: &str,
+    text: &str,
+    addr: u16,
+) -> Result<Vec<u8>, String> {
+    let prefix = if *family == CpuFamily::Z80 { "0x" } else { "$" };
+    let text = crate::debug_symbols::table_for(machine_id).substitute(text, prefix);
+    assemble_for(family, &text, addr)
+}
+
 fn assemble_for(family: &CpuFamily, text: &str, addr: u16) -> Result<Vec<u8>, String> {
     match family {
         CpuFamily::Z80 => z80::disassemble::assemble_one_at(text, addr),
@@ -1172,8 +1190,8 @@ fn parse_debugger_keycode(name: &str) -> Option<KeyCode> {
 #[cfg(test)]
 mod tests {
     use super::{
-        assemble_for, disassemble_one, disassembly_window, is_step_over_candidate,
-        parse_debugger_keycode, present_text,
+        assemble_for, assemble_with_symbols, disassemble_one, disassembly_window,
+        is_step_over_candidate, parse_debugger_keycode, present_text,
     };
     use bevy::input::keyboard::KeyCode;
     use plugin_api::{CpuFamily, MachineCreateRequest};
@@ -1242,6 +1260,21 @@ mod tests {
             vec![0xD0, 0xFE]
         );
         assert!(assemble_for(&CpuFamily::Other("68000".into()), "NOP", 0).is_err());
+    }
+
+    #[test]
+    fn symbol_names_assemble_as_their_addresses() {
+        // The built-in tables: the C64 KERNAL's CHROUT is $FFD2, the Spectrum ROM's LD_BYTES is $0556.
+        assert_eq!(
+            assemble_with_symbols(&CpuFamily::Mos6502, "c64", "JSR CHROUT", 0xC000).unwrap(),
+            assemble_for(&CpuFamily::Mos6502, "JSR $FFD2", 0xC000).unwrap()
+        );
+        assert_eq!(
+            assemble_with_symbols(&CpuFamily::Z80, "zx-spectrum", "CALL LD_BYTES", 0x8000).unwrap(),
+            assemble_for(&CpuFamily::Z80, "CALL 0x0556", 0x8000).unwrap()
+        );
+        // A name the machine does not have is still the assembler's error.
+        assert!(assemble_with_symbols(&CpuFamily::Mos6502, "c64", "JSR NOWHERE", 0).is_err());
         assert_eq!(stub_machine().cpu_family(), CpuFamily::Z80);
     }
 

@@ -669,8 +669,8 @@ guessing.
   shifted-legend combo keys (`Exclamation`..`RightBracket`: Shift+1..9 = `! " #
   $ % & ' ( )`, Shift+`, . /` = `< > ?`, Shift+`:` `;` = `[ ]`), **checked against
   the committed KERNAL's own shift decode table** (index = column*8 + row of this
-  crate's matrix) rather than recalled. The CPC punctuation row is *not* mapped yet
-  (only `, . /`), so symbolic only helps letters/digits there. Auto-run typing and
+  crate's matrix) rather than recalled. The CPC's punctuation row and shifted
+  symbols are mapped since 2026-10-16 (read from the firmware's own key tables), so symbolic typing covers them too. Auto-run typing and
   hotkeys/pads stay physical. Verified live under Xvfb by remapping the X keymap
   (`change_keyboard_mapping` *after* the app started -- winit only picked it up then; `setxkbmap de`
   did not load in that Xvfb) so the QWERTY-Y position types `z`: positional sent `KeyY`, symbolic `KeyZ`. Not done: dead keys/non-ASCII, per-game
@@ -787,6 +787,24 @@ guessing.
   sweep), `inputs::tests` (plain file, zip, `#entry`, cleanup, a local TCP HTTP server, progress text),
   `playlist::tests` (URL playlists). Not done: HTTP auth/headers, an on-disk download cache, a signal handler for
   Ctrl-C cleanup, a running-percentage toast.
+  **Per-run settings, per-game file names, symbols on input, crash report (2026-10-16)**: `apps/retroclawd/src/overrides.rs` folds
+  `--hotkey ACTION=CHORD` (repeatable; the first flag for an action replaces the config's bindings, later ones add; `none`;
+  `modifier=KEY`) and a game config's `[keys]`/`layout` into the loaded `AppConfig` as the top layer of the machine's own
+  sections (`[machines.<id>.hotkeys|keys|input]`), so `Hotkeys::resolve`/`KeyBindings::resolve`/`effective_layout` validate them with their
+  usual messages (CLI `--layout`/`--keymap` still rank above a game config); a game config's `symbols` (string or list) are loaded
+  before `--symbols`. `GameConfig` gained `keys`, `layout`, `symbols` (all optional, `deny_unknown_fields` still on). Screenshot and
+  quick-save names carry the game: `host_files::game_stem` (file stem of the loaded media; `a.zip#dir/Game.d64` -> `Game`, URLs
+  decoded, anything unsafe `_`) and `game_tag` -> `states/<machine>-<game>-slotN.state`, `MediaSettings::game` filled in `main` from the
+  game config's/CLI media, then `--program`, then `--cartridge`; with nothing loaded the old `<machine>-slotN` names stay. The debugger's
+  `assemble` (also ZRCP's) accepts symbol names in operands: `machine::SymbolTable::substitute` (shared repository) replaces a known
+  name by `$XXXX` (6502) or `0xXXXX` (Z80) -- not the mnemonic, registers/conditions or numbers --, so `JSR CHROUT` and
+  `CALL LD_BYTES` assemble (`debugger::assemble_with_symbols`, unit-tested against the built-in tables). A crashed plugin (a panic
+  caught by `plugin_api::guard`, after which every call returns an error naming it) is now noticed by `HostedMachine::crash_message`
+  once per emu-thread tick: one toast and a console line, and the machine is held like a pause with its last picture, instead of the
+  emu thread panicking on the next clock query. Unit-tested: the argument parsing/layering, the names, the substitution and the
+  crash-error predicate; **not** exercised with a live crashing plugin (the stub plugin shares the process-wide crash flag with every
+  other test, so inducing a panic there would poison them). Not done: per-game `[pads]`/`[hotkeys]`, symbol names inside
+  expressions (`CHROUT+1`).
   **Debugger symbols (2026-10-12)**: `machine::SymbolTable` (shared crates) is a CPU-agnostic address->name table that
   annotates disassembly *text* (`  ; NAME` after the first known `$1234`/`$12` (6502) or `0x1234` (Z80) operand; text
   that already has a `;` or an immediate `#$12` is left alone) and parses symbol files (`NAME = $1234`, `NAME EQU

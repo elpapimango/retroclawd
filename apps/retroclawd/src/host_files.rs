@@ -57,6 +57,32 @@ pub(crate) fn unique_path(path: PathBuf) -> PathBuf {
         .expect("an unused file name exists")
 }
 
+/// The name a screenshot or quick-save state file carries for a game: the file stem of what was loaded (`Game.zip#disk.d64` ->
+/// `disk`, `https://host/p/Jet%20Set.tap?x=1` -> `Jet_Set`), so two games on one machine do not share save slots. `None` when
+/// the source has no usable name.
+pub(crate) fn game_stem(source: &str) -> Option<String> {
+    let name = match source
+        .split_once(".zip#")
+        .or_else(|| source.split_once(".ZIP#"))
+    {
+        Some((_, entry)) => entry,
+        None => source.split(['?', '#']).next().unwrap_or(source),
+    };
+    let name = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    let name = name.replace("%20", " ");
+    let stem = Path::new(&name).file_stem()?.to_string_lossy().into_owned();
+    let stem: String = file_safe(stem.trim()).chars().take(60).collect();
+    (!stem.trim_matches('_').is_empty()).then_some(stem)
+}
+
+/// `<machine>` or, with a game, `<machine>-<game>`: what the file names above start with.
+pub(crate) fn game_tag(machine_id: &str, game: Option<&str>) -> String {
+    match game {
+        Some(game) => format!("{}-{}", file_safe(machine_id), file_safe(game)),
+        None => file_safe(machine_id),
+    }
+}
+
 /// Machine ids are already file-name friendly (`zx-spectrum-128`); keep
 /// anything unexpected from becoming a path separator.
 fn file_safe(text: &str) -> String {
@@ -150,5 +176,33 @@ mod tests {
         std::fs::write(dir.join("shot-2.png"), b"x").unwrap();
         assert_eq!(unique_path(first), dir.join("shot-3.png"));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_game_is_named_by_the_stem_of_what_was_loaded() {
+        assert_eq!(
+            game_stem("roms/Jet Set Willy.tap").as_deref(),
+            Some("Jet_Set_Willy")
+        );
+        assert_eq!(game_stem("C:\\games\\Elite.d64").as_deref(), Some("Elite"));
+        assert_eq!(game_stem("pack.zip#disks/Zak.d81").as_deref(), Some("Zak"));
+        assert_eq!(
+            game_stem("https://x.org/p/Jet%20Set.tap?v=1").as_deref(),
+            Some("Jet_Set")
+        );
+        assert_eq!(game_stem("pack.zip").as_deref(), Some("pack"));
+        assert_eq!(game_stem("").as_deref(), None);
+        assert_eq!(game_stem("../..").as_deref(), None);
+    }
+
+    #[test]
+    fn the_file_tag_adds_the_game_after_the_machine() {
+        assert_eq!(game_tag("c64", None), "c64");
+        assert_eq!(game_tag("c64", Some("Elite")), "c64-Elite");
+        assert_eq!(
+            state_path(Path::new("states"), &game_tag("c64", Some("Elite")), 2),
+            Path::new("states/c64-Elite-slot2.state")
+        );
+        assert_eq!(game_tag("c64", Some("../x")), "c64-___x");
     }
 }

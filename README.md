@@ -217,7 +217,9 @@ batch mode means it spins forever) -- `--max-cycles` caps it, or Ctrl+C.
   `machine`/`region`/`media`/`tape_speed`, plus an `[options]` table for
   plugin-declared options (see **Machine-specific options** above); any of
   those also given directly on the command line overrides the toml's value
-  for that setting, rather than conflicting with it
+  for that setting, rather than conflicting with it. It also takes, for this game only, a `[keys]` table (host key ->
+  machine key name(s), layered over `retroclawd.toml`'s `[keys]` and the machine's own), `layout = "symbolic"`
+  (`--layout` still wins) and `symbols = "game.sym"` (or a list; loaded before `--symbols`)
 - `--list-machine` (alias `-lm`) -- print discovered machine ids and exit
 - `--list-plugins` (alias `-lp`) -- print discovered machine/debugger
   plugin libraries and exit (debugger entries include selector names and
@@ -242,7 +244,9 @@ batch mode means it spins forever) -- `--max-cycles` caps it, or Ctrl+C.
 
 Emulator actions are bound to key chords in `retroclawd.toml` -- `[hotkeys]`
 for every machine, `[machines.<id>.hotkeys]` to override per machine
-(`retroclawd --list-hotkeys [machine]` prints the effective table). Layers:
+(`retroclawd --list-hotkeys [machine]` prints the effective table; `--hotkey ACTION=CHORD`, repeatable, binds one
+for a single run: `--hotkey pause=ctrl+KC_P --hotkey reset=none --hotkey modifier=alt_right`, the first flag for an
+action replacing what the config bound and later ones adding chords). Layers:
 built-in defaults, then `[hotkeys]`, then the machine's table, per binding;
 `"none"` unbinds; a list binds several chords (`reset = ["KC_F12", "ctrl+KC_R"]`).
 Host keys are written as [QMK keycodes](https://docs.qmk.fm/keycodes_basic)
@@ -263,7 +267,7 @@ used by a hotkey is not also sent to the emulated machine.
 | `overlay` | `KC_F10` | show / hide the debug overlay (cpu panel, or the `--show-overlay` panels) |
 | `pause` | `KC_PAUS` | pause / resume emulation |
 | `screenshot` | `KC_PSCR` | save `screenshots/<machine>-<date>-<time>.png` (UTC) |
-| `quick_save` / `quick_load` | `shift+KC_F11` / `shift+KC_F12` | save / load `states/<machine>-slotN.state` |
+| `quick_save` / `quick_load` | `shift+KC_F11` / `shift+KC_F12` | save / load `states/<machine>-slotN.state`, or `states/<machine>-<game>-slotN.state` when a game was loaded (the file stem of the media: `--tape`/`--disk`/`--snapshot`, a game config's `media`, `--program`, `--cartridge`), so games do not share slots; screenshots are named the same way |
 | `state_slot_next` / `state_slot_prev` | `shift+KC_F10` / unbound | pick the slot, 0-9 |
 | `fast_forward` | `KC_SCRL` (hold) | run 8x faster while held (also tape loading), audio off |
 | `shader_next` / `shader_prev` | `ctrl+KC_F11` / unbound | cycle the bundled shaders |

@@ -1382,6 +1382,12 @@ impl HostedBackend {
     }
 }
 
+/// Whether a call's error is a plugin's own crash report (`plugin_api::guard`: "panic in <site>: <text>" for the call that
+/// panicked, "the plugin crashed earlier (panic in ...)" for every call after it).
+fn is_crash_error(error: &str) -> bool {
+    error.contains("panic in ") || error.contains("crashed earlier")
+}
+
 impl HostedMachine {
     pub(crate) fn machine_id(&self) -> &str {
         &self.machine_id
@@ -1391,6 +1397,16 @@ impl HostedMachine {
         self.backend
             .instance_call(self.instance, MachineInstanceCallRequest { command })
             .map(|resp| resp.response)
+    }
+
+    /// The text of the panic that killed the machine's plugin, if it has crashed: a crashed plugin answers every call with an error
+    /// naming the panic (`plugin_api::guard`), so one cheap call is the probe. `None` while it is healthy (or when the failure is
+    /// some other error, which the caller of that call reports itself).
+    pub(crate) fn crash_message(&self) -> Option<String> {
+        match self.call_machine(MachineCommand::GetFrameHz) {
+            Err(error) if is_crash_error(&error) => Some(error),
+            _ => None,
+        }
     }
 
     pub(crate) fn metadata(&self) -> &MachineMetadata {
@@ -2482,5 +2498,26 @@ mod tests {
             "the plugin's own explanation: {error}"
         );
         assert!(!error.contains("machine plugin call failed"), "{error}");
+    }
+
+    #[test]
+    fn a_plugin_crash_report_is_told_apart_from_an_ordinary_error() {
+        assert!(super::is_crash_error(
+            "the plugin crashed earlier (panic in step: index out of bounds)"
+        ));
+        assert!(super::is_crash_error("panic in instance_call: boom"));
+        assert!(!super::is_crash_error(
+            "unsupported media kind for zx81 plugin"
+        ));
+        // A healthy plugin has no crash message.
+        let machine =
+            crate::plugin_bridge::create_hosted_machine(plugin_api::MachineCreateRequest {
+                machine_id: "stub-machine".to_string(),
+                region: Some("pal".to_string()),
+                roms: Vec::new(),
+                options: Vec::new(),
+            })
+            .unwrap();
+        assert_eq!(machine.crash_message(), None);
     }
 }
