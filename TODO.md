@@ -234,12 +234,23 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     asserted; a 16K ZX81 needs ~2.4 s to reach its prompt; the C64 `--frames` batch is 19705 cycles but the VIC's own frame is
     19656 (checked with a timer), so only the host's pacing is 50.00 Hz.
   - ZX81 follow-ups: an opt-in **fast-load trap** (`--fast-tape-load`), the **tape position in `.state` files**, and **bit 6 of
-    port 0xFE** as the 50/60 Hz flag (`--region ntsc` gets the ROM's 31-line margin). Not done: `.wav` / `.tzx` / `.csw` input for
-    the ZX81 (needs a way to rescale `zx-tape` pulses from 3.5469 MHz to 3.25 MHz in `retroclawd-crates`).
+    port 0xFE** as the 50/60 Hz flag (`--region ntsc` gets the ROM's 31-line margin). `.tzx`/`.pzx`/`.csw`/`.voc`/`.wav` input
+    for the ZX81 followed (see the next entry).
   - **`firmware.toml` option check in every family's CI**: each plugin crate has the unit test
     `firmware_toml_names_only_file_options_the_plugin_declares` (it reads the family's `firmware.toml` and checks every `option`
     against the plugin's declared file options; mutation-checked with the old `rom_kernal` bug). A machine id in the manifest
     that no plugin serves is still not caught.
+- **DONE (2026-10-16): CPC punctuation and typing, `.wav` input, the malformed `.cpr`.**
+  - CPC: the keyboard matrix is complete (read from the firmware's key tables at ROM 0x1D69/0x1DB9, and tested against them): the
+    punctuation keys, F0-F9, and 21 shifted-symbol combo keys, so `--type` and paste can type `"` and every other symbol into BASIC. Real
+    bugs found: `,` and `.` were swapped, and Space also pressed joystick fire, which the firmware turns into an `X` (every typed space was
+    "X "). A suite case types all the symbols into the real firmware and reads the string back.
+  - `retroclawd-crates` `zx-tape::parse_wav` (PCM 8/16/24/32-bit and float, any rate, first channel, Schmitt trigger at 10% of the peak)
+    and `.wav` tapes on the ZX81 (rescaled), ZX Spectrum and CPC plugins and in the host's tape dialogs; a ZX81 suite case records a
+    program at 192 kHz and loads it through the ROM.
+  - `cpc-cartridge::parse_lenient` repairs a wrong RIFF size field and a short last page (the released `AmstradDiag.cpr` has both) and
+    reports it; `parse` stays strict. The CPC diagnostics disk now boots and shows its menu; the cartridge boots but parks waiting for VSYNC on
+    the GX4000 model (CRTC unprogrammed); the menu keys and an oracle are still to do (see the tools `CLAUDE.md`).
 - **DONE (2026-10-16): more 128K ROMs, ZX81 pulse tapes, Spectrum diagnostics.**
   - The `firmware.toml` 128K entry also accepts `plus2uk.rom`, `spec128uk_4.02.rom` and `spec128uk_derby1.4.rom` (after the preferred
     `128.rom`); a suite case checks that every cached 128K-family ROM boots with its frame interrupt running. `tools/fetch_roms.sh`

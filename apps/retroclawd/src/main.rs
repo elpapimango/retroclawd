@@ -436,7 +436,7 @@ struct CommonArgs {
     load_state: Option<String>,
 
     /// Load a tape file, playing it back in real time. Format is picked by
-    /// file extension: `.tap`, `.tzx`, `.cdt`, `.pzx`, `.csw`, `.voc`, or
+    /// file extension: `.tap`, `.tzx`, `.cdt`, `.pzx`, `.csw`, `.voc`, `.wav`, or
     /// `.t64`. ZX Spectrum models support all six non-C64 extensions; CPC
     /// models support `.cdt`/`.tzx`/`.voc` cassette images; C64 supports its
     /// own, differently-shaped `.tap` (a real bit-level pulse capture, an

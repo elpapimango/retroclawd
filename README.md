@@ -27,7 +27,7 @@ The CPU cores (Z80, validated with ZEXALL/ZEXDOC; NMOS 6502 with the illegal opc
 Dormann's and Tom Seddon's suites) and the chips several families share (AY-3-8910, uPD765A) live in
 `retroclawd-crates`. In short, the machines have: a real keyboard matrix, video and audio (the Spectrum's
 beeper and AY, the CPC's PSG, the C64/C128's SID), real-time tape playback (`.tap`/`.tzx`/`.cdt`/`.pzx`/
-`.csw`/`.voc`, C64 `.tap`/`.t64`) with a turbo multiplier and fast-load traps, floppy images (`.dsk`/`.edsk`,
+`.csw`/`.voc`/`.wav`, C64 `.tap`/`.t64`) with a turbo multiplier and fast-load traps, floppy images (`.dsk`/`.edsk`,
 `.d64`/`.d71`/`.d81` and more, writable with `--disk-save`/`--disk-writeback`), cartridges (C64 `.crt`, CPC+
 `.cpr`), snapshots (`.z80`, `.sna`, `.szx`, `.p`/`.p81`/`.81`) and this project's own `.state` save states.
 The application adds zip and URL inputs, an optional input-latency "run-ahead" mode, CRT shaders, gamepads,
@@ -535,7 +535,7 @@ still double as the Spectrum/CPC joystick as before.
   already be given. Conflicts with `--snapshot` and a standalone program
 
 **Tape**
-- `--tape <path>` -- load a `.tap`/`.tzx`/`.cdt`/`.pzx`/`.csw`/`.voc` tape
+- `--tape <path>` -- load a `.tap`/`.tzx`/`.cdt`/`.pzx`/`.csw`/`.voc`/`.wav` tape
   file, playing back real pulses. ZX Spectrum starts when ROM reads EAR;
   CPC loads start from its cassette motor protocol. Conflicts with
   `--snapshot`
@@ -572,7 +572,7 @@ still double as the Spectrum/CPC joystick as before.
 - ZX81: `--tape game.p` (also `.81`, `.p81`) plays the file as the cassette signal for `LOAD ""` (real speed, about 307 bit/s: a
   small program takes seconds, a 16K one minutes); BASIC `SAVE "NAME"` is recorded and written by `--tape-save out.p`
   (or `.81`, `.p81` with the name). The ZX81 `.p` can also be saved straight from memory with `--dump-snapshot out.p`.
-  `.tzx`, `.pzx`, `.csw` and `.voc` tapes play too (real time; rescaled to the ZX81's 3.25 MHz clock).
+  `.tzx`, `.pzx`, `.csw`, `.voc` and `.wav` tapes play too (real time; rescaled to the ZX81's 3.25 MHz clock).
   `--fast-tape-load` makes `LOAD` store the file at once after the ROM has matched its name from the real signal (a 16K
   program is otherwise minutes of tape). A machine with a 16K or larger pack (`--ram-kb 16`) takes about 2.4 s to reach its prompt.
 - `mouse = "1351-port1"` (or `1351-port2`, `paddle-port1`, `paddle-port2`) in `[machines.c64]` turns the host mouse into a 1351

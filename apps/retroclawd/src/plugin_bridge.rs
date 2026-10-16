@@ -1352,7 +1352,7 @@ impl HostedBackend {
         tape_speed: u32,
     ) -> Result<(), String> {
         let lower = extension.to_ascii_lowercase();
-        if ["tap", "tzx", "cdt", "pzx", "csw", "voc", "t64"].contains(&lower.as_str()) {
+        if ["tap", "tzx", "cdt", "pzx", "csw", "voc", "wav", "t64"].contains(&lower.as_str()) {
             self.apply_tape(instance, &lower, bytes, tape_speed)
         } else if lower == "dsk"
             || lower == "edsk"

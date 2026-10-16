@@ -124,10 +124,12 @@ pub(crate) fn extensions_for(kind: FileKind, machine_id: &str) -> &'static [&'st
     let spectrum = machine_id.starts_with("zx-spectrum");
     let cpc = machine_id.starts_with("cpc") || machine_id == "gx4000";
     match kind {
-        FileKind::Tape if spectrum => &["tap", "tzx", "pzx", "csw", "voc"],
-        FileKind::Tape if cpc => &["cdt", "tzx", "voc"],
+        FileKind::Tape if spectrum => &["tap", "tzx", "pzx", "csw", "voc", "wav"],
+        FileKind::Tape if cpc => &["cdt", "tzx", "voc", "wav"],
         FileKind::Tape if machine_id == "c64" => &["tap", "t64"],
-        FileKind::Tape if machine_id == "zx81" => &["p", "p81", "81"],
+        FileKind::Tape if machine_id == "zx81" => {
+            &["p", "p81", "81", "tzx", "pzx", "csw", "voc", "wav"]
+        }
         FileKind::Disk if spectrum || cpc => &["dsk", "edsk"],
         FileKind::Disk if machine_id == "c64" || machine_id == "c128" => {
             &["d64", "d71", "d81", "g64", "x64"]
@@ -148,7 +150,7 @@ pub(crate) fn kind_of_extension(path: &str) -> Option<FileKind> {
         .to_string_lossy()
         .to_lowercase();
     match extension.as_str() {
-        "tap" | "tzx" | "cdt" | "pzx" | "csw" | "voc" | "t64" => Some(FileKind::Tape),
+        "tap" | "tzx" | "cdt" | "pzx" | "csw" | "voc" | "wav" | "t64" => Some(FileKind::Tape),
         "dsk" | "edsk" | "d64" | "d71" | "d81" | "g64" | "x64" | "nib" => Some(FileKind::Disk),
         "z80" | "sna" | "szx" | "p" | "p81" | "81" => Some(FileKind::Snapshot),
         "state" => Some(FileKind::State),
@@ -1461,11 +1463,11 @@ mod tests {
     fn filters_follow_the_machine() {
         assert_eq!(
             extensions_for(FileKind::Tape, "cpc6128"),
-            ["cdt", "tzx", "voc"]
+            ["cdt", "tzx", "voc", "wav"]
         );
         assert_eq!(
             extensions_for(FileKind::Tape, "gx4000"),
-            ["cdt", "tzx", "voc"]
+            ["cdt", "tzx", "voc", "wav"]
         );
         assert_eq!(
             extensions_for(FileKind::Disk, "c64"),
@@ -1475,7 +1477,10 @@ mod tests {
             extensions_for(FileKind::Snapshot, "zx81"),
             ["p", "p81", "81"]
         );
-        assert_eq!(extensions_for(FileKind::Tape, "zx81"), ["p", "p81", "81"]);
+        assert_eq!(
+            extensions_for(FileKind::Tape, "zx81"),
+            ["p", "p81", "81", "tzx", "pzx", "csw", "voc", "wav"]
+        );
         assert_eq!(default_save_extension(FileAction::SaveTape, "zx81"), "p");
         assert_eq!(
             default_save_extension(FileAction::SaveTape, "cpc6128"),
