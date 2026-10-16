@@ -465,21 +465,28 @@ pub(crate) struct RemoteFirmware {
     pub(crate) sha1: String,
 }
 
-/// Every firmware file on the server that has a SHA-1.
+/// A listed firmware file with a SHA-1 that the server can actually serve (the
+/// same dump can be listed twice, one entry's file gone from its library).
+fn remote_firmware(f: &Value) -> Option<RemoteFirmware> {
+    if f.get("missing_from_fs").and_then(Value::as_bool) == Some(true) {
+        return None;
+    }
+    let sha1 = f.get("sha1_hash")?.as_str()?.trim().to_ascii_lowercase();
+    (!sha1.is_empty()).then(|| RemoteFirmware {
+        id: number(f, "id"),
+        name: text(f, "file_name"),
+        sha1,
+    })
+}
+
+/// Every firmware file on the server that has a SHA-1 and is present.
 pub(crate) fn firmware_index() -> Result<Vec<RemoteFirmware>, String> {
     let firmware = Client::new()?.json(&["api", "firmware"], &[])?;
     Ok(firmware
         .as_array()
         .ok_or("unexpected /api/firmware answer")?
         .iter()
-        .filter_map(|f| {
-            let sha1 = f.get("sha1_hash")?.as_str()?.trim().to_ascii_lowercase();
-            (!sha1.is_empty()).then(|| RemoteFirmware {
-                id: number(f, "id"),
-                name: text(f, "file_name"),
-                sha1,
-            })
-        })
+        .filter_map(remote_firmware)
         .collect())
 }
 

@@ -104,11 +104,11 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
   (the C128's BASIC halves). Not covered yet: the +2A/+3 64K ROM (no dump to take a hash from), CPC+ firmware of its own,
   firmware that RomM stores as an ordinary ROM entry rather than firmware.
 - **DONE (2026-10-14/15), steps 2 of the same plan**: `retroclawd romm ...`, `romm:<id>` sources, cache commands.
-- **PLANNING (2026-10-14)**: RomM integration -- fetch firmware and games from the owner's RomM server by id, command line
-  only (no browser/UI in the desktop binary): list platforms / games / firmware as text, copy an id into the next command.
-  Notes and open questions in the session that started it; nothing built yet. Constraints decided so far: the host
-  contains no ROM or game data; the RomM token is never in the repository (read-only client API token, from the
-  environment or a local config, separate token for CI); machines stay separate repositories because of possible takedowns.
+- **DONE (2026-10-14..16)**: RomM integration -- `retroclawd romm platforms|games|firmware|match`, `romm:<id>` /
+  `romm:fw/<id>` sources (also in game-config `media`), `cache list|clean|remove`, `[romm] url, token` (env `ROMM_URL` /
+  `ROMM_TOKEN` win), `--firmware auto`. Rules kept: the host contains no ROM or game data; the token is never in the
+  repository, never printed or logged (read-only client API token; a separate token for CI); machines stay separate
+  repositories because of possible takedowns. Details and what is still open: the cleanup entry below.
 - **DONE (2026-10-15): cleanup before going public.** No ROM image or commercial software is in any repository
   or history any more. What was done, so the next session starts from facts:
   - Tests that read `roms/` / `software/` skip when the file is absent (the CPC tape tests use `software_tape()`);
@@ -127,9 +127,25 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     available on public repositories). The CI workflows use no secrets. Actions are on Node 24 (`checkout@v6`,
     `upload-artifact@v6`) and run on `ubuntu-24.04` instead of `ubuntu-latest`. `tools/smoke_test.sh` with real ROMs
     matched the baseline hashes for all seven machines on the fresh build.
-  - Still unverified against the real RomM server: `romm match` and `--firmware auto` for every machine (only tried
-    against a throwaway fake server); the c128 `parts` join and the drive-ROM `when` rules; hashes not in any family
-    (the +2A/+3 64K ROM, CPC+ own firmware). Run `retroclawd romm match` and fix the `firmware.toml` hashes.
+  - **Verified against the real RomM server (2026-10-16)**: `retroclawd romm match` resolves every `firmware.toml` entry
+    (the c128 `parts` join and the drive-ROM `when` rules included; only the 32K C128 BASIC image is absent, the two
+    halves are used), and `--firmware auto` boots zx81, zx-spectrum, zx-spectrum-128, cpc464, cpc6128, c64 and c128.
+    `tools/smoke_test.sh --debug` passes for all seven (C64 with the real rev 3 KERNAL, C128 with the 318020-05 set).
+    Found on the way: `commodore/firmware.toml` named the options `rom_kernal`/`rom_basic`/`rom_char`/`rom_c64_*`, but
+    the plugins declare the keys `kernal`/`basic`/`char`/`c64_basic`/`c64_kernal` (only `rom_1541` has the prefix), so
+    `--firmware auto` filled nothing on the C64/C128 although `romm match` looked fine. Fixed in
+    `retroclawd-commodore` `74f5b73` (pinned here). Also: the same dump can be listed twice on the server with one entry's file gone
+    (`missing_from_fs`, content 404); `firmware_index` now skips such entries (it picked firmware 34 for the C128 KERNAL).
+    Still open: `romm match` prints the toml's option names, not the plugin's keys, so this mismatch is invisible in
+    its output -- check the key against `MachineOptionInfo` there (and a test that every `option` in a family's
+    `firmware.toml` is declared by one of its plugins). Hashes not in any family: the +2A/+3 64K ROM, CPC+ own firmware.
+  - **Work-laptop networking (2026-10-16)**: both HTTP clients (`romm`, `file-loader`) honour `HTTP_PROXY`/`HTTPS_PROXY`/
+    `NO_PROXY` and now use the **system certificate store** (`rustls-tls-native-roots`), because Zscaler re-signs TLS and
+    the bundled Mozilla roots failed with `invalid peer certificate: UnknownIssuer`. HTTP errors show their cause chain.
+    Not tried behind a real Zscaler yet.
+  - `tools/fetch_roms.sh` (`.ps1` wrapper): fills the git-ignored `machines/<family>/roms/` files the smoke test reads from
+    the RomM firmware by SHA-1 (tries every listed entry of a hash, verifies before keeping). `git` history of the
+    host was rewritten on 2026-10-15; an old clone needs `git fetch && git reset --hard origin/master`.
   - Next, in the owner's order: (1) the per-machine test suites incl. the ZX81 one; (2) the Atari 8-bit family.
     Everything needed is described below; nothing of them is started.
   - Environment notes: a cloud session's disk is small (the build needs ~17 GB); local sessions have `ROMM_URL` /
