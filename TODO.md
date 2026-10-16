@@ -191,7 +191,15 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
   the ROM's own key tables at 0x007E and 0x00A5), and typed `PRINT 12`, `12*34`, `1.5+1` and `7-2*3` run in the ROM. This found that the
   ZX81's `.` key had no name and the shifted symbols (`+ - * / = ( ) : ; ? , " $ < >`) were not reachable, so BASIC could not be
   typed or pasted; both are fixed in the plugin (`Period` and the combo keys, see the sinclair CLAUDE.md), and `--type-delay` was added
-  because the ROM drops keys typed faster than about 160 ms. Then boot screens per ROM revision, and the third-party diagnostics.
+  because the ROM drops keys typed faster than about 160 ms.
+  **ZX81 (2026-10-16): 4 more cases, 15 passing + 1 gap (16 in all)**: RAMTOP for `--ram-kb` 1/2/16/32/56 (4400h, 4800h, then 8000h:
+  ZXDOCS says the ROM's detection ends at 8000h), the first and last cell of the 16K/32K/56K machines are separate RAM (the 56K
+  one from 2000h), a hand-built `.p` (`1 PRINT "A"`, NXTLIN on the line) loads at 4009h and autostarts -- the `A` appears in the
+  top-left cell, drawn from the ROM's own character set -- and **gap: the plugin cannot save a `.p`/`.81`** (`--dump-snapshot x.p` ->
+  `unsupported snapshot save extension`); the case expects the file to be memory 4009h..E_LINE-1 and fails until it is built.
+  `tools/fetch_roms.sh` now also fetches `zx81.rom` (the suite's ROM). Not done: SLOW-mode effective speed (ZXDOCS: 0.8046 MHz =
+  108 free lines x 149 cycles per frame; it needs code that runs under the ROM's display routine, so it needs a BASIC-launched
+  loop and a clear oracle), boot screens per ROM revision, tape in/out, the third-party diagnostics.
 - **TODO (2026-10-15): ZX81 test suite**, separate from the diagnostics above because the ZX81 is the odd machine (no ULA
   interrupt, the CPU makes the picture): a program set that exercises every area of the emulator and checks it works --
   ROM boot to the stable loop with NMIs waking `HALT`; FAST and SLOW mode timing (frame length, NMI generator on and off,
