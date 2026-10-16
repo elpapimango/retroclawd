@@ -2,6 +2,7 @@
 # Cross-repository smoke test: boot every machine headless with the real ROMs from the
 # git-ignored machines/<family>/roms folders (your own dumps; a case whose ROM is missing is
 # skipped) and compare the screenshot hashes with tools/smoke/baseline.sha256.
+# tools/fetch_roms.sh fills those folders from your RomM server.
 #
 #   tools/smoke_test.sh [--debug] [--no-build] [--update] [--families a,b]
 #
