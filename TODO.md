@@ -101,7 +101,7 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
   else names from the server's firmware by SHA-1, from a `firmware.toml` per family (`retroclawd-sinclair`/`-amstrad`/
   `-commodore`, staged as `<family>.firmware.toml` next to the libraries), with `retroclawd romm match [machine]` to see
   the result; downloads are hash-checked; entries may carry `when` conditions (drive ROM per `--drive-type`) and `parts`
-  (the C128's BASIC halves). Not covered yet: the +2A/+3 64K ROM (no dump to take a hash from), CPC+ firmware of its own,
+  (the C128's BASIC halves). Not covered yet (the +2A/+3 64K ROM was added to RomM and the manifest on 2026-10-16): CPC+ firmware of its own,
   firmware that RomM stores as an ordinary ROM entry rather than firmware.
 - **DONE (2026-10-14/15), steps 2 of the same plan**: `retroclawd romm ...`, `romm:<id>` sources, cache commands.
 - **DONE (2026-10-14..16)**: RomM integration -- `retroclawd romm platforms|games|firmware|match`, `romm:<id>` /
@@ -139,7 +139,7 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     (`missing_from_fs`, content 404); `firmware_index` now skips such entries (it picked firmware 34 for the C128 KERNAL).
     `romm match` and `--firmware auto` now flag an entry whose `option` the plugin does not declare as a file option
     (`OPTION NOT DECLARED by the plugin (file options: ...)`, a stderr warning; unit test `an_entry_must_name_a_declared_file_option`).
-    Not done: a check in each family's own CI against its plugins' profiles. Hashes not in any family: the +2A/+3 64K ROM, CPC+ own firmware.
+    Not done: a check in each family's own CI against its plugins' profiles. Hashes not in any family: CPC+ own firmware.
   - **Work-laptop networking (2026-10-16)**: both HTTP clients (`romm`, `file-loader`) honour `HTTP_PROXY`/`HTTPS_PROXY`/
     `NO_PROXY` and now use the **system certificate store** (`rustls-tls-native-roots`), because Zscaler re-signs TLS and
     the bundled Mozilla roots failed with `invalid peer certificate: UnknownIssuer`. HTTP errors show their cause chain.
@@ -240,6 +240,14 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     `firmware_toml_names_only_file_options_the_plugin_declares` (it reads the family's `firmware.toml` and checks every `option`
     against the plugin's declared file options; mutation-checked with the old `rom_kernal` bug). A machine id in the manifest
     that no plugin serves is still not caught.
+- **DONE (2026-10-16): +2A/+3 and more ROMs.** RomM gained the +2A/+3 64K ROMs (`plus3.rom`, `plus2a.rom`), a +2 UK ROM, two more 128K
+  variants, Interface 1 v1/v2 and the `zx81-550-kludge` ZX81 ROM. `retroclawd-sinclair` `firmware.toml` now lists the +2A/+3 ROM
+  (`romm match zx-spectrum-2a3` and `--firmware auto` work; the +3 boots) and the kludge ZX81 ROM, which joins the suite's revision
+  case (it boots to the same prompt). New suite cases for the +2A/+3 (`spectrum_plus3`, skipped without `plus3.rom`): the four
+  special-paging all-RAM maps and the 2-bit ROM number, both matching the World of Spectrum 128K reference on the first run, and
+  the shared 70908 T frame as a third gap (same cause as the 48K/128K ones). `tools/fetch_roms.sh` fetches `plus3.rom` and the
+  kludge ROM. Not used yet: Interface 1 ROMs (no Interface 1 is emulated), the other 128K/+2 UK ROMs (could join the 128K manifest
+  entry), `zxpand_zx81.rom`.
 - **TODO (2026-10-15): ZX81 test suite**, separate from the diagnostics above because the ZX81 is the odd machine (no ULA
   interrupt, the CPU makes the picture): a program set that exercises every area of the emulator and checks it works --
   ROM boot to the stable loop with NMIs waking `HALT`; FAST and SLOW mode timing (frame length, NMI generator on and off,
