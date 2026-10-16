@@ -35,6 +35,7 @@ sha() { if command -v sha1sum >/dev/null 2>&1; then sha1sum "$1" | cut -d' ' -f1
 FILES=(
   "sinclair|zx81/zx81.rom|7b143ee964e9ada89d1f9e88f0bd48d919184cfc"
   "sinclair|zx81/zx81-550-original.rom|a0ade36540561cc1691bb6f0c42ceae12484a102"
+  "sinclair|zx81/zx81b.rom|c6d8e06cb936989f6e1cc7a56d1f092da854a515"
   "sinclair|zx-spectrum/spec48.rom|5ea7c2b824672e914525d1d5c419d71b84a426a2"
   "sinclair|zx-spectrum/128.rom|16375d42ea109b47edded7a16028de7fdb3013a1"
   "amstrad|cpc/cpc464.rom|56d39c463da60968d93e58b4ba0e675829412a20"
