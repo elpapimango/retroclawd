@@ -192,7 +192,7 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
   ZX81's `.` key had no name and the shifted symbols (`+ - * / = ( ) : ; ? , " $ < >`) were not reachable, so BASIC could not be
   typed or pasted; both are fixed in the plugin (`Period` and the combo keys, see the sinclair CLAUDE.md), and `--type-delay` was added
   because the ROM drops keys typed faster than about 160 ms.
-  **ZX81 (2026-10-16): 21 cases passing, no gaps**, after the keyboard ones: RAMTOP for `--ram-kb` 1/2/16/32/56 (4400h, 4800h, then
+  **ZX81 (2026-10-16): 24 cases passing, no gaps**, after the keyboard ones: RAMTOP for `--ram-kb` 1/2/16/32/56 (4400h, 4800h, then
   8000h: ZXDOCS says the ROM's detection ends at 8000h), the first and last cell of the 16K/32K/56K machines are separate RAM (the
   56K one from 2000h), a hand-built `.p` (`1 PRINT "A"`, NXTLIN on the line) loads at 4009h and autostarts -- the `A` appears in
   the top-left cell, drawn from the ROM's own character set --, **saving a `.p` / `.81`** (found missing, built the same day:
@@ -218,6 +218,28 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
   other tests could initialise the shared machine catalog (and another test removed the same variable): discovery now has
   `discover_runtime_catalog_from(candidates, explicit, searched_dirs)` and the test calls it with the file, no environment
   variable at all. 30 parallel runs of the 279 tests: 0 failures (about one in three failed before).
+- **DONE (2026-10-16): suites for the ZX Spectrum and the C64, ZX81 follow-ups, firmware.toml check.**
+  - `retroclawd-tools` `rc-suite`: **Spectrum 12 cases + 2 gaps** (`tests/spectrum.rs`: the ROM boots to the copyright text drawn
+    from the ROM's own font, P_RAMT, FRAMES, ROM read-only / RAM from 0x4000, every key on its half row of port 0xFE, the border
+    bits, the interleaved display file, contention slowing a loop, and on the 128K the eight RAM pages, the fixed pages 5 and 2,
+    the ROM select bit and the paging lock) and **C64 9 cases** (`tests/c64.rs`: the banner, `PEEK(0)`/`PEEK(1)`, the whole
+    LORAM/HIRAM/CHAREN bank-switching table, a PAL frame of 19656 cycles measured with a CIA timer between two raster line 0s,
+    312 raster lines, the 60 Hz jiffy clock, typed BASIC, voice 3's oscillator read-back, a CIA timer counting cycles). Sources
+    are the World of Spectrum 48K/128K references and c64-wiki pages, named in each case; the C128 suite now runs again because
+    `tools/fetch_roms.sh` also fetches the 1541/1570/1571/1581 DOS ROMs.
+  - Found by them: **Spectrum frame length is 70 938 T for every model** (48K should be 69 888, 128K 70 908): two gap cases and a
+    TODO in the sinclair repository. **C64 `PEEK(1)` gave 247** (the 6510's missing bits 6-7 floated high), fixed in
+    `retroclawd-commodore`. **A 16K ZX81 drew a blank screen** (`decode_rows` skipped every other row of an expanded display
+    file), fixed in `retroclawd-sinclair`. Not bugs, noted so they are not rediscovered: the ROM sets `ERR_NR` itself, so it is not
+    asserted; a 16K ZX81 needs ~2.4 s to reach its prompt; the C64 `--frames` batch is 19705 cycles but the VIC's own frame is
+    19656 (checked with a timer), so only the host's pacing is 50.00 Hz.
+  - ZX81 follow-ups: an opt-in **fast-load trap** (`--fast-tape-load`), the **tape position in `.state` files**, and **bit 6 of
+    port 0xFE** as the 50/60 Hz flag (`--region ntsc` gets the ROM's 31-line margin). Not done: `.wav` / `.tzx` / `.csw` input for
+    the ZX81 (needs a way to rescale `zx-tape` pulses from 3.5469 MHz to 3.25 MHz in `retroclawd-crates`).
+  - **`firmware.toml` option check in every family's CI**: each plugin crate has the unit test
+    `firmware_toml_names_only_file_options_the_plugin_declares` (it reads the family's `firmware.toml` and checks every `option`
+    against the plugin's declared file options; mutation-checked with the old `rom_kernal` bug). A machine id in the manifest
+    that no plugin serves is still not caught.
 - **TODO (2026-10-15): ZX81 test suite**, separate from the diagnostics above because the ZX81 is the odd machine (no ULA
   interrupt, the CPU makes the picture): a program set that exercises every area of the emulator and checks it works --
   ROM boot to the stable loop with NMIs waking `HALT`; FAST and SLOW mode timing (frame length, NMI generator on and off,

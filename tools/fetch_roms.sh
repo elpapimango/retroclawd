@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Fills the git-ignored machines/<family>/roms folders that tools/smoke_test.sh reads, with the
-# firmware your RomM server holds. Each file is picked by SHA-1 (the same hashes as the
+# Fills the git-ignored machines/<family>/roms folders that tools/smoke_test.sh and the retroclawd-tools
+# suites (crates/rc-suite) read, with the firmware your RomM server holds. Each file is picked by SHA-1 (the same hashes as the
 # machines/<family>/firmware.toml files), downloaded, and verified before it is kept.
 #
 #   tools/fetch_roms.sh [--debug] [--force]
@@ -49,6 +49,10 @@ FILES=(
   "commodore|c128/chargen-390059-01.bin|29ed066d513f2d5c09ff26d9166ba23c2afb2b3f"
   "commodore|c128/basic64-901226-01.bin|79015323128650c742a3694c9429aa91f355905e"
   "commodore|c128/kernal64-901227-03.bin|1d503e56df85a62fee696e7618dc5b4e781df1bb"
+  "commodore|1541/dos1541-325302-01+901229-05.bin|ab16f56989b27d89babe5f89c5a8cb3da71a82f0"
+  "commodore|c64/VC1570|5fc06dc82ff6840f183bd43a4d9b8a16956b2f56"
+  "commodore|c64/VC1571|f1be619c106641a685f6609e4d43d6fc9eac1e70"
+  "commodore|c64/VC1581|01228eae6f066bd9b7b2b6a7fa3f667e41dad393"
 )
 
 # The server's firmware: "id  name  size  sha1" rows after a two-line header (names may hold spaces).
