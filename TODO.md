@@ -130,7 +130,8 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
   - **Verified against the real RomM server (2026-10-16)**: `retroclawd romm match` resolves every `firmware.toml` entry
     (the c128 `parts` join and the drive-ROM `when` rules included; only the 32K C128 BASIC image is absent, the two
     halves are used), and `--firmware auto` boots zx81, zx-spectrum, zx-spectrum-128, cpc464, cpc6128, c64 and c128.
-    `tools/smoke_test.sh --debug` passes for all seven (C64 with the real rev 3 KERNAL, C128 with the 318020-05 set).
+    `tools/smoke_test.sh --debug` passes for all seven (C64 with the real rev 3 KERNAL, C128 with the 318020-05 set);
+    rerun on a fresh debug build of `025a2e6` (option check included): 7 of 7 ok, none skipped.
     Found on the way: `commodore/firmware.toml` named the options `rom_kernal`/`rom_basic`/`rom_char`/`rom_c64_*`, but
     the plugins declare the keys `kernal`/`basic`/`char`/`c64_basic`/`c64_kernal` (only `rom_1541` has the prefix), so
     `--firmware auto` filled nothing on the C64/C128 although `romm match` looked fine. Fixed in
