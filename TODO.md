@@ -240,6 +240,15 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     `firmware_toml_names_only_file_options_the_plugin_declares` (it reads the family's `firmware.toml` and checks every `option`
     against the plugin's declared file options; mutation-checked with the old `rom_kernal` bug). A machine id in the manifest
     that no plugin serves is still not caught.
+- **DONE (2026-10-16): GX4000 diagnostics cartridge and the CPC diagnostics suite.**
+  - Real bug: a CPC+/GX4000 ignored classic Gate Array ink writes (colours come from the ASIC palette only), so any program setting
+    colours the old way showed black; `Asic::set_legacy_ink` fixes it. The earlier "cartridge parks in a VSYNC wait" diagnosis was wrong
+    (it runs and programs the CRTC itself; the screen was black). Unit-tested and mutation-checked.
+  - `tools/fetch_diagnostics.sh` also fetches amstrad-diagnostics v1.3's `.cpr` and `.dsk`. Five suite cases (`cpc_diagnostics`): the cartridge's
+    menu and LOWER RAM PASSED on a GX4000, its keyboard test lighting exactly the typed keys (odd and even halves of the 48 unshifted
+    keys, an independent check of the whole matrix), and on a CPC6128 disk its upper RAM test and its ROM test (lower ROM, BASIC and
+    AMSDOS recognised by checksum). The menu works once the program has loaded; the earlier miss was typing too early.
+  - Open: its soak, sound and joystick tests; the C64 diagnostic cartridge.
 - **DONE (2026-10-16): CPC punctuation and typing, `.wav` input, the malformed `.cpr`.**
   - CPC: the keyboard matrix is complete (read from the firmware's key tables at ROM 0x1D69/0x1DB9, and tested against them): the
     punctuation keys, F0-F9, and 21 shifted-symbol combo keys, so `--type` and paste can type `"` and every other symbol into BASIC. Real
@@ -249,8 +258,7 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     and `.wav` tapes on the ZX81 (rescaled), ZX Spectrum and CPC plugins and in the host's tape dialogs; a ZX81 suite case records a
     program at 192 kHz and loads it through the ROM.
   - `cpc-cartridge::parse_lenient` repairs a wrong RIFF size field and a short last page (the released `AmstradDiag.cpr` has both) and
-    reports it; `parse` stays strict. The CPC diagnostics disk now boots and shows its menu; the cartridge boots but parks waiting for VSYNC on
-    the GX4000 model (CRTC unprogrammed); the menu keys and an oracle are still to do (see the tools `CLAUDE.md`).
+    reports it; `parse` stays strict. The CPC diagnostics disk boots and shows its menu (see the next entry for the suite cases).
 - **DONE (2026-10-16): more 128K ROMs, ZX81 pulse tapes, Spectrum diagnostics.**
   - The `firmware.toml` 128K entry also accepts `plus2uk.rom`, `spec128uk_4.02.rom` and `spec128uk_derby1.4.rom` (after the preferred
     `128.rom`); a suite case checks that every cached 128K-family ROM boots with its frame interrupt running. `tools/fetch_roms.sh`
@@ -259,8 +267,7 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     3.25 MHz (unit-tested per format; a suite `.tzx` case loads through the real ROM). The families' pins moved to include it.
   - Third-party diagnostics: `tools/fetch_diagnostics.sh` (pinned, SHA-256 checked, git-ignored cache) and a Spectrum suite case that runs
     zx-diagnostics v0.37's ROM and reads its documented pass colours (every test PASS, bright-green "48K RAM Tests Passed" bar). **Not
-    done:** the CPC diagnostics (malformed `.cpr`, needs `"` typed -- the CPC plugin cannot type it headless -- and a menu) and the C64
-    cartridge; see the tools `CLAUDE.md`. A real follow-up they point at: map the CPC punctuation row so `--type` can type BASIC.
+    done:** the C64 cartridge (the CPC diagnostics followed, see the entries above); see the tools `CLAUDE.md`.
 - **DONE (2026-10-16): Spectrum frame length** -- every model ran a 70 938 T frame; now 69 888 (48K) and 70 908 (128K family) through
   per-model effective clocks (3 494 400 / 3 545 400 Hz at the host's 50 Hz tick), no trait or ABI change; the three gap cases closed.
   Details and the 0.16% / 0.04% wall-clock trade in the sinclair TODO.

@@ -7,6 +7,9 @@
 #
 #   zx-diagnostics v0.37 (Brendan Alford, Dylan Smith; LGPL-3.0) -- the Spectrum diagnostic ROM (testrom.bin), run as the
 #       machine's 16K ROM: https://github.com/brendanalford/zx-diagnostics
+#   amstrad-diagnostics v1.3 (Lyle Llopis; MIT) -- the CPC/GX4000 diagnostics, as a disk (AmstradDiag.dsk) and a Plus
+#       cartridge (AmstradDiag.cpr, which has a malformed header the CPC plugin repairs):
+#       https://github.com/llopis/amstrad-diagnostics
 #
 # Needs curl and python3 (or unzip). HTTP_PROXY / HTTPS_PROXY are honoured by curl. Exits 1 if a download or its check fails.
 set -euo pipefail
@@ -20,6 +23,8 @@ sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d
 # name | zip URL | SHA-256 of the zip | entry in the zip | SHA-256 of the entry | destination
 ITEMS=(
   "zx-diagnostics v0.37|https://github.com/brendanalford/zx-diagnostics/releases/download/v0.37/Release-v0.37.zip|bdb97f1108623c145fd106cd46d69101c836a7cdffa07d64cf073eda5e726306|testrom.bin|e38354b6b8f393a65a2512cb622c6f255a4d015e9022244a873f0c6c2b0cf464|machines/sinclair/software/diagnostics/zx-diagnostics-testrom.bin"
+  "amstrad-diagnostics v1.3 AmstradDiag.cpr|https://github.com/llopis/amstrad-diagnostics/releases/download/v1.3/AmstradDiag.zip|65dbf840e590bbe9ae4ccea934b54180eabf7ada6d54283e30725d3f868e8f92|AmstradDiag.cpr|bf82fff3646eb707a0fbc153bfe78bd5ba55a82ff604be8bf06d3e6211352310|machines/amstrad/software/diagnostics/AmstradDiag.cpr"
+  "amstrad-diagnostics v1.3 AmstradDiag.dsk|https://github.com/llopis/amstrad-diagnostics/releases/download/v1.3/AmstradDiag.zip|65dbf840e590bbe9ae4ccea934b54180eabf7ada6d54283e30725d3f868e8f92|AmstradDiag.dsk|a6b5dc9abc9f0dcd3dd74b2ec23862f2f55ccc3a2b6f62505e9a93cdf1a6fe97|machines/amstrad/software/diagnostics/AmstradDiag.dsk"
 )
 
 extract() { # zip entry dest
