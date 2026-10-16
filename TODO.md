@@ -200,6 +200,14 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
   `tools/fetch_roms.sh` now also fetches `zx81.rom` (the suite's ROM). Not done: SLOW-mode effective speed (ZXDOCS: 0.8046 MHz =
   108 free lines x 149 cycles per frame; it needs code that runs under the ROM's display routine, so it needs a BASIC-launched
   loop and a clear oracle), boot screens per ROM revision, tape in/out, the third-party diagnostics.
+- **TODO (2026-10-16): ZX81 `.p` / `.81` save** (`retroclawd-sinclair`, `zx81` plugin). `--dump-snapshot x.p` fails with
+  `unsupported snapshot save extension ".p" for zx81 plugin`, and there is no save hotkey path for it either, so a program typed
+  on the emulated ZX81 cannot be kept. Write the file ZXDOCS describes: memory from 4009h up to E_LINE-1 (length E_LINE-4009h,
+  VERSN = 0, NXTLIN as it is, so a saved program autostarts when loaded); `.81` is the same bytes; `.p81` (the name header
+  `rcsnap` already reads and writes) needs a name from the user. Closing it: drop `.gap(...)` from `saving_a_p_file_writes_memory_from_0x4009_to_e_line`
+  in `retroclawd-tools` `crates/rc-suite/tests/zx81.rs` (the run fails until you do, on purpose), add a load -> save -> load round trip, and wire the
+  `save_snapshot` dialog/hotkey for `.p`. Related: `Zx81::load_p_snapshot` synthesizes the registers (ZEsarUX constants), so a
+  loaded program resumes in the ROM's `SLOW` re-entry at 0207h; a saved file needs none of that.
 - **TODO (2026-10-15): ZX81 test suite**, separate from the diagnostics above because the ZX81 is the odd machine (no ULA
   interrupt, the CPU makes the picture): a program set that exercises every area of the emulator and checks it works --
   ROM boot to the stable loop with NMIs waking `HALT`; FAST and SLOW mode timing (frame length, NMI generator on and off,
