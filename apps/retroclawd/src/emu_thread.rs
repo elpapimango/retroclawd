@@ -783,7 +783,7 @@ struct TickInputs<'a> {
     input_rx: &'a Receiver<(String, bool)>,
     /// Key events `tick` has taken off `input_rx` but not applied yet -- see
     /// `KeyQueue`. Empty between ticks unless one was deferred.
-    held_over: RefCell<KeyQueue>,
+    held_over: &'a RefCell<KeyQueue>,
     command_rx: &'a Receiver<EmuCommand>,
     mouse_rx: &'a Receiver<MouseEvent>,
 }
@@ -1258,12 +1258,15 @@ pub(crate) fn spawn(
             }
 
 
+            // One queue for the whole run: what `tick` holds back (a press behind a release, a release
+            // still inside its minimum hold) must survive to the next tick.
+            let held_over = RefCell::new(KeyQueue::default());
             while !thread_stop.load(Ordering::Relaxed) {
                 tick(
                     &mut machine,
                     &TickInputs {
                         input_rx: &input_rx,
-                        held_over: RefCell::default(),
+                        held_over: &held_over,
                         command_rx: &command_rx,
                         mouse_rx: &mouse_rx,
                     },
@@ -1858,7 +1861,7 @@ mod tests {
         let (_mouse_tx, mouse_rx) = mpsc::channel();
         let inputs = TickInputs {
             input_rx: &input_rx,
-            held_over: RefCell::default(),
+            held_over: &RefCell::default(),
             command_rx: &command_rx,
             mouse_rx: &mouse_rx,
         };
@@ -1886,6 +1889,55 @@ mod tests {
 
         command_tx.send(EmuCommand::Dialog(false)).unwrap();
         assert_ne!(step_tick(&mut rig), still, "closing the dialog resumes");
+    }
+
+    /// Regression: the queue lived in a `TickInputs` built anew every tick, so a press held back behind a release was thrown away
+    /// with it (`0` after another digit never reached the machine). The queue must outlive the tick.
+    #[test]
+    fn a_deferred_key_press_survives_to_the_next_tick() {
+        let mut rig = Rig::new(MediaSettings::default());
+        let audio: AudioQueue = Arc::new(Mutex::new(VecDeque::new()));
+        let frames: FrameBuffer = Arc::new(Mutex::new(None));
+        let debug: DebugSnapshotHandle = Arc::new(Mutex::new(DebugSnapshot {
+            halted: false,
+            registers: Vec::new(),
+            memory_hex: Vec::new(),
+            memory_hex_addr: 0,
+            overlay: crate::plugin_bridge::OverlayDebugSnapshot::default(),
+        }));
+        let (input_tx, input_rx) = mpsc::channel();
+        let (_command_tx, command_rx) = mpsc::channel();
+        let (_mouse_tx, mouse_rx) = mpsc::channel();
+        let queue = RefCell::new(KeyQueue::default());
+        let inputs = TickInputs {
+            input_rx: &input_rx,
+            held_over: &queue,
+            command_rx: &command_rx,
+            mouse_rx: &mouse_rx,
+        };
+        let run_tick = |rig: &mut Rig| {
+            tick(
+                &mut rig.machine,
+                &inputs,
+                &audio,
+                &frames,
+                &debug,
+                &mut rig.control,
+                &mut None,
+            );
+        };
+        // A key goes down and stays down past its minimum hold, then one frame releases it and presses another.
+        input_tx.send(("KeyA".to_string(), true)).unwrap();
+        for _ in 0..3 {
+            run_tick(&mut rig);
+        }
+        input_tx.send(("KeyA".to_string(), false)).unwrap();
+        input_tx.send(("KeyB".to_string(), true)).unwrap();
+        run_tick(&mut rig);
+        assert_eq!(queue.borrow().pending.len(), 1, "the press waits a tick");
+        run_tick(&mut rig);
+        assert!(queue.borrow().pending.is_empty(), "and is applied on the next one");
+        assert!(queue.borrow().pressed_at.contains_key("KeyB"));
     }
 
     /// A plugin panic is remembered process-wide (`plugin_api::guard`), so this test crashes the stub in a copy of the test
@@ -1941,7 +1993,7 @@ mod tests {
         let (_mouse_tx, mouse_rx) = mpsc::channel();
         let inputs = TickInputs {
             input_rx: &input_rx,
-            held_over: RefCell::default(),
+            held_over: &RefCell::default(),
             command_rx: &command_rx,
             mouse_rx: &mouse_rx,
         };
