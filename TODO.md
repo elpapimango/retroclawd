@@ -245,8 +245,7 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     boot/frame-interrupt case already covered each); the C64 dead test (crystalct/C64UnifDiagCart's modified 781220 ROM, fetched by
     `tools/fetch_diagnostics.sh` from a pinned commit into the git-ignored folder -- the repository is CERN-OHL-W-2.0, the code inside
     Commodore's, so it is never committed or redistributed) boots from an Ultimax `.crt` and prints OK for the zero page and the stack
-    page (about 50 s in a debug build). Its full cycle (and the unified cartridge's mode switch, which is the author's own flip-flop
-    hardware) was not run.
+    page (about 50 s in a debug build). Its full cycle and the unified cartridge's mode switch were done on 2026-10-17 (below).
   - ZX80: `zx81-snapshot::parse_o`/`write_o` (`.o` = memory from 0x4000 up to `E_LINE` at offset 0x0A, no name; a file that disagrees
     with its own `E_LINE` is refused) and the ZX81 plugin now names a ZX80 program as such and refuses it ("no ZX80 is emulated"). A
     ZX80 machine needs its own 4K ROM (none is in RomM) and is a separate project.
@@ -256,7 +255,7 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     (`scripted.rs`, reusing `HostControl::apply`; failures exit 1), and `SymbolTable::substitute` folds `NAME+1`/`NAME-$10` and
     `#<NAME`/`#>NAME`. **Still open:** hotkeys that need a window (`--at pause` etc. are refused), drag and drop, recent files, a second drive, pad buttons
     as hotkey triggers, dead keys/non-ASCII. (The live crash test was added afterwards: the stub panics on a `crash-now` key, run in a child copy of the test binary.)
-- **DONE (2026-10-17): the C64 dead test's full RAM pass, by hand.** A full pass was run once by hand (release build, `--at N:screenshot=` every 6000 frames, 120000 frames in 7 min): the low tests are done by ~4000, the main RAM test blanks the screen until it ends before frame 96000 (about 32 min of machine time), the colour-bar video pattern follows (frame 96000), and the next cycle's low tests are on screen again by 108000; no failure map ever appeared. COUNT stays 000 and the screen is blank during the RAM test, so the RAM test's own OK was never seen -- that it finished is read from what comes next. Too slow for the suite in a debug build, so it stays a manual check.
+- **DONE (2026-10-17): the unified diagnostic cartridge's mode switch, and the dead test's real length.** The board (crystalct's C64 Unified Diagnostic Cartridge) is the modified dead test in Ultimax mode plus a flip-flop: after its first cycle the dead test copies a routine to `$0334` that writes `$01` to `$DE00` and jumps to the KERNAL's reset routine, the flip-flop turns the cartridge into an ordinary 8K one, the KERNAL finds `CBM80` and the *standard* diagnostic (rev 586220++, first 8K of the 32K EPROM image) starts. Without that switch the emulator's `JMP $FCE2` landed inside the dead test's own ROM and ran garbage. New mapper `Mapper::UnifiedDiag` (`crates/machines/c64/src/cartridge.rs`), CRT hardware type `0xC640` (our own number: the board has no `.crt` type; chips: 8K at `$8000` = standard diagnostic, 8K at `$E000` = dead test; the header's EXROM/GAME levels = the JPE/JPG start mode), an I/O1 write sets the mode from data bit 0 (1 = 8K, 0 = Ultimax; read off the dead test's routine, there is no schematic here), a reset returns to the start mode, the mode rides in the save state. Tests: two unit tests, a real-KERNAL test with a synthetic Ultimax half and CBM80 half (mutation-checked: removing the `$DE00` handler fails it), and the suite case that runs the real 32K image (`tools/fetch_diagnostics.sh` now fetches `unified_32k.bin`). **What the real run shows** (30 s in a release build): the dead test finishes zero page, stack, screen RAM, colour RAM, the low-RAM test and the sound test by about frame 5000, the switch comes between frames 5000 and 6000, and by frame 8000 the standard diagnostic shows every RAM/ROM test OK, the three ROM checksums (KERNAL `B6C70A`, BASIC `043D56`, CHARAC `F3F7F8`), TIMER1/TIMER2 A and B OK and INTERRUPT OK; cassette, control port, serial port and user port read BAD/OPEN and the chip table flags the two 6526 and the 6581 BAD -- those tests want the diagnostic's test plugs (loopback connectors), so they are not asserted; whether the 6581 BAD is a missing plug or an emulation gap is **open**. **Correction**: the earlier notes here, in `retroclawd-tools/CLAUDE.md` and in the commit messages said the dead test's main RAM test needs half an hour of machine time. That was wrong: Ultimax leaves only the low 4K to test, so a whole cycle is about 5000 frames. The long run I took of the dead test alone (a screen "stuck" at SCREEN RAM, blank screens, colour bars) was the CPU executing the dead test's ROM from `$FCE2` after the missing switch, not a RAM pass.
 - **DONE (2026-10-17): the +3's second drive.** `ZxSpectrum::load_disk_in`/`eject_disk_from`/`disk_in`/`take_modified_disk_image_of`/
   `mark_disk_saved_in`, the save state carries drive B's modified image, and the plugin takes `MediaSlot::Disk { drive: 0 | 1 }` (two
   `DiskStatus` entries; a third drive is refused). Same shape as the CPC's, on the shared two-unit `nec765`. Tests: bus (reads A and B apart,
@@ -269,14 +268,13 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     exists in the repo only after v1.3 (the release has no `[T]` entry), so instead the PSG is tested from the other side: eight CPC suite
     cases program the AY through the PPI exactly as that test's source does (periods `0238/01DD/017B`) and `--dump-audio` measures the result
     (each channel's frequency with sub-harmonic checks, chord, mixer mute, noise, volume, register 1 four bits like an AY-3-8912).
-  - C64 dead test: now runs to frame 4000 and checks the screen RAM and colour RAM tests too, and that the main RAM test starts. A full RAM
-    pass is about half an hour of machine time (20 patterns per byte with a delay loop), so it is not run; the unified cartridge's mode
-    switch is hardware specific and not run either. Mutation-checked (colour RAM bit stuck).
+  - C64 dead test: now runs to frame 4000 and checks the screen RAM and colour RAM tests too, and that the main RAM test starts. (The
+    "half an hour for a full RAM pass" written here was wrong, see the 2026-10-17 entry on the unified cartridge.)
+    Mutation-checked (colour RAM bit stuck).
   - Host: pad chords in `[hotkeys]` (`pad1:select+start`), accent folding and dead keys in the symbolic layout and in paste, and a second
     drive: `--disk-b`/`--disk-b-save`, `load_disk_b`/`eject_disk_b`/`save_disk_b`, `nec765` with two units (shared), CPC plugin drive 1.
     Verified with the real 6128 firmware reading `B:` files. Per-game `[hotkeys]`/`[pads]` and the live plugin-crash test were done earlier.
-  - **Still open:** the unified diagnostic cartridge's mode
-    switch, real dead-key/pad hardware (no live check), the sound test of AmstradDiag HEAD (needs sjasmplus to
+  - **Still open:** real dead-key/pad hardware (no live check), the sound test of AmstradDiag HEAD (needs sjasmplus to
     build), drag and drop, recent files, the ZX80 machine (needs a ROM), Interface 1/zxpand ROMs (skipped).
 - **DONE (2026-10-16): GX4000 diagnostics cartridge and the CPC diagnostics suite.**
   - Real bug: a CPC+/GX4000 ignored classic Gate Array ink writes (colours come from the ASIC palette only), so any program setting
@@ -292,7 +290,7 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     fire 1 were read, `FAILED` (error colour) when a direction never was. Soak (6128 disk): the title counts `SOAK ITERATION N`; two pictures
     of one run (`--at 2000:screenshot=FILE` and the final one) still show the banner, no error colour, and the counter moved on.
     Mutation-checked: swapped Up/Down bits and a moved Left bit fail the joystick cases, a stuck bit 7 in banks 4+ fails the soak (and the
-    upper RAM case). Open: its sound test, the C64 diagnostic cartridge's full cycle.
+    upper RAM case). Open: its sound test.
 - **DONE (2026-10-16): CPC punctuation and typing, `.wav` input, the malformed `.cpr`.**
   - CPC: the keyboard matrix is complete (read from the firmware's key tables at ROM 0x1D69/0x1DB9, and tested against them): the
     punctuation keys, F0-F9, and 21 shifted-symbol combo keys, so `--type` and paste can type `"` and every other symbol into BASIC. Real
