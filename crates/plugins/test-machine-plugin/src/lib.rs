@@ -249,6 +249,9 @@ fn extension(name: Option<&str>) -> String {
         .to_ascii_lowercase()
 }
 
+/// A key event with this name panics inside the plugin.
+pub const CRASH_KEY: &str = "crash-now";
+
 fn handle_machine_command(
     record: &mut InstanceRecord,
     command: MachineCommand,
@@ -257,9 +260,13 @@ fn handle_machine_command(
     match command {
         MachineCommand::GetClockHz => Ok(MachineResponse::ClockHz(CLOCK_HZ)),
         MachineCommand::GetFrameHz => Ok(MachineResponse::FrameHz(FRAME_HZ)),
+        // Lets a test crash the plugin on demand (the host's crash handling is tested with it, in a process of its own).
+        MachineCommand::KeyEvent { key, .. } if key == CRASH_KEY => {
+            panic!("test plugin: crash requested")
+        }
+        MachineCommand::KeyEvent { .. } => Ok(MachineResponse::Ack),
         MachineCommand::RequestInterrupt
         | MachineCommand::SetBorder { .. }
-        | MachineCommand::KeyEvent { .. }
         | MachineCommand::MouseMotion { .. }
         | MachineCommand::MouseButton { .. }
         | MachineCommand::MouseWheel { .. }

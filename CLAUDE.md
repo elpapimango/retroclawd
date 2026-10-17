@@ -802,8 +802,10 @@ guessing.
   caught by `plugin_api::guard`, after which every call returns an error naming it) is now noticed by `HostedMachine::crash_message`
   once per emu-thread tick: one toast and a console line, and the machine is held like a pause with its last picture, instead of the
   emu thread panicking on the next clock query. Unit-tested: the argument parsing/layering, the names, the substitution and the
-  crash-error predicate; **not** exercised with a live crashing plugin (the stub plugin shares the process-wide crash flag with every
-  other test, so inducing a panic there would poison them). A game config also takes `[hotkeys]` (incl. `modifier`) and `[pads]`/`[pads.N]` (incl. `deadzone`), folded into the machine's own sections per action / per button below `--hotkey`.
+  crash-error predicate; and live (2026-10-16) with the stub plugin, which panics on a `crash-now` key event (`test_machine_plugin_impl::
+  CRASH_KEY`): the crash flag is process-wide, so `emu_thread::tests::a_crashed_plugin_is_reported_once_and_the_machine_is_held`
+  re-runs the test binary on itself (env `RC_CRASH_TEST_CHILD`) and the crash happens only in that child; it checks `tick` reports once
+  and holds the machine (mutation-checked: without the probe the clock query panics). A game config also takes `[hotkeys]` (incl. `modifier`) and `[pads]`/`[pads.N]` (incl. `deadzone`), folded into the machine's own sections per action / per button below `--hotkey`.
   **Headless actions and symbol arithmetic (2026-10-16)**: `--at FRAME:ACTION[=FILE]` (`apps/retroclawd/src/scripted.rs`, needs
   `--frames`) runs the hotkey/dialog actions of a batch run: `scripted::Runner` owns a real `HostControl` and feeds it the same
   `EmuCommand`s (`Reset`, `QuickSave`, `Media(MediaOp)`, `Export` ...) the window sends, with files read through `inputs::load` (zips

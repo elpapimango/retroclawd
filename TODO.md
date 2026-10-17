@@ -255,7 +255,7 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     plugin crashes. **Since (same day):** `--headless --frames N --at FRAME:ACTION[=FILE]` runs the hotkey/dialog actions headless
     (`scripted.rs`, reusing `HostControl::apply`; failures exit 1), and `SymbolTable::substitute` folds `NAME+1`/`NAME-$10` and
     `#<NAME`/`#>NAME`. **Still open:** hotkeys that need a window (`--at pause` etc. are refused), drag and drop, recent files, a second drive, pad buttons
-    as hotkey triggers, dead keys/non-ASCII, a live crash test.
+    as hotkey triggers, dead keys/non-ASCII. (The live crash test was added afterwards: the stub panics on a `crash-now` key, run in a child copy of the test binary.)
 - **DONE (2026-10-16): GX4000 diagnostics cartridge and the CPC diagnostics suite.**
   - Real bug: a CPC+/GX4000 ignored classic Gate Array ink writes (colours come from the ASIC palette only), so any program setting
     colours the old way showed black; `Asic::set_legacy_ink` fixes it. The earlier "cartridge parks in a VSYNC wait" diagnosis was wrong

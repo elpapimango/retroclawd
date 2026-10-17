@@ -1656,4 +1656,99 @@ mod tests {
         command_tx.send(EmuCommand::Dialog(false)).unwrap();
         assert_ne!(step_tick(&mut rig), still, "closing the dialog resumes");
     }
+
+    /// A plugin panic is remembered process-wide (`plugin_api::guard`), so this test crashes the stub in a copy of the test
+    /// binary of its own and only the parent checks that the child passed; no other test sees the crash.
+    #[test]
+    fn a_crashed_plugin_is_reported_once_and_the_machine_is_held() {
+        const CHILD: &str = "RC_CRASH_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "a_crashed_plugin_is_reported_once",
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            let text = format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(
+                output.status.success(),
+                "the child run failed:
+{text}"
+            );
+            assert!(
+                text.contains("1 passed"),
+                "the child did not run the test:
+{text}"
+            );
+            assert!(
+                text.contains("the machine plugin crashed:"),
+                "the console line is missing:
+{text}"
+            );
+            return;
+        }
+
+        let mut rig = Rig::new(MediaSettings::default());
+        let audio: AudioQueue = Arc::new(Mutex::new(VecDeque::new()));
+        let frames: FrameBuffer = Arc::new(Mutex::new(None));
+        let debug: DebugSnapshotHandle = Arc::new(Mutex::new(DebugSnapshot {
+            halted: false,
+            registers: Vec::new(),
+            memory_hex: Vec::new(),
+            memory_hex_addr: 0,
+            overlay: crate::plugin_bridge::OverlayDebugSnapshot::default(),
+        }));
+        let (_input_tx, input_rx) = mpsc::channel();
+        let (_command_tx, command_rx) = mpsc::channel();
+        let (_mouse_tx, mouse_rx) = mpsc::channel();
+        let inputs = TickInputs {
+            input_rx: &input_rx,
+            held_over: RefCell::default(),
+            command_rx: &command_rx,
+            mouse_rx: &mouse_rx,
+        };
+        let step_tick = |rig: &mut Rig| {
+            tick(
+                &mut rig.machine,
+                &inputs,
+                &audio,
+                &frames,
+                &debug,
+                &mut rig.control,
+                &mut None,
+            );
+        };
+
+        step_tick(&mut rig);
+        assert!(rig.said().is_empty(), "a healthy machine says nothing");
+        assert_eq!(rig.machine.crash_message(), None);
+
+        // The plugin panics while handling this key event.
+        rig.machine
+            .key_event_name(test_machine_plugin_impl::CRASH_KEY, true);
+        let error = rig.machine.crash_message().expect("the plugin has crashed");
+        assert!(
+            error.contains("panic in") || error.contains("crashed earlier"),
+            "{error}"
+        );
+
+        // The next tick reports it (it must not panic on the clock query) ...
+        step_tick(&mut rig);
+        let said = rig.said();
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert!(said[0].starts_with("The machine crashed"), "{said:?}");
+        // ... only once, and the machine stays where it was.
+        let held = machine::Machine::pc(&rig.machine);
+        step_tick(&mut rig);
+        step_tick(&mut rig);
+        assert!(rig.said().is_empty(), "reported once");
+        assert_eq!(machine::Machine::pc(&rig.machine), held);
+    }
 }
