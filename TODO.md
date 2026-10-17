@@ -28,6 +28,15 @@ spectrum FRAMES counter, ROM-halves-equal-the-file; zx81 ROM ignores writes, 16K
 16K K prompt. Merged (all checks kept): cpc AMSDOS single/multi-sector, keyboard odd/even, joystick directions; spectrum frame lengths (3 -> 1), RAM pages and fixed banks,
 ROM select bits; zx81 keyboard plain/shifted.
 
+**Pass 2 of the test review is done (2026-10-17): 2046 `#[test]` functions became 1317** -- host 347 -> 249, shared 500 -> 372, sinclair 263 -> 149,
+amstrad 222 -> 137, commodore 569 -> 320, tools 145 -> 90 -- by the rules agreed that day: keep third-party and document-based checks (CPU
+core tests, ZEXALL/Klaus Dormann/Seddon, real-ROM acceptance tests), one regression test per real bug, data-loss and secrecy guards, one parser test per
+format feature; remove tests that restate our own code, duplicates of an rc-suite case, trivia and exploration probes; merge tests that differ only in a
+literal. A merged test **keeps every check**: the originals became plain helper functions that one `#[test]` calls in order (a merge never crosses a
+module or a `#[cfg]`). The CPU cores' instruction tests were not merged (a merged test would hide all but its first failure). Also fixed on the way:
+the tools tests that run real ROMs looked for `48.rom` (the file is `spec48.rom`), and the real-disks round trip now skips when no `.d64` is present.
+Not touched: the ignored real-ROM tests (only the four exploration probes `dump_picture`, `probe_disk`, `play_disk_image`, `play_media` were removed).
+
 ## Parked: checks that need real hardware (2026-10-17)
 
 No real hardware is available, so these stay parked until someone has it; everything around them is unit-tested.
