@@ -1,6 +1,6 @@
 //! `--at FRAME:ACTION[=ARG]`: the hotkey and file-dialog actions for a `--headless --frames` run. Nothing is asked: the file an
 //! action needs is named on the command line, and the action itself is the emu thread's own (`HostControl::apply`), so a reset, a
-//! quick save or a disk swap behaves exactly as it does in the window. Names are the hotkey action names.
+//! quick save or a disk swap behaves exactly as it does in the window. Names are the hotkey action names (plus `key_down`/`key_up`).
 
 use std::sync::mpsc;
 
@@ -12,6 +12,10 @@ use crate::plugin_bridge::HostedMachine;
 pub(crate) enum Action {
     Reset,
     Freeze,
+    /// `key_down=NAME` / `key_up=NAME`: press or release a machine key by the name `--list-keys` prints (a joystick direction,
+    /// a key with no character to `--type`), so a run can hold it for as many frames as it wants.
+    KeyDown(String),
+    KeyUp(String),
     /// `screenshot` -> `screenshots/<machine>-<time>.png`, `screenshot=FILE` -> that file.
     Screenshot(Option<String>),
     QuickSave,
@@ -53,6 +57,10 @@ pub(crate) fn parse(text: &str) -> Result<Scripted, String> {
         arg.filter(|a| !a.is_empty())
             .ok_or_else(|| format!("--at {text}: {name} needs a file: {name}=FILE"))
     };
+    let need_name = |arg: Option<String>| {
+        arg.filter(|a| !a.is_empty())
+            .ok_or_else(|| format!("--at {text}: {name} needs a machine key name: {name}=Joy1Up"))
+    };
     let none = |arg: &Option<String>| match arg {
         Some(_) => Err(format!("--at {text}: {name} takes no argument")),
         None => Ok(()),
@@ -60,6 +68,8 @@ pub(crate) fn parse(text: &str) -> Result<Scripted, String> {
     let action = match name.as_str() {
         "reset" => none(&arg).map(|()| Action::Reset)?,
         "freeze" => none(&arg).map(|()| Action::Freeze)?,
+        "key_down" => Action::KeyDown(need_name(arg)?),
+        "key_up" => Action::KeyUp(need_name(arg)?),
         "screenshot" => Action::Screenshot(arg.filter(|a| !a.is_empty())),
         "quick_save" => none(&arg).map(|()| Action::QuickSave)?,
         "quick_load" => none(&arg).map(|()| Action::QuickLoad)?,
@@ -159,6 +169,12 @@ impl Runner {
             Action::StateSlot(delta) => command(self, EmuCommand::StateSlot(*delta), machine),
             Action::EjectTape => command(self, EmuCommand::Media(MediaOp::EjectTape), machine),
             Action::EjectDisk => command(self, EmuCommand::Media(MediaOp::EjectDisk), machine),
+            Action::KeyDown(key) | Action::KeyUp(key) => {
+                machine
+                    .try_key_event(key, matches!(action, Action::KeyDown(_)))
+                    .map_err(|e| format!("key {key}: {e}"))?;
+                Ok(None)
+            }
             Action::Screenshot(None) => command(self, EmuCommand::Screenshot, machine),
             Action::Screenshot(Some(path)) => {
                 let (w, h, rgb) = machine
@@ -287,6 +303,7 @@ mod tests {
         assert!(parse("reset").unwrap_err().contains("FRAME:ACTION"));
         assert!(parse("x:reset").unwrap_err().contains("frame number"));
         assert!(parse("1:load_tape").unwrap_err().contains("needs a file"));
+        assert!(parse("1:key_down").unwrap_err().contains("key name"));
         assert!(parse("1:reset=now").unwrap_err().contains("no argument"));
         assert!(parse("1:pause").unwrap_err().contains("headless"));
         assert!(parse("1:jump").unwrap_err().contains("unknown action"));

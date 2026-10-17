@@ -522,7 +522,8 @@ still double as the Spectrum/CPC joystick as before.
 - `--at <FRAME:ACTION[=FILE]>` (repeatable, needs `--frames`) -- run a hotkey or file-dialog action at the start of a frame
   (`FRAMES` itself means after the last frame, before the dumps): `reset`, `freeze`, `screenshot[=FILE]`, `quick_save`,
   `quick_load`, `state_slot_next`, `state_slot_prev`, `load_tape|load_disk|load_snapshot|load_state=FILE`, `eject_tape`,
-  `eject_disk`, `save_snapshot|save_state|save_tape|save_disk=FILE`. It is the window's own code (a quick save goes to
+  `eject_disk`, `save_snapshot|save_state|save_tape|save_disk=FILE`, and `key_down=NAME` / `key_up=NAME` (a machine key by the
+  name `--list-keys` prints, e.g. `Joy1Up`, held for as many frames as you like; an unknown name fails the run). It is the window's own code (a quick save goes to
   `states/` as usual) with the file named here instead of asked for; each action prints `frame N: <message>`, and a failed one
   (missing file, nothing to save) makes the run exit 1. Actions with no meaning without a window (`pause`, `mute`, `quit`...)
   are refused. For example `--frames 300 --at 100:save_state=a.state --at 200:reset --at 250:load_state=a.state`

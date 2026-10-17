@@ -264,7 +264,13 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     menu and LOWER RAM PASSED on a GX4000, its keyboard test lighting exactly the typed keys (odd and even halves of the 48 unshifted
     keys, an independent check of the whole matrix), and on a CPC6128 disk its upper RAM test and its ROM test (lower ROM, BASIC and
     AMSDOS recognised by checksum). The menu works once the program has loaded; the earlier miss was typing too early.
-  - Open: its soak, sound and joystick tests; the C64 diagnostic cartridge.
+  - **Then (same day): its soak and joystick tests.** Joystick (GX4000 cartridge, keyboard test): `--at FRAME:key_down|key_up=Joy1*` presses
+    the stick and the program's own display paints what it read from matrix line 9 (two complementary runs light exactly the pressed
+    cells of up/down/left/right/fire 1-3), and leaving the test holding fire 1 shows `JOYSTICK : PASSED` (cyan) once up, down, left, right and
+    fire 1 were read, `FAILED` (error colour) when a direction never was. Soak (6128 disk): the title counts `SOAK ITERATION N`; two pictures
+    of one run (`--at 2000:screenshot=FILE` and the final one) still show the banner, no error colour, and the counter moved on.
+    Mutation-checked: swapped Up/Down bits and a moved Left bit fail the joystick cases, a stuck bit 7 in banks 4+ fails the soak (and the
+    upper RAM case). Open: its sound test, the C64 diagnostic cartridge's full cycle.
 - **DONE (2026-10-16): CPC punctuation and typing, `.wav` input, the malformed `.cpr`.**
   - CPC: the keyboard matrix is complete (read from the firmware's key tables at ROM 0x1D69/0x1DB9, and tested against them): the
     punctuation keys, F0-F9, and 21 shifted-symbol combo keys, so `--type` and paste can type `"` and every other symbol into BASIC. Real

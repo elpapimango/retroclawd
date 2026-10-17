@@ -1564,6 +1564,11 @@ impl HostedMachine {
         self.key_event_name(&format!("{key:?}"), pressed);
     }
 
+    /// `key_event_name`, but the plugin's refusal (an unknown key name) is returned instead of logged.
+    pub(crate) fn try_key_event(&mut self, key: &str, pressed: bool) -> Result<(), String> {
+        self.backend.key_event(self.instance, key, pressed)
+    }
+
     pub(crate) fn key_event_name(&mut self, key: &str, pressed: bool) {
         match self.backend.key_event(self.instance, key, pressed) {
             Ok(()) => {
