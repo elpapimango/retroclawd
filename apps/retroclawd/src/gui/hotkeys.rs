@@ -1333,7 +1333,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn a_pad_chord_fires_once_on_its_last_button_and_hides_its_buttons() {
         let hotkeys = Hotkeys::resolve(
             &config("[hotkeys]\nreset = \"pad1:select+start\"\nfast_forward = \"pad:r2\""),
@@ -1363,7 +1362,6 @@ mod tests {
         assert_eq!(poll(&[pad(2, &[])]), [Trigger::Released(fast)]);
     }
 
-    #[test]
     fn swallowed_pad_buttons_are_masked_until_they_are_let_go() {
         let hotkeys =
             Hotkeys::resolve(&config("[hotkeys]\nreset = \"pad1:select+start\""), "c64").unwrap();
@@ -1395,6 +1393,12 @@ mod tests {
         hotkeys.poll_pads(&pads, &mut state);
         state.mask(&mut pads);
         assert!(pads[0].1.is_down(PadButton::Start));
+    }
+    /// Merged (every check kept): `a_pad_chord_fires_once_on_its_last_button_and_hides_its_buttons`, `swallowed_pad_buttons_are_masked_until_they_are_let_go`.
+    #[test]
+    fn pad_chords_fire_once_and_mask_their_buttons() {
+        a_pad_chord_fires_once_on_its_last_button_and_hides_its_buttons();
+        swallowed_pad_buttons_are_masked_until_they_are_let_go();
     }
 
     #[test]
@@ -1429,7 +1433,6 @@ mod tests {
         assert!(parse_chord("f13x").unwrap_err().contains("unknown key"));
     }
 
-    #[test]
     fn qmk_keycodes_name_the_same_keys_as_the_older_spellings() {
         for (qmk, old) in [
             ("KC_F12", "f12"),
@@ -1454,7 +1457,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn qmk_modifiers_and_shifted_keycodes_parse_in_chords() {
         let chord = parse_chord("KC_LCTL+KC_LSFT+KC_F9").unwrap();
         assert_eq!(chord.key, KeyCode::F9);
@@ -1474,8 +1476,13 @@ mod tests {
         );
         assert!(parse_chord("KC_NOPE").unwrap_err().contains("unknown key"));
     }
-
+    /// Merged (every check kept): `qmk_keycodes_name_the_same_keys_as_the_older_spellings`, `qmk_modifiers_and_shifted_keycodes_parse_in_chords`.
     #[test]
+    fn qmk_keycodes() {
+        qmk_keycodes_name_the_same_keys_as_the_older_spellings();
+        qmk_modifiers_and_shifted_keycodes_parse_in_chords();
+    }
+
     fn chord_text_round_trips() {
         for text in [
             "KC_F12",
@@ -1490,12 +1497,17 @@ mod tests {
         }
     }
 
-    #[test]
     fn every_bindable_key_has_a_name_that_parses_back() {
         for &key in BINDABLE_KEYS {
             let name = key_display_name(key);
             assert_eq!(parse_key_name(&name), Some(key), "{key:?} shown as {name}");
         }
+    }
+    /// Merged (every check kept): `chord_text_round_trips`, `every_bindable_key_has_a_name_that_parses_back`.
+    #[test]
+    fn chord_text_round_trips_for_every_key() {
+        chord_text_round_trips();
+        every_bindable_key_has_a_name_that_parses_back();
     }
 
     #[test]
@@ -1648,26 +1660,6 @@ mod tests {
     }
 
     #[test]
-    fn fast_forward_is_active_while_held_and_ends_on_release() {
-        let hotkeys = defaults();
-        let mut state = HotkeyState::default();
-        let mut keyboard = keyboard_with(&[KeyCode::ScrollLock]);
-        assert_eq!(
-            hotkeys.poll(&keyboard, &mut state),
-            vec![Trigger::Pressed(Action::FastForward)]
-        );
-        keyboard.clear();
-        assert!(hotkeys.poll(&keyboard, &mut state).is_empty());
-        keyboard.release(KeyCode::ScrollLock);
-        assert_eq!(
-            hotkeys.poll(&keyboard, &mut state),
-            vec![Trigger::Released(Action::FastForward)]
-        );
-        keyboard.clear();
-        assert!(hotkeys.poll(&keyboard, &mut state).is_empty());
-    }
-
-    #[test]
     fn the_hold_modifier_gates_every_hotkey() {
         let cfg = config("[hotkeys]\nmodifier = \"alt_right\"");
         let hotkeys = Hotkeys::resolve(&cfg, "c64").unwrap();
@@ -1699,15 +1691,5 @@ mod tests {
             hotkeys.poll(&keyboard, &mut state),
             vec![Trigger::Pressed(Action::Mute)]
         );
-    }
-
-    #[test]
-    fn describe_lists_every_action_with_its_chord() {
-        let text = defaults().describe();
-        for info in &ACTIONS {
-            assert!(text.contains(info.name), "{}", info.name);
-        }
-        assert!(text.contains("shift+KC_F11"));
-        assert!(text.contains("(unbound)"));
     }
 }

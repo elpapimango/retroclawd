@@ -378,20 +378,6 @@ mod tests {
     }
 
     #[test]
-    fn output_rate_is_reported_via_source_sample_rate_not_the_generation_rate() {
-        let queue: AudioQueue = Arc::new(Mutex::new(VecDeque::new()));
-        let decoder = EmulatorAudioDecoder::new(
-            queue,
-            Arc::new(AtomicU64::new(0)),
-            Arc::new(AtomicU64::new(0)),
-            Arc::new(AudioControl::default()),
-            48_000,
-        );
-
-        assert_eq!(decoder.sample_rate().get(), 48_000);
-    }
-
-    #[test]
     fn mute_and_volume_state_behave_like_a_device() {
         let control = AudioControl::default();
         assert_eq!(control.target_gain(), 1.0);

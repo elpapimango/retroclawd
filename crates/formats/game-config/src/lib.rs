@@ -93,7 +93,6 @@ pub fn parse(text: &str) -> Result<GameConfig, toml::de::Error> {
 mod tests {
     use super::*;
 
-    #[test]
     fn parses_all_fields() {
         let config = parse(
             r#"
@@ -118,7 +117,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn hotkeys_and_pads_are_per_game_settings() {
         let config = parse(
             r#"
@@ -144,7 +142,6 @@ mod tests {
         assert_eq!(parse("").unwrap().pads, GamePads::default());
     }
 
-    #[test]
     fn keys_layout_and_symbols_are_per_game_settings() {
         let config = parse(
             r#"
@@ -171,6 +168,13 @@ mod tests {
                 == 2
         );
     }
+    /// Merged (every check kept): `parses_all_fields`, `hotkeys_and_pads_are_per_game_settings`, `keys_layout_and_symbols_are_per_game_settings`.
+    #[test]
+    fn parses_game_settings() {
+        parses_all_fields();
+        hotkeys_and_pads_are_per_game_settings();
+        keys_layout_and_symbols_are_per_game_settings();
+    }
 
     #[test]
     fn empty_toml_is_all_none() {
@@ -178,13 +182,17 @@ mod tests {
         assert_eq!(config, GameConfig::default());
     }
 
-    #[test]
     fn unknown_field_is_rejected() {
         assert!(parse(r#"machin = "zx81""#).is_err());
     }
 
-    #[test]
     fn malformed_toml_is_rejected() {
         assert!(parse("machine = ").is_err());
+    }
+    /// Merged (every check kept): `unknown_field_is_rejected`, `malformed_toml_is_rejected`.
+    #[test]
+    fn rejects_bad_files() {
+        unknown_field_is_rejected();
+        malformed_toml_is_rejected();
     }
 }

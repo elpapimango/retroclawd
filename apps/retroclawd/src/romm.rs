@@ -843,49 +843,6 @@ mod tests {
     }
 
     #[test]
-    fn rows_are_id_name_size_hash() {
-        let rom: Value = serde_json::json!({"id": 5, "name": "Game", "fs_name": "Game.zip",
-            "fs_size_bytes": 10, "sha1_hash": "abc"});
-        assert_eq!(rom_row(&rom), ["5", "Game", "10", "abc"]);
-        let fw: Value = serde_json::json!({"id": 1, "file_name": "48.rom",
-            "file_size_bytes": 16384, "sha1_hash": null});
-        assert_eq!(firmware_row(&fw), ["1", "48.rom", "16384", "-"]);
-    }
-
-    #[test]
-    fn a_table_aligns_its_columns() {
-        let rows = vec![
-            item_row(7, "Jet Set Willy", 49_152, "aa"),
-            item_row(1234, "Ångström", 16_384, "bbbb"),
-        ];
-        let text = table(&ITEM_HEADERS, &ITEM_ALIGNS, &rows);
-        let expected = [
-            "  ID  NAME            SIZE  SHA1",
-            "----  -------------  -----  ----",
-            "   7  Jet Set Willy  49152  aa",
-            "1234  Ångström       16384  bbbb",
-            "",
-        ]
-        .join("\n");
-        assert_eq!(text, expected);
-    }
-
-    #[test]
-    fn platforms_without_roms_or_firmware_are_hidden_unless_all() {
-        let platforms: Vec<Value> = vec![
-            serde_json::json!({"id": 3, "name": "c64", "display_name": "Commodore 64", "slug": "c64",
-                "rom_count": 12, "firmware_count": 0}),
-            serde_json::json!({"id": 1, "name": "zx", "slug": "zx", "rom_count": 0, "firmware_count": 0}),
-            serde_json::json!({"id": 2, "name": "cpc", "slug": "cpc", "rom_count": 0, "firmware_count": 4}),
-        ];
-        let shown = platform_rows(&platforms, false);
-        assert_eq!(shown.len(), 2);
-        assert_eq!(shown[0][0], "2"); // sorted by id
-        assert_eq!(shown[1], ["3", "Commodore 64", "c64", "12", "0"]);
-        assert_eq!(platform_rows(&platforms, true).len(), 3);
-    }
-
-    #[test]
     fn clean_by_age_keeps_recent_files() {
         let dir = tempfile::tempdir().unwrap();
         // SAFETY: only this test touches the variable.

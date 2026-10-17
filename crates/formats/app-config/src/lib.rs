@@ -188,7 +188,6 @@ pub fn parse(text: &str) -> Result<AppConfig, toml::de::Error> {
 mod tests {
     use super::*;
 
-    #[test]
     fn parses_default_section() {
         let config = parse(
             r#"
@@ -221,7 +220,6 @@ mod tests {
         assert!(config.machines.is_empty());
     }
 
-    #[test]
     fn parses_per_machine_sections() {
         let config = parse(
             r#"
@@ -248,7 +246,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn parses_window_and_frame_pacing_settings() {
         let config = parse(
             r#"
@@ -263,6 +260,13 @@ mod tests {
         assert_eq!(config.default.vsync, Some(false));
         assert_eq!(config.default.max_fps, Some(60));
         assert!(config.default.options.is_empty());
+    }
+    /// Merged (every check kept): `parses_default_section`, `parses_per_machine_sections`, `parses_window_and_frame_pacing_settings`.
+    #[test]
+    fn parses_host_settings() {
+        parses_default_section();
+        parses_per_machine_sections();
+        parses_window_and_frame_pacing_settings();
     }
 
     #[test]
@@ -293,7 +297,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn parses_global_and_machine_hotkeys() {
         let config = parse(
             r#"
@@ -318,12 +321,10 @@ mod tests {
         assert!(!c64.options.contains_key("hotkeys"));
     }
 
-    #[test]
     fn a_non_string_hotkey_value_is_rejected() {
         assert!(parse("[hotkeys]\nreset = 12").is_err());
     }
 
-    #[test]
     fn parses_global_and_machine_key_bindings() {
         let config = parse(
             r#"
@@ -372,18 +373,15 @@ mod tests {
         ));
     }
 
-    #[test]
     fn wrongly_typed_host_setting_is_rejected() {
         assert!(parse("[default]\nmax_fps = \"fast\"").is_err());
         assert!(parse("[default]\nfullscreen = 1").is_err());
     }
 
-    #[test]
     fn malformed_toml_is_rejected() {
         assert!(parse("default = ").is_err());
     }
 
-    #[test]
     fn parses_global_and_machine_pads() {
         let config = parse(
             r#"
@@ -410,12 +408,18 @@ mod tests {
         assert!(!c64.options.contains_key("pads"));
     }
 
-    #[test]
     fn a_pad_button_must_be_a_string_or_list() {
         assert!(parse("[pads.1]\nsouth = 3").is_err());
     }
-
+    /// Merged (every check kept): `a_non_string_hotkey_value_is_rejected`, `a_pad_button_must_be_a_string_or_list`, `wrongly_typed_host_setting_is_rejected`, `malformed_toml_is_rejected`.
     #[test]
+    fn rejects_bad_values() {
+        a_non_string_hotkey_value_is_rejected();
+        a_pad_button_must_be_a_string_or_list();
+        wrongly_typed_host_setting_is_rejected();
+        malformed_toml_is_rejected();
+    }
+
     fn parses_input_sections_and_keymap_files() {
         let config = parse(
             r#"
@@ -455,5 +459,13 @@ mod tests {
         );
         assert!(parse_keymap("[hotkeys]\nreset = \"f1\"").is_err());
         assert!(parse_keymap("[machines.c64]\nrom = \"x\"").is_err());
+    }
+    /// Merged (every check kept): `parses_global_and_machine_hotkeys`, `parses_global_and_machine_key_bindings`, `parses_global_and_machine_pads`, `parses_input_sections_and_keymap_files`.
+    #[test]
+    fn parses_input_sections() {
+        parses_global_and_machine_hotkeys();
+        parses_global_and_machine_key_bindings();
+        parses_global_and_machine_pads();
+        parses_input_sections_and_keymap_files();
     }
 }

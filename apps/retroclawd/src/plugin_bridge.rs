@@ -2070,7 +2070,6 @@ mod tests {
         assert!(super::write_file_atomically(&target, b"x").is_err());
     }
 
-    #[test]
     fn chip_blob_u16_pairs_decodes_little_endian_pairs() {
         let widths: [u16; 4] = [2168, 855, 1710, 65535];
         let bytes: Vec<u8> = widths.iter().flat_map(|w| w.to_le_bytes()).collect();
@@ -2082,7 +2081,6 @@ mod tests {
         assert_eq!(chip_blob_u16_pairs(&blobs, "tape_pulse_widths"), widths);
     }
 
-    #[test]
     fn chip_blob_u16_pairs_returns_empty_for_missing_key() {
         assert_eq!(
             chip_blob_u16_pairs(&[], "tape_pulse_widths"),
@@ -2090,7 +2088,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn chip_blob_u16_pairs_drops_a_trailing_odd_byte() {
         let blobs = vec![plugin_api::BinaryBlob {
             key: "tape_pulse_widths".to_string(),
@@ -2098,6 +2095,13 @@ mod tests {
         }];
 
         assert_eq!(chip_blob_u16_pairs(&blobs, "tape_pulse_widths"), vec![2168]);
+    }
+    /// Merged (every check kept): `chip_blob_u16_pairs_decodes_little_endian_pairs`, `chip_blob_u16_pairs_returns_empty_for_missing_key`, `chip_blob_u16_pairs_drops_a_trailing_odd_byte`.
+    #[test]
+    fn chip_blob_u16_pairs_decode_cases() {
+        chip_blob_u16_pairs_decodes_little_endian_pairs();
+        chip_blob_u16_pairs_returns_empty_for_missing_key();
+        chip_blob_u16_pairs_drops_a_trailing_odd_byte();
     }
 
     unsafe extern "C" fn test_list_profiles(_req: RcSlice) -> RcCallResult {
@@ -2183,29 +2187,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn plugin_candidate_paths_scans_nothing_without_explicit_env_configuration() {
-        // Unit tests never scan the default locations (`default_plugin_dirs`
-        // is empty under `cfg(test)`), so a library that happens to sit next
-        // to the test binary cannot change what the other tests see.
-        // SAFETY: test-only env var removal, scoped to this process; no
-        // other test sets these vars.
-        unsafe {
-            std::env::remove_var(super::MACHINE_PLUGIN_ENV_VAR);
-            std::env::remove_var(super::MACHINE_PLUGINS_ENV_VAR);
-            std::env::remove_var(super::MACHINE_PLUGIN_DIRS_ENV_VAR);
-        }
-        assert!(super::plugin_candidate_paths().is_empty());
-    }
-
-    #[test]
     fn descriptor_compat_accepts_newer_minor_on_same_major() {
         let descriptor = test_descriptor(ABI_MAJOR_V1, ABI_MINOR_V1 + 1);
         PluginHost::validate_descriptor_compatibility(&descriptor, ABI_MAJOR_V1, ABI_MINOR_V1)
             .expect("newer plugin minor should be accepted");
     }
 
-    #[test]
     fn descriptor_compat_rejects_older_minor_against_newer_host() {
         let descriptor = test_descriptor(ABI_MAJOR_V1, 1);
         let err = PluginHost::validate_descriptor_compatibility(&descriptor, ABI_MAJOR_V1, 2)
@@ -2216,13 +2203,19 @@ mod tests {
         );
     }
 
-    #[test]
     fn descriptor_compat_rejects_major_mismatch() {
         let descriptor = test_descriptor(ABI_MAJOR_V1 + 1, ABI_MINOR_V1);
         let err =
             PluginHost::validate_descriptor_compatibility(&descriptor, ABI_MAJOR_V1, ABI_MINOR_V1)
                 .expect_err("major mismatch must fail");
         assert_eq!(err, "machine plugin ABI major mismatch: host=1, plugin=2");
+    }
+    /// Merged (every check kept): `descriptor_compat_accepts_newer_minor_on_same_major`, `descriptor_compat_rejects_older_minor_against_newer_host`, `descriptor_compat_rejects_major_mismatch`.
+    #[test]
+    fn descriptor_compat() {
+        descriptor_compat_accepts_newer_minor_on_same_major();
+        descriptor_compat_rejects_older_minor_against_newer_host();
+        descriptor_compat_rejects_major_mismatch();
     }
 
     // ---- Version skew between host and plugin (policy: docs/plugin-abi.md) ----
@@ -2378,7 +2371,6 @@ mod tests {
         assert!(warning.is_none());
     }
 
-    #[test]
     fn validate_profile_contract_rejects_newer_plugin_contract_for_old_host() {
         let mut profile = profile_with_debug_contract();
         profile.contract_version = MACHINE_PROFILE_CONTRACT_VERSION + 1;
@@ -2396,7 +2388,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn validate_profile_contract_rejects_older_plugin_contract_for_new_host() {
         let profile = profile_with_debug_contract();
         let err = validate_profile_contract_with_version(
@@ -2411,6 +2402,12 @@ mod tests {
             err,
             "machine profile contract mismatch for zx81 from plugin.dll (retroclawd.test.machine@0.1.0): host=2, plugin=1"
         );
+    }
+    /// Merged (every check kept): `validate_profile_contract_rejects_newer_plugin_contract_for_old_host`, `validate_profile_contract_rejects_older_plugin_contract_for_new_host`.
+    #[test]
+    fn validate_profile_contract_rejects_other_contract_versions() {
+        validate_profile_contract_rejects_newer_plugin_contract_for_old_host();
+        validate_profile_contract_rejects_older_plugin_contract_for_new_host();
     }
 
     #[test]

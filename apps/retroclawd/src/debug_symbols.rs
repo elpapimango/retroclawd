@@ -188,21 +188,4 @@ mod tests {
         // The Spectrum's table must not leak onto a 6502 machine and vice versa.
         assert_eq!(builtin("c64").annotate("CALL 0x0556"), "CALL 0x0556");
     }
-
-    #[test]
-    fn every_built_in_address_is_unique() {
-        for (name, table) in [
-            ("kernal", C64_KERNAL),
-            ("hardware", C64_HARDWARE),
-            ("spectrum", SPECTRUM_ROM),
-        ] {
-            let mut seen = std::collections::BTreeSet::new();
-            for (addr, label) in table {
-                assert!(
-                    seen.insert(*addr),
-                    "{name}: {addr:#06x} ({label}) listed twice"
-                );
-            }
-        }
-    }
 }

@@ -929,7 +929,6 @@ mod tests {
         AutoRunKey::Host(key)
     }
 
-    #[test]
     fn c64_profiles_need_a_readiness_wait_but_cpc_disk_does_not() {
         assert!(auto_run_needs_readiness_wait(AutoRunProfile::C64Load));
         assert!(auto_run_needs_readiness_wait(AutoRunProfile::C64Run));
@@ -940,21 +939,25 @@ mod tests {
         );
     }
 
-    #[test]
     fn auto_run_ready_target_desc_names_the_real_c64_idle_loop_range() {
         let desc = auto_run_ready_target_desc(AutoRunProfile::C64Load);
         assert!(desc.contains("E5CD"), "got: {desc}");
         assert!(desc.contains("E5D4"), "got: {desc}");
     }
 
-    #[test]
     fn auto_run_ready_with_no_snapshot_is_never_ready() {
         assert!(!auto_run_ready(AutoRunProfile::C64Load, None));
         assert!(!auto_run_ready(AutoRunProfile::C64Run, None));
         assert!(!auto_run_ready(AutoRunProfile::CpcTape, None));
     }
-
+    /// Merged (every check kept): `c64_profiles_need_a_readiness_wait_but_cpc_disk_does_not`, `auto_run_ready_target_desc_names_the_real_c64_idle_loop_range`, `auto_run_ready_with_no_snapshot_is_never_ready`.
     #[test]
+    fn auto_run_readiness() {
+        c64_profiles_need_a_readiness_wait_but_cpc_disk_does_not();
+        auto_run_ready_target_desc_names_the_real_c64_idle_loop_range();
+        auto_run_ready_with_no_snapshot_is_never_ready();
+    }
+
     fn cpc_tape_sequence_sends_ctrl_small_enter_then_small_enter() {
         let actions: Vec<_> = auto_run_actions(AutoRunProfile::CpcTape)
             .into_iter()
@@ -988,7 +991,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn cpc_disk_sequence_keeps_single_enter_after_run_disc() {
         let actions: Vec<_> = auto_run_actions(AutoRunProfile::CpcDisk)
             .into_iter()
@@ -1001,7 +1003,6 @@ mod tests {
         assert_eq!(enter_presses, 1);
     }
 
-    #[test]
     fn cpc_tape_followup_actions_keep_using_small_enter() {
         let actions: Vec<_> = cpc_tape_followup_actions().into_iter().collect();
         let enter_presses = actions
@@ -1020,7 +1021,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn c64_load_sequence_types_load_star_8_1_using_the_named_asterisk_key() {
         let actions: Vec<_> = auto_run_actions(AutoRunProfile::C64Load)
             .into_iter()
@@ -1042,7 +1042,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn c128_profiles_type_run_star_or_run_and_wait_for_their_own_idle_loop() {
         let keys = |profile| {
             auto_run_actions(profile)
@@ -1075,7 +1074,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn c64_run_sequence_and_load_followup_both_type_bare_run() {
         for actions in [
             auto_run_actions(AutoRunProfile::C64Run)
@@ -1099,7 +1097,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn c64_load_profile_enables_a_short_delayed_followup_run_and_c64_run_does_not() {
         let load_state = AutoRunState::new(AutoRunProfile::C64Load);
         assert!(load_state.followup_delay.is_some());
@@ -1109,8 +1106,15 @@ mod tests {
         assert!(run_state.followup_delay.is_none());
         assert!(run_state.followup_actions.is_empty());
     }
-
+    /// Merged (every check kept): `c64_load_sequence_types_load_star_8_1_using_the_named_asterisk_key`, `c128_profiles_type_run_star_or_run_and_wait_for_their_own_idle_loop`, `c64_run_sequence_and_load_followup_both_type_bare_run`, `c64_load_profile_enables_a_short_delayed_followup_run_and_c64_run_does_not`.
     #[test]
+    fn c64_c128_auto_run_sequences() {
+        c64_load_sequence_types_load_star_8_1_using_the_named_asterisk_key();
+        c128_profiles_type_run_star_or_run_and_wait_for_their_own_idle_loop();
+        c64_run_sequence_and_load_followup_both_type_bare_run();
+        c64_load_profile_enables_a_short_delayed_followup_run_and_c64_run_does_not();
+    }
+
     fn cpc_tape_profile_enables_delayed_followup_phase() {
         let state = AutoRunState::new(AutoRunProfile::CpcTape);
         assert!(state.followup_delay.is_some());
@@ -1122,6 +1126,14 @@ mod tests {
         let disk_state = AutoRunState::new(AutoRunProfile::CpcDisk);
         assert!(disk_state.followup_delay.is_none());
         assert!(disk_state.followup_actions.is_empty());
+    }
+    /// Merged (every check kept): `cpc_tape_sequence_sends_ctrl_small_enter_then_small_enter`, `cpc_disk_sequence_keeps_single_enter_after_run_disc`, `cpc_tape_followup_actions_keep_using_small_enter`, `cpc_tape_profile_enables_delayed_followup_phase`.
+    #[test]
+    fn cpc_auto_run_sequences() {
+        cpc_tape_sequence_sends_ctrl_small_enter_then_small_enter();
+        cpc_disk_sequence_keeps_single_enter_after_run_disc();
+        cpc_tape_followup_actions_keep_using_small_enter();
+        cpc_tape_profile_enables_delayed_followup_phase();
     }
 
     #[test]

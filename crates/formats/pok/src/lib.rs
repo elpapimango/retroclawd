@@ -193,15 +193,19 @@ mod tests {
         assert!(!entry.ignores_bank());
     }
 
-    #[test]
     fn rejects_malformed_records() {
         let error = parse(b"NBroken\nZ 8 nope 1\nY\n").expect_err("must reject");
         assert!(matches!(error, Error::InvalidLine { line: 2, .. }));
     }
 
-    #[test]
     fn rejects_entries_without_trainer() {
         let error = parse(b"Z 8 100 1\n").expect_err("must reject");
         assert!(matches!(error, Error::InvalidLine { line: 1, .. }));
+    }
+    /// Merged (every check kept): `rejects_malformed_records`, `rejects_entries_without_trainer`.
+    #[test]
+    fn rejects_bad_files() {
+        rejects_malformed_records();
+        rejects_entries_without_trainer();
     }
 }

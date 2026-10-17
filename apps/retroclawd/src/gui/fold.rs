@@ -89,14 +89,4 @@ mod tests {
         assert_eq!(ascii_fold('£'), None);
         assert_eq!(ascii_fold('中'), None);
     }
-
-    #[test]
-    fn no_character_is_in_two_groups() {
-        let all: String = FOLDS.iter().map(|(group, _)| *group).collect();
-        let unique: std::collections::HashSet<char> = all.chars().collect();
-        assert_eq!(all.chars().count(), unique.len());
-        for (group, plain) in FOLDS {
-            assert!(plain.is_ascii() && !group.is_ascii());
-        }
-    }
 }

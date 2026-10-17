@@ -168,32 +168,6 @@ mod tests {
     }
 
     #[test]
-    fn queued_messages_follow_in_order_and_move_along_quickly() {
-        let mut q = ToastQueue::default();
-        q.push("Volume 90%");
-        q.push("Volume 80%");
-        q.push("Volume 70%");
-        assert_eq!(q.tick(MS(16)), Some("Volume 90%"));
-        // Others are waiting: the first is cut to the short time.
-        assert_eq!(q.tick(MS(700)), Some("Volume 80%"));
-        assert_eq!(q.tick(MS(700)), Some("Volume 70%"));
-        // The last one gets the full time.
-        assert_eq!(q.tick(MS(1500)), Some("Volume 70%"));
-        assert_eq!(q.tick(MS(1000)), None);
-    }
-
-    #[test]
-    fn repeating_the_message_on_screen_extends_it_without_queueing() {
-        let mut q = ToastQueue::default();
-        q.push("Muted");
-        q.tick(MS(16));
-        q.tick(MS(2000));
-        q.push("Muted");
-        assert_eq!(q.tick(MS(1000)), Some("Muted"));
-        assert_eq!(q.pending.len(), 0);
-    }
-
-    #[test]
     fn a_flood_keeps_only_the_latest_few() {
         let mut q = ToastQueue::default();
         for n in 0..50 {

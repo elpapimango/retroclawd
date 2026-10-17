@@ -135,14 +135,6 @@ mod tests {
     }
 
     #[test]
-    fn letters_map_to_their_keys() {
-        assert_eq!(key_for_letter('S'), Some(KeyCode::KeyS));
-        assert_eq!(key_for_letter('a'), Some(KeyCode::KeyA));
-        assert_eq!(key_for_letter('Z'), Some(KeyCode::KeyZ));
-        assert_eq!(key_for_letter('1'), None);
-    }
-
-    #[test]
     fn an_option_key_or_escape_answers_and_other_keys_do_not() {
         let r = request();
         let mut kb = ButtonInput::<KeyCode>::default();

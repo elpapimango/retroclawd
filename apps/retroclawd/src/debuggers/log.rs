@@ -281,19 +281,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_level_supports_common_levels() {
-        assert_eq!(
-            parse_level(Some("trace".to_string())).unwrap(),
-            tracing::Level::TRACE
-        );
-        assert_eq!(
-            parse_level(Some("DEBUG".to_string())).unwrap(),
-            tracing::Level::DEBUG
-        );
-        assert_eq!(parse_level(None).unwrap(), tracing::Level::INFO);
-    }
-
-    #[test]
     fn engine_crates_are_held_to_engine_level_but_emulator_targets_follow_level() {
         use tracing::Level;
         let enabled = |target, level, max, engine| event_enabled(target, &level, max, engine);

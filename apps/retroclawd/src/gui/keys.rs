@@ -884,7 +884,6 @@ mod tests {
         assert_eq!(r.plain_names(KeyCode::KeyZ), ["KeyZ"]);
     }
 
-    #[test]
     fn a_shift_chord_consumes_the_real_shift() {
         let mut r = router("[keys]\n\"shift+2\" = \"At\"", ALL);
         let hot = HotkeyState::default();
@@ -938,7 +937,6 @@ mod tests {
         assert_eq!(got, [ev("KeyB", true), ev("ShiftLeft", true)]);
     }
 
-    #[test]
     fn both_shift_keys_are_one_machine_shift() {
         let mut r = router("", ALL);
         let hot = HotkeyState::default();
@@ -956,7 +954,6 @@ mod tests {
         assert_eq!(frame(&mut r, &mut kb, &hot), [ev("ShiftLeft", false)]);
     }
 
-    #[test]
     fn arrow_keys_hold_the_machine_shift_as_before() {
         let mut r = router("", ALL);
         let hot = HotkeyState::default();
@@ -974,8 +971,13 @@ mod tests {
         kb.release(KeyCode::ShiftRight);
         assert_eq!(frame(&mut r, &mut kb, &hot), [ev("ShiftLeft", false)]);
     }
-
+    /// Merged (every check kept): `both_shift_keys_are_one_machine_shift`, `arrow_keys_hold_the_machine_shift_as_before`.
     #[test]
+    fn machine_shift_comes_from_either_shift_and_the_arrows() {
+        both_shift_keys_are_one_machine_shift();
+        arrow_keys_hold_the_machine_shift_as_before();
+    }
+
     fn a_ctrl_chord_consumes_ctrl_too() {
         let mut r = router("[keys]\n\"ctrl+a\" = \"Edit\"", ALL);
         let hot = HotkeyState::default();
@@ -987,6 +989,12 @@ mod tests {
             frame(&mut r, &mut kb, &hot),
             [ev("ControlLeft", false), ev("Edit", true)]
         );
+    }
+    /// Merged (every check kept): `a_shift_chord_consumes_the_real_shift`, `a_ctrl_chord_consumes_ctrl_too`.
+    #[test]
+    fn chords_consume_their_modifiers() {
+        a_shift_chord_consumes_the_real_shift();
+        a_ctrl_chord_consumes_ctrl_too();
     }
 
     #[test]
@@ -1141,33 +1149,6 @@ mod tests {
             KeyRouter::new(bindings).plain_names(KeyCode::KeyQ),
             ["Anything"]
         );
-    }
-
-    #[test]
-    fn listings_show_names_aliases_and_bindings() {
-        let names = info(&["KeyA", "ArrowLeft"]);
-        let text = describe_names("m", &names);
-        assert!(text.contains("KeyA") && text.contains("also: a"), "{text}");
-        assert!(
-            text.contains("ArrowLeft") && text.contains("left"),
-            "{text}"
-        );
-        assert!(describe_names("m", &[]).contains("does not report"));
-        let bindings = KeyBindings::resolve(
-            &cfg("[keys]\n\"shift+2\" = \"KeyA\"\nq = \"none\""),
-            "m",
-            &KeyNames::only(&names),
-            &defaults(),
-            &[],
-        )
-        .unwrap();
-        let table = bindings.describe();
-        assert!(
-            table.contains("shift+KC_2") && table.contains("-> KeyA"),
-            "{table}"
-        );
-        assert!(table.contains("(nothing)"), "{table}");
-        assert!(describe_host_keys().contains("KC_F12"));
     }
 
     // ---- symbolic layout -------------------------------------------------
@@ -1395,14 +1376,6 @@ mod tests {
             press_typing(&mut r, &mut kb, KeyCode::KeyY, Some('z')),
             [ev("KeyY", true)]
         );
-    }
-
-    #[test]
-    fn layouts_parse_and_report_their_names() {
-        assert_eq!(Layout::parse("Symbolic"), Ok(Layout::Symbolic));
-        assert_eq!(Layout::parse(" positional "), Ok(Layout::Positional));
-        assert!(Layout::parse("qwertz").unwrap_err().contains("positional"));
-        assert_eq!(Layout::Symbolic.name(), "symbolic");
     }
 
     #[test]

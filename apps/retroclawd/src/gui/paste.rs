@@ -328,7 +328,6 @@ mod tests {
         (name.to_string(), pressed)
     }
 
-    #[test]
     fn each_character_is_a_press_then_a_release_of_its_key() {
         assert_eq!(
             run("a1+", PasteCase::Fold),
@@ -343,7 +342,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn repeated_characters_release_between_presses() {
         let events = run("aa", PasteCase::Fold);
         assert_eq!(
@@ -356,13 +354,17 @@ mod tests {
             ]
         );
     }
-
+    /// Merged (every check kept): `each_character_is_a_press_then_a_release_of_its_key`, `repeated_characters_release_between_presses`.
     #[test]
+    fn paste_presses_and_releases_each_character() {
+        each_character_is_a_press_then_a_release_of_its_key();
+        repeated_characters_release_between_presses();
+    }
+
     fn fold_types_a_capital_as_the_plain_key() {
         assert_eq!(run("A", PasteCase::Fold), run("a", PasteCase::Fold));
     }
 
-    #[test]
     fn exact_holds_the_machine_shift_around_a_capital_only() {
         assert_eq!(
             run("Ab", PasteCase::Exact),
@@ -437,11 +439,17 @@ mod tests {
         assert_eq!(p.events.len(), 4);
     }
 
-    #[test]
     fn paste_case_parses_its_two_words() {
         assert_eq!(PasteCase::parse("fold"), Ok(PasteCase::Fold));
         assert_eq!(PasteCase::parse(" Exact "), Ok(PasteCase::Exact));
         assert!(PasteCase::parse("upper").is_err());
+    }
+    /// Merged (every check kept): `fold_types_a_capital_as_the_plain_key`, `exact_holds_the_machine_shift_around_a_capital_only`, `paste_case_parses_its_two_words`.
+    #[test]
+    fn paste_case_fold_and_exact() {
+        fold_types_a_capital_as_the_plain_key();
+        exact_holds_the_machine_shift_around_a_capital_only();
+        paste_case_parses_its_two_words();
     }
 
     mod system {

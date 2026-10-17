@@ -497,7 +497,6 @@ mod tests {
         assert!(text.contains("AF   0x1234  PC   0x5678"));
     }
 
-    #[test]
     fn cpu_only_panels_omit_memory_disk_and_tape_lines_entirely() {
         let overlay = crate::plugin_bridge::OverlayDebugSnapshot::default();
         let panels = OverlayPanels {
@@ -511,7 +510,6 @@ mod tests {
         assert!(!text.contains("TAPE:"));
     }
 
-    #[test]
     fn overlay_panels_show_n_a_when_enabled_but_machine_has_no_data() {
         let overlay = crate::plugin_bridge::OverlayDebugSnapshot::default();
         let panels = OverlayPanels {
@@ -525,6 +523,12 @@ mod tests {
         assert!(!text.contains("MEM @"));
         assert!(text.contains("DISK: n/a"));
         assert!(text.contains("TAPE: n/a"));
+    }
+    /// Merged (every check kept): `cpu_only_panels_omit_memory_disk_and_tape_lines_entirely`, `overlay_panels_show_n_a_when_enabled_but_machine_has_no_data`.
+    #[test]
+    fn overlay_panels_without_data() {
+        cpu_only_panels_omit_memory_disk_and_tape_lines_entirely();
+        overlay_panels_show_n_a_when_enabled_but_machine_has_no_data();
     }
 
     #[test]
@@ -564,7 +568,6 @@ mod tests {
         assert!(text.contains("10011"));
     }
 
-    #[test]
     fn parse_defaults_to_cpu_only_when_flag_has_no_value() {
         // Matches clap's `default_missing_value = "cpu"` for a bare
         // `--show-overlay`.
@@ -578,7 +581,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn parse_accepts_colon_delimited_panel_list() {
         let panels = OverlayPanels::parse("cpu:mem:tape").unwrap();
         assert_eq!(
@@ -593,7 +595,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn parse_accepts_disk_panel() {
         let panels = OverlayPanels::parse("cpu:disk:tape").unwrap();
         assert_eq!(
@@ -608,7 +609,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn parse_all_enables_every_panel() {
         let panels = OverlayPanels::parse("all").unwrap();
         assert_eq!(
@@ -628,7 +628,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn parse_rejects_unknown_panel_name() {
         let err = OverlayPanels::parse("cpu:bogus").unwrap_err();
         assert!(
@@ -637,7 +636,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn parse_ignores_blank_tokens_from_stray_colons() {
         let panels = OverlayPanels::parse(":cpu::tape:").unwrap();
         assert_eq!(
@@ -648,6 +646,16 @@ mod tests {
                 ..Default::default()
             }
         );
+    }
+    /// Merged (every check kept): `parse_defaults_to_cpu_only_when_flag_has_no_value`, `parse_accepts_colon_delimited_panel_list`, `parse_accepts_disk_panel`, `parse_all_enables_every_panel`, `parse_rejects_unknown_panel_name`, `parse_ignores_blank_tokens_from_stray_colons`.
+    #[test]
+    fn overlay_panels_parse() {
+        parse_defaults_to_cpu_only_when_flag_has_no_value();
+        parse_accepts_colon_delimited_panel_list();
+        parse_accepts_disk_panel();
+        parse_all_enables_every_panel();
+        parse_rejects_unknown_panel_name();
+        parse_ignores_blank_tokens_from_stray_colons();
     }
 
     #[test]
@@ -680,16 +688,20 @@ mod tests {
         assert!(state.panels.version);
     }
 
-    #[test]
     fn needs_overlay_data_is_false_for_cpu_only() {
         let panels = OverlayPanels::parse("cpu").unwrap();
         assert!(!panels.needs_overlay_data());
     }
 
-    #[test]
     fn needs_overlay_data_is_true_when_any_data_panel_enabled() {
         assert!(OverlayPanels::parse("mem").unwrap().needs_overlay_data());
         assert!(OverlayPanels::parse("disk").unwrap().needs_overlay_data());
         assert!(OverlayPanels::parse("tape").unwrap().needs_overlay_data());
+    }
+    /// Merged (every check kept): `needs_overlay_data_is_false_for_cpu_only`, `needs_overlay_data_is_true_when_any_data_panel_enabled`.
+    #[test]
+    fn needs_overlay_data() {
+        needs_overlay_data_is_false_for_cpu_only();
+        needs_overlay_data_is_true_when_any_data_panel_enabled();
     }
 }

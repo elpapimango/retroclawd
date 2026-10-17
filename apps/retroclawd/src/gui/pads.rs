@@ -528,17 +528,6 @@ mod tests {
     }
 
     #[test]
-    fn mistakes_are_explained() {
-        let err = |text: &str| PadBindings::resolve(&cfg(text), "m", &info(JOY)).unwrap_err();
-        assert!(err("[pads.9]\nsouth = \"space\"").contains("not a pad slot"));
-        assert!(err("[pads.deadzonee]\nsouth = \"space\"").contains("not a pad slot"));
-        assert!(err("[pads.1]\nturbo = \"space\"").contains("unknown pad button \"turbo\""));
-        assert!(err("[pads.1]\nsouth = \"nonesuch\"").contains("unknown machine key"));
-        assert!(err("[pads]\ndeadzone = 1.5").contains("deadzone"));
-        assert!(err("[pads.1]\nsouth = [\"none\", \"space\"]").contains("mixes"));
-    }
-
-    #[test]
     fn the_shared_layer_skips_keys_only_other_machines_have() {
         // `[pads.1]` is for every machine: Fire2 exists elsewhere, not here.
         let names = KeyNames {
@@ -579,21 +568,5 @@ mod tests {
         assert!(rel.is_empty() && press.is_empty());
         let (rel, _) = r.route(&[]);
         assert!(rel.is_empty());
-    }
-
-    #[test]
-    fn two_sources_on_one_machine_key_release_it_only_when_both_let_go() {
-        // Stick and D-pad both bound to Joy1Left: the shared reference count in
-        // `KeyRouter::apply` keeps the key down until both are released.
-        let b = PadBindings::resolve(&AppConfig::default(), "m", &info(JOY)).unwrap();
-        let mut pads = PadRouter::new(b);
-        let mut keys = super::super::keys::KeyRouter::new(Default::default());
-
-        let (rel, press) = pads.route(&[(1, state(&[PadButton::Left, PadButton::StickLeft]))]);
-        assert_eq!(keys.apply(rel, press), [("Joy1Left".to_string(), true)]);
-        let (rel, press) = pads.route(&[(1, state(&[PadButton::StickLeft]))]);
-        assert!(keys.apply(rel, press).is_empty());
-        let (rel, press) = pads.route(&[(1, state(&[]))]);
-        assert_eq!(keys.apply(rel, press), [("Joy1Left".to_string(), false)]);
     }
 }

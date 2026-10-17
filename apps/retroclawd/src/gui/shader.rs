@@ -71,7 +71,6 @@ mod tests {
         assert_eq!(cycle(Some("my/custom.wgsl"), 1), "crt");
     }
 
-    #[test]
     fn every_bundled_name_resolves() {
         for name in BUNDLED {
             assert!(!resolve_source(Some(name)).unwrap().is_empty(), "{name}");
@@ -83,7 +82,6 @@ mod tests {
         assert_eq!(resolve_source(None).unwrap(), PASSTHROUGH);
     }
 
-    #[test]
     fn bundled_names_resolve_to_their_own_source() {
         assert_eq!(resolve_source(Some("crt")).unwrap(), CRT);
         assert_eq!(resolve_source(Some("scanlines")).unwrap(), SCANLINES);
@@ -95,14 +93,18 @@ mod tests {
         assert_eq!(resolve_source(Some("zfast-crt")).unwrap(), ZFAST_CRT);
         assert_eq!(resolve_source(Some("crt-potato")).unwrap(), CRT_POTATO);
     }
-
+    /// Merged (every check kept): `every_bundled_name_resolves`, `bundled_names_resolve_to_their_own_source`.
     #[test]
+    fn bundled_shader_names_resolve() {
+        every_bundled_name_resolves();
+        bundled_names_resolve_to_their_own_source();
+    }
+
     fn unknown_name_is_treated_as_a_path_and_fails_to_read() {
         let err = resolve_source(Some("not-a-real-shader")).unwrap_err();
         assert!(err.contains("not-a-real-shader"));
     }
 
-    #[test]
     fn a_real_path_is_read_from_disk() {
         let dir = std::env::temp_dir();
         let path = dir.join(format!(
@@ -113,5 +115,11 @@ mod tests {
         let source = resolve_source(Some(path.to_str().unwrap())).unwrap();
         assert_eq!(source, "// custom");
         std::fs::remove_file(&path).unwrap();
+    }
+    /// Merged (every check kept): `unknown_name_is_treated_as_a_path_and_fails_to_read`, `a_real_path_is_read_from_disk`.
+    #[test]
+    fn shader_paths() {
+        unknown_name_is_treated_as_a_path_and_fails_to_read();
+        a_real_path_is_read_from_disk();
     }
 }

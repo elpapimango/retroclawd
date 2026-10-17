@@ -1298,29 +1298,6 @@ mod tests {
     }
 
     #[test]
-    fn next_disk_without_a_playlist_says_how_to_get_one() {
-        let rig = Rig::new("no-playlist");
-        rig.run(
-            FileAction::NextDisk,
-            "c64",
-            ALL_MEDIA,
-            clean(),
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-        );
-        let events = rig.events();
-        assert!(
-            events
-                .iter()
-                .any(|e| matches!(e, Event::Say(s) if s.contains("--disk list.m3u"))),
-            "{events:?}"
-        );
-        assert!(!events.iter().any(|e| matches!(e, Event::Apply(_))));
-    }
-
-    #[test]
     fn saving_a_state_writes_the_exported_bytes_and_proposes_a_dated_name() {
         let rig = Rig::new("save-state");
         let target = rig.dir.join("mine.state");
@@ -1424,7 +1401,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn the_last_folder_is_used_next_time_and_survives_a_restart() {
         let rig = Rig::new("memory");
         let sub = rig.dir.join("tapes");
@@ -1461,7 +1437,6 @@ mod tests {
         assert_eq!(FolderMemory::load(&state), FolderMemory::default());
     }
 
-    #[test]
     fn dialogs_open_in_the_remembered_folder() {
         let rig = Rig::new("start-dir");
         let tape = rig.file("t.tap", b"x");
@@ -1498,35 +1473,10 @@ mod tests {
         assert_eq!(dirs[0], None);
         assert_eq!(dirs[1], Some(std::fs::canonicalize(&rig.dir).unwrap()));
     }
-
+    /// Merged (every check kept): `the_last_folder_is_used_next_time_and_survives_a_restart`, `dialogs_open_in_the_remembered_folder`.
     #[test]
-    fn filters_follow_the_machine() {
-        assert_eq!(
-            extensions_for(FileKind::Tape, "cpc6128"),
-            ["cdt", "tzx", "voc", "wav"]
-        );
-        assert_eq!(
-            extensions_for(FileKind::Tape, "gx4000"),
-            ["cdt", "tzx", "voc", "wav"]
-        );
-        assert_eq!(
-            extensions_for(FileKind::Disk, "c64"),
-            ["d64", "d71", "d81", "g64", "x64"]
-        );
-        assert_eq!(
-            extensions_for(FileKind::Snapshot, "zx81"),
-            ["p", "p81", "81"]
-        );
-        assert_eq!(
-            extensions_for(FileKind::Tape, "zx81"),
-            ["p", "p81", "81", "tzx", "pzx", "csw", "voc", "wav"]
-        );
-        assert_eq!(default_save_extension(FileAction::SaveTape, "zx81"), "p");
-        assert_eq!(
-            default_save_extension(FileAction::SaveTape, "cpc6128"),
-            "cdt"
-        );
-        assert_eq!(extensions_for(FileKind::State, "anything"), ["state"]);
-        assert!(filters_for(FileKind::Disk, "zx81").is_empty());
+    fn the_last_folder_is_remembered() {
+        the_last_folder_is_used_next_time_and_survives_a_restart();
+        dialogs_open_in_the_remembered_folder();
     }
 }

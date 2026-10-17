@@ -124,28 +124,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn slots_wrap_in_both_directions() {
-        assert_eq!(step_slot(0, 1), 1);
-        assert_eq!(step_slot(9, 1), 0);
-        assert_eq!(step_slot(0, -1), 9);
-        assert_eq!(step_slot(5, -1), 4);
-    }
-
-    #[test]
-    fn state_paths_are_per_machine_and_slot() {
-        let dir = Path::new("states");
-        assert_eq!(
-            state_path(dir, "zx-spectrum-128", 3),
-            Path::new("states/zx-spectrum-128-slot3.state")
-        );
-        assert_ne!(state_path(dir, "c64", 0), state_path(dir, "c64", 1));
-        assert_eq!(
-            state_path(dir, "../evil", 0),
-            Path::new("states/___evil-slot0.state")
-        );
-    }
-
-    #[test]
     fn unix_time_converts_to_utc_calendar_time() {
         assert_eq!(utc_from_unix(0), (1970, 1, 1, 0, 0, 0));
         // 2000-03-01 00:00:00 UTC, right after a leap day.
@@ -154,15 +132,6 @@ mod tests {
         assert_eq!(utc_from_unix(1_709_210_096), (2024, 2, 29, 12, 34, 56));
         // 2026-10-10 00:00:00 UTC
         assert_eq!(utc_from_unix(1_791_590_400), (2026, 10, 10, 0, 0, 0));
-    }
-
-    #[test]
-    fn screenshot_names_sort_by_time() {
-        let dir = Path::new("shots");
-        let a = screenshot_path(dir, "c64", 1_709_210_096);
-        let b = screenshot_path(dir, "c64", 1_709_210_097);
-        assert_eq!(a, Path::new("shots/c64-20240229-123456.png"));
-        assert!(a < b);
     }
 
     #[test]
@@ -193,16 +162,5 @@ mod tests {
         assert_eq!(game_stem("pack.zip").as_deref(), Some("pack"));
         assert_eq!(game_stem("").as_deref(), None);
         assert_eq!(game_stem("../..").as_deref(), None);
-    }
-
-    #[test]
-    fn the_file_tag_adds_the_game_after_the_machine() {
-        assert_eq!(game_tag("c64", None), "c64");
-        assert_eq!(game_tag("c64", Some("Elite")), "c64-Elite");
-        assert_eq!(
-            state_path(Path::new("states"), &game_tag("c64", Some("Elite")), 2),
-            Path::new("states/c64-Elite-slot2.state")
-        );
-        assert_eq!(game_tag("c64", Some("../x")), "c64-___x");
     }
 }

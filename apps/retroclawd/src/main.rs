@@ -3119,14 +3119,12 @@ mod tests {
         assert!(resolve_paste_settings(&zero, "c64").is_err());
     }
 
-    #[test]
     fn window_and_pacing_settings_default_to_vsync_windowed() {
         let s = app_settings_for("", &[], "zx-spectrum");
         assert!(!s.fullscreen && !s.no_vsync);
         assert_eq!(s.max_fps, None);
     }
 
-    #[test]
     fn toml_sets_fullscreen_vsync_and_max_fps_with_machine_over_default() {
         let toml_text = r#"
             [default]
@@ -3146,14 +3144,12 @@ mod tests {
         assert_eq!(s.max_fps, Some(120));
     }
 
-    #[test]
     fn vsync_off_in_toml_gets_the_same_60_fps_preset_as_the_flag() {
         let s = app_settings_for("[default]\nvsync = false", &[], "c64");
         assert!(s.no_vsync);
         assert_eq!(s.max_fps, Some(60));
     }
 
-    #[test]
     fn cli_flags_beat_the_toml_for_window_and_pacing() {
         let toml_text = "[default]\nmax_fps = 50";
         let s = app_settings_for(
@@ -3163,6 +3159,14 @@ mod tests {
         );
         assert!(s.fullscreen && s.no_vsync);
         assert_eq!(s.max_fps, Some(75));
+    }
+    /// Merged (every check kept): `window_and_pacing_settings_default_to_vsync_windowed`, `toml_sets_fullscreen_vsync_and_max_fps_with_machine_over_default`, `vsync_off_in_toml_gets_the_same_60_fps_preset_as_the_flag`, `cli_flags_beat_the_toml_for_window_and_pacing`.
+    #[test]
+    fn window_and_pacing_settings() {
+        window_and_pacing_settings_default_to_vsync_windowed();
+        toml_sets_fullscreen_vsync_and_max_fps_with_machine_over_default();
+        vsync_off_in_toml_gets_the_same_60_fps_preset_as_the_flag();
+        cli_flags_beat_the_toml_for_window_and_pacing();
     }
 
     #[test]
@@ -3233,7 +3237,6 @@ mod tests {
         assert!(resolve_app_settings(&args_with(&[]), &config, "zx81", &names, &[]).is_ok());
     }
 
-    #[test]
     fn the_old_keymap_section_and_a_default_keys_section_are_explained() {
         let old = app_config::parse("[keymap.default]\nleft = \"left\"").unwrap();
         let err = validate_app_config(&old).unwrap_err();
@@ -3331,7 +3334,6 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    #[test]
     fn a_default_input_section_is_explained() {
         let config = app_config::parse("[default.input]\nlayout = \"symbolic\"").unwrap();
         let err = validate_app_config(&config).unwrap_err();
@@ -3343,7 +3345,6 @@ mod tests {
         assert!(validate_app_config(&ok).is_ok());
     }
 
-    #[test]
     fn a_default_pads_section_is_explained() {
         let config = app_config::parse("[default.pads.1]\nsouth = \"x\"").unwrap();
         let err = validate_app_config(&config).unwrap_err();
@@ -3357,6 +3358,13 @@ mod tests {
             .unwrap();
         assert!(validate_app_config(&ok).is_ok());
         assert!(!ok.machines["c64"].options.contains_key("pads"));
+    }
+    /// Merged (every check kept): `the_old_keymap_section_and_a_default_keys_section_are_explained`, `a_default_input_section_is_explained`, `a_default_pads_section_is_explained`.
+    #[test]
+    fn default_sections_are_explained() {
+        the_old_keymap_section_and_a_default_keys_section_are_explained();
+        a_default_input_section_is_explained();
+        a_default_pads_section_is_explained();
     }
 
     #[test]
@@ -3381,7 +3389,6 @@ mod tests {
         assert!(error.contains("nested `options` table is gone"), "{error}");
     }
 
-    #[test]
     fn debug_log_shorthand_maps_output_then_level() {
         // The exact selector shape from a real bug report (relative Windows path).
         let runtime = apply_plugin_runtime(&[r"debug-log:.\output.log:debug".to_string()]).unwrap();
@@ -3404,7 +3411,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn windows_drive_letters_stay_attached_to_their_path() {
         assert_eq!(
             split_plugin_tokens(r"C:\logs\out.log:debug"),
@@ -3429,6 +3435,12 @@ mod tests {
             plugin_api::DebugValue::Text(r"C:\logs\out.log".into())
         );
         assert_eq!(log.options[1].key, "level");
+    }
+    /// Merged (every check kept): `debug_log_shorthand_maps_output_then_level`, `windows_drive_letters_stay_attached_to_their_path`.
+    #[test]
+    fn debug_log_shorthand() {
+        debug_log_shorthand_maps_output_then_level();
+        windows_drive_letters_stay_attached_to_their_path();
     }
 
     #[test]
@@ -3540,7 +3552,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn dump_audio_needs_frames() {
         let try_parse = |flags: &[&str]| {
             let mut argv = vec!["retroclawd", "zx81"];
@@ -3551,7 +3562,6 @@ mod tests {
         assert!(try_parse(&["--headless", "--frames", "5", "--dump-audio", "a.wav"]).is_ok());
     }
 
-    #[test]
     fn frames_is_headless_only_and_excludes_max_cycles() {
         let try_parse = |flags: &[&str]| {
             let mut argv = vec!["retroclawd"];
@@ -3567,7 +3577,6 @@ mod tests {
         assert_eq!(args.frames, Some(50));
     }
 
-    #[test]
     fn type_needs_frames_and_type_after_needs_type() {
         let try_parse = |flags: &[&str]| {
             let mut argv = vec!["retroclawd"];
@@ -3619,6 +3628,13 @@ mod tests {
             try_parse(&["--headless", "--frames", "9", "--type-delay", "160"]).is_err(),
             "--type-delay without --type"
         );
+    }
+    /// Merged (every check kept): `dump_audio_needs_frames`, `frames_is_headless_only_and_excludes_max_cycles`, `type_needs_frames_and_type_after_needs_type`.
+    #[test]
+    fn options_that_need_frames() {
+        dump_audio_needs_frames();
+        frames_is_headless_only_and_excludes_max_cycles();
+        type_needs_frames_and_type_after_needs_type();
     }
 
     #[test]
@@ -3696,7 +3712,6 @@ mod tests {
         assert!(resolve_auto_run_profile(&tape, &c128_resolved(), &run_requested()).is_err());
     }
 
-    #[test]
     fn resolve_auto_run_profile_picks_c64_load_for_an_attached_d64_disk() {
         let args = args_with(&["--disk", "game.d64"]);
         let resolved = resolved_with_media(None);
@@ -3706,7 +3721,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn resolve_auto_run_profile_picks_c64_load_for_an_attached_d71_disk() {
         let args = args_with(&["--disk", "game.d71"]);
         let resolved = resolved_with_media(None);
@@ -3716,7 +3730,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn resolve_auto_run_profile_picks_c64_load_for_an_attached_d81_disk() {
         let args = args_with(&["--disk", "game.d81"]);
         let resolved = resolved_with_media(None);
@@ -3726,7 +3739,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn resolve_auto_run_profile_picks_c64_run_for_a_prg_program() {
         let args = args_with(&["--program", "game.prg"]);
         let resolved = resolved_with_media(None);
@@ -3736,7 +3748,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn resolve_auto_run_profile_picks_c64_run_for_a_t64_tape() {
         let args = args_with(&["--tape", "game.t64"]);
         let resolved = resolved_with_media(None);
@@ -3744,6 +3755,15 @@ mod tests {
             resolve_auto_run_profile(&args, &resolved, &run_requested()).unwrap(),
             Some(gui::AutoRunProfile::C64Run)
         );
+    }
+    /// Merged (every check kept): `resolve_auto_run_profile_picks_c64_load_for_an_attached_d64_disk`, `resolve_auto_run_profile_picks_c64_load_for_an_attached_d71_disk`, `resolve_auto_run_profile_picks_c64_load_for_an_attached_d81_disk`, `resolve_auto_run_profile_picks_c64_run_for_a_prg_program`, `resolve_auto_run_profile_picks_c64_run_for_a_t64_tape`.
+    #[test]
+    fn resolve_auto_run_profile_for_c64_media() {
+        resolve_auto_run_profile_picks_c64_load_for_an_attached_d64_disk();
+        resolve_auto_run_profile_picks_c64_load_for_an_attached_d71_disk();
+        resolve_auto_run_profile_picks_c64_load_for_an_attached_d81_disk();
+        resolve_auto_run_profile_picks_c64_run_for_a_prg_program();
+        resolve_auto_run_profile_picks_c64_run_for_a_t64_tape();
     }
 
     #[test]
@@ -4030,7 +4050,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn resolve_program_load_uses_org_verbatim_for_a_non_prg_extension() {
         let bytes = vec![0xEA, 0xEA, 0xEA];
         let (org, loaded) = resolve_program_load("test.bin", bytes.clone(), 0x4000).unwrap();
@@ -4052,7 +4071,6 @@ mod tests {
         assert_eq!(loaded, vec![0xAA, 0xBB, 0xCC]);
     }
 
-    #[test]
     fn resolve_program_load_extension_check_is_case_insensitive() {
         let bytes = vec![0x00, 0xC0, 0x42];
         let (org, loaded) = resolve_program_load("GAME.PRG", bytes, 0x4000).unwrap();
@@ -4060,12 +4078,18 @@ mod tests {
         assert_eq!(loaded, vec![0x42]);
     }
 
-    #[test]
     fn resolve_program_load_allows_a_header_only_prg_with_zero_program_bytes() {
         let bytes = vec![0x00, 0x80];
         let (org, loaded) = resolve_program_load("empty.prg", bytes, 0x4000).unwrap();
         assert_eq!(org, 0x8000);
         assert!(loaded.is_empty());
+    }
+    /// Merged (every check kept): `resolve_program_load_uses_org_verbatim_for_a_non_prg_extension`, `resolve_program_load_extension_check_is_case_insensitive`, `resolve_program_load_allows_a_header_only_prg_with_zero_program_bytes`.
+    #[test]
+    fn resolve_program_load_accepts_edge_cases() {
+        resolve_program_load_uses_org_verbatim_for_a_non_prg_extension();
+        resolve_program_load_extension_check_is_case_insensitive();
+        resolve_program_load_allows_a_header_only_prg_with_zero_program_bytes();
     }
 
     fn p00(prg: &[u8]) -> Vec<u8> {
@@ -4086,7 +4110,6 @@ mod tests {
         assert!(resolve_program_load("GAME.P07", file, 0x4000).is_ok());
     }
 
-    #[test]
     fn resolve_program_load_rejects_a_p00_without_the_header_or_a_load_address() {
         let err = resolve_program_load("x.p00", vec![0x01, 0x08, 0xAA], 0x4000).unwrap_err();
         assert!(err.contains("PC64"), "{err}");
@@ -4098,10 +4121,15 @@ mod tests {
         assert_eq!((org, bytes), (0x4000, vec![1, 2, 3]));
     }
 
-    #[test]
     fn resolve_program_load_rejects_a_prg_file_too_short_to_hold_a_load_address() {
         let err = resolve_program_load("bad.prg", vec![0x01], 0x4000).unwrap_err();
         assert!(err.contains("too short"));
+    }
+    /// Merged (every check kept): `resolve_program_load_rejects_a_p00_without_the_header_or_a_load_address`, `resolve_program_load_rejects_a_prg_file_too_short_to_hold_a_load_address`.
+    #[test]
+    fn resolve_program_load_rejects_short_files() {
+        resolve_program_load_rejects_a_p00_without_the_header_or_a_load_address();
+        resolve_program_load_rejects_a_prg_file_too_short_to_hold_a_load_address();
     }
 
     #[test]

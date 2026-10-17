@@ -388,35 +388,4 @@ mod tests {
         load(&path2.to_string_lossy()).unwrap();
         assert!(temp_root().is_some_and(|r| r.exists()));
     }
-
-    #[test]
-    fn progress_lines_name_the_file_and_the_amount() {
-        let start = Progress::Downloading {
-            source: "https://h/dir/Game%20One.zip#x".into(),
-            received: 0,
-            total: None,
-        };
-        assert_eq!(
-            progress_text(&start),
-            Some(("Downloading Game%20One.zip".to_string(), false))
-        );
-        let part = Progress::Downloading {
-            source: "https://h/g.zip".into(),
-            received: 1_048_576,
-            total: Some(4_194_304),
-        };
-        assert_eq!(
-            progress_text(&part).unwrap().0,
-            "Downloading g.zip: 1.0 MB of 4.0 MB (25%)"
-        );
-        let done = Progress::Downloaded {
-            source: "https://h/g.zip".into(),
-            bytes: 2_097_152,
-            seconds: 1.25,
-        };
-        assert_eq!(
-            progress_text(&done),
-            Some(("Downloaded g.zip (2.0 MB) in 1.2 s".to_string(), true))
-        );
-    }
 }

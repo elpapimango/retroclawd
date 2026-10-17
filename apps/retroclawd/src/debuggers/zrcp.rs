@@ -2752,13 +2752,11 @@ mod tests {
     use super::*;
     use plugin_api::RegisterField;
 
-    #[test]
     fn parse_hex_bytes_accepts_compact_and_spaced_forms() {
         assert_eq!(parse_hex_bytes("A0FF").unwrap(), vec![0xA0, 0xFF]);
         assert_eq!(parse_hex_bytes("A0 FF").unwrap(), vec![0xA0, 0xFF]);
     }
 
-    #[test]
     fn parse_u16_supports_zrcp_hex_suffix() {
         assert_eq!(parse_u16("140").unwrap(), 140);
         assert_eq!(parse_u16("8CH").unwrap(), 0x8C);
@@ -2766,7 +2764,6 @@ mod tests {
         assert_eq!(parse_u16("$8c").unwrap(), 0x8C);
     }
 
-    #[test]
     fn parse_run_args_accepts_verbose_limit_and_flags() {
         let parsed = parse_run_args(
             ["verbose", "100", "no-stop-on-data", "update-immediately"]
@@ -2780,17 +2777,24 @@ mod tests {
         assert!(parsed.update_immediately);
     }
 
-    #[test]
     fn parse_zrcp_breakpoint_condition_accepts_pc_equals_hex() {
         let (address, condition) = parse_zrcp_breakpoint_condition("PC=0038H").unwrap();
         assert_eq!(address, 0x0038);
         assert!(condition.is_none());
     }
 
-    #[test]
     fn parse_zrcp_breakpoint_condition_rejects_non_pc_expressions() {
         let error = parse_zrcp_breakpoint_condition("A=1").unwrap_err();
         assert!(error.contains("only PC=<addr>"));
+    }
+    /// Merged (every check kept): `parse_hex_bytes_accepts_compact_and_spaced_forms`, `parse_u16_supports_zrcp_hex_suffix`, `parse_run_args_accepts_verbose_limit_and_flags`, `parse_zrcp_breakpoint_condition_accepts_pc_equals_hex`, `parse_zrcp_breakpoint_condition_rejects_non_pc_expressions`.
+    #[test]
+    fn zrcp_argument_parsing() {
+        parse_hex_bytes_accepts_compact_and_spaced_forms();
+        parse_u16_supports_zrcp_hex_suffix();
+        parse_run_args_accepts_verbose_limit_and_flags();
+        parse_zrcp_breakpoint_condition_accepts_pc_equals_hex();
+        parse_zrcp_breakpoint_condition_rejects_non_pc_expressions();
     }
 
     struct FakeHost {
@@ -3042,7 +3046,6 @@ mod tests {
         assert!(reply.contains("Breakpoint fired: PC=0038H"));
     }
 
-    #[test]
     fn help_and_unknown_command_behave_as_expected() {
         let mut fake = FakeHost {
             state: fake_state(true, 0x1000),
@@ -3071,7 +3074,6 @@ mod tests {
         assert!(err.contains("unknown command"));
     }
 
-    #[test]
     fn recognized_unimplemented_command_returns_specific_error() {
         let mut fake = FakeHost {
             state: fake_state(true, 0x1000),
@@ -3088,7 +3090,6 @@ mod tests {
         assert!(err.contains("recognized in ZRCP"));
     }
 
-    #[test]
     fn metadata_commands_return_expected_shapes() {
         let mut fake = FakeHost {
             state: fake_state(true, 0x1000),
@@ -3115,7 +3116,6 @@ mod tests {
         assert_eq!(driver, "OK retroclawd");
     }
 
-    #[test]
     fn timing_and_io_diagnostics_commands_return_expected_payloads() {
         let mut fake = FakeHost {
             state: fake_state(true, 0x2000),
@@ -3500,7 +3500,6 @@ mod tests {
         assert!(after_clear.contains("4000H : 0"));
     }
 
-    #[test]
     fn lightweight_compatibility_commands_behave_consistently() {
         let mut fake = FakeHost {
             state: fake_state(true, 0x0036),
@@ -3596,7 +3595,6 @@ mod tests {
         };
         assert!(no_opt.contains("1: no"));
     }
-    #[test]
     fn ui_io_ports_and_reset_cpu_commands_work() {
         let mut fake = FakeHost {
             state: fake_state(true, 0x4321),
@@ -3664,6 +3662,16 @@ mod tests {
         assert!(!fake.state.halted);
         assert_eq!(fake.state.pc, 0);
         assert_eq!(fake.state.last_event.as_deref(), Some("reset"));
+    }
+    /// Merged (every check kept): `metadata_commands_return_expected_shapes`, `timing_and_io_diagnostics_commands_return_expected_payloads`, `lightweight_compatibility_commands_behave_consistently`, `ui_io_ports_and_reset_cpu_commands_work`, `help_and_unknown_command_behave_as_expected`, `recognized_unimplemented_command_returns_specific_error`.
+    #[test]
+    fn zrcp_compatibility_commands() {
+        metadata_commands_return_expected_shapes();
+        timing_and_io_diagnostics_commands_return_expected_payloads();
+        lightweight_compatibility_commands_behave_consistently();
+        ui_io_ports_and_reset_cpu_commands_work();
+        help_and_unknown_command_behave_as_expected();
+        recognized_unimplemented_command_returns_specific_error();
     }
 
     #[test]
@@ -4230,7 +4238,6 @@ mod tests {
         assert_eq!(get_snapshot, "OK DEAD");
     }
 
-    #[test]
     fn tcp_client_flow_accepts_zrcp_style_commands() {
         use std::io::{Read, Write};
         use std::net::{Shutdown, TcpListener, TcpStream};
@@ -4273,7 +4280,6 @@ mod tests {
         assert!(output.contains("OK bye"));
     }
 
-    #[test]
     fn tcp_client_flow_accepts_cr_nul_framing() {
         use std::io::{Read, Write};
         use std::net::{Shutdown, TcpListener, TcpStream};
@@ -4307,5 +4313,11 @@ mod tests {
         assert!(output.contains("OK 0.1.0"));
         assert!(output.contains("OK bye"));
         assert!(!output.contains("OK commands:"));
+    }
+    /// Merged (every check kept): `tcp_client_flow_accepts_zrcp_style_commands`, `tcp_client_flow_accepts_cr_nul_framing`.
+    #[test]
+    fn tcp_client_flows() {
+        tcp_client_flow_accepts_zrcp_style_commands();
+        tcp_client_flow_accepts_cr_nul_framing();
     }
 }

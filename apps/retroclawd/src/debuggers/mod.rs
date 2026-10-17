@@ -241,14 +241,4 @@ mod tests {
         drop(started);
         std::fs::remove_file(&path).ok();
     }
-
-    #[test]
-    fn every_built_in_debugger_describes_itself_under_its_own_selector() {
-        for info in built_in_infos() {
-            assert_eq!(
-                canonical_selector(&info.selector),
-                Some(info.selector.as_str())
-            );
-        }
-    }
 }

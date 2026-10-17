@@ -1595,7 +1595,6 @@ mod tests {
         assert!(q.take().is_empty());
     }
 
-    #[test]
     fn a_key_stays_down_for_a_whole_scan_before_its_release() {
         // A fast typist: the press and the release reach the thread together (a slow GUI frame).
         let mut q = queue(&[
@@ -1651,13 +1650,18 @@ mod tests {
         assert_eq!(q.take(), batch(&[("B", true)]));
     }
 
-    #[test]
     fn a_blocked_release_keeps_the_order_of_what_follows() {
         let mut q = queue(&[("A", true), ("A", false), ("B", true)]);
         assert_eq!(q.take(), batch(&[("A", true)]));
         assert!(q.take().is_empty());
         assert_eq!(q.take(), batch(&[("A", false)]));
         assert_eq!(q.take(), batch(&[("B", true)]));
+    }
+    /// Merged (every check kept): `a_key_stays_down_for_a_whole_scan_before_its_release`, `a_blocked_release_keeps_the_order_of_what_follows`.
+    #[test]
+    fn a_key_stays_down_for_a_whole_scan_and_the_order_holds() {
+        a_key_stays_down_for_a_whole_scan_before_its_release();
+        a_blocked_release_keeps_the_order_of_what_follows();
     }
 
     use super::*;

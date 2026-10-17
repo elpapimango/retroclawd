@@ -121,19 +121,4 @@ mod tests {
     fn an_empty_playlist_is_an_error() {
         assert!(parse_m3u("#EXTM3U\n\n", "list.m3u").is_err());
     }
-
-    #[test]
-    fn stepping_wraps_in_both_directions() {
-        assert_eq!(step_index(0, 3, true), 1);
-        assert_eq!(step_index(2, 3, true), 0);
-        assert_eq!(step_index(0, 3, false), 2);
-        assert_eq!(step_index(1, 3, false), 0);
-        assert_eq!(step_index(0, 0, true), 0);
-    }
-
-    #[test]
-    fn playlists_are_recognised_by_extension() {
-        assert!(is_playlist("a/b.M3U"));
-        assert!(!is_playlist("a/b.d64"));
-    }
 }

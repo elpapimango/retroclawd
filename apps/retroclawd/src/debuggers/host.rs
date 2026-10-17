@@ -552,20 +552,24 @@ fn register_width_bits(name: &str, value: u64) -> u16 {
 mod tests {
     use super::*;
 
-    #[test]
     fn width_helper_prefers_explicit_8_bit_register_names() {
         assert_eq!(register_width_bits("A", 0x1234), 8);
         assert_eq!(register_width_bits("I", 0xFFFF), 8);
     }
 
-    #[test]
     fn width_helper_defaults_to_16_for_common_cpu_widths() {
         assert_eq!(register_width_bits("PC", 0x1234), 16);
         assert_eq!(register_width_bits("CUSTOM", 0xFFFF), 16);
     }
 
-    #[test]
     fn width_helper_uses_64_when_value_is_large_and_name_unknown() {
         assert_eq!(register_width_bits("CUSTOM", 0x1_0000), 64);
+    }
+    /// Merged (every check kept): `width_helper_prefers_explicit_8_bit_register_names`, `width_helper_defaults_to_16_for_common_cpu_widths`, `width_helper_uses_64_when_value_is_large_and_name_unknown`.
+    #[test]
+    fn width_helper() {
+        width_helper_prefers_explicit_8_bit_register_names();
+        width_helper_defaults_to_16_for_common_cpu_widths();
+        width_helper_uses_64_when_value_is_large_and_name_unknown();
     }
 }
