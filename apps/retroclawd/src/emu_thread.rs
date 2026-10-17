@@ -113,11 +113,18 @@ pub(crate) type RequestedCount = Arc<AtomicU64>;
 /// guarantee at least one full scan with the key down, with margin for a debounce.
 const MIN_KEY_HOLD_TICKS: u64 = 2;
 
+/// How many whole ticks a key stays up before it can be pressed again. The firmware tells a new press of a
+/// key from the old one only by seeing it released: pressed again one tick after its release (`0000`), the CPC
+/// firmware saw one long press and typed a single `0` -- measured by typing with exact frame timings, where
+/// every gap of two or more ticks typed all four and every gap of one typed one.
+const MIN_KEY_GAP_TICKS: u64 = 2;
+
 /// The host's key events waiting for the machine, applied in order with two rules.
 ///
 /// 1. A *release* waits until its key has been down for `MIN_KEY_HOLD_TICKS` ticks (see above); the
 ///    events behind it wait too, so order holds.
-/// 2. A *press* that follows a *release* in the same tick waits for the next tick. The host sends
+/// 2. A *press* of a key waits until that key has been up for `MIN_KEY_GAP_TICKS` ticks.
+/// 3. A *press* that follows a *release* in the same tick waits for the next tick. The host sends
 ///    "release Shift, press the key" for a chord such as Shift+8 = `*`; applied together, the switch can
 ///    land in the middle of the machine's keyboard scan (the C64 KERNAL reads the matrix column by column
 ///    in its IRQ), which then sees the old Shift and the new key at once and decodes the key shifted --
@@ -128,6 +135,8 @@ struct KeyQueue {
     pending: VecDeque<(String, bool)>,
     /// The tick each key still held down was pressed on.
     pressed_at: std::collections::HashMap<String, u64>,
+    /// The tick each key was last released on.
+    released_at: std::collections::HashMap<String, u64>,
     tick: u64,
 }
 
@@ -143,7 +152,12 @@ impl KeyQueue {
         let mut released = false;
         while let Some((key, pressed)) = self.pending.front() {
             if *pressed {
-                if released {
+                if released
+                    || self
+                        .released_at
+                        .get(key)
+                        .is_some_and(|at| self.tick < at + MIN_KEY_GAP_TICKS)
+                {
                     break;
                 }
             } else if self
@@ -158,6 +172,7 @@ impl KeyQueue {
                 self.pressed_at.entry(key.clone()).or_insert(self.tick);
             } else {
                 self.pressed_at.remove(&key);
+                self.released_at.insert(key.clone(), self.tick);
                 released = true;
             }
             batch.push((key, pressed));
@@ -1583,16 +1598,57 @@ mod tests {
     #[test]
     fn a_key_stays_down_for_a_whole_scan_before_its_release() {
         // A fast typist: the press and the release reach the thread together (a slow GUI frame).
-        let mut q = queue(&[("KeyL", true), ("KeyL", false), ("KeyL", true), ("KeyL", false)]);
-        assert_eq!(q.take(), batch(&[("KeyL", true)]), "down, and not up in the same tick");
+        let mut q = queue(&[
+            ("KeyL", true),
+            ("KeyL", false),
+            ("KeyL", true),
+            ("KeyL", false),
+        ]);
+        assert_eq!(
+            q.take(),
+            batch(&[("KeyL", true)]),
+            "down, and not up in the same tick"
+        );
         assert!(q.take().is_empty(), "still down one tick later");
-        assert_eq!(q.take(), batch(&[("KeyL", false)]), "up after two ticks down");
-        // The second L may press only on the tick after the release.
+        assert_eq!(
+            q.take(),
+            batch(&[("KeyL", false)]),
+            "up after two ticks down"
+        );
+        // The second L may press only once the key has been up for two ticks, and then stays down two ticks too.
+        assert!(q.take().is_empty(), "still up, one tick");
         assert_eq!(q.take(), batch(&[("KeyL", true)]));
         assert!(q.take().is_empty());
         assert_eq!(q.take(), batch(&[("KeyL", false)]));
-        assert!(q.take().is_empty());
         assert!(q.pending.is_empty());
+    }
+
+    #[test]
+    fn a_key_is_up_for_two_ticks_before_it_can_be_pressed_again() {
+        // `0000` at full speed: each press comes straight after the last release.
+        let mut q = queue(&[
+            ("Digit0", true),
+            ("Digit0", false),
+            ("Digit0", true),
+            ("Digit0", false),
+        ]);
+        let mut downs = Vec::new();
+        let mut ups = Vec::new();
+        for t in 1..=12 {
+            for (_, pressed) in q.take() {
+                if pressed { downs.push(t) } else { ups.push(t) }
+            }
+        }
+        assert_eq!((downs.len(), ups.len()), (2, 2));
+        assert!(downs[1] >= ups[0] + MIN_KEY_GAP_TICKS, "{downs:?} {ups:?}");
+        assert!(ups[0] >= downs[0] + MIN_KEY_HOLD_TICKS, "{downs:?} {ups:?}");
+        // A different key is not held up by it.
+        let mut q = queue(&[("A", true), ("A", false)]);
+        for _ in 0..3 {
+            q.take();
+        }
+        q.push(("B".to_string(), true));
+        assert_eq!(q.take(), batch(&[("B", true)]));
     }
 
     #[test]
@@ -1936,7 +1992,10 @@ mod tests {
         run_tick(&mut rig);
         assert_eq!(queue.borrow().pending.len(), 1, "the press waits a tick");
         run_tick(&mut rig);
-        assert!(queue.borrow().pending.is_empty(), "and is applied on the next one");
+        assert!(
+            queue.borrow().pending.is_empty(),
+            "and is applied on the next one"
+        );
         assert!(queue.borrow().pressed_at.contains_key("KeyB"));
     }
 
