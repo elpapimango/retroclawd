@@ -104,29 +104,66 @@ pub(crate) type UnderrunCount = Arc<AtomicU64>;
 /// a genuine production stall.
 pub(crate) type RequestedCount = Arc<AtomicU64>;
 
-/// The key events to apply this tick, taken off the front of `pending`. A
-/// *press* that follows a *release* waits for the next tick (and everything
-/// behind it with it, so order holds).
+/// How many whole ticks a key stays down before its release is applied.
 ///
-/// The host sends "release Shift, press the key" for a chord such as
-/// Shift+8 = `*`. Applied together, the switch can land in the middle of the
-/// machine's own keyboard scan (the C64 KERNAL reads the matrix column by
-/// column in its IRQ), which then sees the old Shift and the new key at once
-/// and decodes the key shifted -- 39 of 870 switch offsets in
-/// `c64/tests/key_switch_race.rs`. One tick between the two leaves no scan
-/// that can see both.
-fn take_key_batch(pending: &mut VecDeque<(String, bool)>) -> Vec<(String, bool)> {
-    let mut batch = Vec::new();
-    let mut released = false;
-    while pending
-        .front()
-        .is_some_and(|(_, pressed)| !(*pressed && released))
-    {
-        let (key, pressed) = pending.pop_front().expect("front was just checked");
-        released |= !pressed;
-        batch.push((key, pressed));
+/// The machine only looks at its keyboard matrix when its own scan runs (the C64 KERNAL in its 50/60 Hz
+/// IRQ, the CPC firmware on its ticker), so a key that goes down and up inside one 20 ms tick is never
+/// seen. Typing quickly does exactly that -- `1 pint helo` for `10 print "hello"` -- whenever the host
+/// delivers a press and its release together (a slow GUI frame, or two keys overlapping). Two ticks
+/// guarantee at least one full scan with the key down, with margin for a debounce.
+const MIN_KEY_HOLD_TICKS: u64 = 2;
+
+/// The host's key events waiting for the machine, applied in order with two rules.
+///
+/// 1. A *release* waits until its key has been down for `MIN_KEY_HOLD_TICKS` ticks (see above); the
+///    events behind it wait too, so order holds.
+/// 2. A *press* that follows a *release* in the same tick waits for the next tick. The host sends
+///    "release Shift, press the key" for a chord such as Shift+8 = `*`; applied together, the switch can
+///    land in the middle of the machine's keyboard scan (the C64 KERNAL reads the matrix column by column
+///    in its IRQ), which then sees the old Shift and the new key at once and decodes the key shifted --
+///    39 of 870 switch offsets in `c64/tests/key_switch_race.rs`. One tick between the two leaves no scan
+///    that can see both.
+#[derive(Default)]
+struct KeyQueue {
+    pending: VecDeque<(String, bool)>,
+    /// The tick each key still held down was pressed on.
+    pressed_at: std::collections::HashMap<String, u64>,
+    tick: u64,
+}
+
+impl KeyQueue {
+    fn push(&mut self, event: (String, bool)) {
+        self.pending.push_back(event);
     }
-    batch
+
+    /// The events to apply this tick, taken off the front of the queue.
+    fn take(&mut self) -> Vec<(String, bool)> {
+        self.tick += 1;
+        let mut batch = Vec::new();
+        let mut released = false;
+        while let Some((key, pressed)) = self.pending.front() {
+            if *pressed {
+                if released {
+                    break;
+                }
+            } else if self
+                .pressed_at
+                .get(key)
+                .is_some_and(|at| self.tick < at + MIN_KEY_HOLD_TICKS)
+            {
+                break;
+            }
+            let (key, pressed) = self.pending.pop_front().expect("front was just checked");
+            if pressed {
+                self.pressed_at.entry(key.clone()).or_insert(self.tick);
+            } else {
+                self.pressed_at.remove(&key);
+                released = true;
+            }
+            batch.push((key, pressed));
+        }
+        batch
+    }
 }
 
 /// One tick's worth of work: apply any queued input, step the machine for
@@ -745,9 +782,8 @@ fn file_label(path: &std::path::Path) -> String {
 struct TickInputs<'a> {
     input_rx: &'a Receiver<(String, bool)>,
     /// Key events `tick` has taken off `input_rx` but not applied yet -- see
-    /// the "release, then press" rule in `tick`. Empty between ticks unless
-    /// one was deferred.
-    held_over: RefCell<VecDeque<(String, bool)>>,
+    /// `KeyQueue`. Empty between ticks unless one was deferred.
+    held_over: RefCell<KeyQueue>,
     command_rx: &'a Receiver<EmuCommand>,
     mouse_rx: &'a Receiver<MouseEvent>,
 }
@@ -818,9 +854,9 @@ fn tick(
     let batch = {
         let mut held_over = inputs.held_over.borrow_mut();
         while let Ok(event) = inputs.input_rx.try_recv() {
-            held_over.push_back(event);
+            held_over.push(event);
         }
-        take_key_batch(&mut held_over)
+        held_over.take()
     };
     for (key, pressed) in batch {
         drained_keys += 1;
@@ -1510,28 +1546,59 @@ mod tests {
         events(list).into()
     }
 
-    #[test]
-    fn a_press_after_a_release_waits_for_the_next_tick() {
-        // Shift+8: the host releases Shift and presses the key in one frame.
-        let mut pending = events(&[("ShiftLeft", false), ("Asterisk", true), ("KeyA", true)]);
-        assert_eq!(take_key_batch(&mut pending), batch(&[("ShiftLeft", false)]));
-        // Next tick: the deferred press and everything behind it, in order.
-        assert_eq!(
-            take_key_batch(&mut pending),
-            batch(&[("Asterisk", true), ("KeyA", true)])
-        );
-        assert!(pending.is_empty());
+    fn queue(list: &[(&str, bool)]) -> KeyQueue {
+        let mut q = KeyQueue::default();
+        for (k, p) in list {
+            q.push((k.to_string(), *p));
+        }
+        q
     }
 
     #[test]
-    fn presses_first_and_plain_releases_are_not_delayed() {
-        let mut pending = events(&[("A", true), ("B", true), ("A", false), ("B", false)]);
-        assert_eq!(take_key_batch(&mut pending).len(), 4);
+    fn a_press_after_a_release_waits_for_the_next_tick() {
+        // Shift+8: the host releases Shift and presses the key in one frame (Shift has been down a while).
+        let mut q = queue(&[("ShiftLeft", false), ("Asterisk", true), ("KeyA", true)]);
+        q.pressed_at.insert("ShiftLeft".to_string(), 0);
+        q.tick = 10;
+        assert_eq!(q.take(), batch(&[("ShiftLeft", false)]));
+        // Next tick: the deferred press and everything behind it, in order.
+        assert_eq!(q.take(), batch(&[("Asterisk", true), ("KeyA", true)]));
+        assert!(q.pending.is_empty());
+    }
+
+    #[test]
+    fn presses_and_releases_of_other_keys_are_not_delayed() {
+        let mut q = queue(&[("A", true), ("B", true)]);
+        assert_eq!(q.take().len(), 2, "rollover: two presses at once");
         // Release, release, press: only the press waits.
-        let mut pending = events(&[("A", false), ("B", false), ("C", true)]);
-        assert_eq!(take_key_batch(&mut pending).len(), 2);
-        assert_eq!(take_key_batch(&mut pending), batch(&[("C", true)]));
-        assert!(take_key_batch(&mut pending).is_empty());
+        let mut q = queue(&[("A", false), ("B", false), ("C", true)]);
+        assert_eq!(q.take().len(), 2);
+        assert_eq!(q.take(), batch(&[("C", true)]));
+        assert!(q.take().is_empty());
+    }
+
+    #[test]
+    fn a_key_stays_down_for_a_whole_scan_before_its_release() {
+        // A fast typist: the press and the release reach the thread together (a slow GUI frame).
+        let mut q = queue(&[("KeyL", true), ("KeyL", false), ("KeyL", true), ("KeyL", false)]);
+        assert_eq!(q.take(), batch(&[("KeyL", true)]), "down, and not up in the same tick");
+        assert!(q.take().is_empty(), "still down one tick later");
+        assert_eq!(q.take(), batch(&[("KeyL", false)]), "up after two ticks down");
+        // The second L may press only on the tick after the release.
+        assert_eq!(q.take(), batch(&[("KeyL", true)]));
+        assert!(q.take().is_empty());
+        assert_eq!(q.take(), batch(&[("KeyL", false)]));
+        assert!(q.take().is_empty());
+        assert!(q.pending.is_empty());
+    }
+
+    #[test]
+    fn a_blocked_release_keeps_the_order_of_what_follows() {
+        let mut q = queue(&[("A", true), ("A", false), ("B", true)]);
+        assert_eq!(q.take(), batch(&[("A", true)]));
+        assert!(q.take().is_empty());
+        assert_eq!(q.take(), batch(&[("A", false)]));
+        assert_eq!(q.take(), batch(&[("B", true)]));
     }
 
     use super::*;
