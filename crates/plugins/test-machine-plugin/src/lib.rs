@@ -69,8 +69,9 @@ static PLUGIN_DESCRIPTOR_V1: StaticPluginDescriptor = StaticPluginDescriptor(Plu
 struct StubMachine {
     pc: u16,
     ram: Vec<u8>,
-    disk: Option<Vec<u8>>,
-    disk_modified: bool,
+    /// Drive A and drive B.
+    disks: [Option<Vec<u8>>; 2],
+    disk_modified: [bool; 2],
     tape: bool,
 }
 
@@ -79,8 +80,8 @@ impl StubMachine {
         StubMachine {
             pc: 0x0100,
             ram: vec![0; 0x10000],
-            disk: None,
-            disk_modified: false,
+            disks: [None, None],
+            disk_modified: [false; 2],
             tape: false,
         }
     }
@@ -249,6 +250,19 @@ fn extension(name: Option<&str>) -> String {
         .to_ascii_lowercase()
 }
 
+/// A key event with this name marks the disk in drive A / drive B as written to.
+pub const DIRTY_DISK_A_KEY: &str = "dirty-disk-a";
+pub const DIRTY_DISK_B_KEY: &str = "dirty-disk-b";
+
+/// The stub has the two drives of a CPC or +3 interface.
+fn stub_drive(drive: u8) -> Result<usize, String> {
+    if drive < 2 {
+        Ok(usize::from(drive))
+    } else {
+        Err(format!("drive {drive} does not exist (drives 0 and 1)"))
+    }
+}
+
 /// A key event with this name panics inside the plugin.
 pub const CRASH_KEY: &str = "crash-now";
 
@@ -263,6 +277,15 @@ fn handle_machine_command(
         // Lets a test crash the plugin on demand (the host's crash handling is tested with it, in a process of its own).
         MachineCommand::KeyEvent { key, .. } if key == CRASH_KEY => {
             panic!("test plugin: crash requested")
+        }
+        // Lets a test play the guest writing to a disk.
+        MachineCommand::KeyEvent { key, .. } if key == DIRTY_DISK_A_KEY => {
+            m.disk_modified[0] = m.disks[0].is_some();
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::KeyEvent { key, .. } if key == DIRTY_DISK_B_KEY => {
+            m.disk_modified[1] = m.disks[1].is_some();
+            Ok(MachineResponse::Ack)
         }
         MachineCommand::KeyEvent { .. } => Ok(MachineResponse::Ack),
         MachineCommand::RequestInterrupt
@@ -315,7 +338,11 @@ fn handle_machine_command(
             }
         }
         MachineCommand::AttachMedia {
-            kind, name, bytes, ..
+            slot,
+            kind,
+            name,
+            bytes,
+            ..
         } => {
             let ext = extension(name.as_deref());
             match kind {
@@ -324,8 +351,12 @@ fn handle_machine_command(
                         return Err(".nib images are not supported by the stub machine".to_string());
                     }
                     dsk::parse(&bytes).map_err(|e| format!("not a disk image: {e}"))?;
-                    m.disk = Some(bytes);
-                    m.disk_modified = false;
+                    let drive = stub_drive(match slot {
+                        MediaSlot::Disk { drive } => drive,
+                        _ => 0,
+                    })?;
+                    m.disks[drive] = Some(bytes);
+                    m.disk_modified[drive] = false;
                     Ok(MachineResponse::Ack)
                 }
                 MediaKind::Tape => {
@@ -343,9 +374,10 @@ fn handle_machine_command(
             }
         }
         MachineCommand::DetachMedia { slot } => match slot {
-            MediaSlot::Disk { .. } => {
-                m.disk = None;
-                m.disk_modified = false;
+            MediaSlot::Disk { drive } => {
+                let drive = stub_drive(drive)?;
+                m.disks[drive] = None;
+                m.disk_modified[drive] = false;
                 Ok(MachineResponse::Ack)
             }
             MediaSlot::Tape => {
@@ -355,13 +387,17 @@ fn handle_machine_command(
             other => Err(format!("unsupported: nothing to detach in {other:?}")),
         },
         MachineCommand::ExportDisk {
-            only_if_modified, ..
-        } => Ok(MachineResponse::DiskImage(match &m.disk {
-            Some(image) if !only_if_modified || m.disk_modified => Some(image.clone()),
-            _ => None,
-        })),
-        MachineCommand::MarkDiskSaved { .. } => {
-            m.disk_modified = false;
+            drive,
+            only_if_modified,
+        } => {
+            let drive = stub_drive(drive)?;
+            Ok(MachineResponse::DiskImage(match &m.disks[drive] {
+                Some(image) if !only_if_modified || m.disk_modified[drive] => Some(image.clone()),
+                _ => None,
+            }))
+        }
+        MachineCommand::MarkDiskSaved { drive } => {
+            m.disk_modified[stub_drive(drive)?] = false;
             Ok(MachineResponse::Ack)
         }
         MachineCommand::ExportTape { .. } => Ok(MachineResponse::TapeImage(None)),

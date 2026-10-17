@@ -44,6 +44,7 @@ FILES=(
   "sinclair|zx-spectrum/spec128uk_4.02.rom|d60d884a22ea9d607340710175981336dbdaa92e"
   "sinclair|zx-spectrum/spec128uk_derby1.4.rom|12a71560b431462cd877edcdec48a18874befc9a"
   "amstrad|cpc/cpc464.rom|56d39c463da60968d93e58b4ba0e675829412a20"
+  "amstrad|cpc/cpc664.rom|4a38f7f5bf7fd0a95cf882433c69e67251a46868"
   "amstrad|cpc/cpc6128.rom|29dd0487dc5a96cd00966d074de8700ddd4ee18b"
   "commodore|c64/kernal-901227-03.bin|1d503e56df85a62fee696e7618dc5b4e781df1bb"
   "commodore|c64/basic-901226-01.bin|79015323128650c742a3694c9429aa91f355905e"

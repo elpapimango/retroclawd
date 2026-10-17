@@ -19,6 +19,7 @@ use bevy::input::keyboard::KeyCode;
 use bevy::prelude::Resource;
 
 use super::input::stable_host_key_name;
+use super::pads::{MAX_PADS, PadButton, PadState};
 
 /// A host-level action a hotkey can trigger.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -49,6 +50,9 @@ pub(crate) enum Action {
     SaveState,
     SaveTape,
     SaveDisk,
+    LoadDiskB,
+    EjectDiskB,
+    SaveDiskB,
     NextDisk,
     PrevDisk,
     Freeze,
@@ -70,6 +74,9 @@ impl Action {
             Action::SaveState => FileAction::SaveState,
             Action::SaveTape => FileAction::SaveTape,
             Action::SaveDisk => FileAction::SaveDisk,
+            Action::LoadDiskB => FileAction::LoadDiskB,
+            Action::EjectDiskB => FileAction::EjectDiskB,
+            Action::SaveDiskB => FileAction::SaveDiskB,
             Action::NextDisk => FileAction::NextDisk,
             Action::PrevDisk => FileAction::PrevDisk,
             _ => return None,
@@ -92,7 +99,7 @@ pub(crate) struct ActionInfo {
 /// and Scroll Lock (plus chords on those): none of them is a key any
 /// emulated machine uses (the C64's F1/F3/F5/F7 and the Spectrum/CPC/C64
 /// letter and modifier keys all stay with the machine).
-pub(crate) const ACTIONS: [ActionInfo; 30] = [
+pub(crate) const ACTIONS: [ActionInfo; 33] = [
     ActionInfo {
         action: Action::Reset,
         name: "reset",
@@ -226,6 +233,27 @@ pub(crate) const ACTIONS: [ActionInfo; 30] = [
         name: "load_disk",
         default: Some("ctrl+shift+f10"),
         help: "choose a disk image and put it in the drive (asks first if the current disk has unsaved changes)",
+        hold: false,
+    },
+    ActionInfo {
+        action: Action::LoadDiskB,
+        name: "load_disk_b",
+        default: None,
+        help: "choose a disk image for the second drive (drive B of a CPC664/6128); refused while its disk has unsaved changes",
+        hold: false,
+    },
+    ActionInfo {
+        action: Action::EjectDiskB,
+        name: "eject_disk_b",
+        default: None,
+        help: "take the disk out of drive B (refused while it has unsaved changes)",
+        hold: false,
+    },
+    ActionInfo {
+        action: Action::SaveDiskB,
+        name: "save_disk_b",
+        default: None,
+        help: "save a copy of the disk in drive B as a .dsk file (and count its changes as saved)",
         hold: false,
     },
     ActionInfo {
@@ -836,10 +864,76 @@ pub(crate) fn parse_chord(text: &str) -> Result<Chord, String> {
     Ok(chord)
 }
 
+/// A gamepad hotkey: every button of the chord held at once, on one pad (`pad1:select+start`) or on any pad (`pad:select+start`).
+/// Written in the same `[hotkeys]` lists as keyboard chords.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PadChord {
+    /// Pad slot 1-4, or any pad.
+    pub(crate) slot: Option<u8>,
+    pub(crate) buttons: Vec<PadButton>,
+}
+
+impl PadChord {
+    pub(crate) fn to_text(&self) -> String {
+        let buttons: Vec<&str> = self.buttons.iter().map(|b| b.name()).collect();
+        match self.slot {
+            Some(slot) => format!("pad{slot}:{}", buttons.join("+")),
+            None => format!("pad:{}", buttons.join("+")),
+        }
+    }
+}
+
+/// `Some` when `text` is a pad chord (`pad:`/`padN:` then buttons joined by `+`): `Ok` with the chord or `Err` naming what is
+/// wrong with it; `None` for a keyboard chord.
+pub(crate) fn parse_pad_chord(text: &str) -> Option<Result<PadChord, String>> {
+    let trimmed = text.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let rest = lower.strip_prefix("pad")?;
+    let (digits, buttons) = rest.split_once(':')?;
+    if !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let slot = if digits.is_empty() {
+        None
+    } else {
+        match digits.parse::<u8>() {
+            Ok(n) if (1..=MAX_PADS).contains(&n) => Some(n),
+            _ => {
+                return Some(Err(format!(
+                    "\"{trimmed}\": pad slot {digits} does not exist (pad1 to pad{MAX_PADS}, or just pad)"
+                )));
+            }
+        }
+    };
+    let mut list = Vec::new();
+    for name in buttons.split('+') {
+        let Some(button) = PadButton::parse(name) else {
+            return Some(Err(format!(
+                "\"{trimmed}\": unknown pad button \"{}\" ({})",
+                name.trim(),
+                PadButton::ALL.map(PadButton::name).join(", ")
+            )));
+        };
+        if list.contains(&button) {
+            return Some(Err(format!(
+                "\"{trimmed}\": button \"{}\" repeated",
+                button.name()
+            )));
+        }
+        list.push(button);
+    }
+    Some(Ok(PadChord {
+        slot,
+        buttons: list,
+    }))
+}
+
 /// The resolved hotkey table for one machine.
 #[derive(Resource, Clone, Debug, Default)]
 pub(crate) struct Hotkeys {
     bindings: Vec<(Action, Chord)>,
+    /// Gamepad chords (`pad1:select+start`); they need no `modifier` key.
+    pad_bindings: Vec<(Action, PadChord)>,
     /// Hold-to-enable key from `hotkeys.modifier`; every chord needs it held.
     modifier: Option<KeyCode>,
 }
@@ -871,6 +965,36 @@ impl HotkeyState {
     pub(crate) fn swallow_all(&mut self, keyboard: &ButtonInput<KeyCode>) {
         self.swallowed.extend(keyboard.get_pressed().copied());
     }
+}
+
+/// Bookkeeping `Hotkeys::poll_pads` needs between frames.
+#[derive(Resource, Default, Debug)]
+pub(crate) struct PadHotkeyState {
+    /// Pad chords that are held down now (index into the table) and the pad they are held on.
+    active: HashMap<usize, u8>,
+    /// Buttons of a chord that fired: hidden from the machine until released, like a swallowed key.
+    swallowed: HashSet<(u8, PadButton)>,
+}
+
+impl PadHotkeyState {
+    /// Clears the swallowed buttons from the pad states before they are routed to the machine.
+    pub(crate) fn mask(&self, pads: &mut [(u8, PadState)]) {
+        for (slot, state) in pads {
+            for (swallowed_slot, button) in &self.swallowed {
+                if swallowed_slot == slot {
+                    state.set(*button, false);
+                }
+            }
+        }
+    }
+}
+
+/// What the pad hotkeys need between frames: the chord bookkeeping, and the triggers `pad_input` found, which it hands to
+/// `hotkey_input` (the system that owns everything an action needs) for its next run.
+#[derive(Resource, Default, Debug)]
+pub(crate) struct PadTriggers {
+    pub(crate) state: PadHotkeyState,
+    pub(crate) triggers: Vec<Trigger>,
 }
 
 /// What a hotkey did this frame.
@@ -935,8 +1059,23 @@ impl Hotkeys {
         };
 
         let mut bindings: Vec<(Action, Chord)> = Vec::new();
+        let mut pad_bindings: Vec<(Action, PadChord)> = Vec::new();
         for info in &ACTIONS {
             for text in &table[&info.action] {
+                if let Some(parsed) = parse_pad_chord(text) {
+                    let chord = parsed.map_err(|e| format!("hotkey \"{}\": {e}", info.name))?;
+                    if let Some((other, _)) = pad_bindings.iter().find(|(_, c)| *c == chord) {
+                        return Err(format!(
+                            "hotkey chord \"{}\" is bound to both \"{}\" and \"{}\" -- rebind one \
+                             (or set it to \"none\")",
+                            chord.to_text(),
+                            other.info().name,
+                            info.name
+                        ));
+                    }
+                    pad_bindings.push((info.action, chord));
+                    continue;
+                }
                 let chord =
                     parse_chord(text).map_err(|e| format!("hotkey \"{}\": {e}", info.name))?;
                 if let Some((other, _)) = bindings.iter().find(|(_, c)| *c == chord) {
@@ -951,7 +1090,11 @@ impl Hotkeys {
                 bindings.push((info.action, chord));
             }
         }
-        Ok(Hotkeys { bindings, modifier })
+        Ok(Hotkeys {
+            bindings,
+            pad_bindings,
+            modifier,
+        })
     }
 
     /// Chords bound to `action` (for listings and tests).
@@ -960,6 +1103,15 @@ impl Hotkeys {
             .iter()
             .filter(|(a, _)| *a == action)
             .map(|(_, chord)| *chord)
+            .collect()
+    }
+
+    /// Gamepad chords bound to `action`.
+    pub(crate) fn pad_chords_for(&self, action: Action) -> Vec<PadChord> {
+        self.pad_bindings
+            .iter()
+            .filter(|(a, _)| *a == action)
+            .map(|(_, chord)| chord.clone())
             .collect()
     }
 
@@ -1015,6 +1167,47 @@ impl Hotkeys {
         triggers
     }
 
+    /// Compares the connected pads (slot, buttons held) to the pad chords for one frame: a chord fires when its last button goes
+    /// down (a hold action also reports its end) and its buttons are swallowed until released (`PadHotkeyState::mask`). The
+    /// first button of a two-button chord reaches the machine a moment before the second one arrives, as a key would.
+    pub(crate) fn poll_pads(
+        &self,
+        pads: &[(u8, PadState)],
+        state: &mut PadHotkeyState,
+    ) -> Vec<Trigger> {
+        state.swallowed.retain(|(slot, button)| {
+            pads.iter()
+                .any(|(s, pad)| s == slot && pad.is_down(*button))
+        });
+        let mut triggers = Vec::new();
+        for (index, (action, chord)) in self.pad_bindings.iter().enumerate() {
+            let held_on = pads
+                .iter()
+                .find(|(slot, pad)| {
+                    chord.slot.is_none_or(|want| want == *slot)
+                        && chord.buttons.iter().all(|b| pad.is_down(*b))
+                })
+                .map(|(slot, _)| *slot);
+            match (held_on, state.active.contains_key(&index)) {
+                (Some(slot), false) => {
+                    state.active.insert(index, slot);
+                    for button in &chord.buttons {
+                        state.swallowed.insert((slot, *button));
+                    }
+                    triggers.push(Trigger::Pressed(*action));
+                }
+                (None, true) => {
+                    state.active.remove(&index);
+                    if action.info().hold {
+                        triggers.push(Trigger::Released(*action));
+                    }
+                }
+                _ => {}
+            }
+        }
+        triggers
+    }
+
     /// Plain-text table for `--list-hotkeys`.
     pub(crate) fn describe(&self) -> String {
         let mut out = String::new();
@@ -1033,6 +1226,11 @@ impl Hotkeys {
                 .chords_for(info.action)
                 .into_iter()
                 .map(Chord::to_text)
+                .chain(
+                    self.pad_chords_for(info.action)
+                        .iter()
+                        .map(PadChord::to_text),
+                )
                 .collect();
             let bound = if chords.is_empty() {
                 "(unbound)".to_string()
@@ -1063,6 +1261,132 @@ mod tests {
             keyboard.press(*key);
         }
         keyboard
+    }
+
+    fn pad(slot: u8, buttons: &[PadButton]) -> (u8, PadState) {
+        let mut state = PadState::default();
+        for b in buttons {
+            state.set(*b, true);
+        }
+        (slot, state)
+    }
+
+    #[test]
+    fn pad_chords_parse_with_a_slot_or_for_any_pad() {
+        let chord = parse_pad_chord("pad1:Select+Start").unwrap().unwrap();
+        assert_eq!(chord.slot, Some(1));
+        assert_eq!(chord.buttons, [PadButton::Select, PadButton::Start]);
+        assert_eq!(chord.to_text(), "pad1:select+start");
+        let any = parse_pad_chord("PAD:l1+r1+a").unwrap().unwrap();
+        assert_eq!(any.slot, None);
+        assert_eq!(
+            any.buttons,
+            [PadButton::L1, PadButton::R1, PadButton::South]
+        );
+        // Keyboard chords are not pad chords, errors name the problem.
+        assert!(parse_pad_chord("ctrl+f5").is_none());
+        assert!(parse_pad_chord("pause").is_none());
+        let err = |text: &str| parse_pad_chord(text).unwrap().unwrap_err();
+        assert!(err("pad9:start").contains("does not exist"));
+        assert!(err("pad:turbo").contains("unknown pad button"));
+        assert!(err("pad:start+start").contains("repeated"));
+    }
+
+    #[test]
+    fn a_pad_chord_resolves_beside_keyboard_chords_and_is_listed() {
+        let hotkeys = Hotkeys::resolve(
+            &config("[hotkeys]\nreset = [\"f12\", \"pad1:select+start\"]\npause = \"pad:start\""),
+            "c64",
+        )
+        .unwrap();
+        let reset = Action::from_name("reset").unwrap();
+        assert_eq!(
+            hotkeys.chords_for(reset).len(),
+            1,
+            "the keyboard chord stays"
+        );
+        assert_eq!(
+            hotkeys.pad_chords_for(reset)[0].to_text(),
+            "pad1:select+start"
+        );
+        let listing = hotkeys.describe();
+        assert!(listing.contains("KC_F12, pad1:select+start"), "{listing}");
+        // The same pad chord on two actions is the same error as for keys; a typo is reported with the action.
+        let both = Hotkeys::resolve(
+            &config("[hotkeys]\nreset = \"pad:start\"\npause = \"pad:start\""),
+            "c64",
+        )
+        .unwrap_err();
+        assert!(both.contains("bound to both"), "{both}");
+        let bad = Hotkeys::resolve(&config("[hotkeys]\nreset = \"pad:warp\""), "c64").unwrap_err();
+        assert!(
+            bad.contains("hotkey \"reset\"") && bad.contains("unknown pad button"),
+            "{bad}"
+        );
+    }
+
+    #[test]
+    fn a_pad_chord_fires_once_on_its_last_button_and_hides_its_buttons() {
+        let hotkeys = Hotkeys::resolve(
+            &config("[hotkeys]\nreset = \"pad1:select+start\"\nfast_forward = \"pad:r2\""),
+            "c64",
+        )
+        .unwrap();
+        let reset = Action::from_name("reset").unwrap();
+        let fast = Action::from_name("fast_forward").unwrap();
+        let mut state = PadHotkeyState::default();
+        let mut poll = |pads: &[(u8, PadState)]| hotkeys.poll_pads(pads, &mut state);
+
+        assert!(
+            poll(&[pad(1, &[PadButton::Select])]).is_empty(),
+            "half a chord does nothing"
+        );
+        assert_eq!(
+            poll(&[pad(1, &[PadButton::Select, PadButton::Start])]),
+            [Trigger::Pressed(reset)]
+        );
+        assert!(
+            poll(&[pad(1, &[PadButton::Select, PadButton::Start])]).is_empty(),
+            "held: no repeat"
+        );
+        // Another pad's buttons do not count for `pad1:`; a hold action on any pad reports both edges.
+        assert!(poll(&[pad(1, &[]), pad(2, &[PadButton::Select, PadButton::Start])]).is_empty());
+        assert_eq!(poll(&[pad(2, &[PadButton::R2])]), [Trigger::Pressed(fast)]);
+        assert_eq!(poll(&[pad(2, &[])]), [Trigger::Released(fast)]);
+    }
+
+    #[test]
+    fn swallowed_pad_buttons_are_masked_until_they_are_let_go() {
+        let hotkeys =
+            Hotkeys::resolve(&config("[hotkeys]\nreset = \"pad1:select+start\""), "c64").unwrap();
+        let mut state = PadHotkeyState::default();
+        let mut pads = [pad(
+            1,
+            &[PadButton::Select, PadButton::Start, PadButton::South],
+        )];
+        assert_eq!(hotkeys.poll_pads(&pads, &mut state).len(), 1);
+        state.mask(&mut pads);
+        assert!(!pads[0].1.is_down(PadButton::Select) && !pads[0].1.is_down(PadButton::Start));
+        assert!(
+            pads[0].1.is_down(PadButton::South),
+            "other buttons still reach the machine"
+        );
+        // Start is let go and pressed again alone: the chord is over, so Start is the machine's again once Select is released
+        // and Start comes back.
+        let mut pads = [pad(1, &[PadButton::Select])];
+        hotkeys.poll_pads(&pads, &mut state);
+        state.mask(&mut pads);
+        assert!(
+            !pads[0].1.is_down(PadButton::Select),
+            "Select was not let go yet"
+        );
+        let mut pads = [pad(1, &[])];
+        hotkeys.poll_pads(&pads, &mut state);
+        state.mask(&mut pads);
+        let mut pads = [pad(1, &[PadButton::Start])];
+        hotkeys.poll_pads(&pads, &mut state);
+        state.mask(&mut pads);
+        assert!(pads[0].1.is_down(PadButton::Start));
     }
 
     #[test]

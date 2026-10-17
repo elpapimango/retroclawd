@@ -25,6 +25,9 @@ pub(crate) enum Action {
     LoadDisk(String),
     EjectTape,
     EjectDisk,
+    LoadDiskB(String),
+    EjectDiskB,
+    SaveDiskB(String),
     LoadSnapshot(String),
     SaveSnapshot(String),
     LoadState(String),
@@ -77,6 +80,9 @@ pub(crate) fn parse(text: &str) -> Result<Scripted, String> {
         "state_slot_prev" => none(&arg).map(|()| Action::StateSlot(-1))?,
         "eject_tape" => none(&arg).map(|()| Action::EjectTape)?,
         "eject_disk" => none(&arg).map(|()| Action::EjectDisk)?,
+        "eject_disk_b" => none(&arg).map(|()| Action::EjectDiskB)?,
+        "load_disk_b" => Action::LoadDiskB(need(arg)?),
+        "save_disk_b" => Action::SaveDiskB(need(arg)?),
         "load_tape" => Action::LoadTape(need(arg)?),
         "load_disk" => Action::LoadDisk(need(arg)?),
         "load_snapshot" => Action::LoadSnapshot(need(arg)?),
@@ -94,7 +100,7 @@ pub(crate) fn parse(text: &str) -> Result<Scripted, String> {
         _ => {
             return Err(format!(
                 "--at {text}: unknown action {name:?} (reset, freeze, screenshot[=FILE], quick_save, quick_load, \
-                 state_slot_next, state_slot_prev, load_tape=F, load_disk=F, eject_tape, eject_disk, load_snapshot=F, \
+                 state_slot_next, state_slot_prev, load_tape=F, load_disk=F, eject_tape, eject_disk, load_disk_b=F, eject_disk_b, save_disk_b=F, load_snapshot=F, \
                  save_snapshot=F, load_state=F, save_state=F, save_tape=F, save_disk=F)"
             ));
         }
@@ -169,6 +175,22 @@ impl Runner {
             Action::StateSlot(delta) => command(self, EmuCommand::StateSlot(*delta), machine),
             Action::EjectTape => command(self, EmuCommand::Media(MediaOp::EjectTape), machine),
             Action::EjectDisk => command(self, EmuCommand::Media(MediaOp::EjectDisk), machine),
+            Action::EjectDiskB => command(self, EmuCommand::Media(MediaOp::EjectDiskB), machine),
+            Action::LoadDiskB(path) => {
+                let (extension, bytes) = read(path)?;
+                let op = MediaOp::AttachDiskB {
+                    extension,
+                    bytes,
+                    path: path.into(),
+                };
+                command(self, EmuCommand::Media(op), machine)
+            }
+            Action::SaveDiskB(path) => {
+                let note = self.save(Export::DiskB, path, machine)?;
+                self.control
+                    .apply(EmuCommand::Media(MediaOp::DiskBSaved), machine);
+                Ok(note)
+            }
             Action::KeyDown(key) | Action::KeyUp(key) => {
                 machine
                     .try_key_event(key, matches!(action, Action::KeyDown(_)))
@@ -265,6 +287,7 @@ fn is_failure(message: &str) -> bool {
     message.contains("failed")
         || message.starts_with("No saved state")
         || message.starts_with("Freeze:")
+        || message.starts_with("Drive B has unsaved changes")
 }
 
 #[cfg(test)]
@@ -289,6 +312,15 @@ mod tests {
             Action::StateSlot(1)
         );
         assert_eq!(
+            parse("2:load_disk_b=b.dsk").unwrap().action,
+            Action::LoadDiskB("b.dsk".into())
+        );
+        assert_eq!(parse("2:eject_disk_b").unwrap().action, Action::EjectDiskB);
+        assert_eq!(
+            parse("2:save_disk_b=o.dsk").unwrap().action,
+            Action::SaveDiskB("o.dsk".into())
+        );
+        assert_eq!(
             parse("9:screenshot").unwrap().action,
             Action::Screenshot(None)
         );
@@ -307,6 +339,41 @@ mod tests {
         assert!(parse("1:reset=now").unwrap_err().contains("no argument"));
         assert!(parse("1:pause").unwrap_err().contains("headless"));
         assert!(parse("1:jump").unwrap_err().contains("unknown action"));
+    }
+
+    #[test]
+    fn drive_b_actions_load_save_and_eject_through_files() {
+        let machine_id = "stub-machine";
+        let mut machine =
+            crate::plugin_bridge::create_hosted_machine(plugin_api::MachineCreateRequest {
+                machine_id: machine_id.to_string(),
+                region: Some("pal".to_string()),
+                roms: Vec::new(),
+                options: Vec::new(),
+            })
+            .expect("the bundled stub machine");
+        let dir = std::env::temp_dir().join(format!("rc-scripted-b-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let disk = dir.join("b.dsk");
+        let copy = dir.join("copy.dsk");
+        std::fs::write(&disk, dsk::Disk::new(1).to_bytes()).unwrap();
+        let actions = vec![
+            parse(&format!("0:load_disk_b={}", disk.display())).unwrap(),
+            parse(&format!("1:save_disk_b={}", copy.display())).unwrap(),
+            parse("2:eject_disk_b").unwrap(),
+            parse(&format!("3:save_disk_b={}", copy.display())).unwrap(),
+        ];
+        let mut runner = Runner::new(machine_id, MediaSettings::default(), actions);
+        for frame in 0..3 {
+            runner.run_due(frame, &mut machine);
+        }
+        assert!(!runner.failed);
+        assert!(copy.exists(), "save_disk_b wrote a copy of drive B");
+        assert_eq!(std::fs::read(&copy).unwrap(), std::fs::read(&disk).unwrap());
+        // Nothing left in drive B to save: that is a failed action, not a silent no-op.
+        runner.run_due(3, &mut machine);
+        assert!(runner.failed);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

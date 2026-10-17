@@ -256,6 +256,21 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     (`scripted.rs`, reusing `HostControl::apply`; failures exit 1), and `SymbolTable::substitute` folds `NAME+1`/`NAME-$10` and
     `#<NAME`/`#>NAME`. **Still open:** hotkeys that need a window (`--at pause` etc. are refused), drag and drop, recent files, a second drive, pad buttons
     as hotkey triggers, dead keys/non-ASCII. (The live crash test was added afterwards: the stub panics on a `crash-now` key, run in a child copy of the test binary.)
+- **DONE (2026-10-16, later): the open-items queue (1-6).**
+  - AmstradDiag on a CPC664 (the 664 ROM is now in `fetch_roms.sh`): system information (model, FDC detected), lower RAM, ROM test (OS 664
+    FD6F, 664 BASIC 1440, AMSDOS 0F91). A 464 cannot run the disk (no FDC); the cartridge needs a GX4000. The diagnostics' own sound test
+    exists in the repo only after v1.3 (the release has no `[T]` entry), so instead the PSG is tested from the other side: eight CPC suite
+    cases program the AY through the PPI exactly as that test's source does (periods `0238/01DD/017B`) and `--dump-audio` measures the result
+    (each channel's frequency with sub-harmonic checks, chord, mixer mute, noise, volume, register 1 four bits like an AY-3-8912).
+  - C64 dead test: now runs to frame 4000 and checks the screen RAM and colour RAM tests too, and that the main RAM test starts. A full RAM
+    pass is about half an hour of machine time (20 patterns per byte with a delay loop), so it is not run; the unified cartridge's mode
+    switch is hardware specific and not run either. Mutation-checked (colour RAM bit stuck).
+  - Host: pad chords in `[hotkeys]` (`pad1:select+start`), accent folding and dead keys in the symbolic layout and in paste, and a second
+    drive: `--disk-b`/`--disk-b-save`, `load_disk_b`/`eject_disk_b`/`save_disk_b`, `nec765` with two units (shared), CPC plugin drive 1.
+    Verified with the real 6128 firmware reading `B:` files. Per-game `[hotkeys]`/`[pads]` and the live plugin-crash test were done earlier.
+  - **Still open:** the +3's second drive (the controller supports it, the plugin refuses `drive 1`), the unified diagnostic cartridge's mode
+    switch, a full dead-test RAM pass, real dead-key/pad hardware (no live check), the sound test of AmstradDiag HEAD (needs sjasmplus to
+    build), drag and drop, recent files, the ZX80 machine (needs a ROM), Interface 1/zxpand ROMs (skipped).
 - **DONE (2026-10-16): GX4000 diagnostics cartridge and the CPC diagnostics suite.**
   - Real bug: a CPC+/GX4000 ignored classic Gate Array ink writes (colours come from the ASIC palette only), so any program setting
     colours the old way showed black; `Asic::set_legacy_ink` fixes it. The earlier "cartridge parks in a VSYNC wait" diagnosis was wrong

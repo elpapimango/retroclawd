@@ -278,6 +278,7 @@ used by a hotkey is not also sent to the emulated machine.
 | `load_tape` / `load_disk` | `ctrl+shift+KC_F9` / `ctrl+shift+KC_F10` | file dialog: put a tape / disk in (see "File dialogs") |
 | `load_snapshot` / `save_snapshot` | `ctrl+shift+KC_F11` / `ctrl+shift+KC_F12` | file dialog: load / save a snapshot |
 | `eject_tape` / `eject_disk` | unbound | take the tape / disk out |
+| `load_disk_b` / `eject_disk_b` / `save_disk_b` | unbound | the same for the second drive, drive B (CPC664/6128): choose a disk image for it, take it out, save a copy; replacing or ejecting a drive B disk with unsaved changes is refused unless `--disk-b-save` / `--disk-writeback` can write them first |
 | `load_state` / `save_state` | unbound | file dialog: any `.state` file (quick-save slots stay on `quick_save`/`quick_load`) |
 | `save_tape` / `save_disk` | unbound | save the cassette recording (`.cdt/.tzx/.voc`, CPC) / a copy of the disk image |
 | `freeze` | `ctrl+KC_PAUS` | press the freeze button of a C64 cartridge that has one |
@@ -429,7 +430,9 @@ keymap = "keymaps/spectrum.toml"
   Spectrum and C64 cover the whole punctuation row, the CPC only `, . /`, the ZX81
   letters, digits and space), and the host's Shift/AltGr used to type it are not
   also sent. A character the machine has no key for falls back to the physical
-  key, exactly as in the positional layout.
+  key, exactly as in the positional layout -- except an accented letter, which types its plain letter (`é` -> `e`, `Ü` -> `U`, `ß` -> `ss`
+  when pasted), and a dead key (an accent waiting for its letter), which types nothing by itself so the composed letter that follows is
+  the only thing the machine sees. Paste folds accents the same way.
 - **Explicit bindings still win:** a plain `[keys]` entry for a physical key beats the
   layout; chords, hotkeys and pad bindings are always physical.
 - **Not covered:** dead keys and non-ASCII characters (`é`, `ß`) use the physical
@@ -479,6 +482,12 @@ the machine's joystick with no configuration: pad 1 is `Joy1*`, pad 2 is
 | Commodore 64 | `Joy1*` (control port 1, shares CIA1 Port B with the keyboard) and `Joy2*` (port 2, what most games read), `Fire1` only |
 | ZX81 | no joystick |
 
+A pad can also trigger the host actions of `[hotkeys]`: write the buttons held together as a chord, `pad1:select+start` (one pad) or
+`pad:select+start` (any pad), beside the keyboard chords -- `reset = ["f12", "pad1:select+start"]`. The action fires when the last
+button goes down, a hold action (`fast_forward`) lasts while the chord is held, and the chord's buttons are hidden from the machine
+until they are let go (the first one of two reaches the machine a moment before the second arrives, as a key would). `pad:` chords
+need no `modifier` key. `--list-hotkeys` shows them.
+
 `[pads]` rebinds buttons; `[machines.<id>.pads]` overrides per machine. Pad
 slots are `[pads.1]`..`[pads.4]` (first pad seen = 1; unplugging one does not
 renumber the others). A button can press any machine key, not only joystick
@@ -527,6 +536,8 @@ still double as the Spectrum/CPC joystick as before.
   `states/` as usual) with the file named here instead of asked for; each action prints `frame N: <message>`, and a failed one
   (missing file, nothing to save) makes the run exit 1. Actions with no meaning without a window (`pause`, `mute`, `quit`...)
   are refused. For example `--frames 300 --at 100:save_state=a.state --at 200:reset --at 250:load_state=a.state`
+- `--dump-audio <file.wav>` (needs `--frames`) -- write everything the machine played as a mono 16-bit 44.1 kHz `.wav`, to check a
+  tone's frequency or silence without a sound card
 - `--dump-memory <START:LEN>` (alias `-dm`) -- hex-dump memory after the
   run stops, e.g. `--dump-memory 0x4000:16`
 - `--dump-screen <path>` -- write the current video frame as a PNG after
@@ -569,6 +580,10 @@ still double as the Spectrum/CPC joystick as before.
   `retroclawd zx-spectrum --help` for their exact descriptions/defaults.
 
 **Disk (`zx-spectrum-2a3`, `cpc664`, `cpc6128`, or `cpc6128plus`)**
+- `--disk-b <path>` -- a disk for the second drive, drive B (the CPC664/6128's external drive; a machine without one refuses it).
+  Same formats as `--disk`; AMSDOS finds it by the drive letter (`B:FILE.BIN`, `|B`). `--disk-b-save <path>` writes drive B's modified
+  image when the session ends; `--disk-writeback` rewrites each given disk's own file. Put a disk in or out later with the
+  `load_disk_b`/`eject_disk_b`/`save_disk_b` hotkeys or `--at N:load_disk_b=FILE`.
 - `--disk <path>` -- load a `.dsk`/`.edsk` floppy image into the emulated
   +3/CPC drive. Standard and Extended DSK are auto-detected by content.
   Independent of `--snapshot`/`--tape`.

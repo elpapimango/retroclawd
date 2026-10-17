@@ -403,6 +403,10 @@ struct CommonArgs {
     /// window's hotkeys and dialogs, with the file named here instead of asked for; an action that fails makes the run exit 1.
     #[arg(long = "at", value_name = "FRAME:ACTION", requires = "frames", value_parser = scripted::parse)]
     at: Vec<scripted::Scripted>,
+    /// With `--frames`: write everything the machine played as a mono 16-bit `.wav` (44.1 kHz) to this path, so a run can
+    /// be checked for a tone's frequency or for silence.
+    #[arg(long, value_name = "FILE", requires = "frames")]
+    dump_audio: Option<String>,
     /// Write the current video frame as a PNG to this path after the run
     /// stops (halt or --max-cycles cutoff)
     #[arg(long, requires = "headless")]
@@ -482,6 +486,21 @@ struct CommonArgs {
     #[arg(long)]
     disk: Option<String>,
 
+    /// A disk for the second drive, drive B (CPC664/6128's external drive; the machine refuses it when it has no second
+    /// drive). Same formats as `--disk`. Guest writes to it are handled like `--disk`'s: discarded with a warning unless
+    /// `--disk-b-save` or `--disk-writeback` (which applies to both drives, each to its own file) is given.
+    #[arg(long, value_name = "PATH")]
+    disk_b: Option<String>,
+
+    /// Where to write drive B's disk image, with the guest's writes, when the session ends.
+    #[arg(
+        long,
+        value_name = "PATH",
+        requires = "disk_b",
+        conflicts_with = "disk_writeback"
+    )]
+    disk_b_save: Option<String>,
+
     /// Plug a cartridge into the expansion port: a `.crt` image for
     /// `--machine c64` (normal 8K/16K and Ultimax, Simons' BASIC, Ocean,
     /// Fun Play, Super Games, Epyx Fastload, System 3, Dinamic, Zaxxon,
@@ -520,7 +539,7 @@ struct CommonArgs {
     /// when the session ends (atomically: temp file + rename). Without
     /// this or `--disk-save`, guest disk writes are discarded, with a
     /// warning if any happened.
-    #[arg(long, requires = "disk")]
+    #[arg(long)]
     disk_writeback: bool,
 
     /// Record everything the program writes to the cassette output (a real
@@ -2497,6 +2516,42 @@ fn main() -> ExitCode {
         });
     }
 
+    if let Err(e) = disk_writeback_needs_a_disk(&args) {
+        eprintln!("{e}");
+        return ExitCode::from(2);
+    }
+    if let Some(path) = &args.disk_b {
+        let bytes = match inputs::load(path) {
+            Ok(loaded) => loaded.bytes.clone(),
+            Err(e) => {
+                eprintln!("{e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        let extension = inputs::extension(path);
+        if let Err(e) = machine.apply_disk_in(1, &extension, &bytes) {
+            eprintln!("--disk-b: {e}");
+            return ExitCode::FAILURE;
+        }
+        if args.disk_writeback && !inputs::is_writable_file(path) {
+            eprintln!(
+                "--disk-writeback cannot rewrite {path}: it is a URL or a zip, not a plain file; \
+                 use --disk-b-save <file> to write the modified image elsewhere"
+            );
+            return ExitCode::FAILURE;
+        }
+        machine.set_disk_exit_policy_for(
+            1,
+            plugin_bridge::DiskExitPolicy {
+                save_to: match (&args.disk_b_save, args.disk_writeback) {
+                    (Some(save), _) => Some(std::path::PathBuf::from(save)),
+                    (None, true) => Some(std::path::PathBuf::from(path)),
+                    (None, false) => None,
+                },
+            },
+        );
+    }
+
     if let Some(path) = &args.cartridge {
         let bytes = match inputs::load(path) {
             Ok(loaded) => loaded.bytes.clone(),
@@ -2650,6 +2705,8 @@ fn main() -> ExitCode {
                 disk_writeback: args.disk_writeback,
                 disk_save: args.disk_save.as_ref().map(std::path::PathBuf::from),
                 disk_path: args.disk.as_ref().map(std::path::PathBuf::from),
+                disk_b_save: args.disk_b_save.as_ref().map(std::path::PathBuf::from),
+                disk_b_path: args.disk_b.as_ref().map(std::path::PathBuf::from),
                 game: resolved
                     .media
                     .as_deref()
@@ -2683,6 +2740,8 @@ fn main() -> ExitCode {
             disk_writeback: args.disk_writeback,
             disk_save: args.disk_save.as_ref().map(std::path::PathBuf::from),
             disk_path: args.disk.as_ref().map(std::path::PathBuf::from),
+            disk_b_save: args.disk_b_save.as_ref().map(std::path::PathBuf::from),
+            disk_b_path: args.disk_b.as_ref().map(std::path::PathBuf::from),
             game: resolved
                 .media
                 .as_deref()
@@ -2741,6 +2800,9 @@ fn dialog_seeds(args: &CommonArgs, resolved: &Resolved) -> Vec<(dialogs::FileKin
     if let Some(path) = &args.disk {
         add(dialogs::FileKind::Disk, path);
     }
+    if let Some(path) = &args.disk_b {
+        add(dialogs::FileKind::Disk, path);
+    }
     if let Some(path) = &args.snapshot {
         add(dialogs::FileKind::Snapshot, path);
     }
@@ -2748,6 +2810,15 @@ fn dialog_seeds(args: &CommonArgs, resolved: &Resolved) -> Vec<(dialogs::FileKin
         add(dialogs::FileKind::State, path);
     }
     seeds
+}
+
+/// `--disk-writeback` rewrites the file of every disk given, so it needs at least one.
+fn disk_writeback_needs_a_disk(args: &CommonArgs) -> Result<(), String> {
+    if args.disk_writeback && args.disk.is_none() && args.disk_b.is_none() {
+        Err("--disk-writeback needs a --disk or --disk-b to write back".to_string())
+    } else {
+        Ok(())
+    }
 }
 
 /// Where a modified `--disk` image should be written when the session ends:
@@ -2815,6 +2886,28 @@ fn unescape_typed(text: &str) -> String {
     out
 }
 
+/// A mono 16-bit PCM `.wav` of `samples` (clamped to -1..1).
+fn wav_bytes(samples: &[f32], rate: u32) -> Vec<u8> {
+    let data_len = (samples.len() * 2) as u32;
+    let mut out = Vec::with_capacity(44 + samples.len() * 2);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data_len).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    out.extend_from_slice(&1u16.to_le_bytes()); // mono
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&(rate * 2).to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data_len.to_le_bytes());
+    for sample in samples {
+        out.extend_from_slice(&((sample.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes());
+    }
+    out
+}
+
 fn run_headless(
     mut machine: plugin_bridge::HostedMachine,
     args: &CommonArgs,
@@ -2825,6 +2918,7 @@ fn run_headless(
     if let Some(frames) = args.frames {
         let started = std::time::Instant::now();
         let mut cycles = 0u64;
+        let mut audio: Vec<f32> = Vec::new();
         for frame in 0..frames {
             actions.run_due(frame, &mut machine);
             if let Some(t) = typing.as_mut()
@@ -2835,6 +2929,18 @@ fn run_headless(
                 machine.key_event_name(&key, pressed);
             }
             cycles += emu_thread::advance_one_frame(&mut machine, |_| false);
+            if args.dump_audio.is_some() {
+                audio.extend(machine.drain_audio());
+            }
+        }
+        if let Some(path) = &args.dump_audio {
+            match fs::write(path, wav_bytes(&audio, machine::AUDIO_SAMPLE_RATE)) {
+                Ok(()) => println!("wrote {} audio samples to {path}", audio.len()),
+                Err(e) => {
+                    eprintln!("failed to write {path}: {e}");
+                    return ExitCode::FAILURE;
+                }
+            }
         }
         actions.run_due(frames, &mut machine); // `--at FRAMES:...`: after the last frame, before the dumps
         println!(
@@ -3361,7 +3467,28 @@ mod tests {
             CommonArgs::try_parse_from(argv)
         };
         assert!(try_parse(&["--disk-save", "o.dsk"]).is_err(), "no --disk");
-        assert!(try_parse(&["--disk-writeback"]).is_err(), "no --disk");
+        // Writeback rewrites whichever disks were given (the check is `disk_writeback_needs_a_disk`).
+        let needs = |flags: &[&str]| disk_writeback_needs_a_disk(&try_parse(flags).unwrap());
+        assert!(needs(&["--disk-writeback"]).is_err(), "no disk at all");
+        assert!(needs(&["--disk", "a.dsk", "--disk-writeback"]).is_ok());
+        assert!(needs(&["--disk-b", "b.dsk", "--disk-writeback"]).is_ok());
+        assert!(needs(&["--disk", "a.dsk"]).is_ok());
+        assert!(
+            try_parse(&["--disk-b-save", "o.dsk"]).is_err(),
+            "no --disk-b"
+        );
+        assert!(
+            try_parse(&[
+                "--disk-b",
+                "b.dsk",
+                "--disk-b-save",
+                "o.dsk",
+                "--disk-writeback"
+            ])
+            .is_err(),
+            "mutually exclusive"
+        );
+        assert!(try_parse(&["--disk-b", "b.dsk", "--disk-b-save", "o.dsk"]).is_ok());
         assert!(
             try_parse(&[
                 "--disk",
@@ -3374,6 +3501,42 @@ mod tests {
             "mutually exclusive"
         );
         assert!(try_parse(&["--disk", "g.dsk", "--disk-writeback"]).is_ok());
+    }
+
+    #[test]
+    fn a_wav_is_a_mono_16_bit_pcm_riff_of_the_clamped_samples() {
+        let wav = wav_bytes(&[0.0, 0.5, -1.0, 2.0], 44_100);
+        assert_eq!(&wav[..4], b"RIFF");
+        assert_eq!(&wav[8..16], b"WAVEfmt ");
+        assert_eq!(u16::from_le_bytes([wav[20], wav[21]]), 1, "PCM");
+        assert_eq!(u16::from_le_bytes([wav[22], wav[23]]), 1, "mono");
+        assert_eq!(u32::from_le_bytes(wav[24..28].try_into().unwrap()), 44_100);
+        assert_eq!(u16::from_le_bytes([wav[34], wav[35]]), 16, "bits");
+        assert_eq!(
+            u32::from_le_bytes(wav[40..44].try_into().unwrap()),
+            8,
+            "data bytes"
+        );
+        let samples: Vec<i16> = wav[44..]
+            .chunks(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .collect();
+        assert_eq!(samples, [0, 16383, -32767, 32767], "clamped to -1..1");
+        assert_eq!(
+            u32::from_le_bytes(wav[4..8].try_into().unwrap()) as usize,
+            wav.len() - 8
+        );
+    }
+
+    #[test]
+    fn dump_audio_needs_frames() {
+        let try_parse = |flags: &[&str]| {
+            let mut argv = vec!["retroclawd", "zx81"];
+            argv.extend_from_slice(flags);
+            CommonArgs::try_parse_from(argv)
+        };
+        assert!(try_parse(&["--headless", "--dump-audio", "a.wav"]).is_err());
+        assert!(try_parse(&["--headless", "--frames", "5", "--dump-audio", "a.wav"]).is_ok());
     }
 
     #[test]

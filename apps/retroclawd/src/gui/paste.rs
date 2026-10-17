@@ -106,21 +106,36 @@ pub(crate) fn plan(
             plan.typed += 1;
             continue;
         }
-        let Some(key) = symbols.key_for(c) else {
+        // A character the machine has no key for is typed as the plain letters it folds to (`é` as `e`, `ß` as `ss`) if it
+        // has keys for those.
+        let typed: Vec<char> = if symbols.key_for(c).is_some() {
+            vec![c]
+        } else {
+            match super::fold::ascii_fold(c) {
+                Some(plain) if plain.chars().all(|p| symbols.key_for(p).is_some()) => {
+                    plain.chars().collect()
+                }
+                _ => Vec::new(),
+            }
+        };
+        if typed.is_empty() {
             plan.skipped += 1;
             continue;
-        };
-        let capital = case == PasteCase::Exact && c.is_ascii_uppercase();
-        if capital {
-            for name in shift {
-                plan.events.push_back((name.clone(), true));
-            }
         }
-        plan.events.push_back((key.to_string(), true));
-        plan.events.push_back((key.to_string(), false));
-        if capital {
-            for name in shift.iter().rev() {
-                plan.events.push_back((name.clone(), false));
+        for c in typed {
+            let key = symbols.key_for(c).expect("checked above");
+            let capital = case == PasteCase::Exact && c.is_ascii_uppercase();
+            if capital {
+                for name in shift {
+                    plan.events.push_back((name.clone(), true));
+                }
+            }
+            plan.events.push_back((key.to_string(), true));
+            plan.events.push_back((key.to_string(), false));
+            if capital {
+                for name in shift.iter().rev() {
+                    plan.events.push_back((name.clone(), false));
+                }
             }
         }
         plan.typed += 1;
@@ -377,6 +392,36 @@ mod tests {
         let curly = run("\u{201C}a\u{201D} \u{2013} \u{00A0}\t", PasteCase::Fold);
         let plain = run("\"a\" - \u{20}\u{20}", PasteCase::Fold);
         assert_eq!(curly, plain);
+    }
+
+    #[test]
+    fn accented_letters_are_pasted_as_their_plain_letters() {
+        // `à` and `Ä` type the A key, `ß` needs an s key (this machine has none: skipped).
+        let p = plan(
+            "\u{e0}\u{c4}b \u{df}",
+            &symbols(),
+            &names(&["Enter"]),
+            &names(&["ShiftLeft"]),
+            PasteCase::Fold,
+        );
+        let typed: Vec<&str> = p
+            .events
+            .iter()
+            .filter(|(_, down)| *down)
+            .map(|(k, _)| k.as_str())
+            .collect();
+        assert_eq!(typed, ["KeyA", "KeyA", "KeyB", "Space"]);
+        assert_eq!((p.typed, p.skipped), (4, 1), "ß has no s key here");
+        // Two-letter folds type both letters and count as one character.
+        let p = plan(
+            "\u{e6}",
+            &SymbolMap::from_names(&[key("KeyA", ""), key("KeyE", "")]),
+            &names(&["Enter"]),
+            &names(&["ShiftLeft"]),
+            PasteCase::Fold,
+        );
+        assert_eq!(p.typed, 1);
+        assert_eq!(p.events.len(), 4);
     }
 
     #[test]

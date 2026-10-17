@@ -634,14 +634,18 @@ pub(crate) fn hotkey_input(
     router: Res<KeyRouter>,
     input_tx: Res<InputTxRes>,
     mut paste: ResMut<super::paste::PasteState>,
+    mut pad_triggers: ResMut<super::hotkeys::PadTriggers>,
 ) {
     // A file dialog (or its question) is open: nothing typed meanwhile may
     // trigger a hotkey or reach the machine.
     if dialogs.is_busy() {
         state.swallow_all(&keyboard);
+        pad_triggers.triggers.clear();
         return;
     }
-    for trigger in hotkeys.poll(&keyboard, &mut state) {
+    let mut triggers = hotkeys.poll(&keyboard, &mut state);
+    triggers.append(&mut pad_triggers.triggers);
+    for trigger in triggers {
         let send = |command: EmuCommand| {
             let _ = command_tx.0.send(command);
         };
@@ -751,6 +755,15 @@ pub(crate) fn record_logical_keys(
         if event.repeat {
             continue;
         }
+        if matches!(event.logical_key, Key::Dead(_)) {
+            tracing::debug!(
+                target: "retroclawd::input",
+                "key down: physical={:?} dead key",
+                event.key_code
+            );
+            logical.pressed_dead(event.key_code);
+            continue;
+        }
         let typed = match &event.logical_key {
             Key::Character(text) => {
                 let mut chars = text.chars();
@@ -780,10 +793,12 @@ pub(crate) fn pad_input(
     mut pads: ResMut<PadRouter>,
     mut slots: ResMut<PadSlots>,
     mut router: ResMut<KeyRouter>,
+    hotkeys: Res<Hotkeys>,
+    mut pad_triggers: ResMut<super::hotkeys::PadTriggers>,
 ) {
     let deadzone = pads.deadzone();
     let present: Vec<u64> = gamepads.iter().map(|(e, _)| e.to_bits()).collect();
-    let states: Vec<(u8, PadState)> = slots
+    let mut states: Vec<(u8, PadState)> = slots
         .assign(&present)
         .into_iter()
         .filter_map(|(slot, id)| {
@@ -793,6 +808,11 @@ pub(crate) fn pad_input(
                 .map(|(_, gamepad)| (slot, pad_state(gamepad, deadzone)))
         })
         .collect();
+    // Pad chords from `[hotkeys]` (`pad1:select+start`): their buttons are hidden from the machine, the triggers go to
+    // `hotkey_input`.
+    let triggers = hotkeys.poll_pads(&states, &mut pad_triggers.state);
+    pad_triggers.state.mask(&mut states);
+    pad_triggers.triggers.extend(triggers);
     let (releases, presses) = pads.route(&states);
     for event in router.apply(releases, presses) {
         let _ = input_tx.0.send(event);
@@ -1102,6 +1122,77 @@ mod tests {
     }
 
     #[test]
+    fn a_pad_hotkey_chord_triggers_its_action_and_hides_its_buttons_from_the_machine() {
+        use super::super::hotkeys::{Action, Hotkeys, PadTriggers, Trigger};
+        use super::super::keys::{KeyBindings, KeyNames, KeyRouter};
+        use super::super::pads::{PadBindings, PadRouter};
+        use super::{InputTxRes, pad_input};
+        use bevy::prelude::*;
+
+        let config = app_config::parse(
+            "[hotkeys]
+reset = \"pad:select+start\"
+[pads.1]
+select = \"Joy1Fire2\"
+south = \"Joy1Fire1\"",
+        )
+        .unwrap();
+        let names = KeyNames::only(&plugin_api::key_infos(["Joy1Fire1", "Joy1Fire2"]));
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut app = App::new();
+        app.insert_resource(InputTxRes(tx))
+            .insert_resource(KeyRouter::new(KeyBindings::default()))
+            .insert_resource(PadRouter::new(
+                PadBindings::resolve(&config, "m", &names).unwrap(),
+            ))
+            .insert_resource(super::super::pads::PadSlots::default())
+            .insert_resource(Hotkeys::resolve(&config, "m").unwrap())
+            .insert_resource(PadTriggers::default())
+            .add_systems(Update, pad_input);
+        let pad = app.world_mut().spawn(Gamepad::default()).id();
+        let press = |app: &mut App, buttons: &[GamepadButton], down: bool| {
+            let mut e = app.world_mut().entity_mut(pad);
+            let mut gamepad = e.get_mut::<Gamepad>().unwrap();
+            for button in buttons {
+                if down {
+                    gamepad.digital_mut().press(*button);
+                } else {
+                    gamepad.digital_mut().release(*button);
+                }
+            }
+        };
+        let drain = |rx: &std::sync::mpsc::Receiver<(String, bool)>| -> Vec<(String, bool)> {
+            rx.try_iter().collect()
+        };
+        let reset = Action::from_name("reset").unwrap();
+
+        // Select alone is a bound machine key and reaches the machine.
+        press(&mut app, &[GamepadButton::Select], true);
+        app.update();
+        assert_eq!(drain(&rx), [("Joy1Fire2".to_string(), true)]);
+        assert!(app.world().resource::<PadTriggers>().triggers.is_empty());
+
+        // Start completes the chord: the action fires, and Select is taken back from the machine (released).
+        press(&mut app, &[GamepadButton::Start], true);
+        app.update();
+        assert_eq!(drain(&rx), [("Joy1Fire2".to_string(), false)]);
+        assert_eq!(
+            app.world().resource::<PadTriggers>().triggers,
+            [Trigger::Pressed(reset)]
+        );
+
+        // South is not part of it and still plays; holding the chord does not fire again.
+        app.world_mut()
+            .resource_mut::<PadTriggers>()
+            .triggers
+            .clear();
+        press(&mut app, &[GamepadButton::South], true);
+        app.update();
+        assert_eq!(drain(&rx), [("Joy1Fire1".to_string(), true)]);
+        assert!(app.world().resource::<PadTriggers>().triggers.is_empty());
+    }
+
+    #[test]
     fn pad_input_sends_the_bound_machine_keys_for_each_connected_pad() {
         use super::super::keys::{KeyBindings, KeyNames, KeyRouter};
         use super::super::pads::{PadBindings, PadRouter};
@@ -1122,6 +1213,8 @@ mod tests {
             .insert_resource(KeyRouter::new(KeyBindings::default()))
             .insert_resource(PadRouter::new(bindings))
             .insert_resource(super::super::pads::PadSlots::default())
+            .insert_resource(super::super::hotkeys::Hotkeys::default())
+            .insert_resource(super::super::hotkeys::PadTriggers::default())
             .add_systems(Update, pad_input);
 
         let first = app.world_mut().spawn(Gamepad::default()).id();

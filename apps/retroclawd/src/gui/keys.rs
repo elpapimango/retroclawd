@@ -236,6 +236,12 @@ impl SymbolMap {
         self.map.get(&c)
     }
 
+    /// The key for `c`, or for the plain letter an accented one folds to (`é` types `e`) when the machine has no key for it.
+    fn lookup(&self, c: char) -> Option<&(String, CharKind)> {
+        self.get(c)
+            .or_else(|| super::fold::ascii_fold_char(c).and_then(|plain| self.get(plain)))
+    }
+
     /// The machine key that types `c`, if it has one.
     pub(crate) fn key_for(&self, c: char) -> Option<&str> {
         self.get(c).map(|(name, _)| name.as_str())
@@ -248,10 +254,19 @@ impl SymbolMap {
 #[derive(Resource, Debug, Default)]
 pub(crate) struct LogicalKeys {
     typed: HashMap<KeyCode, char>,
+    /// Keys that went down as a dead key (an accent waiting for its letter): they type nothing by themselves.
+    dead: HashSet<KeyCode>,
 }
 
 impl LogicalKeys {
+    /// `key` went down as a dead key: under the symbolic layout it sends nothing (the composed letter that follows is typed).
+    pub(crate) fn pressed_dead(&mut self, key: KeyCode) {
+        self.typed.remove(&key);
+        self.dead.insert(key);
+    }
+
     pub(crate) fn pressed(&mut self, key: KeyCode, typed: Option<char>) {
+        self.dead.remove(&key);
         match typed {
             Some(c) => {
                 self.typed.insert(key, c);
@@ -264,10 +279,15 @@ impl LogicalKeys {
 
     pub(crate) fn released(&mut self, key: KeyCode) {
         self.typed.remove(&key);
+        self.dead.remove(&key);
     }
 
     fn get(&self, key: KeyCode) -> Option<char> {
         self.typed.get(&key).copied()
+    }
+
+    fn is_dead(&self, key: KeyCode) -> bool {
+        self.dead.contains(&key)
     }
 }
 
@@ -530,7 +550,7 @@ impl KeyRouter {
             .unwrap_or_else(|| vec![default_name(key)])
     }
 
-    fn resolve_press(&self, key: KeyCode, mods: Mods, typed: Option<char>) -> Held {
+    fn resolve_press(&self, key: KeyCode, mods: Mods, typed: Option<char>, dead: bool) -> Held {
         if !mods.is_empty() {
             let exact = Chord {
                 key,
@@ -549,7 +569,22 @@ impl KeyRouter {
         // Symbolic layout: an explicit plain binding for this physical key
         // still wins, otherwise the character the key typed picks the machine
         // key. Characters the machine has no key for fall through to the
-        // physical key's own name, as in the positional layout.
+        // physical key's own name, as in the positional layout -- except a dead
+        // key, which types nothing by itself, and an accented letter, which
+        // types its plain letter.
+        let plain_binding = Chord {
+            key,
+            ctrl: false,
+            shift: false,
+            alt: false,
+            meta: false,
+        };
+        if self.layout == Layout::Symbolic && dead && self.bindings.get(&plain_binding).is_none() {
+            return Held {
+                names: Vec::new(),
+                consumed: Mods::default(),
+            };
+        }
         if self.layout == Layout::Symbolic
             && let Some(c) = typed
             && self
@@ -562,7 +597,7 @@ impl KeyRouter {
                     meta: false,
                 })
                 .is_none()
-            && let Some((name, kind)) = self.symbols.get(c)
+            && let Some((name, kind)) = self.symbols.lookup(c)
         {
             let consumed = match kind {
                 CharKind::Letter => Mods::default(),
@@ -626,7 +661,8 @@ impl KeyRouter {
             .collect();
         fresh.sort_by_key(|key| default_name(*key));
         for key in fresh {
-            let held = self.resolve_press(key, physical_mods, logical.get(key));
+            let held =
+                self.resolve_press(key, physical_mods, logical.get(key), logical.is_dead(key));
             presses.push(held.names.clone());
             self.held.insert(key, held);
         }
@@ -1197,6 +1233,58 @@ mod tests {
         assert_eq!(map.get(' ').unwrap().0, "Space");
         assert!(map.get('~').is_none());
         assert!(map.get('3').is_none(), "this machine list has no Digit3");
+    }
+
+    #[test]
+    fn an_accented_letter_types_its_plain_letter_when_the_machine_has_no_key_for_it() {
+        let mut symbolic = symbolic_router("");
+        let mut kb = ButtonInput::<KeyCode>::default();
+        // The key that typed `à` (a French keyboard's 2 key, say) sends the A key, not its physical position's name.
+        assert_eq!(
+            press_typing(&mut symbolic, &mut kb, KeyCode::Digit2, Some('\u{e0}')),
+            [ev("KeyA", true)]
+        );
+        // A character with no plain twin still falls back to the physical key's name.
+        let mut symbolic = symbolic_router("");
+        let mut kb = ButtonInput::<KeyCode>::default();
+        assert_eq!(
+            press_typing(&mut symbolic, &mut kb, KeyCode::KeyQ, Some('\u{4e2d}')),
+            [ev("KeyQ", true)]
+        );
+    }
+
+    #[test]
+    fn a_dead_key_types_nothing_in_the_symbolic_layout_but_an_explicit_binding_still_wins() {
+        let mut symbolic = symbolic_router("");
+        let mut logical = LogicalKeys::default();
+        logical.pressed_dead(KeyCode::Equal);
+        let mut kb = ButtonInput::<KeyCode>::default();
+        kb.press(KeyCode::Equal);
+        assert_eq!(
+            symbolic.route(&kb, &HotkeyState::default(), &logical),
+            [],
+            "the accent key sends no machine key"
+        );
+        // The composed letter that follows is typed as usual (here `à`, on its own physical key).
+        kb.clear();
+        kb.release(KeyCode::Equal);
+        logical.released(KeyCode::Equal);
+        symbolic.route(&kb, &HotkeyState::default(), &logical);
+        kb.clear();
+        assert_eq!(
+            press_typing(&mut symbolic, &mut kb, KeyCode::KeyE, Some('\u{e0}')),
+            [ev("KeyA", true)]
+        );
+        // An explicit binding for the physical key still wins over "dead".
+        let mut bound = symbolic_router("[keys]\nKC_EQL = \"Semicolon\"");
+        let mut logical = LogicalKeys::default();
+        logical.pressed_dead(KeyCode::Equal);
+        let mut kb = ButtonInput::<KeyCode>::default();
+        kb.press(KeyCode::Equal);
+        assert_eq!(
+            bound.route(&kb, &HotkeyState::default(), &logical),
+            [ev("Semicolon", true)]
+        );
     }
 
     #[test]

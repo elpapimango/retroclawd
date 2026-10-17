@@ -308,6 +308,15 @@ pub(crate) enum MediaOp {
     },
     /// The disk image was written out: its changes are no longer unsaved.
     DiskSaved,
+    /// The same for the second drive (drive B of a CPC664/6128). Replacing or ejecting a drive B disk with unsaved changes is
+    /// refused unless the changes can be written to the `--disk-b` file or `--disk-b-save` first.
+    AttachDiskB {
+        extension: String,
+        bytes: Vec<u8>,
+        path: std::path::PathBuf,
+    },
+    EjectDiskB,
+    DiskBSaved,
 }
 
 /// What a "save" dialog wants serialised.
@@ -315,6 +324,8 @@ pub(crate) enum MediaOp {
 pub(crate) enum Export {
     /// The drive's current image, guest writes applied (modified or not).
     Disk,
+    /// The same for drive B.
+    DiskB,
     /// The cassette recording as `cdt`/`tzx`/`voc`.
     Tape {
         format: String,
@@ -347,6 +358,10 @@ pub(crate) struct MediaSettings {
     pub(crate) disk_save: Option<std::path::PathBuf>,
     /// The `--disk` file the session started with.
     pub(crate) disk_path: Option<std::path::PathBuf>,
+    /// `--disk-b-save`: where a modified drive B image goes.
+    pub(crate) disk_b_save: Option<std::path::PathBuf>,
+    /// The `--disk-b` file (or the last disk put in drive B).
+    pub(crate) disk_b_path: Option<std::path::PathBuf>,
     /// What was loaded, as a file-name friendly stem (`host_files::game_stem`): screenshots and quick-save states are named
     /// `<machine>-<game>-...` so two games on one machine keep separate slots. `None` when nothing was loaded.
     pub(crate) game: Option<String>,
@@ -458,6 +473,7 @@ impl HostControl {
                     Export::State => Ok(Some(machine.save_state())),
                     Export::Snapshot { extension } => machine.save_snapshot(&extension).map(Some),
                     Export::Disk => machine.export_disk(0, false),
+                    Export::DiskB => machine.export_disk(1, false),
                     Export::Tape { format } => machine.export_tape(&format),
                 };
                 let _ = reply.send(result);
@@ -608,6 +624,85 @@ impl HostControl {
                 if let Err(e) = machine.mark_disk_saved(0) {
                     self.say(format!("Could not mark the disk saved: {e}"));
                 }
+                false
+            }
+            MediaOp::AttachDiskB {
+                extension,
+                bytes,
+                path,
+            } => {
+                if !self.drive_b_can_be_replaced(machine, "replacing it") {
+                    return false;
+                }
+                match machine.apply_disk_in(1, &extension, &bytes) {
+                    Ok(()) => {
+                        let save_to = if self.media.disk_writeback
+                            && crate::inputs::is_writable_file(&path.to_string_lossy())
+                        {
+                            Some(path.clone())
+                        } else {
+                            self.media.disk_b_save.clone()
+                        };
+                        machine.set_disk_exit_policy_for(
+                            1,
+                            crate::plugin_bridge::DiskExitPolicy { save_to },
+                        );
+                        self.say(format!("Drive B loaded: {}", file_label(&path)));
+                        self.media.disk_b_path = Some(path);
+                    }
+                    Err(e) => self.say(format!("Drive B load failed: {e}")),
+                }
+                true
+            }
+            MediaOp::EjectDiskB => {
+                if !self.drive_b_can_be_replaced(machine, "ejecting it") {
+                    return false;
+                }
+                match machine.detach_media(plugin_api::MediaSlot::Disk { drive: 1 }) {
+                    Ok(()) => {
+                        self.media.disk_b_path = None;
+                        self.say("Drive B ejected");
+                    }
+                    Err(e) => self.say(format!("Drive B eject failed: {e}")),
+                }
+                true
+            }
+            MediaOp::DiskBSaved => {
+                if let Err(e) = machine.mark_disk_saved(1) {
+                    self.say(format!("Could not mark drive B saved: {e}"));
+                }
+                false
+            }
+        }
+    }
+
+    /// Before the disk in drive B leaves it: unsaved writes are never dropped silently. They are written to the `--disk-b` file
+    /// (`--disk-writeback`) or `--disk-b-save` when one of those was given; otherwise the change of disk is refused.
+    fn drive_b_can_be_replaced(&mut self, machine: &HostedMachine, doing: &str) -> bool {
+        let image = match machine.export_disk(1, true) {
+            Ok(Some(image)) => image,
+            _ => return true,
+        };
+        let target = match (&self.media.disk_b_path, self.media.disk_writeback) {
+            (Some(path), true) if crate::inputs::is_writable_file(&path.to_string_lossy()) => {
+                Some(path.clone())
+            }
+            _ => self.media.disk_b_save.clone(),
+        };
+        let Some(target) = target else {
+            self.say(format!(
+                "Drive B has unsaved changes: save them first (save_disk_b), or start with --disk-b-save, before {doing}"
+            ));
+            return false;
+        };
+        match crate::plugin_bridge::write_file_atomically(&target, &image) {
+            Ok(()) => {
+                let _ = machine.mark_disk_saved(1);
+                self.say(format!("Drive B saved to {}", file_label(&target)));
+                true
+            }
+            Err(e) => {
+                self.say(format!("Drive B save failed: {e} -- not {doing}"));
                 false
             }
         }
@@ -1532,6 +1627,75 @@ mod tests {
         assert_eq!(rig.said(), ["Disk loaded: second.dsk", "Disk ejected"]);
         assert_eq!(rig.export(Export::Disk), Ok(None));
         assert_eq!(rig.disk_status().original, None);
+    }
+
+    #[test]
+    fn drive_b_takes_its_own_disk_and_guards_unsaved_changes() {
+        let dir = std::env::temp_dir().join(format!("rc-emu-driveb-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let save = dir.join("saved-b.dsk");
+        let mut rig = Rig::new(MediaSettings {
+            disk_b_save: Some(save.clone()),
+            ..MediaSettings::default()
+        });
+        let attach_b = |name: &str| {
+            EmuCommand::Media(MediaOp::AttachDiskB {
+                extension: "dsk".to_string(),
+                bytes: blank_disk(),
+                path: dir.join(name),
+            })
+        };
+        // Drive B and drive A are separate: loading B leaves A empty.
+        rig.apply(attach_b("one.dsk"));
+        assert_eq!(rig.said(), ["Drive B loaded: one.dsk"]);
+        assert!(matches!(rig.export(Export::DiskB), Ok(Some(_))));
+        assert_eq!(rig.export(Export::Disk), Ok(None), "drive A is still empty");
+
+        // The guest writes to B: replacing it first writes the changes to --disk-b-save, then loads the new disk.
+        rig.machine
+            .try_key_event(test_machine_plugin_impl::DIRTY_DISK_B_KEY, true)
+            .unwrap();
+        rig.apply(attach_b("two.dsk"));
+        assert_eq!(
+            rig.said(),
+            ["Drive B saved to saved-b.dsk", "Drive B loaded: two.dsk"]
+        );
+        assert!(save.exists(), "the changes were written before the swap");
+        assert_eq!(
+            rig.control.media.disk_b_path.as_deref(),
+            Some(dir.join("two.dsk").as_path())
+        );
+
+        // Without a place to put them, the swap is refused and the disk stays.
+        let mut rig = Rig::new(MediaSettings::default());
+        rig.apply(attach_b("one.dsk"));
+        rig.said();
+        rig.machine
+            .try_key_event(test_machine_plugin_impl::DIRTY_DISK_B_KEY, true)
+            .unwrap();
+        rig.apply(attach_b("two.dsk"));
+        let said = rig.said();
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert!(
+            said[0].starts_with("Drive B has unsaved changes"),
+            "{said:?}"
+        );
+        assert!(
+            matches!(rig.export(Export::DiskB), Ok(Some(_))),
+            "B kept its disk"
+        );
+        rig.apply(EmuCommand::Media(MediaOp::EjectDiskB));
+        assert!(rig.said()[0].starts_with("Drive B has unsaved changes"));
+        // Saving it by hand (the dialog's Save As) counts as saved, and then the eject goes through.
+        rig.apply(EmuCommand::Media(MediaOp::DiskBSaved));
+        rig.apply(EmuCommand::Media(MediaOp::EjectDiskB));
+        assert_eq!(rig.said(), ["Drive B ejected"]);
+        assert_eq!(rig.export(Export::DiskB), Ok(None));
+        // A disk that was never written is replaced without a word.
+        rig.apply(attach_b("three.dsk"));
+        rig.apply(EmuCommand::Media(MediaOp::EjectDiskB));
+        assert_eq!(rig.said(), ["Drive B loaded: three.dsk", "Drive B ejected"]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

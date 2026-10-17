@@ -132,10 +132,10 @@ pub(crate) struct HostedMachine {
     instance: MachineInstanceHandle,
     machine_id: String,
     metadata: MachineMetadata,
-    /// Set once a disk is attached; acted on when the machine is dropped
+    /// Per drive (A, B): set once a disk is attached; acted on when the machine is dropped
     /// (end of a headless run, or when the GUI's emulation thread ends).
     /// Never cloned: a run-ahead clone must not write the user's file.
-    disk_exit: Option<DiskExitPolicy>,
+    disk_exit: [Option<DiskExitPolicy>; 2],
     /// Like `disk_exit`, for a cassette recording; never cloned either.
     tape_exit: Option<TapeExitPolicy>,
     /// Like `disk_exit`, for a flashed cartridge; never cloned either.
@@ -155,7 +155,7 @@ impl Clone for HostedMachine {
             instance,
             machine_id: self.machine_id.clone(),
             metadata: self.metadata.clone(),
-            disk_exit: None,
+            disk_exit: [None, None],
             tape_exit: None,
             cartridge_exit: None,
             printer_out: None,
@@ -1023,7 +1023,7 @@ pub(crate) fn create_hosted_machine(
         instance: create.instance,
         machine_id,
         metadata: create.metadata,
-        disk_exit: None,
+        disk_exit: [None, None],
         tape_exit: None,
         cartridge_exit: None,
         printer_out: None,
@@ -1328,13 +1328,14 @@ impl HostedBackend {
     fn apply_disk(
         &self,
         instance: MachineInstanceHandle,
+        drive: u8,
         extension: &str,
         bytes: &[u8],
     ) -> Result<(), String> {
         self.expect_ack(
             instance,
             MachineCommand::AttachMedia {
-                slot: MediaSlot::Disk { drive: 0 },
+                slot: MediaSlot::Disk { drive },
                 kind: MediaKind::Disk,
                 name: Some(format!("disk.{extension}")),
                 bytes: bytes.to_vec(),
@@ -1363,7 +1364,7 @@ impl HostedBackend {
             || lower == "x64"
             || lower == "nib"
         {
-            self.apply_disk(instance, &lower, bytes)
+            self.apply_disk(instance, 0, &lower, bytes)
         } else if lower == "cpr" || lower == "crt" {
             self.expect_ack(
                 instance,
@@ -1640,7 +1641,18 @@ impl HostedMachine {
     }
 
     pub(crate) fn apply_disk(&mut self, extension: &str, bytes: &[u8]) -> Result<(), String> {
-        self.backend.apply_disk(self.instance, extension, bytes)
+        self.apply_disk_in(0, extension, bytes)
+    }
+
+    /// Puts a disk image in `drive` (0 = A, 1 = B); a machine without that drive refuses with its own message.
+    pub(crate) fn apply_disk_in(
+        &mut self,
+        drive: u8,
+        extension: &str,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        self.backend
+            .apply_disk(self.instance, drive, extension, bytes)
     }
 
     /// Takes the tape or disk out of its slot (`DetachMedia`). Unsaved disk
@@ -1657,7 +1669,14 @@ impl HostedMachine {
     /// Chooses what happens to a modified disk image when this machine is
     /// dropped. Call after attaching the disk.
     pub(crate) fn set_disk_exit_policy(&mut self, policy: DiskExitPolicy) {
-        self.disk_exit = Some(policy);
+        self.set_disk_exit_policy_for(0, policy);
+    }
+
+    /// `set_disk_exit_policy` for `drive` (0 = A, 1 = B).
+    pub(crate) fn set_disk_exit_policy_for(&mut self, drive: u8, policy: DiskExitPolicy) {
+        if let Some(slot) = self.disk_exit.get_mut(usize::from(drive)) {
+            *slot = Some(policy);
+        }
     }
 
     /// The drive's current disk image (guest writes applied) in the format
@@ -1693,31 +1712,42 @@ impl HostedMachine {
     /// written to the disk. Reports on stderr -- it runs from `Drop`, where
     /// there is nobody to return an error to.
     fn finish_disk_on_exit(&mut self) {
-        let Some(policy) = self.disk_exit.take() else {
+        for drive in 0..2u8 {
+            self.finish_drive_on_exit(drive);
+        }
+    }
+
+    fn finish_drive_on_exit(&mut self, drive: u8) {
+        let Some(policy) = self.disk_exit[usize::from(drive)].take() else {
             return;
         };
-        let image = match self.export_disk(0, true) {
+        let name = if drive == 0 { "disk" } else { "drive B disk" };
+        let image = match self.export_disk(drive, true) {
             Ok(Some(image)) => image,
             Ok(None) => return,
             Err(e) => {
-                eprintln!("could not read back the disk image: {e}");
+                eprintln!("could not read back the {name} image: {e}");
                 return;
             }
         };
         match policy.save_to {
             Some(path) => match write_file_atomically(&path, &image) {
                 Ok(()) => {
-                    let _ = self.mark_disk_saved(0);
-                    eprintln!("saved modified disk image to {}", path.display());
+                    let _ = self.mark_disk_saved(drive);
+                    eprintln!("saved modified {name} image to {}", path.display());
                 }
                 Err(e) => eprintln!(
-                    "FAILED to save the modified disk image to {}: {e}",
+                    "FAILED to save the modified {name} image to {}: {e}",
                     path.display()
                 ),
             },
-            None => eprintln!(
+            None if drive == 0 => eprintln!(
                 "the disk image was modified but not saved -- run with --disk-save <path> \
                  (or --disk-writeback to overwrite the --disk file) to keep changes"
+            ),
+            None => eprintln!(
+                "the drive B disk image was modified but not saved -- run with --disk-b-save <path> \
+                 (or --disk-writeback to overwrite the --disk-b file) to keep changes"
             ),
         }
     }

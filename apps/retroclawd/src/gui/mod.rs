@@ -9,6 +9,7 @@ use crate::plugin_bridge::HostedMachine;
 
 mod audio;
 mod debug_overlay;
+mod fold;
 pub(crate) mod hotkeys;
 mod input;
 pub(crate) mod keys;
@@ -326,6 +327,7 @@ pub fn run_gui(
     .insert_resource(toast::ToastRes::new(handle.messages.clone()))
     .insert_resource(app_settings.hotkeys.clone())
     .insert_resource(HotkeyState::default())
+    .insert_resource(hotkeys::PadTriggers::default())
     .insert_resource(
         keys::KeyRouter::new(app_settings.key_bindings.clone())
             .with_layout(app_settings.layout, app_settings.symbols.clone()),

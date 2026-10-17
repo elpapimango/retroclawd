@@ -806,6 +806,25 @@ guessing.
   CRASH_KEY`): the crash flag is process-wide, so `emu_thread::tests::a_crashed_plugin_is_reported_once_and_the_machine_is_held`
   re-runs the test binary on itself (env `RC_CRASH_TEST_CHILD`) and the crash happens only in that child; it checks `tick` reports once
   and holds the machine (mutation-checked: without the probe the clock query panics). A game config also takes `[hotkeys]` (incl. `modifier`) and `[pads]`/`[pads.N]` (incl. `deadzone`), folded into the machine's own sections per action / per button below `--hotkey`.
+  **Pad hotkeys, accents and dead keys, headless audio, a second drive (2026-10-16, later)**: *Pad chords*: `[hotkeys]` bindings written
+  `pad:select+start` / `pad2:l1+r1+south` (`gui::hotkeys::PadChord`, `parse_pad_chord`; a keyboard chord never starts with `pad<N>:`) resolve
+  into `Hotkeys::pad_bindings` (a duplicate is the same error as for keys). `pad_input` calls `Hotkeys::poll_pads` on the slot/state list
+  before routing: a chord fires `Trigger::Pressed` when its last button goes down (`Released` for a hold action when it stops being held),
+  its buttons go into `PadHotkeyState::swallowed` and `mask` clears them from the states the `PadRouter` sees until they are released. The
+  triggers wait in `PadTriggers` (which also owns that state) for `hotkey_input`, which runs first next frame and handles them exactly like
+  keyboard triggers (dialogs open: discarded). Bevy `App` test: Select reaches the machine, Start completes the chord, Select is released.
+  *Accents and dead keys*: `gui/fold.rs` (`ascii_fold`: Latin-1/Latin Extended-A letters to ASCII, `ß` -> `ss`, `Æ` -> `AE`). In the symbolic
+  layout `SymbolMap::lookup` tries the typed character, then its single-letter fold; `LogicalKeys::pressed_dead` records Bevy's `Key::Dead`
+  and `resolve_press` sends nothing for it unless the physical key has an explicit plain binding. `paste::plan` types a character with no key
+  as its folded letters if the machine has keys for all of them. Not verified with a real dead-key keyboard (unit tests feed `LogicalKeys`).
+  *`--dump-audio file.wav`* (`wav_bytes`): headless `--frames` runs drain the machine's audio each frame; `rc_suite::Audio` reads it
+  (DC-free `rms`, single-bin `tone`). *Second drive*: `HostedMachine::apply_disk_in(drive, ..)`, `disk_exit: [Option<DiskExitPolicy>; 2]`,
+  `--disk-b`/`--disk-b-save`, `MediaOp::{AttachDiskB, EjectDiskB, DiskBSaved}`, `Export::DiskB`, file actions `load_disk_b`/`eject_disk_b`/
+  `save_disk_b`, `--at` actions of the same names. Drive B has no "ask first" prompt: `HostControl::drive_b_can_be_replaced` writes unsaved
+  changes to the `--disk-b` file (`--disk-writeback`) or `--disk-b-save` before a replace/eject, else **refuses** the change with a message
+  -- never a silent loss. Only the CPC664/6128 plugin has a drive B (the +3 plugin and the C64 refuse `drive 1`); `--disk-writeback` no
+  longer requires `--disk` (either disk will do). The stub machine has two drives and test keys `dirty-disk-a`/`dirty-disk-b` for the guest
+  writing. Verified through the real 6128 firmware: AMSDOS reads `B:SAME.BIN` from drive B while `A:SAME.BIN` is a different file.
   **Headless actions and symbol arithmetic (2026-10-16)**: `--at FRAME:ACTION[=FILE]` (`apps/retroclawd/src/scripted.rs`, needs
   `--frames`) runs the hotkey/dialog actions of a batch run: `scripted::Runner` owns a real `HostControl` and feeds it the same
   `EmuCommand`s (`Reset`, `QuickSave`, `Media(MediaOp)`, `Export` ...) the window sends, with files read through `inputs::load` (zips

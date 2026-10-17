@@ -53,6 +53,10 @@ pub(crate) enum FileAction {
     SaveState,
     SaveTape,
     SaveDisk,
+    /// The same three for the second drive (drive B of a CPC664/6128).
+    LoadDiskB,
+    EjectDiskB,
+    SaveDiskB,
     /// Swap to the next / previous disk of an `--disk list.m3u` playlist.
     NextDisk,
     PrevDisk,
@@ -103,6 +107,9 @@ impl FileAction {
             FileAction::LoadDisk
             | FileAction::EjectDisk
             | FileAction::SaveDisk
+            | FileAction::LoadDiskB
+            | FileAction::EjectDiskB
+            | FileAction::SaveDiskB
             | FileAction::NextDisk
             | FileAction::PrevDisk => FileKind::Disk,
             FileAction::LoadSnapshot | FileAction::SaveSnapshot => FileKind::Snapshot,
@@ -175,7 +182,7 @@ fn default_save_extension(action: FileAction, machine_id: &str) -> &'static str 
         FileAction::SaveState => "state",
         FileAction::SaveTape if machine_id == "zx81" => "p",
         FileAction::SaveTape => "cdt",
-        FileAction::SaveDisk => "dsk",
+        FileAction::SaveDisk | FileAction::SaveDiskB => "dsk",
         _ => extensions_for(FileKind::Snapshot, machine_id)
             .first()
             .copied()
@@ -410,6 +417,36 @@ impl Session<'_> {
                     path,
                 });
                 Ok(None)
+            }
+            FileAction::LoadDiskB => {
+                let Some(path) = self.pick(FileKind::Disk, "Load disk into drive B") else {
+                    return Ok(None);
+                };
+                let bytes = read_file(&path)?;
+                self.emu.apply(MediaOp::AttachDiskB {
+                    extension: input_extension_of(&path),
+                    bytes,
+                    path,
+                });
+                Ok(None)
+            }
+            FileAction::EjectDiskB => {
+                self.emu.apply(MediaOp::EjectDiskB);
+                Ok(None)
+            }
+            FileAction::SaveDiskB => {
+                let name = self.timestamped("dsk");
+                let Some(path) =
+                    self.pick_save(FileKind::Disk, "Save drive B disk image", &name, None)
+                else {
+                    return Ok(None);
+                };
+                let Some(bytes) = self.emu.export(Export::DiskB)? else {
+                    return Ok(Some("There is no disk in drive B".to_string()));
+                };
+                write_file(&path, &bytes)?;
+                self.emu.apply(MediaOp::DiskBSaved);
+                Ok(Some(format!("Drive B disk image saved: {}", label(&path))))
             }
             FileAction::EjectTape => {
                 self.emu.apply(MediaOp::EjectTape);
@@ -875,6 +912,9 @@ mod tests {
                 }
                 MediaOp::LoadState { bytes } => format!("state {} bytes", bytes.len()),
                 MediaOp::DiskSaved => "disk saved".to_string(),
+                MediaOp::AttachDiskB { path, .. } => format!("attach B {}", path.display()),
+                MediaOp::EjectDiskB => "eject B".to_string(),
+                MediaOp::DiskBSaved => "disk B saved".to_string(),
             };
             self.log.borrow_mut().push(Event::Apply(text));
         }
