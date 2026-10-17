@@ -822,7 +822,7 @@ guessing.
   `--disk-b`/`--disk-b-save`, `MediaOp::{AttachDiskB, EjectDiskB, DiskBSaved}`, `Export::DiskB`, file actions `load_disk_b`/`eject_disk_b`/
   `save_disk_b`, `--at` actions of the same names. Drive B has no "ask first" prompt: `HostControl::drive_b_can_be_replaced` writes unsaved
   changes to the `--disk-b` file (`--disk-writeback`) or `--disk-b-save` before a replace/eject, else **refuses** the change with a message
-  -- never a silent loss. Only the CPC664/6128 plugin has a drive B (the +3 plugin and the C64 refuse `drive 1`); `--disk-writeback` no
+  -- never a silent loss. Only the CPC664/6128 and the Spectrum +3 plugins have a drive B (the other Spectrums and the C64 refuse `drive 1`); `--disk-writeback` no
   longer requires `--disk` (either disk will do). The stub machine has two drives and test keys `dirty-disk-a`/`dirty-disk-b` for the guest
   writing. Verified through the real 6128 firmware: AMSDOS reads `B:SAME.BIN` from drive B while `A:SAME.BIN` is a different file.
   **Headless actions and symbol arithmetic (2026-10-16)**: `--at FRAME:ACTION[=FILE]` (`apps/retroclawd/src/scripted.rs`, needs

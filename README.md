@@ -278,7 +278,7 @@ used by a hotkey is not also sent to the emulated machine.
 | `load_tape` / `load_disk` | `ctrl+shift+KC_F9` / `ctrl+shift+KC_F10` | file dialog: put a tape / disk in (see "File dialogs") |
 | `load_snapshot` / `save_snapshot` | `ctrl+shift+KC_F11` / `ctrl+shift+KC_F12` | file dialog: load / save a snapshot |
 | `eject_tape` / `eject_disk` | unbound | take the tape / disk out |
-| `load_disk_b` / `eject_disk_b` / `save_disk_b` | unbound | the same for the second drive, drive B (CPC664/6128): choose a disk image for it, take it out, save a copy; replacing or ejecting a drive B disk with unsaved changes is refused unless `--disk-b-save` / `--disk-writeback` can write them first |
+| `load_disk_b` / `eject_disk_b` / `save_disk_b` | unbound | the same for the second drive, drive B (CPC664/6128 and Spectrum +3): choose a disk image for it, take it out, save a copy; replacing or ejecting a drive B disk with unsaved changes is refused unless `--disk-b-save` / `--disk-writeback` can write them first |
 | `load_state` / `save_state` | unbound | file dialog: any `.state` file (quick-save slots stay on `quick_save`/`quick_load`) |
 | `save_tape` / `save_disk` | unbound | save the cassette recording (`.cdt/.tzx/.voc`, CPC) / a copy of the disk image |
 | `freeze` | `ctrl+KC_PAUS` | press the freeze button of a C64 cartridge that has one |
@@ -580,7 +580,7 @@ still double as the Spectrum/CPC joystick as before.
   `retroclawd zx-spectrum --help` for their exact descriptions/defaults.
 
 **Disk (`zx-spectrum-2a3`, `cpc664`, `cpc6128`, or `cpc6128plus`)**
-- `--disk-b <path>` -- a disk for the second drive, drive B (the CPC664/6128's external drive; a machine without one refuses it).
+- `--disk-b <path>` -- a disk for the second drive, drive B (the CPC664/6128's or +3's external drive; a machine without one refuses it).
   Same formats as `--disk`; AMSDOS finds it by the drive letter (`B:FILE.BIN`, `|B`). `--disk-b-save <path>` writes drive B's modified
   image when the session ends; `--disk-writeback` rewrites each given disk's own file. Put a disk in or out later with the
   `load_disk_b`/`eject_disk_b`/`save_disk_b` hotkeys or `--at N:load_disk_b=FILE`.

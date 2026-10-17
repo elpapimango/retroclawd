@@ -53,7 +53,7 @@ pub(crate) enum FileAction {
     SaveState,
     SaveTape,
     SaveDisk,
-    /// The same three for the second drive (drive B of a CPC664/6128).
+    /// The same three for the second drive (drive B of a CPC664/6128 or +3).
     LoadDiskB,
     EjectDiskB,
     SaveDiskB,

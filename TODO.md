@@ -256,6 +256,13 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
     (`scripted.rs`, reusing `HostControl::apply`; failures exit 1), and `SymbolTable::substitute` folds `NAME+1`/`NAME-$10` and
     `#<NAME`/`#>NAME`. **Still open:** hotkeys that need a window (`--at pause` etc. are refused), drag and drop, recent files, a second drive, pad buttons
     as hotkey triggers, dead keys/non-ASCII. (The live crash test was added afterwards: the stub panics on a `crash-now` key, run in a child copy of the test binary.)
+- **DONE (2026-10-17): the C64 dead test's full RAM pass, by hand.** A full pass was run once by hand (release build, `--at N:screenshot=` every 6000 frames, 120000 frames in 7 min): the low tests are done by ~4000, the main RAM test blanks the screen until it ends before frame 96000 (about 32 min of machine time), the colour-bar video pattern follows (frame 96000), and the next cycle's low tests are on screen again by 108000; no failure map ever appeared. COUNT stays 000 and the screen is blank during the RAM test, so the RAM test's own OK was never seen -- that it finished is read from what comes next. Too slow for the suite in a debug build, so it stays a manual check.
+- **DONE (2026-10-17): the +3's second drive.** `ZxSpectrum::load_disk_in`/`eject_disk_from`/`disk_in`/`take_modified_disk_image_of`/
+  `mark_disk_saved_in`, the save state carries drive B's modified image, and the plugin takes `MediaSlot::Disk { drive: 0 | 1 }` (two
+  `DiskStatus` entries; a third drive is refused). Same shape as the CPC's, on the shared two-unit `nec765`. Tests: bus (reads A and B apart,
+  independent modified/saved/restored), plugin (attach/export/detach/mark per drive, no drive 2, 48K refuses), and a host suite case that
+  reads a sector from each drive through the FDC ports. The +3DOS ROM's own `DD_READ_SECTOR` was tried and not used: run without a
+  boot it sits in its spin-up/seek delay loops.
 - **DONE (2026-10-16, later): the open-items queue (1-6).**
   - AmstradDiag on a CPC664 (the 664 ROM is now in `fetch_roms.sh`): system information (model, FDC detected), lower RAM, ROM test (OS 664
     FD6F, 664 BASIC 1440, AMSDOS 0F91). A 464 cannot run the disk (no FDC); the cartridge needs a GX4000. The diagnostics' own sound test
@@ -268,8 +275,8 @@ a commit. The machine roadmaps moved with their repositories (their `TODO.md`). 
   - Host: pad chords in `[hotkeys]` (`pad1:select+start`), accent folding and dead keys in the symbolic layout and in paste, and a second
     drive: `--disk-b`/`--disk-b-save`, `load_disk_b`/`eject_disk_b`/`save_disk_b`, `nec765` with two units (shared), CPC plugin drive 1.
     Verified with the real 6128 firmware reading `B:` files. Per-game `[hotkeys]`/`[pads]` and the live plugin-crash test were done earlier.
-  - **Still open:** the +3's second drive (the controller supports it, the plugin refuses `drive 1`), the unified diagnostic cartridge's mode
-    switch, a full dead-test RAM pass, real dead-key/pad hardware (no live check), the sound test of AmstradDiag HEAD (needs sjasmplus to
+  - **Still open:** the unified diagnostic cartridge's mode
+    switch, real dead-key/pad hardware (no live check), the sound test of AmstradDiag HEAD (needs sjasmplus to
     build), drag and drop, recent files, the ZX80 machine (needs a ROM), Interface 1/zxpand ROMs (skipped).
 - **DONE (2026-10-16): GX4000 diagnostics cartridge and the CPC diagnostics suite.**
   - Real bug: a CPC+/GX4000 ignored classic Gate Array ink writes (colours come from the ASIC palette only), so any program setting

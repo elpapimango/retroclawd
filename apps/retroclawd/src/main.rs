@@ -486,7 +486,7 @@ struct CommonArgs {
     #[arg(long)]
     disk: Option<String>,
 
-    /// A disk for the second drive, drive B (CPC664/6128's external drive; the machine refuses it when it has no second
+    /// A disk for the second drive, drive B (the external drive of a CPC664/6128 or Spectrum +3; the machine refuses it when it has no second
     /// drive). Same formats as `--disk`. Guest writes to it are handled like `--disk`'s: discarded with a warning unless
     /// `--disk-b-save` or `--disk-writeback` (which applies to both drives, each to its own file) is given.
     #[arg(long, value_name = "PATH")]

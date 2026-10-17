@@ -308,7 +308,7 @@ pub(crate) enum MediaOp {
     },
     /// The disk image was written out: its changes are no longer unsaved.
     DiskSaved,
-    /// The same for the second drive (drive B of a CPC664/6128). Replacing or ejecting a drive B disk with unsaved changes is
+    /// The same for the second drive (drive B of a CPC664/6128 or +3). Replacing or ejecting a drive B disk with unsaved changes is
     /// refused unless the changes can be written to the `--disk-b` file or `--disk-b-save` first.
     AttachDiskB {
         extension: String,
