@@ -13,6 +13,21 @@ Status labels:
 - **PARKED** — deliberately inactive; do not let it drive unrelated design.
 - **DONE** — retained only when it defines the baseline for remaining work.
 
+## Test review: acid tests, not exhaustive validation (2026-10-17)
+
+Decision: the aim is a simple, capable emulator, tested the way an acid test would: third-party programs and published facts, not proof of
+real hardware. Plan agreed: (1) review everything in two passes with a keep/trim/remove list for approval -- **pass 1, the 101 `rc-suite` cases,
+is done (101 -> 69)**, pass 2 (the unit and integration tests of every repository) is next; (2) then add acid-style suites as cases with a known-gaps
+list: CPC Acid Tests Suite (cpcwiki) and cpctech `test.zip` (fetched, hash-checked, never committed), Acid800 (`Emulators\Acid800-1.2`, Atari 800 is
+parked, so as a model of an acid test's layout), and a few small acid-style programs of our own for the C64 and the Spectrum (documented behaviour,
+expected results from documents; ChronoCoders' C64 tests and kondrak's rust64 are reference reading only, nothing from them is run or copied).
+Pass 1 removed: c128 MMU version register, `$FF01` load; c64 CPU port values, raster 0-311, typed PRINT, the dead test alone (the unified case runs
+it), the 6581-with-paddle case (and the BAD assertion in the unified case; the missing-plug explanation stays in the notes below); cpc PSG channel A/B/C
+alone, mixer mute, noise, volume (AmstradDiag's sound test and the chord/register-1 cases cover them), joystick-FAILED, soak, 664 ROM checksums;
+spectrum FRAMES counter, ROM-halves-equal-the-file; zx81 ROM ignores writes, 16K pack, last cell of each RAM size, saved-file round trip, SAVE format,
+16K K prompt. Merged (all checks kept): cpc AMSDOS single/multi-sector, keyboard odd/even, joystick directions; spectrum frame lengths (3 -> 1), RAM pages and fixed banks,
+ROM select bits; zx81 keyboard plain/shifted.
+
 ## Parked: checks that need real hardware (2026-10-17)
 
 No real hardware is available, so these stay parked until someone has it; everything around them is unit-tested.
