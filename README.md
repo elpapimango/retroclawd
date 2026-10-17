@@ -222,6 +222,12 @@ batch mode means it spins forever) -- `--max-cycles` caps it, or Ctrl+C.
   (`--layout` still wins), `symbols = "game.sym"` (or a list; loaded before `--symbols`), a `[hotkeys]` table
   (`action = "chord"`, a list or `"none"`, plus `modifier`; `--hotkey` still wins) and `[pads]`/`[pads.1]`
   (`button = "machine key"`, plus `deadzone`). Each replaces only the actions / buttons it names
+- `--version` (`-V`) -- print the version, build number and git commit of retroclawd and of every machine plugin found, and exit; the
+  same lines head `--help`, and `--list-plugins` shows them per plugin. A line reads `retroclawd 0.1.0 build 39 (6bdc7515ff, 2026-10-17)`:
+  the **build number** is the number of commits in the repository up to the one built from, the hash and date are that **commit**'s (the
+  one that was pushed, once it has been), and `dirty` is added when tracked files differ from it. The host reports the retroclawd
+  repository, each plugin the machine repository it was built in (sinclair, amstrad, commodore), so a stale plugin next to a new
+  executable shows at a glance. Built without git, set `RC_BUILD_NUMBER`, `RC_GIT_COMMIT`, `RC_GIT_DATE` (and `RC_GIT_DIRTY=1`).
 - `--list-machine` (alias `-lm`) -- print discovered machine ids and exit
 - `--list-plugins` (alias `-lp`) -- print discovered machine/debugger
   plugin libraries and exit (debugger entries include selector names and
@@ -267,6 +273,7 @@ used by a hotkey is not also sent to the emulated machine.
 | `fullscreen` | `KC_F11` | toggle borderless fullscreen |
 | `mute` / `volume_down` / `volume_up` | `KC_F9` / `ctrl+KC_F9` / `ctrl+KC_F10` | audio mute, volume in 10% steps |
 | `overlay` | `KC_F10` | show / hide the debug overlay (cpu panel, or the `--show-overlay` panels) |
+| `version` | `KC_LSFT` + `KC_F9` | show / hide the version panel in the overlay (shows the overlay too if it was hidden) |
 | `pause` | `KC_PAUS` | pause / resume emulation |
 | `screenshot` | `KC_PSCR` | save `screenshots/<machine>-<date>-<time>.png` (UTC) |
 | `quick_save` / `quick_load` | `shift+KC_F11` / `shift+KC_F12` | save / load `states/<machine>-slotN.state`, or `states/<machine>-<game>-slotN.state` when a game was loaded (the file stem of the media: `--tape`/`--disk`/`--snapshot`, a game config's `media`, `--program`, `--cartridge`), so games do not share slots; screenshots are named the same way |
@@ -689,6 +696,8 @@ still double as the Spectrum/CPC joystick as before.
     ~855T, bit1 ~1710T -- this is the real signal for "is the tape
     decoding actual bits or garbage"), and a time-uniform ASCII EAR-bit
     waveform bar (ZX Spectrum, CPC)
+  - `version` -- the retroclawd version line and the line of the plugin running this machine (version, build number, commit, date);
+    the `version` hotkey (`shift+f9`) flips this panel at any time
   - `all` -- every panel
 
   A bare `--show-overlay` (no value) shows `cpu` only. A panel with

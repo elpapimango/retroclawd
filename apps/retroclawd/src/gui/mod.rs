@@ -217,9 +217,13 @@ pub fn run_gui(
     // below blocks until the window closes, and dropping `handle` at the
     // end of this function (after `app.run()` returns) is what stops and
     // joins the thread -- see `EmuThreadHandle`'s `Drop` impl.
-    let overlay_state = debug_overlay::OverlayStateRes::new(
+    let mut overlay_state = debug_overlay::OverlayStateRes::new(
         overlay_panels,
         std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    );
+    overlay_state.version_text = crate::version::overlay_text(
+        machine_id,
+        crate::plugin_bridge::startup_report().ok().as_ref(),
     );
     let handle = emu_thread::spawn(
         machine,

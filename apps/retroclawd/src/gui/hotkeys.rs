@@ -30,6 +30,7 @@ pub(crate) enum Action {
     VolumeUp,
     VolumeDown,
     Overlay,
+    Version,
     Pause,
     Screenshot,
     QuickSave,
@@ -99,7 +100,7 @@ pub(crate) struct ActionInfo {
 /// and Scroll Lock (plus chords on those): none of them is a key any
 /// emulated machine uses (the C64's F1/F3/F5/F7 and the Spectrum/CPC/C64
 /// letter and modifier keys all stay with the machine).
-pub(crate) const ACTIONS: [ActionInfo; 33] = [
+pub(crate) const ACTIONS: [ActionInfo; 34] = [
     ActionInfo {
         action: Action::Reset,
         name: "reset",
@@ -140,6 +141,13 @@ pub(crate) const ACTIONS: [ActionInfo; 33] = [
         name: "overlay",
         default: Some("f10"),
         help: "show / hide the debug overlay (cpu panel unless --show-overlay chose panels)",
+        hold: false,
+    },
+    ActionInfo {
+        action: Action::Version,
+        name: "version",
+        default: Some("shift+f9"),
+        help: "show / hide the version panel in the overlay (retroclawd and plugin version, build number, git commit)",
         hold: false,
     },
     ActionInfo {

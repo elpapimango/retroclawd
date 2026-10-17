@@ -835,6 +835,19 @@ guessing.
   failure) and live on a Spectrum 48K. `SymbolTable::substitute` (shared) also folds a constant offset after a known name
   (`CHROUT+1`, `BORDER - $10`, decimal/`$`/`0x`/`h`, chained, wrapping at 64K) and `#<NAME`/`#>NAME` (6502 low/high byte, applied after
   the offset); a register's displacement (`(IX+5)`) and an unknown name are untouched. No general expressions (`*`, parentheses).
+  **Version info (2026-10-17)**: `build-info` (shared repository, `crates/build-info`) stamps a crate at build time -- its `build.rs` calls
+  `build_info::emit()`, which asks git (in the crate's own repository) for `rev-list --count HEAD` (the **build number**), the abbreviated
+  `HEAD` hash and its commit date, and whether tracked files differ from `HEAD` (submodules and untracked files ignored); without git it
+  reads `RC_BUILD_NUMBER`/`RC_GIT_COMMIT`/`RC_GIT_DATE`/`RC_GIT_DIRTY`. `build_info::build_info!()` is the host's `BuildInfo`
+  (`version::HOST`), `build_info::version_tag!()` a string `0.1.0+39.6bdc7515ff.2026-10-17[.dirty]` (semver build metadata) that each
+  machine plugin puts in its descriptor's existing `version` field -- **no ABI change**, an older plugin just shows its plain version
+  (`Info::parse` reads both). `apps/retroclawd/src/version.rs` formats it: `--version`/`-V` and the top of `--help` print the host line and
+  one line per plugin found, `--list-plugins` the same per plugin, and the overlay has a `version` panel (`--show-overlay ...:version`, in
+  `all`) that the `version` hotkey (`shift+f9`, `Action::Version`) flips, showing the overlay with it when hidden. The host reports the
+  retroclawd repository, each plugin its machine family's repository. The build script reruns when HEAD, the branch ref or the crate's own
+  files change; an edit in another crate of the same repository does not rerun it, so the `dirty` flag can lag until the next commit or
+  edit there (the commit and build number are exact). Tests: `build-info` (tag round trip, dirty, plain version), `version::tests`
+  (stamped host, plugin lines, overlay text), `debug_overlay` (panel parse, hotkey toggle).
   **Debugger symbols (2026-10-12)**: `machine::SymbolTable` (shared crates) is a CPU-agnostic address->name table that
   annotates disassembly *text* (`  ; NAME` after the first known `$1234`/`$12` (6502) or `0x1234` (Z80) operand; text
   that already has a `;` or an immediate `#$12` is left alone) and parses symbol files (`NAME = $1234`, `NAME EQU

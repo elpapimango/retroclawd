@@ -26,6 +26,8 @@ pub(crate) struct OverlayPanels {
     pub(crate) memory: bool,
     pub(crate) disk: bool,
     pub(crate) tape: bool,
+    /// The retroclawd and plugin version, build number and commit (the `version` hotkey flips it).
+    pub(crate) version: bool,
 }
 
 impl OverlayPanels {
@@ -43,6 +45,7 @@ impl OverlayPanels {
                 memory: true,
                 disk: true,
                 tape: true,
+                version: true,
             });
         }
         let mut panels = Self::default();
@@ -56,9 +59,10 @@ impl OverlayPanels {
                 "mem" | "memory" => panels.memory = true,
                 "disk" => panels.disk = true,
                 "tape" => panels.tape = true,
+                "version" => panels.version = true,
                 other => {
                     return Err(format!(
-                        "unknown --show-overlay panel {other:?} (expected cpu, mem, disk, tape, or all)"
+                        "unknown --show-overlay panel {other:?} (expected cpu, mem, disk, tape, version, or all)"
                     ));
                 }
             }
@@ -83,6 +87,8 @@ impl OverlayPanels {
 pub(crate) struct OverlayStateRes {
     pub(crate) panels: OverlayPanels,
     pub(crate) visible: bool,
+    /// The text of the `version` panel (the host and the plugin of the running machine), set once at start.
+    pub(crate) version_text: String,
     /// Shared with the emu thread: it only fetches the slower memory/disk/
     /// tape panel data while this is set, so a hidden overlay costs nothing.
     data_wanted: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -100,6 +106,7 @@ impl OverlayStateRes {
                 ..OverlayPanels::default()
             }),
             visible: flag_panels.is_some(),
+            version_text: String::new(),
             data_wanted,
         };
         state.publish_data_wanted();
@@ -109,6 +116,17 @@ impl OverlayStateRes {
     /// The flag the emu thread watches (see `data_wanted`).
     pub(crate) fn data_wanted_flag(&self) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
         self.data_wanted.clone()
+    }
+
+    /// Shows the version panel (and the overlay with it, if it was hidden), or hides the panel again.
+    pub(crate) fn toggle_version(&mut self) {
+        if self.visible && self.panels.version {
+            self.panels.version = false;
+        } else {
+            self.visible = true;
+            self.panels.version = true;
+        }
+        self.publish_data_wanted();
     }
 
     pub(crate) fn toggle(&mut self) -> bool {
@@ -210,7 +228,7 @@ pub(crate) fn update_debug_overlay(
     *frame_time = 0.0;
 
     let snapshot = snapshot.0.lock().unwrap();
-    let out = format_overlay(
+    let mut out = format_overlay(
         state.panels,
         snapshot.halted,
         &snapshot.registers,
@@ -219,6 +237,9 @@ pub(crate) fn update_debug_overlay(
         &snapshot.memory_hex,
         &snapshot.overlay,
     );
+    if state.panels.version {
+        out.push_str(&state.version_text);
+    }
     text.0 = out;
 }
 
@@ -567,6 +588,7 @@ mod tests {
                 memory: true,
                 disk: false,
                 tape: true,
+                version: false,
             }
         );
     }
@@ -581,6 +603,7 @@ mod tests {
                 memory: false,
                 disk: true,
                 tape: true,
+                version: false,
             }
         );
     }
@@ -595,6 +618,7 @@ mod tests {
                 memory: true,
                 disk: true,
                 tape: true,
+                version: true,
             }
         );
         assert_eq!(
@@ -624,6 +648,36 @@ mod tests {
                 ..Default::default()
             }
         );
+    }
+
+    #[test]
+    fn the_version_panel_parses_and_the_hotkey_flips_it_and_shows_the_overlay() {
+        assert!(OverlayPanels::parse("cpu:version").unwrap().version);
+        assert!(!OverlayPanels::parse("cpu").unwrap().version);
+        // Version info needs no machine data from the emu thread.
+        assert!(
+            !OverlayPanels::parse("version")
+                .unwrap()
+                .needs_overlay_data()
+        );
+        let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut state = OverlayStateRes::new(None, flag);
+        state.version_text = "retroclawd 0.1.0 build 1
+"
+        .to_string();
+        assert!(!state.visible);
+        state.toggle_version();
+        assert!(
+            state.visible && state.panels.version,
+            "shows the overlay too"
+        );
+        state.toggle_version();
+        assert!(
+            state.visible && !state.panels.version,
+            "a second press hides only the panel"
+        );
+        state.toggle_version();
+        assert!(state.panels.version);
     }
 
     #[test]

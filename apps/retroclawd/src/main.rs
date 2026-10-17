@@ -16,6 +16,7 @@ mod playlist;
 mod plugin_bridge;
 mod romm;
 mod scripted;
+mod version;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::ffi::OsString;
@@ -259,6 +260,10 @@ struct CommonArgs {
     /// Print all discovered machine ids and exit.
     #[arg(long = "list-machine")]
     list_machine: bool,
+
+    /// Print the version, build number and git commit of retroclawd and of every machine plugin found, and exit.
+    #[arg(short = 'V', long = "version")]
+    show_version: bool,
 
     /// Print discovered machine plugin libraries and the debuggers built into this
     /// executable, and exit. For debuggers, includes selector names and options;
@@ -1911,7 +1916,9 @@ fn main() -> ExitCode {
     let mut cmd = build_command(machine_hint.as_deref(), hinted_options);
 
     if help_requested(&normalized_args) {
-        let mut text = render_help_with_single_dash_aliases(&mut cmd);
+        let mut text = version::summary(machine_report.as_ref().ok());
+        text.push('\n');
+        text.push_str(&render_help_with_single_dash_aliases(&mut cmd));
         // No specific machine was selected: append every discovered
         // machine's own options as its own section (clap itself can't
         // render this in one Command -- every machine that declares a
@@ -1966,6 +1973,11 @@ fn main() -> ExitCode {
         }
     }
 
+    if args.show_version {
+        print!("{}", version::summary(machine_report.as_ref().ok()));
+        return ExitCode::SUCCESS;
+    }
+
     if args.list_plugins {
         println!(
             "host compatibility: plugin ABI {}.{} (plugins need the same major and at least this minor), protocol {}, machine profile contract {}",
@@ -1982,9 +1994,9 @@ fn main() -> ExitCode {
                 } else {
                     for plugin in &report.plugins {
                         println!(
-                            "- {}@{} (ABI {}.{}) [{}] machines: {}",
+                            "- {} {} (ABI {}.{}) [{}] machines: {}",
                             plugin.plugin_id,
-                            plugin.plugin_version,
+                            build_info::Info::parse(&plugin.plugin_version),
                             plugin.abi.0,
                             plugin.abi.1,
                             plugin.source,

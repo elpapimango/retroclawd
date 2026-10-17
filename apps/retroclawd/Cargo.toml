@@ -5,6 +5,7 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [dependencies]
+build-info = { path = "../../shared/crates/build-info" }
 clap = { version = "4", features = ["derive", "wrap_help", "string"] }
 png = "0.18"
 winit = "0.30"
@@ -43,6 +44,7 @@ profiling = ["bevy/trace_tracy"]
 
 [build-dependencies]
 winresource = "0.1"
+build-info = { path = "../../shared/crates/build-info" }
 
 [dev-dependencies]
 # A do-nothing machine for the unit tests: no machine code lives in this repository.

@@ -700,6 +700,9 @@ pub(crate) fn hotkey_input(
             Trigger::Pressed(Action::Overlay) => {
                 overlay.toggle();
             }
+            Trigger::Pressed(Action::Version) => {
+                overlay.toggle_version();
+            }
             Trigger::Pressed(action @ (Action::ShaderNext | Action::ShaderPrev)) => {
                 let delta = if action == Action::ShaderNext { 1 } else { -1 };
                 let name = shader::cycle(shader_settings.name.as_deref(), delta);

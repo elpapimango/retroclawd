@@ -91,7 +91,7 @@ pub(crate) fn parse(text: &str) -> Result<Scripted, String> {
         "save_state" => Action::SaveState(need(arg)?),
         "save_tape" => Action::SaveTape(need(arg)?),
         "save_disk" => Action::SaveDisk(need(arg)?),
-        "pause" | "fast_forward" | "mute" | "volume_up" | "volume_down" | "overlay"
+        "pause" | "fast_forward" | "mute" | "volume_up" | "volume_down" | "overlay" | "version"
         | "fullscreen" | "quit" | "paste" | "shader_next" | "shader_prev" => {
             return Err(format!(
                 "--at {text}: {name} means nothing in a headless run (no window, no sound)"
