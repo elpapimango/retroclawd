@@ -37,6 +37,16 @@ module or a `#[cfg]`). The CPU cores' instruction tests were not merged (a merge
 the tools tests that run real ROMs looked for `48.rom` (the file is `spec48.rom`), and the real-disks round trip now skips when no `.d64` is present.
 Not touched: the ignored real-ROM tests (only the four exploration probes `dump_picture`, `probe_disk`, `play_disk_image`, `play_media` were removed).
 
+**Acid suites (2026-10-17, step 2 of the review)**: `tools/fetch_acid.sh --from <Acid_Tests_Suite folder>` copies the third-party acid tests
+from a folder you already have into the git-ignored `machines/<family>/software/acid/` folders, SHA-256 checked, never committed.
+*Patrik Rak's z80test 1.0* (inside the cpcwiki suite) runs on the 48K as `spectrum_z80test` in rc-suite: six variants, 152 CRC-checked tests each,
+compared with a real 48K with a Zilog Z80; the runner answers the `scroll?` prompt only while it shows (a key pressed during a test would change the
+IN tests) by rerunning from reset with one more press per round, and reads the `Result:` line from the picture with the 48K ROM's own character set.
+It found three real gaps, all fixed the same day: the ULA's idle EAR bit (port 0xFE reads 0xBF with no tape playing, was 0xFF), the N flag of
+INI/IND/OUTI/OUTD (bit 7 of the byte, was always set), and SCF/CCF F3/F5 (`(Q ^ F) | A`, Q = F if the previous instruction wrote F). full, doc, flags,
+docflags and ccf now pass; **known gap: z80memptr fails 41 of 152** (MEMPTR/WZ is not modelled: ADD HL,rr, DJNZ, CALL, RET, EX (SP),HL, LD (BC),A ...).
+Next in this step: the CPC acid tests (PPI/PSG, CRTC/Plus, video/gate array/keyboard, disc/ROM), then our own small C64 and Spectrum programs.
+
 ## Parked: checks that need real hardware (2026-10-17)
 
 No real hardware is available, so these stay parked until someone has it; everything around them is unit-tested.
