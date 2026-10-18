@@ -61,6 +61,20 @@ FDC model 2, /DACK 1, drive configuration 1, multi-drive N, drive 0, 40 tracks, 
 and unfinished; they need a faster way through paged output first), the CRTC programs (their files have `_` in the name, which AMSDOS answers `Bad command`
 to when typed; they print raw data anyway), `keyb`/`keyb2` (need a person at the keyboard), `devices/`. Then: our own small C64 and Spectrum programs.
 
+**Own acid programs, C64 and Spectrum (2026-10-17, last part of step 2)**: small programs of our own, each one documented fact, the document named in its case
+(sources chosen by the user: Bauer's VIC-II article, the C64 Programmer's Reference Guide / c64-wiki pages, the MOS 6526 datasheet; the World of Spectrum 48K and 128K
+references, the Sinclair wiki's floating-bus page, the Kempston interface manual, the Z80 timing tables). rc-suite files `spectrum_timing.rs`, `spectrum_io.rs`,
+`c64_hardware.rs`; `Outcome.cycles` now also reads a run to HALT ("N instructions, M cycles"), which is how the Spectrum programs measure: a program starts at T-state 0
+of the frame, fillers put one access at a chosen T-state, and the cycles with the access in contended and in uncontended RAM differ by the delay.
+**Spectrum**: contended memory (6,5,4,3,2,1,0,0 from 14335, 192 lines of 224, none in the border, 14361 and 228-T lines on the 128K), port contention outside 0x40-0x7F, the
+ULA answering every even port with 0xBF, Kempston (8/4/2/1, +16), AY read-back, 0x7FFD and 0x1FFD decode and the beeper (twenty 400-T periods = twenty edges 5.04 samples
+apart) all agree with the documents. **Known gaps found**: the I/O contention of ports with the high byte in 0x40-0x7F (WOS48's C:1,C:3 and C:1 x4 rows: 0x40FE is one cycle short
+at some phases, 0x7FFF is mostly not delayed) and the floating bus, which has the right order and period but samples one T-state later than the document's numbers (the late-timing
+variant) while the contention follows the early-timing ones. **C64**: raster IRQ in the right line (1, $30, $80, $F8, 256, 311), 312 lines numbered from 0, a CIA timer's
+period = latch + 1, one-shot stop and flag, ICR read clears, keyboard matrix (10 keys), joystick ports, sprite collision registers cleared on read, register mirrors every 64 bytes
+agree. **Known gaps found**: bad lines steal no cycles (a frame costs the same with the display on and off; `vic_accuracy = cycle` is the planned fix), the unconnected bits of the VIC
+registers read back as written instead of 1 ($D020 after writing 0 reads $00, BAUER says $F0), and the unused addresses $D02F-$D03F store writes instead of reading $FF.
+
 ## Parked: checks that need real hardware (2026-10-17)
 
 No real hardware is available, so these stay parked until someone has it; everything around them is unit-tested.
