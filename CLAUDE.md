@@ -1325,3 +1325,13 @@ CPU core stays testable in isolation from host/machine integration:
 - **Test ROMs** — accuracy best validated vs known-good Z80 test suites
   (e.g. ZEXALL/ZEXDOC) rather than hand-written unit tests alone; consider
   wiring one up early as accuracy baseline.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for `elpapimango/retroclawd` (via `gh`). See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: one `GLOSSARY.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.
