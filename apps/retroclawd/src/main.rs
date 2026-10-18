@@ -412,6 +412,11 @@ struct CommonArgs {
     /// be checked for a tone's frequency or for silence.
     #[arg(long, value_name = "FILE", requires = "frames")]
     dump_audio: Option<String>,
+    /// With `--frames`: each time the program counter reaches `ADDR` (e.g. a text-output routine such as the CPC's
+    /// `0xBB5A`), append the low byte of register `REG` (`A`, ...) to `FILE`: a transcript of what a test program printed,
+    /// readable even when the text scrolls off the screen. `--capture-at 0xBB5A:A=out.txt`.
+    #[arg(long, value_name = "ADDR:REG=FILE", requires = "frames", value_parser = parse_capture_at)]
+    capture_at: Option<CaptureAt>,
     /// Write the current video frame as a PNG to this path after the run
     /// stops (halt or --max-cycles cutoff)
     #[arg(long, requires = "headless")]
@@ -2920,6 +2925,58 @@ fn wav_bytes(samples: &[f32], rate: u32) -> Vec<u8> {
     out
 }
 
+/// `--capture-at ADDR:REG=FILE`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CaptureAt {
+    addr: u16,
+    reg: String,
+    path: String,
+}
+
+fn parse_capture_at(text: &str) -> Result<CaptureAt, String> {
+    let bad = || format!("`{text}`: expected ADDR:REG=FILE, e.g. 0xBB5A:A=out.txt");
+    let (head, path) = text.split_once('=').ok_or_else(bad)?;
+    let (addr, reg) = head.split_once(':').ok_or_else(bad)?;
+    let digits = addr.trim_start_matches("0x").trim_start_matches('$');
+    let radix = if digits.len() != addr.len() { 16 } else { 10 };
+    let addr = u16::from_str_radix(digits, radix).map_err(|_| bad())?;
+    if reg.is_empty() || path.is_empty() {
+        return Err(bad());
+    }
+    Ok(CaptureAt {
+        addr,
+        reg: reg.to_string(),
+        path: path.to_string(),
+    })
+}
+
+/// The low byte of the register named `reg`: an exact name first (a 6502's `A`), else a Z80 half-register
+/// (`A`/`F`/`B`/`C`/`D`/`E`/`H`/`L` out of `AF`/`BC`/`DE`/`HL`).
+fn register_byte(regs: &[(&'static str, u64)], reg: &str) -> Option<u8> {
+    let find = |name: &str| {
+        regs.iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|&(_, v)| v)
+    };
+    if let Some(v) = find(reg) {
+        return Some(v as u8);
+    }
+    let upper = reg.to_ascii_uppercase();
+    let (pair, high) = match upper.as_str() {
+        "A" => ("AF", true),
+        "F" => ("AF", false),
+        "B" => ("BC", true),
+        "C" => ("BC", false),
+        "D" => ("DE", true),
+        "E" => ("DE", false),
+        "H" => ("HL", true),
+        "L" => ("HL", false),
+        _ => return None,
+    };
+    let v = find(pair)?;
+    Some(if high { (v >> 8) as u8 } else { v as u8 })
+}
+
 fn run_headless(
     mut machine: plugin_bridge::HostedMachine,
     args: &CommonArgs,
@@ -2931,6 +2988,7 @@ fn run_headless(
         let started = std::time::Instant::now();
         let mut cycles = 0u64;
         let mut audio: Vec<f32> = Vec::new();
+        let mut captured: Vec<u8> = Vec::new();
         for frame in 0..frames {
             actions.run_due(frame, &mut machine);
             if let Some(t) = typing.as_mut()
@@ -2940,7 +2998,17 @@ fn run_headless(
             {
                 machine.key_event_name(&key, pressed);
             }
-            cycles += emu_thread::advance_one_frame(&mut machine, |_| false);
+            cycles += match &args.capture_at {
+                None => emu_thread::advance_one_frame(&mut machine, |_| false),
+                Some(cap) => emu_thread::advance_one_frame(&mut machine, |m| {
+                    if m.pc() == cap.addr
+                        && let Some(value) = register_byte(&m.registers(), &cap.reg)
+                    {
+                        captured.push(value);
+                    }
+                    false
+                }),
+            };
             if args.dump_audio.is_some() {
                 audio.extend(machine.drain_audio());
             }
@@ -2950,6 +3018,15 @@ fn run_headless(
                 Ok(()) => println!("wrote {} audio samples to {path}", audio.len()),
                 Err(e) => {
                     eprintln!("failed to write {path}: {e}");
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
+        if let Some(cap) = &args.capture_at {
+            match fs::write(&cap.path, &captured) {
+                Ok(()) => println!("wrote {} captured bytes to {}", captured.len(), cap.path),
+                Err(e) => {
+                    eprintln!("failed to write {}: {e}", cap.path);
                     return ExitCode::FAILURE;
                 }
             }
@@ -3549,6 +3626,39 @@ mod tests {
         assert_eq!(
             u32::from_le_bytes(wav[4..8].try_into().unwrap()) as usize,
             wav.len() - 8
+        );
+    }
+
+    #[test]
+    fn capture_at_parses_an_address_register_and_file() {
+        let c = parse_capture_at("0xBB5A:A=out.txt").unwrap();
+        assert_eq!(
+            (c.addr, c.reg.as_str(), c.path.as_str()),
+            (0xBB5A, "A", "out.txt")
+        );
+        assert_eq!(parse_capture_at("$FFD2:a=x").unwrap().addr, 0xFFD2);
+        assert_eq!(parse_capture_at("16:A=x").unwrap().addr, 16);
+        assert!(parse_capture_at("0xBB5A:A").is_err() && parse_capture_at("zz:A=x").is_err());
+        let z80 = [("AF", 0x4182u64), ("BC", 0x1234)];
+        assert_eq!(register_byte(&z80, "A"), Some(0x41));
+        assert_eq!(register_byte(&z80, "f"), Some(0x82));
+        assert_eq!(register_byte(&z80, "C"), Some(0x34));
+        assert_eq!(
+            register_byte(&[("A", 0x1FF)], "A"),
+            Some(0xFF),
+            "an exact name wins (6502)"
+        );
+        assert_eq!(register_byte(&z80, "X"), None);
+        assert!(
+            CommonArgs::try_parse_from([
+                "retroclawd",
+                "zx81",
+                "--headless",
+                "--capture-at",
+                "0:A=x"
+            ])
+            .is_err(),
+            "needs --frames"
         );
     }
 

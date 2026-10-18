@@ -45,7 +45,21 @@ IN tests) by rerunning from reset with one more press per round, and reads the `
 It found three real gaps, all fixed the same day: the ULA's idle EAR bit (port 0xFE reads 0xBF with no tape playing, was 0xFF), the N flag of
 INI/IND/OUTI/OUTD (bit 7 of the byte, was always set), and SCF/CCF F3/F5 (`(Q ^ F) | A`, Q = F if the previous instruction wrote F). full, doc, flags,
 docflags and ccf now pass; **known gap: z80memptr fails 41 of 152** (MEMPTR/WZ is not modelled: ADD HL,rr, DJNZ, CALL, RET, EX (SP),HL, LD (BC),A ...).
-Next in this step: the CPC acid tests (PPI/PSG, CRTC/Plus, video/gate array/keyboard, disc/ROM), then our own small C64 and Spectrum programs.
+**CPC acid tests (2026-10-17)**: Kevin Thacker's suite (cpcwiki) has about ten programs that print `name-PASS`/`name-FAIL` themselves and end with
+"Done."; the rest (most of crtc, cpctests, plus pictures, devices) draw pictures or raw data to compare with a real CPC, so they are **not** cases (decided:
+self-checking programs only). Run as `cpc_acid_tests` (rc-suite `tests/cpc_acid.rs`): `RUN"NAME` on the author's disk, the transcript read with the new
+`--capture-at 0xBB5A:A=FILE` (host: logs register A each time the CPU reaches an address -- here the firmware's TXT OUTPUT -- so scrolled and paged text
+is complete), segments of 200 frames through a save state, Space pressed only after a silent segment, menus answered by prompt text. Each program has a
+recorded state (`BASELINE`: does it finish, which tests fail); a new failure, a test that now passes, or a program that stops finishing fails the suite.
+Today: **romtest passes**; ppi 11 failing (8255 modes 1 and 2 are not modelled, port B latch, control-write reset), psg 4 (PSG port A output read-back,
+register masks), cpctest 2 (interrupt position/width) and it returns to BASIC at the GA I/O decode test, type1ctrl 2 (light pen status), and on the CPC+
+asicfloat, asiclock, asicppi (hangs), asicrom, asictest (hangs), asic_external_ram, dmatest (hangs), pritest (hangs). The failing lists are the known gaps, to be
+fixed or explained one by one. **Bugs this found and fixed**: the DSK reader refused the acid disks' header (`MV - CPCEMU / 13 May 17`, now any header starting
+`MV - CPC` / `EXTENDED`), and a CPC save state dropped the 8255, the keyboard row and the selected PSG register (a restored machine's PPI was in power-on mode; the
+ROM test printed nothing after a restore). **Not done**: the disc FDC programs (`disc/fdc_*`, `fdctest3`; they print PASS/FAIL but need a chain of setup answers --
+FDC model 2, /DACK 1, drive configuration 1, multi-drive N, drive 0, 40 tracks, slow ready -- and print thousands of detail lines page by page: a run is 200k frames
+and unfinished; they need a faster way through paged output first), the CRTC programs (their files have `_` in the name, which AMSDOS answers `Bad command`
+to when typed; they print raw data anyway), `keyb`/`keyb2` (need a person at the keyboard), `devices/`. Then: our own small C64 and Spectrum programs.
 
 ## Parked: checks that need real hardware (2026-10-17)
 
