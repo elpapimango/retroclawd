@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use machine::{AUDIO_SAMPLE_RATE, Machine};
+use machine::{AUDIO_SAMPLE_RATE, Addr, Machine};
 use plugin_api::{
     ABI_MAJOR_V1, ABI_MINOR_V1, BinaryBlob, ChipSnapshot, CpuFamily, DebugCommand, DebugResponse,
     DebugValue, HostMouseButton, ListProfilesRequest, ListProfilesResponse,
@@ -1432,17 +1432,27 @@ impl HostedMachine {
     /// running (a C128 switches between an 8502 and a Z80), so the host stays CPU-agnostic.
     pub(crate) fn disassemble(
         &self,
-        start: Option<u16>,
+        start: Option<Addr>,
         lines: u16,
     ) -> Result<Vec<plugin_api::DisassemblyLine>, String> {
         match self.call_machine(MachineCommand::Debug(DebugCommand::GetDisassembly {
-            start: start.map(u64::from),
+            start,
             lines: lines.into(),
         }))? {
             MachineResponse::Debug(DebugResponse::Disassembly(lines)) => Ok(lines),
             other => Err(format!(
                 "disassembly expected Debug::Disassembly, got {other:?}"
             )),
+        }
+    }
+
+    /// Width in bits of the primary CPU address space, 16 when the machine does not say.
+    pub(crate) fn address_bits(&self) -> u8 {
+        match self.call_machine(MachineCommand::Debug(DebugCommand::GetAddressSpaces)) {
+            Ok(MachineResponse::Debug(DebugResponse::AddressSpaces(spaces))) => spaces
+                .first()
+                .map_or(16, |space| space.addr_width_bits.clamp(1, 64)),
+            _ => 16,
         }
     }
 
@@ -1456,12 +1466,12 @@ impl HostedMachine {
 
     pub(crate) fn write_memory_space(
         &mut self,
-        address: u16,
+        address: Addr,
         bytes: &[u8],
         space: Option<String>,
     ) -> Result<(), String> {
         match self.call_machine(MachineCommand::WriteMemory {
-            address: address.into(),
+            address,
             bytes: bytes.to_vec(),
             space,
         })? {
@@ -1516,6 +1526,10 @@ impl HostedMachine {
         <Self as Machine>::frame_hz(self)
     }
 
+    pub(crate) fn frame_rate(&self) -> machine::FrameRate {
+        <Self as Machine>::frame_rate(self)
+    }
+
     pub(crate) fn step(&mut self) -> u32 {
         <Self as Machine>::step(self)
     }
@@ -1524,24 +1538,24 @@ impl HostedMachine {
         <Self as Machine>::halted(self)
     }
 
-    pub(crate) fn pc(&self) -> u16 {
-        <Self as Machine>::pc(self).try_into().unwrap()
+    pub(crate) fn pc(&self) -> Addr {
+        <Self as Machine>::pc(self)
     }
 
     pub(crate) fn render_frame(&self) -> Option<(u32, u32, Vec<u8>)> {
         <Self as Machine>::render_frame(self)
     }
 
-    pub(crate) fn read_memory(&self, addr: u16) -> u8 {
-        <Self as Machine>::read_memory(self, addr.into())
+    pub(crate) fn read_memory(&self, addr: Addr) -> u8 {
+        <Self as Machine>::read_memory(self, addr)
     }
 
-    pub(crate) fn load(&mut self, addr: u16, bytes: &[u8]) -> usize {
-        <Self as Machine>::load(self, addr.into(), bytes)
+    pub(crate) fn load(&mut self, addr: Addr, bytes: &[u8]) -> usize {
+        <Self as Machine>::load(self, addr, bytes)
     }
 
-    pub(crate) fn set_pc(&mut self, addr: u16) {
-        <Self as Machine>::set_pc(self, addr.into());
+    pub(crate) fn set_pc(&mut self, addr: Addr) {
+        <Self as Machine>::set_pc(self, addr);
     }
     pub(crate) fn set_register(&mut self, name: &str, value: u64) -> Result<(), String> {
         self.backend.set_register(self.instance, name, value)
@@ -1900,7 +1914,7 @@ impl HostedMachine {
     /// Hands a program to the machine plugin as `MediaKind::Program` (the
     /// plugin decides how to start it -- e.g. a BASIC program is injected
     /// once the machine has booted) instead of poking it and jumping to it.
-    pub(crate) fn attach_program(&mut self, org: u16, bytes: &[u8]) -> Result<(), String> {
+    pub(crate) fn attach_program(&mut self, org: Addr, bytes: &[u8]) -> Result<(), String> {
         match self.call_machine(MachineCommand::AttachMedia {
             slot: MediaSlot::Other("program".to_string()),
             kind: MediaKind::Program,
@@ -1908,7 +1922,7 @@ impl HostedMachine {
             bytes: bytes.to_vec(),
             options: vec![NamedValue {
                 key: "org".to_string(),
-                value: DebugValue::U64(u64::from(org)),
+                value: DebugValue::U64(org),
             }],
         })? {
             MachineResponse::Ack => Ok(()),
@@ -1941,6 +1955,30 @@ impl Machine for HostedMachine {
             Ok(MachineResponse::FrameHz(v)) => v,
             Ok(_) => panic!("bridge returned wrong response for GetFrameHz"),
             Err(e) => panic!("bridge GetFrameHz failed: {e}"),
+        }
+    }
+
+    fn frame_rate(&self) -> machine::FrameRate {
+        match self.metadata.frame_rate {
+            (num, den) if num != 0 && den != 0 => machine::FrameRate { num, den },
+            _ => machine::FrameRate::whole(u32::try_from(self.frame_hz()).unwrap_or(u32::MAX)),
+        }
+    }
+
+    fn pixel_aspect(&self) -> (u16, u16) {
+        match self.metadata.pixel_aspect {
+            (0, _) | (_, 0) => (1, 1),
+            aspect => aspect,
+        }
+    }
+
+    fn audio_format(&self) -> machine::AudioFormat {
+        machine::AudioFormat {
+            channels: self.metadata.audio_channels.max(1),
+            sample_rate: match self.metadata.audio_sample_rate {
+                0 => AUDIO_SAMPLE_RATE,
+                rate => rate,
+            },
         }
     }
 

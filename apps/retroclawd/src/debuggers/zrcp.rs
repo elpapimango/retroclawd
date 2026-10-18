@@ -343,7 +343,7 @@ fn sync_slot_breakpoint(
             host,
             instance_id,
             DebuggerHostCommand::ClearBreakpoint {
-                address: installed_slot.address,
+                address: u64::from(installed_slot.address),
             },
         ))?;
         session.installed_slots.remove(&index);
@@ -354,7 +354,7 @@ fn sync_slot_breakpoint(
             host,
             instance_id,
             DebuggerHostCommand::SetBreakpoint {
-                address: slot.address,
+                address: u64::from(slot.address),
                 condition: slot.condition.clone(),
             },
         ))?;
@@ -396,7 +396,10 @@ fn plain_breakpoint_hit_pc(
         return Ok(None);
     }
     for (slot_index, slot) in ordered_slot_entries(session) {
-        if !slot.break_action || slot.pass_count_limit.is_some() || slot.address != state.pc {
+        if !slot.break_action
+            || slot.pass_count_limit.is_some()
+            || u64::from(slot.address) != state.pc
+        {
             continue;
         }
         if let Some(condition) = slot.condition.as_deref() {
@@ -406,7 +409,9 @@ fn plain_breakpoint_hit_pc(
                 continue;
             }
         }
-        return Ok(Some(state.pc));
+        return Ok(Some(u16::try_from(state.pc).map_err(|_| {
+            "ZRCP addresses are 16 bits; this machine is wider".to_string()
+        })?));
     }
     Ok(None)
 }
@@ -480,7 +485,7 @@ fn format_register_value(value: u64, width_bits: u16) -> String {
 
 fn register_lookup(state: &DebuggerStateSnapshot, name: &str) -> Option<(String, u64, u16)> {
     if name.eq_ignore_ascii_case("PC") {
-        return Some(("PC".to_string(), u64::from(state.pc), 16));
+        return Some(("PC".to_string(), state.pc, 16));
     }
     state
         .registers
@@ -664,8 +669,8 @@ fn host_read_memory_range(
             host,
             instance_id,
             DebuggerHostCommand::ReadMemory {
-                address: addr,
-                len: chunk_len_u16,
+                address: u64::from(addr),
+                len: u32::from(chunk_len_u16),
             },
         )? {
             DebuggerHostResponse::Bytes(bytes) => {
@@ -700,7 +705,7 @@ fn host_poke_bytes(
             host,
             instance_id,
             DebuggerHostCommand::Poke {
-                address: addr,
+                address: u64::from(addr),
                 bytes: chunk.to_vec(),
             },
         ))?;
@@ -1035,7 +1040,7 @@ fn run_limited_steps(
             break;
         }
 
-        if let Some(pc) = software_breakpoint_hit_pc(session, state.pc) {
+        if let Some(pc) = software_breakpoint_hit_pc(session, state.pc.try_into().unwrap()) {
             hit_breakpoint = Some(pc);
             break;
         }
@@ -1091,7 +1096,7 @@ fn run_until_event_by_stepping(
         if state.halted || state.last_port_hit.is_some() {
             break;
         }
-        if let Some(pc) = software_breakpoint_hit_pc(session, state.pc) {
+        if let Some(pc) = software_breakpoint_hit_pc(session, state.pc.try_into().unwrap()) {
             hit_breakpoint = Some(pc);
             break;
         }
@@ -1622,7 +1627,9 @@ fn handle_command(
                 expect_ack(host_command(
                     host,
                     instance_id,
-                    DebuggerHostCommand::SetDisassemblyWindow { address },
+                    DebuggerHostCommand::SetDisassemblyWindow {
+                        address: address.into(),
+                    },
                 ))?;
             }
             expect_ack(host_command(
@@ -1831,7 +1838,10 @@ fn handle_command(
                     let pos = state
                         .history
                         .iter()
-                        .position(|entry| entry.before_pc == address || entry.after_pc == address)
+                        .position(|entry| {
+                            entry.before_pc == u64::from(address)
+                                || entry.after_pc == u64::from(address)
+                        })
                         .map(|index| index.to_string())
                         .unwrap_or_else(|| "-1".to_string());
                     Ok(CommandOutcome::Reply(format!("OK {pos}")))
@@ -2009,7 +2019,10 @@ fn handle_command(
             expect_ack(host_command(
                 host,
                 instance_id,
-                DebuggerHostCommand::SetBreakpoint { address, condition },
+                DebuggerHostCommand::SetBreakpoint {
+                    address: address.into(),
+                    condition,
+                },
             ))?;
             Ok(CommandOutcome::Reply("OK".to_string()))
         }
@@ -2021,7 +2034,9 @@ fn handle_command(
             expect_ack(host_command(
                 host,
                 instance_id,
-                DebuggerHostCommand::ClearBreakpoint { address },
+                DebuggerHostCommand::ClearBreakpoint {
+                    address: address.into(),
+                },
             ))?;
             Ok(CommandOutcome::Reply("OK".to_string()))
         }
@@ -2224,7 +2239,7 @@ fn handle_command(
                 host,
                 instance_id,
                 DebuggerHostCommand::Assemble {
-                    addr: address,
+                    addr: u64::from(address),
                     text,
                 },
             )?;
@@ -2799,13 +2814,13 @@ mod tests {
 
     struct FakeHost {
         state: DebuggerStateSnapshot,
-        breakpoints: HashMap<u16, Option<String>>,
+        breakpoints: HashMap<u64, Option<String>>,
         /// Real writable memory for tests that need a genuine
         /// write-then-read round trip (`assemble`, `extended-stack`);
         /// an address never explicitly poked falls back to the
         /// original deterministic `address as u8` value every existing
         /// `ReadMemory` test already relies on.
-        memory: HashMap<u16, u8>,
+        memory: HashMap<u64, u8>,
         /// Every `write-port` the host was asked to perform, in order.
         port_writes: Vec<(u16, u8)>,
     }
@@ -2818,7 +2833,8 @@ mod tests {
                 DebuggerRunMode::Running
             },
             halted: false,
-            pc,
+            pc: u64::from(pc),
+            addr_bits: 16,
             registers: Vec::new(),
             memory_addr: 0,
             memory: vec![0xAA, 0x55],
@@ -2892,7 +2908,7 @@ mod tests {
                         }
                         DebuggerHostCommand::SetRegister { name, value } => {
                             if name.eq_ignore_ascii_case("PC") {
-                                host.state.pc = value as u16;
+                                host.state.pc = value;
                             }
                             host.state.last_event = Some(format!("set-register:{name}={value}"));
                             DebuggerHostResponse::Ack
@@ -2908,7 +2924,7 @@ mod tests {
                         DebuggerHostCommand::ReadMemory { address, len } => {
                             let bytes = (0..len)
                                 .map(|offset| {
-                                    let addr = address.wrapping_add(offset);
+                                    let addr = address.wrapping_add(u64::from(offset));
                                     host.memory.get(&addr).copied().unwrap_or(addr as u8)
                                 })
                                 .collect();
@@ -2928,7 +2944,7 @@ mod tests {
                         }
                         DebuggerHostCommand::Poke { address, bytes } => {
                             for (i, b) in bytes.iter().enumerate() {
-                                host.memory.insert(address.wrapping_add(i as u16), *b);
+                                host.memory.insert(address.wrapping_add(i as u64), *b);
                             }
                             DebuggerHostResponse::Ack
                         }
@@ -2962,11 +2978,11 @@ mod tests {
                         DebuggerHostCommand::Assemble { addr, text } => {
                             // The real host picks the assembler by the machine's CPU family; this stand-in has no
                             // machine, so it accepts whichever of the two assemblers understands the text.
-                            let bytes = z80::disassemble::assemble_one_at(&text, addr)
-                                .or_else(|_| mos6502::disassemble::assemble_one(&text, addr))
+                            let bytes = z80::disassemble::assemble_one_at(&text, addr as u16)
+                                .or_else(|_| mos6502::disassemble::assemble_one(&text, addr as u16))
                                 .unwrap_or_default();
                             for (i, b) in bytes.iter().enumerate() {
-                                host.memory.insert(addr.wrapping_add(i as u16), *b);
+                                host.memory.insert(addr.wrapping_add(i as u64), *b);
                             }
                             DebuggerHostResponse::AssembledBytes(bytes)
                         }

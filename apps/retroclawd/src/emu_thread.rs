@@ -59,7 +59,7 @@ pub(crate) struct DebugSnapshot {
     /// mutates only those two fields so this one survives between the
     /// slower refreshes).
     pub(crate) memory_hex: Vec<u8>,
-    pub(crate) memory_hex_addr: u16,
+    pub(crate) memory_hex_addr: machine::Addr,
     /// Machine-agnostic memory/disk/tape overlay telemetry -- see
     /// `plugin_bridge::OverlayDebugSnapshot`'s own doc comment. Same
     /// slower-refresh-rate reasoning as `memory_hex`.
@@ -193,6 +193,16 @@ impl KeyQueue {
 /// dry (see `UnderrunCount`'s doc comment) rather than a steady drift.
 const SLOW_TICK_THRESHOLD: Duration = Duration::from_millis(10);
 
+/// Cycles one Frame spends: `clock_hz / frame_rate`, an integer division when the rate is whole
+/// (so the existing machines keep their exact budget) and exact on the ratio otherwise.
+fn cycle_budget(m: &dyn machine::Machine) -> u64 {
+    budget_for(m.clock_hz(), m.frame_rate())
+}
+
+fn budget_for(clock_hz: u64, rate: machine::FrameRate) -> u64 {
+    (clock_hz * u64::from(rate.den) / u64::from(rate.num).max(1)).max(1)
+}
+
 /// Advances `m` through exactly one `frame_hz()` tick: raises the frame
 /// interrupt, then burns a full `clock_hz()/frame_hz()` cycle budget --
 /// deliberately never breaking early on `m.halted()` (see the comment
@@ -224,7 +234,7 @@ pub(crate) fn advance_one_frame(
     // chance to wake back up.
     m.request_interrupt();
 
-    let budget = (m.clock_hz() / m.frame_hz()).max(1);
+    let budget = cycle_budget(&*m);
     let mut spent = 0u64;
     // Deliberately does NOT break early on `m.halted()` -- root cause of a
     // real, reported audio-skipping bug, found by reading `ZxSpectrum::
@@ -259,7 +269,7 @@ pub(crate) fn advance_one_frame(
 fn advance_one_frame_with_debugger(m: &mut HostedMachine, dbg: &mut DebuggerLink) -> u64 {
     m.request_interrupt();
 
-    let budget = (m.clock_hz() / m.frame_hz()).max(1);
+    let budget = cycle_budget(&*m);
     let mut spent = 0u64;
     loop {
         let cycles = m.step() as u64;
@@ -1138,8 +1148,7 @@ pub(crate) fn spawn(
     let join = thread::Builder::new()
         .name("emu".into())
         .spawn(move || {
-            let tick_duration =
-                Duration::from_secs_f64(1.0 / machine.frame_hz() as f64);
+            let tick_duration = Duration::from_secs_f64(1.0 / machine.frame_rate().hz());
             let mut logged_halt = false;
             let diagnostics_enabled = debugger_enabled;
 
@@ -1297,10 +1306,10 @@ pub(crate) fn spawn(
                     last_overlay_fetch = Instant::now();
                     let pc = {
                         let snapshot = thread_debug_snapshot.lock().unwrap();
-                        register_value(&snapshot.registers, "PC").unwrap_or(0) as u16
+                        register_value(&snapshot.registers, "PC").unwrap_or(0)
                     };
                     let memory_hex: Vec<u8> = (0..MEMORY_HEX_WINDOW)
-                        .map(|offset| machine.read_memory(pc.wrapping_add(offset)))
+                        .map(|offset| machine.read_memory(pc.wrapping_add(u64::from(offset))))
                         .collect();
                     let overlay = machine.overlay_debug_snapshot();
                     let mut snapshot = thread_debug_snapshot.lock().unwrap();
@@ -1556,6 +1565,20 @@ pub(crate) fn spawn(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_cycle_budget_of_a_whole_rate_is_the_old_integer_division_and_a_fractional_one_is_exact()
+    {
+        // C64 PAL: 985248 / 50 truncates, as it always did.
+        assert_eq!(budget_for(985_248, machine::FrameRate::whole(50)), 19_704);
+        // 3 579 545 Hz at 60000/1001 Hz is 59 718 cycles per frame, where 60 Hz gives 59 659.
+        let ntsc = machine::FrameRate {
+            num: 60_000,
+            den: 1001,
+        };
+        assert_eq!(budget_for(3_579_545, ntsc), 59_718);
+        assert_eq!(budget_for(3_579_545, machine::FrameRate::whole(60)), 59_659);
+    }
+
     fn events(list: &[(&str, bool)]) -> VecDeque<(String, bool)> {
         list.iter().map(|(k, p)| (k.to_string(), *p)).collect()
     }

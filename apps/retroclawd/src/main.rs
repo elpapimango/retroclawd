@@ -2638,12 +2638,12 @@ fn main() -> ExitCode {
             // `--run` with a program: the machine injects it once it has booted
             // (a BASIC program) and the startup profile types `RUN`; it must not
             // be jumped to as machine code.
-            if let Err(e) = machine.attach_program(org, &program) {
+            if let Err(e) = machine.attach_program(u64::from(org), &program) {
                 eprintln!("{e}");
                 return ExitCode::FAILURE;
             }
         } else {
-            let written = machine.load(org, &program);
+            let written = machine.load(u64::from(org), &program);
             if written != program.len() {
                 // A partially loaded program is worse than none: the missing tail is
                 // usually the HALT, so the CPU would run off into unmapped 0xFF bytes
@@ -2655,7 +2655,7 @@ fn main() -> ExitCode {
                 );
                 return ExitCode::FAILURE;
             }
-            machine.set_pc(org);
+            machine.set_pc(u64::from(org));
         }
     }
     // No program given: boot straight from the ROM's own reset vector
@@ -3084,7 +3084,7 @@ fn run_headless(
             if offset % 16 == 0 {
                 print!("  0x{addr:04X}:");
             }
-            print!(" {:02X}", machine.read_memory(addr));
+            print!(" {:02X}", machine.read_memory(u64::from(addr)));
             if offset % 16 == 15 {
                 println!();
             }

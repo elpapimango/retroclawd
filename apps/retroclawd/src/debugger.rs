@@ -6,6 +6,7 @@
 //! `Arc<Mutex<T>>` one-way-published-state handoff, and `input_tx`'s
 //! one-way `mpsc` command channel.
 
+use machine::Addr;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -42,19 +43,19 @@ pub(crate) enum DebuggerCommand {
     /// Restore the previous debugger-captured machine state (one instruction
     /// of reverse-stepping history).
     BackstepInstruction,
-    SetPc(u16),
+    SetPc(Addr),
     SetRegister {
         name: String,
         value: u64,
     },
     SetBreakpoint {
-        addr: u16,
+        addr: Addr,
     },
     SetBreakpointCondition {
-        addr: u16,
+        addr: Addr,
         condition: Option<String>,
     },
-    ClearBreakpoint(u16),
+    ClearBreakpoint(Addr),
     /// Removes every breakpoint at once -- the "Clear breakpoints" toolbar
     /// button, same idea as `ClearBreakpoint` but for the whole set.
     ClearAllBreakpoints,
@@ -67,7 +68,7 @@ pub(crate) enum DebuggerCommand {
     /// time would risk the emu thread ticking between two single-byte
     /// pokes, leaving memory briefly holding half an instruction.
     Poke {
-        addr: u16,
+        addr: Addr,
         bytes: Vec<u8>,
     },
     /// Reply channel carries the real success/failure of the write (unlike
@@ -78,7 +79,7 @@ pub(crate) enum DebuggerCommand {
     /// rather than silently ack-ing a write that never actually landed.
     PokeBank {
         bank: u8,
-        addr: u16,
+        addr: Addr,
         bytes: Vec<u8>,
         reply: Sender<Result<(), String>>,
     },
@@ -95,15 +96,15 @@ pub(crate) enum DebuggerCommand {
     /// Changes which memory range `DebuggerState.memory` covers going
     /// forward -- see that field's own doc comment for why this exists.
     SetMemoryWindow {
-        addr: u16,
-        len: u16,
+        addr: Addr,
+        len: u32,
     },
     /// Scrolls the disassembly panel to start at `addr` instead of
     /// following `pc` -- lets the UI browse code away from where execution
     /// currently is (e.g. to set a breakpoint further down) without losing
     /// track of the real PC, same "independent scroll window" idea as
     /// `SetMemoryWindow`. Cleared by `FollowPc` ("Back to PC" button).
-    SetDisassemblyWindow(u16),
+    SetDisassemblyWindow(Addr),
     /// Resumes following `pc` for the disassembly panel -- undoes
     /// `SetDisassemblyWindow`.
     FollowPc,
@@ -135,8 +136,8 @@ pub(crate) enum DebuggerCommand {
     /// much larger, e.g. a whole sprite sheet) span, decoded into pixels on
     /// the browser side, not here.
     ReadMemory {
-        addr: u16,
-        len: u16,
+        addr: Addr,
+        len: u32,
         reply: Sender<Vec<u8>>,
     },
     /// Same shape as `SaveState`, for hosted-machine snapshot saving.
@@ -145,7 +146,7 @@ pub(crate) enum DebuggerCommand {
     /// instruction mnemonic (e.g. "LD A,5"). Reply channel sends assembled
     /// bytes on success or error message on failure.
     Assemble {
-        addr: u16,
+        addr: Addr,
         text: String,
         reply: Sender<Result<Vec<u8>, String>>,
     },
@@ -189,7 +190,7 @@ pub(crate) enum RunMode {
 
 #[derive(Clone, Debug, serde::Serialize)]
 pub(crate) struct BreakpointDetail {
-    pub(crate) addr: u16,
+    pub(crate) addr: Addr,
     pub(crate) condition: Option<String>,
 }
 
@@ -204,8 +205,8 @@ pub(crate) struct WatchValue {
 
 #[derive(Clone, Debug, serde::Serialize)]
 pub(crate) struct InstructionHistoryEntry {
-    pub(crate) before_pc: u16,
-    pub(crate) after_pc: u16,
+    pub(crate) before_pc: Addr,
+    pub(crate) after_pc: Addr,
     pub(crate) text: String,
 }
 
@@ -224,12 +225,15 @@ pub(crate) struct DebuggerState {
     pub(crate) mode: RunMode,
     pub(crate) registers: Vec<(&'static str, u64)>,
     pub(crate) halted: bool,
-    pub(crate) pc: u16,
-    pub(crate) memory_addr: u16,
+    pub(crate) pc: Addr,
+    /// Width in bits of the primary CPU address space (16 for every 8-bit machine);
+    /// the browser wraps and pads addresses to it.
+    pub(crate) addr_bits: u8,
+    pub(crate) memory_addr: Addr,
     pub(crate) memory: Vec<u8>,
-    pub(crate) breakpoints: Vec<u16>,
+    pub(crate) breakpoints: Vec<Addr>,
     pub(crate) breakpoint_details: Vec<BreakpointDetail>,
-    pub(crate) last_break: Option<u16>,
+    pub(crate) last_break: Option<Addr>,
     pub(crate) watches: Vec<WatchValue>,
     pub(crate) history: Vec<InstructionHistoryEntry>,
     pub(crate) reverse_depth: usize,
@@ -238,7 +242,7 @@ pub(crate) struct DebuggerState {
     /// computed here (not in plugin web routes) since only the emu thread has
     /// `Machine::read_memory` access.
     /// (addr, raw bytes, mnemonic text) per line.
-    pub(crate) disassembly: Vec<(u16, Vec<u8>, String)>,
+    pub(crate) disassembly: Vec<(Addr, Vec<u8>, String)>,
     /// Whether the disassembly panel is currently following `pc` (`true`,
     /// the default) or parked at an address the UI scrolled to via
     /// `SetDisassemblyWindow` (`false`) -- lets the UI grey out/show its
@@ -257,6 +261,7 @@ impl DebuggerState {
             registers: Vec::new(),
             halted: false,
             pc: 0,
+            addr_bits: 16,
             memory_addr: 0,
             memory: Vec::new(),
             breakpoints: Vec::new(),
@@ -307,15 +312,18 @@ pub(crate) struct DebuggerLink {
     // Emu-thread-local, never shared/locked -- only this thread ever reads
     // or writes these, unlike `state` above.
     mode: RunMode,
-    breakpoints: BTreeMap<u16, Option<String>>,
-    memory_window: (u16, u16),
+    breakpoints: BTreeMap<Addr, Option<String>>,
+    memory_window: (Addr, u32),
+    /// Address width of the primary space, asked of the machine on the first `publish`
+    /// (0 = not asked yet).
+    addr_bits: u8,
     pending_step: bool,
     pending_step_over: bool,
     pending_backstep: bool,
     /// `None` = disassembly follows `pc` every tick (the default). `Some`
     /// = parked at that address by `SetDisassemblyWindow`, until `FollowPc`
     /// clears it back to `None`.
-    disassembly_addr: Option<u16>,
+    disassembly_addr: Option<Addr>,
     /// How many lines `publish` disassembles -- see `SetDisassemblyLineCount`.
     disassembly_lines: u16,
     /// Reverse-debug ring buffer of machine save states captured before each
@@ -332,7 +340,7 @@ pub(crate) struct DebuggerLink {
     port_hit: Option<PortHitInfo>,
     /// The hit that is currently the reason for being stopped (published).
     last_port_hit: Option<PortHitInfo>,
-    last_break: Option<u16>,
+    last_break: Option<Addr>,
     last_event: Option<String>,
     total_cycles: u64,
     partial_cycles: u64,
@@ -345,6 +353,7 @@ impl DebuggerLink {
             mode: RunMode::Running,
             breakpoints: BTreeMap::new(),
             memory_window: (0, 0),
+            addr_bits: 0,
             pending_step: false,
             pending_step_over: false,
             pending_backstep: false,
@@ -546,7 +555,7 @@ impl DebuggerLink {
                 }
                 DebuggerCommand::ReadMemory { addr, len, reply } => {
                     let bytes = (0..len)
-                        .map(|i| machine.read_memory(addr.wrapping_add(i)))
+                        .map(|i| machine.read_memory(addr.wrapping_add(u64::from(i))))
                         .collect();
                     let _ = reply.send(bytes);
                 }
@@ -620,7 +629,7 @@ impl DebuggerLink {
         if self.report_port_hit() {
             return total_cycles;
         }
-        let fallthrough_pc = outcome.before_pc.wrapping_add(outcome.consumed as u16);
+        let fallthrough_pc = outcome.before_pc.wrapping_add(outcome.consumed as u64);
         if !is_step_over_candidate(&outcome.text) || outcome.after_pc == fallthrough_pc {
             self.last_break = None;
             return total_cycles;
@@ -698,9 +707,12 @@ impl DebuggerLink {
     /// comes from the machine plugin (`HostedMachine::disassemble`), so any
     /// CPU a plugin can decode shows up correctly.
     pub(crate) fn publish(&mut self, machine: &HostedMachine) {
+        if self.addr_bits == 0 {
+            self.addr_bits = machine.address_bits();
+        }
         let (addr, len) = self.memory_window;
         let memory = (0..len)
-            .map(|i| machine.read_memory(addr.wrapping_add(i)))
+            .map(|i| machine.read_memory(addr.wrapping_add(u64::from(i))))
             .collect();
 
         let start = self.disassembly_addr.unwrap_or_else(|| machine.pc());
@@ -713,7 +725,7 @@ impl DebuggerLink {
             .map(|expr| evaluate_watch(machine, &registers, expr))
             .collect();
 
-        let breakpoints: Vec<u16> = self.breakpoints.keys().copied().collect();
+        let breakpoints: Vec<Addr> = self.breakpoints.keys().copied().collect();
         let breakpoint_details = self
             .breakpoints
             .iter()
@@ -733,6 +745,7 @@ impl DebuggerLink {
             registers,
             halted: machine.halted(),
             pc: machine.pc(),
+            addr_bits: self.addr_bits,
             memory_addr: addr,
             memory,
             breakpoints,
@@ -821,7 +834,7 @@ impl DebuggerLink {
         self.history.push_back(entry);
     }
 
-    fn breakpoint_hit_at_pc(&mut self, machine: &HostedMachine) -> Option<u16> {
+    fn breakpoint_hit_at_pc(&mut self, machine: &HostedMachine) -> Option<Addr> {
         let pc = machine.pc();
         let condition = self.breakpoints.get(&pc).cloned()?;
         let Some(condition) = condition else {
@@ -856,8 +869,8 @@ pub(crate) fn format_port_hit(hit: &PortHitInfo) -> String {
 }
 
 struct StepOutcome {
-    before_pc: u16,
-    after_pc: u16,
+    before_pc: Addr,
+    after_pc: Addr,
     consumed: usize,
     cycles: u64,
     text: String,
@@ -868,23 +881,18 @@ struct StepOutcome {
 /// view empty.
 fn disassembly_window(
     machine: &HostedMachine,
-    start: u16,
+    start: Addr,
     lines: u16,
-) -> Vec<(u16, Vec<u8>, String)> {
+) -> Vec<(Addr, Vec<u8>, String)> {
     let family = machine.cpu_family();
     let symbols = crate::debug_symbols::table_for(machine.machine_id());
     match machine.disassemble(Some(start), lines) {
         Ok(decoded) if !decoded.is_empty() => decoded
             .into_iter()
             .map(|line| {
-                let text = present_text(
-                    &family,
-                    line.address.try_into().unwrap(),
-                    &line.bytes,
-                    line.text,
-                );
+                let text = present_text(&family, line.address, &line.bytes, line.text);
                 let text = symbols.annotate(&text);
-                (line.address as u16, line.bytes, text)
+                (line.address, line.bytes, text)
             })
             .collect(),
         _ => {
@@ -903,15 +911,17 @@ fn disassembly_window(
 
 /// The plugin's text, with a Z80 `JR`/`DJNZ` shown as its absolute target (the 6502 disassembler
 /// already does this for branches) so every CPU reads alike and a target can be named by a symbol.
-fn present_text(family: &CpuFamily, address: u16, bytes: &[u8], text: String) -> String {
+fn present_text(family: &CpuFamily, address: Addr, bytes: &[u8], text: String) -> String {
     match family {
-        CpuFamily::Z80 if bytes.len() == 2 => z80::disassemble::disassemble_at(bytes, address).0,
+        CpuFamily::Z80 if bytes.len() == 2 => {
+            z80::disassemble::disassemble_at(bytes, address as u16).0
+        }
         _ => text,
     }
 }
 
 /// The text and length of the instruction at `addr`.
-fn disassemble_one(machine: &HostedMachine, addr: u16) -> (String, usize) {
+fn disassemble_one(machine: &HostedMachine, addr: Addr) -> (String, usize) {
     match disassembly_window(machine, addr, 1).into_iter().next() {
         Some((_, bytes, text)) => (text, bytes.len().max(1)),
         None => (String::from("DB $00"), 1),
@@ -926,17 +936,17 @@ fn assemble_with_symbols(
     family: &CpuFamily,
     machine_id: &str,
     text: &str,
-    addr: u16,
+    addr: Addr,
 ) -> Result<Vec<u8>, String> {
     let prefix = if *family == CpuFamily::Z80 { "0x" } else { "$" };
     let text = crate::debug_symbols::table_for(machine_id).substitute(text, prefix);
     assemble_for(family, &text, addr)
 }
 
-fn assemble_for(family: &CpuFamily, text: &str, addr: u16) -> Result<Vec<u8>, String> {
+fn assemble_for(family: &CpuFamily, text: &str, addr: Addr) -> Result<Vec<u8>, String> {
     match family {
-        CpuFamily::Z80 => z80::disassemble::assemble_one_at(text, addr),
-        CpuFamily::Mos6502 => mos6502::disassemble::assemble_one(text, addr),
+        CpuFamily::Z80 => z80::disassemble::assemble_one_at(text, addr as u16),
+        CpuFamily::Mos6502 => mos6502::disassemble::assemble_one(text, addr as u16),
         CpuFamily::M68k => Err("no assembler for the 68000 CPU yet".to_string()),
         CpuFamily::Other(name) => Err(format!("no assembler for the {name} CPU")),
     }
@@ -1043,14 +1053,14 @@ fn evaluate_numeric(
         return Err("empty expression".to_string());
     }
     if let Some(inner) = expr.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-        let addr = evaluate_numeric(machine, registers, inner)? as u16;
+        let addr = evaluate_numeric(machine, registers, inner)?;
         return Ok(machine.read_memory(addr) as u64);
     }
     if let Some(value) = parse_number(expr) {
         return Ok(value);
     }
     if expr.eq_ignore_ascii_case("pc") {
-        return Ok(machine.pc() as u64);
+        return Ok(machine.pc());
     }
     if let Some((_, value)) = registers
         .iter()
@@ -1244,7 +1254,7 @@ mod tests {
     fn the_disassembly_window_comes_from_the_machine_plugin() {
         let machine = stub_machine();
         let window = disassembly_window(&machine, 0x4000, 3);
-        let shown: Vec<(u16, &str)> = window.iter().map(|(a, _, t)| (*a, t.as_str())).collect();
+        let shown: Vec<(u64, &str)> = window.iter().map(|(a, _, t)| (*a, t.as_str())).collect();
         // The stub machine decodes every byte as a one-byte NOP.
         assert_eq!(shown, [(0x4000, "NOP"), (0x4001, "NOP"), (0x4002, "NOP")]);
         assert_eq!(disassemble_one(&machine, 0x4000), ("NOP".to_string(), 1));

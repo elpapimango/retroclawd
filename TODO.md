@@ -1263,7 +1263,7 @@ single-pass approximations are intentionally not substituted without a user deci
 ## Architecture guardrails
 
 - `machine` remains CPU-agnostic and must not depend on concrete CPUs or machines.
-- CPU-visible addresses remain `u16`; banked physical memory belongs inside each machine bus.
+- CPU-visible addresses are each Core's own (`machine::Bus` is 16-bit; a 68000 Core defines its own bus); the `Machine` trait and the plugin protocol use `machine::Addr` (`u64`); banked physical memory belongs inside each machine bus (ADR 0003).
 - CPU cores depend only on `machine::Bus`.
 - Format crates parse and write their own concrete formats; do not invent a shared
   `Loader`/`Snapshot` trait across snapshots, tapes, and disks.

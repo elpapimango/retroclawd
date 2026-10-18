@@ -3,6 +3,7 @@
 //! `--list-plugins` prints. Plain Rust types, passed in-process; nothing here
 //! crosses a library boundary.
 
+use machine::Addr;
 use plugin_api::{
     BitmapExplorerDefaults, BitmapPaletteColor, DisassemblyLine, PortHitInfo, PortWatchSpec,
     RegisterField,
@@ -18,7 +19,7 @@ pub enum DebuggerRunMode {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DebuggerBreakpoint {
-    pub address: u16,
+    pub address: Addr,
     pub condition: Option<String>,
 }
 
@@ -33,8 +34,8 @@ pub struct DebuggerWatch {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DebuggerHistoryEntry {
-    pub before_pc: u16,
-    pub after_pc: u16,
+    pub before_pc: Addr,
+    pub after_pc: Addr,
     pub text: String,
 }
 
@@ -42,12 +43,14 @@ pub struct DebuggerHistoryEntry {
 pub struct DebuggerStateSnapshot {
     pub mode: DebuggerRunMode,
     pub halted: bool,
-    pub pc: u16,
+    pub pc: Addr,
+    /// Width in bits of the primary CPU address space.
+    pub addr_bits: u8,
     pub registers: Vec<RegisterField>,
-    pub memory_addr: u16,
+    pub memory_addr: Addr,
     pub memory: Vec<u8>,
     pub breakpoints: Vec<DebuggerBreakpoint>,
-    pub last_break: Option<u16>,
+    pub last_break: Option<Addr>,
     pub watches: Vec<DebuggerWatch>,
     pub history: Vec<DebuggerHistoryEntry>,
     pub reverse_depth: usize,
@@ -86,22 +89,22 @@ pub enum DebuggerHostCommand {
         pressed: bool,
     },
     SetPc {
-        address: u16,
+        address: Addr,
     },
     SetRegister {
         name: String,
         value: u64,
     },
     SetBreakpoint {
-        address: u16,
+        address: Addr,
         condition: Option<String>,
     },
     SetBreakpointCondition {
-        address: u16,
+        address: Addr,
         condition: Option<String>,
     },
     ClearBreakpoint {
-        address: u16,
+        address: Addr,
     },
     ClearAllBreakpoints,
     AddWatch {
@@ -112,31 +115,31 @@ pub enum DebuggerHostCommand {
     },
     ClearWatches,
     SetMemoryWindow {
-        address: u16,
-        len: u16,
+        address: Addr,
+        len: u32,
     },
     SetDisassemblyWindow {
-        address: u16,
+        address: Addr,
     },
     FollowPc,
     SetDisassemblyLineCount {
         count: u16,
     },
     ReadMemory {
-        address: u16,
-        len: u16,
+        address: Addr,
+        len: u32,
     },
     Poke {
-        address: u16,
+        address: Addr,
         bytes: Vec<u8>,
     },
     PokeBank {
         bank: u8,
-        address: u16,
+        address: Addr,
         bytes: Vec<u8>,
     },
     Assemble {
-        addr: u16,
+        addr: Addr,
         text: String,
     },
     LoadState {

@@ -1128,6 +1128,16 @@ guessing.
   holding only the ZX81 library offers only `zx81`. Not done: the machine
   source still lives in this repo, so removing a machine from the *project* (not just a build)
   still means moving its crates out -- the planned next step is one repository per machine.
+  **ABI readiness for 16-bit machines (2026-10-18)**: protocol 11, ABI minor 2, profile contract 2 (ADR 0003, design in
+  `docs/superpowers/specs/2026-10-18-abi-16bit-readiness-design.md`). `machine::Addr` (`u64`) is the address type of the
+  `Machine` trait and the plugin protocol; an address beyond a machine's space wraps to it. The fast path gained `pc_wide`
+  (the host uses it; the old `pc` is the low 16 bits). `machine::Bus` is unchanged (16-bit): a 68000 Core defines its own bus.
+  `DebugCommand::OnCpu { cpu, command }` addresses one CPU of several (`MachineProfile::cpus`, primary first; plugins today accept
+  only `"main"`), `MachineCommand::AxisEvent` carries analogue input (`axis_names`), `MachineResponse::AudioPcm` replaces
+  `AudioPcmMono`, and `MachineMetadata` reports the exact `frame_rate`, `pixel_aspect` and audio format (zero = the old defaults).
+  The host pacing and cycle budget use the exact frame rate; the debugger state and the browser page follow the machine's
+  address width (`addr_bits`); ZRCP stays 16-bit at its edge. Not consumed yet: stereo output, pixel aspect, axis events (see the
+  spec's Status section).
   **Plugin ABI hardening and compatibility policy (2026-10-12)**: the policy is `docs/plugin-abi.md`
   (read it before touching `plugin-api`). Code: `plugin_api::compat` (the host's accept/refuse rules,
   shared by both loaders; reads `abi_major`/`abi_minor` first, refuses another major before

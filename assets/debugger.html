@@ -447,7 +447,10 @@ let selectedDisasmAddr = null;
 let lastDisassemblyLineCount = 0;
 
 function hex2(n) { return n.toString(16).toUpperCase().padStart(2, '0'); }
-function hex4(n) { return n.toString(16).toUpperCase().padStart(4, '0'); }
+// Width of the primary CPU address space, from the machine (16 for the 8-bit machines).
+let addrBits = 16;
+function wrapAddr(n) { const span = 2 ** addrBits; return ((n % span) + span) % span; }
+function hex4(n) { return n.toString(16).toUpperCase().padStart(Math.max(4, Math.ceil(addrBits / 4)), '0'); }
 function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 function parseAddr(raw) {
@@ -482,6 +485,7 @@ async function poll() {
     const res = await fetch('/api/state');
     const s = await res.json();
     lastState = s;
+    addrBits = s.addr_bits || 16;
     render(s);
   } catch (e) {
     document.getElementById('status').textContent = 'disconnected: ' + e;
@@ -825,8 +829,8 @@ document.getElementById('btnSaveListing').onclick = () => {
 document.getElementById('btnJump').onclick = () => {
   const addr = parseAddr(document.getElementById('jumpAddr').value);
   if (!isNaN(addr)) {
-    selectedDisasmAddr = addr & 0xFFFF;
-    post('/api/disassembly-window', { addr: addr & 0xFFFF });
+    selectedDisasmAddr = wrapAddr(addr);
+    post('/api/disassembly-window', { addr: wrapAddr(addr) });
   }
 };
 
@@ -904,16 +908,16 @@ document.addEventListener('keydown', (ev) => {
 document.getElementById('btnMemGo').onclick = () => {
   const addr = parseAddr(document.getElementById('memAddr').value);
   if (!isNaN(addr)) {
-    memBase = addr & 0xFFFF;
+    memBase = wrapAddr(addr);
     post('/api/memory-window', { addr: memBase, len: MEM_LEN });
   }
 };
 document.getElementById('btnMemPrev').onclick = () => {
-  memBase = (memBase - MEM_LEN) & 0xFFFF;
+  memBase = wrapAddr(memBase - MEM_LEN);
   post('/api/memory-window', { addr: memBase, len: MEM_LEN });
 };
 document.getElementById('btnMemNext').onclick = () => {
-  memBase = (memBase + MEM_LEN) & 0xFFFF;
+  memBase = wrapAddr(memBase + MEM_LEN);
   post('/api/memory-window', { addr: memBase, len: MEM_LEN });
 };
 
@@ -959,7 +963,7 @@ let bmRowBytes = 0; // bytes per row actually used to decode `bmBytes`
 let bmRows = 0;
 
 function bmParams() {
-  const addr = parseAddr(document.getElementById('bmAddr').value) & 0xFFFF;
+  const addr = wrapAddr(parseAddr(document.getElementById('bmAddr').value));
   const width = Math.max(1, parseInt(document.getElementById('bmWidth').value, 10) || 1);
   const planes = Math.min(4, Math.max(1, parseInt(document.getElementById('bmPlanes').value, 10) || 1));
   const zoom = Math.max(1, parseInt(document.getElementById('bmZoom').value, 10) || 1);
@@ -1036,7 +1040,7 @@ function drawBitmap(addr, width, planes, zoom, singleStrip) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(off, 0, 0, pxWidth, pxHeight, 0, 0, canvas.width, canvas.height);
 
-  const endAddr = (addr + bmBytes.length - 1) & 0xFFFF;
+  const endAddr = wrapAddr(addr + bmBytes.length - 1);
   const colours = 1 << (singleStrip ? 1 : planes);
   document.getElementById('bmInfo').innerHTML =
     `$${hex4(addr)} - $${hex4(endAddr)}<br>` +
@@ -1051,7 +1055,7 @@ function drawBitmap(addr, width, planes, zoom, singleStrip) {
 function bmStepAddr(deltaRows) {
   const { addr, width, planes, singleStrip } = bmParams();
   const rowBytes = singleStrip ? 1 : width * planes;
-  const next = (addr + deltaRows * rowBytes) & 0xFFFF;
+  const next = wrapAddr(addr + deltaRows * rowBytes);
   document.getElementById('bmAddr').value = '0x' + hex4(next);
   refreshBitmap();
 }
@@ -1093,7 +1097,7 @@ document.getElementById('bitmapCanvas').addEventListener('wheel', (ev) => {
     deltaBytes = (Math.sign(ev.deltaY) || 1) * lineBytes;
   }
   const { addr } = bmParams();
-  document.getElementById('bmAddr').value = '0x' + hex4((addr + deltaBytes) & 0xFFFF);
+  document.getElementById('bmAddr').value = '0x' + hex4(wrapAddr(addr + deltaBytes));
   refreshBitmap();
 }, { passive: false });
 

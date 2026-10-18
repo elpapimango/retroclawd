@@ -2,6 +2,7 @@
 //! only) serves one self-contained page (`assets/debugger.html`, no external
 //! requests) and a JSON API it polls and posts commands to.
 
+use machine::Addr;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -83,6 +84,18 @@ fn option_u16(options: &[NamedValue], key: &str) -> Result<Option<u16>, String> 
     Ok(Some(parsed))
 }
 
+fn parse_addr(token: &str) -> Result<Addr, String> {
+    let token = token.trim();
+    if let Some(hex) = token
+        .strip_prefix("0x")
+        .or_else(|| token.strip_prefix("0X"))
+    {
+        Addr::from_str_radix(hex, 16).map_err(|e| e.to_string())
+    } else {
+        token.parse::<Addr>().map_err(|e| e.to_string())
+    }
+}
+
 fn parse_u16(token: &str) -> Result<u16, String> {
     let token = token.trim();
     if let Some(hex) = token
@@ -97,13 +110,13 @@ fn parse_u16(token: &str) -> Result<u16, String> {
 
 #[derive(serde::Serialize)]
 struct BreakpointDetailResponse {
-    addr: u16,
+    addr: Addr,
     condition: Option<String>,
 }
 
 #[derive(serde::Serialize)]
 struct DisasmLineResponse {
-    addr: u16,
+    addr: Addr,
     bytes: Vec<u8>,
     text: String,
 }
@@ -113,12 +126,13 @@ struct StateResponse {
     mode: DebuggerRunMode,
     registers: BTreeMap<String, u64>,
     halted: bool,
-    pc: u16,
-    memory_addr: u16,
+    pc: Addr,
+    addr_bits: u8,
+    memory_addr: Addr,
     memory: Vec<u8>,
-    breakpoints: Vec<u16>,
+    breakpoints: Vec<Addr>,
     breakpoint_details: Vec<BreakpointDetailResponse>,
-    last_break: Option<u16>,
+    last_break: Option<Addr>,
     watches: Vec<DebuggerWatch>,
     history: Vec<DebuggerHistoryEntry>,
     reverse_depth: usize,
@@ -150,7 +164,7 @@ impl From<DebuggerStateSnapshot> for StateResponse {
             .disassembly
             .into_iter()
             .map(|line| DisasmLineResponse {
-                addr: line.address as u16,
+                addr: line.address,
                 bytes: line.bytes,
                 text: line.text,
             })
@@ -161,6 +175,7 @@ impl From<DebuggerStateSnapshot> for StateResponse {
             registers,
             halted: state.halted,
             pc: state.pc,
+            addr_bits: state.addr_bits,
             memory_addr: state.memory_addr,
             memory: state.memory,
             breakpoints,
@@ -197,26 +212,26 @@ fn full_port_mask() -> u16 {
 
 #[derive(serde::Deserialize)]
 struct AddrBody {
-    addr: u16,
+    addr: Addr,
 }
 
 #[derive(serde::Deserialize)]
 struct BreakpointBody {
-    addr: u16,
+    addr: Addr,
     #[serde(default)]
     condition: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
 struct PokeBody {
-    addr: u16,
+    addr: Addr,
     bytes: Vec<u8>,
 }
 
 #[derive(serde::Deserialize)]
 struct MemoryWindowBody {
-    addr: u16,
-    len: u16,
+    addr: Addr,
+    len: u32,
 }
 
 #[derive(serde::Deserialize)]
@@ -236,7 +251,7 @@ struct RemoveWatchBody {
 
 #[derive(serde::Deserialize)]
 struct AssembleBody {
-    addr: u16,
+    addr: Addr,
     text: String,
 }
 
@@ -313,9 +328,14 @@ fn query_param<'a>(url: &'a str, key: &str) -> Option<&'a str> {
     })
 }
 
-fn query_param_u16(url: &str, key: &str) -> Option<u16> {
+fn query_param_addr(url: &str, key: &str) -> Option<Addr> {
     let raw = query_param(url, key)?;
-    parse_u16(raw).ok()
+    parse_addr(raw).ok()
+}
+
+fn query_param_u32(url: &str, key: &str) -> Option<u32> {
+    let raw = query_param(url, key)?;
+    parse_addr(raw).ok().and_then(|v| u32::try_from(v).ok())
 }
 
 fn query_param_usize(url: &str, key: &str) -> Option<usize> {
@@ -600,13 +620,13 @@ fn handle_request(mut request: tiny_http::Request, host: &HostBridge, instance_i
             for entry in &trainer.entries {
                 let command = if entry.ignores_bank() {
                     DebuggerHostCommand::Poke {
-                        address: entry.address,
+                        address: u64::from(entry.address),
                         bytes: vec![entry.value],
                     }
                 } else {
                     DebuggerHostCommand::PokeBank {
                         bank: entry.bank,
-                        address: entry.address,
+                        address: u64::from(entry.address),
                         bytes: vec![entry.value],
                     }
                 };
@@ -684,8 +704,8 @@ fn handle_request(mut request: tiny_http::Request, host: &HostBridge, instance_i
         }
 
         (Method::Get, "/api/memory-bytes") => {
-            let addr = query_param_u16(request.url(), "addr");
-            let len = query_param_u16(request.url(), "len");
+            let addr = query_param_addr(request.url(), "addr");
+            let len = query_param_u32(request.url(), "len");
             match (addr, len) {
                 (Some(addr), Some(len)) => {
                     let response = host_command(

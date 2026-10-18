@@ -249,7 +249,7 @@ fn format_overlay(
     halted: bool,
     registers: &[(&'static str, u64)],
     fps: f64,
-    memory_hex_addr: u16,
+    memory_hex_addr: machine::Addr,
     memory_hex: &[u8],
     overlay: &crate::plugin_bridge::OverlayDebugSnapshot,
 ) -> String {
@@ -304,7 +304,7 @@ fn format_overlay(
 /// the machine's own paging/bank summary line if it has one (`None` on
 /// machines/models with no banking concept at all, e.g. ZX81 or 48K
 /// Spectrum).
-fn format_memory_panel(addr: u16, hex: &[u8], summary: Option<&str>, out: &mut String) {
+fn format_memory_panel(addr: machine::Addr, hex: &[u8], summary: Option<&str>, out: &mut String) {
     if hex.is_empty() {
         return;
     }
