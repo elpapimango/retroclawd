@@ -52,8 +52,10 @@ Same for every Machine. A Machine may add scenarios in its intake file, never re
 | S7 | Hardware test ROMs shipped for the platform | Their own pass/fail output |
 | S8 | CPU trace of the first N instructions after reset, when the reference can emit one | Trace golden |
 
-Assumptions that apply unless the intake file overrides them: pixel-exact comparison at a fixed deterministic Frame; S8 is optional because not every reference can trace.
+Scenarios are data: a `<id>.manifest.toml` in the Family repository, run by `rc-scenarios run` (crate `rc-suite` of `retroclawd-tools`, which also holds the rules: every golden pinned by hash, a tolerance only with a written reason, a known gap only with evidence, a known gap that starts passing fails the run). Kinds: `screen`, `memory`, `audio`, `state` (S5), `timing` (S6). S8 (a CPU trace) has no kind yet because the plugin ABI has no instruction trace; it stays optional.
+
+**A picture from another emulator is compared by similarity, not pixel for pixel.** The reference draws its own border, scale and palette, so only the content can agree: both pictures are reduced to a 64x48 luminance grid over a `crop` and compared by mean absolute difference (`max_mad`, with the reason written in the manifest). Pixel-exact comparison is only for goldens this project made itself. This replaces the earlier assumption of pixel-exact comparison against the reference.
 
 ## Goldens
 
-Captured once by a script that runs the reference emulator headless on the scenarios, stored in RomM keyed by hash (they derive from copyrighted software, so they stay out of git like ROMs), and pinned by the manifest (reference name and version, exact command, hash). CI compares our output to the golden and never runs the reference emulator. A diff image is written when they differ. One script regenerates goldens when the reference version changes.
+Captured once by a script that runs the reference emulator headless on the scenarios (`scripts/capture_mame_screen.sh` in `retroclawd-tools` for MAME pictures; not yet run), stored in RomM keyed by hash (they derive from copyrighted software, so they stay out of git like ROMs), and pinned by the manifest (reference name and version, exact command, hash). CI compares our output to the golden and never runs the reference emulator. A diff image is written when they differ. One script regenerates goldens when the reference version changes.
