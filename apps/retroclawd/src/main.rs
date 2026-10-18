@@ -3001,7 +3001,7 @@ fn run_headless(
             cycles += match &args.capture_at {
                 None => emu_thread::advance_one_frame(&mut machine, |_| false),
                 Some(cap) => emu_thread::advance_one_frame(&mut machine, |m| {
-                    if m.pc() == cap.addr
+                    if m.pc() == u64::from(cap.addr)
                         && let Some(value) = register_byte(&m.registers(), &cap.reg)
                     {
                         captured.push(value);

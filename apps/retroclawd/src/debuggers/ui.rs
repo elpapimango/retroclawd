@@ -150,7 +150,7 @@ impl From<DebuggerStateSnapshot> for StateResponse {
             .disassembly
             .into_iter()
             .map(|line| DisasmLineResponse {
-                addr: line.address,
+                addr: line.address as u16,
                 bytes: line.bytes,
                 text: line.text,
             })

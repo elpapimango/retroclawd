@@ -54,6 +54,7 @@ static MACHINE_VTABLE_V1: MachinePluginVTableV1 = MachinePluginVTableV1 {
     step: plugin_step_v1,
     halted: plugin_halted_v1,
     pc: plugin_pc_v1,
+    pc_wide: plugin_pc_wide_v1,
 };
 
 static PLUGIN_DESCRIPTOR_V1: StaticPluginDescriptor = StaticPluginDescriptor(PluginDescriptorV1 {
@@ -122,7 +123,7 @@ impl StubMachine {
 struct InstanceRecord {
     machine: StubMachine,
     paused: bool,
-    breakpoints: Vec<u16>,
+    breakpoints: Vec<u64>,
 }
 
 struct PluginState {
@@ -190,6 +191,8 @@ fn machine_profile() -> MachineProfile {
         media_kinds: vec![MediaKind::Disk, MediaKind::Tape, MediaKind::Snapshot],
         options: Vec::new(),
         key_names: Vec::new(),
+        cpus: Vec::new(),
+        axis_names: Vec::new(),
     }
 }
 
@@ -215,6 +218,7 @@ fn metadata() -> MachineMetadata {
             bitplanes: 1,
             zoom: 3,
         }),
+        ..MachineMetadata::default()
     }
 }
 
@@ -299,28 +303,28 @@ fn handle_machine_command(
             let cycles = m.step();
             Ok(MachineResponse::Step(plugin_api::StepResult {
                 cycles,
-                pc: m.pc,
+                pc: u64::from(m.pc),
                 halted: false,
             }))
         }
         MachineCommand::IsHalted => Ok(MachineResponse::Halted(false)),
-        MachineCommand::GetPc => Ok(MachineResponse::Pc(m.pc)),
+        MachineCommand::GetPc => Ok(MachineResponse::Pc(m.pc.into())),
         MachineCommand::Reset => {
             m.pc = 0x0100;
             Ok(MachineResponse::Ack)
         }
-        MachineCommand::ReadMemory { address, len, .. } => {
-            Ok(MachineResponse::Memory(m.read(address, len)))
-        }
+        MachineCommand::ReadMemory { address, len, .. } => Ok(MachineResponse::Memory(
+            m.read(address.try_into().unwrap(), len.try_into().unwrap()),
+        )),
         MachineCommand::WriteMemory { space: Some(_), .. } => {
             Err("unsupported: the stub machine has no banked memory".to_string())
         }
         MachineCommand::WriteMemory { address, bytes, .. }
-        | MachineCommand::LoadBytes { address, bytes } => {
-            Ok(MachineResponse::BytesWritten(m.load(address, &bytes) as u32))
-        }
+        | MachineCommand::LoadBytes { address, bytes } => Ok(MachineResponse::BytesWritten(
+            m.load(address.try_into().unwrap(), &bytes) as u32,
+        )),
         MachineCommand::SetPc { address } => {
-            m.pc = address;
+            m.pc = address as u16;
             Ok(MachineResponse::Ack)
         }
         MachineCommand::SaveState => Ok(MachineResponse::StateBlob(m.save_state())),
@@ -415,7 +419,9 @@ fn handle_machine_command(
         MachineCommand::RenderFrame => {
             Err("unsupported: the stub machine has no video".to_string())
         }
-        MachineCommand::DrainAudio => Ok(MachineResponse::AudioPcmMono {
+        MachineCommand::AxisEvent { .. } => Err("this machine has no analogue axes".to_string()),
+        MachineCommand::DrainAudio => Ok(MachineResponse::AudioPcm {
+            channels: 1,
             sample_rate: AUDIO_SAMPLE_RATE,
             samples: Vec::new(),
         }),
@@ -484,15 +490,15 @@ fn handle_debug_command(
                 bank_context: Vec::new(),
             }]))
         }
-        DebugCommand::ReadMemory { address, len, .. } => {
-            Ok(DebugResponse::Memory(m.read(address, len)))
-        }
+        DebugCommand::ReadMemory { address, len, .. } => Ok(DebugResponse::Memory(
+            m.read(address.try_into().unwrap(), len.try_into().unwrap()),
+        )),
         DebugCommand::WriteMemory { address, bytes, .. } => {
-            m.load(address, &bytes);
+            m.load(address.try_into().unwrap(), &bytes);
             Ok(DebugResponse::Ack)
         }
         DebugCommand::GetDisassembly { start, lines } => {
-            let mut cursor = start.unwrap_or(m.pc);
+            let mut cursor = start.unwrap_or(m.pc.into());
             let mut out = Vec::with_capacity(lines as usize);
             for _ in 0..lines {
                 out.push(DisassemblyLine {
@@ -511,6 +517,15 @@ fn handle_debug_command(
         })),
         DebugCommand::GetChipSnapshots => {
             Ok(DebugResponse::ChipSnapshots(Vec::<ChipSnapshot>::new()))
+        }
+        DebugCommand::OnCpu { cpu, command } => {
+            if cpu == "main" {
+                handle_debug_command(record, *command)
+            } else {
+                Err(format!(
+                    "unknown cpu \"{cpu}\" (this machine has only \"main\")"
+                ))
+            }
         }
         DebugCommand::GetMachineMetadata => Ok(DebugResponse::MachineMetadata(metadata())),
     }
@@ -621,6 +636,10 @@ extern "C" fn plugin_pc_v1(instance: MachineInstanceHandle) -> u16 {
             .get(&instance)
             .map_or(0, |record| record.machine.pc)
     })
+}
+
+extern "C" fn plugin_pc_wide_v1(instance: MachineInstanceHandle) -> u64 {
+    u64::from(plugin_pc_v1(instance))
 }
 
 /// # Safety

@@ -877,9 +877,14 @@ fn disassembly_window(
         Ok(decoded) if !decoded.is_empty() => decoded
             .into_iter()
             .map(|line| {
-                let text = present_text(&family, line.address, &line.bytes, line.text);
+                let text = present_text(
+                    &family,
+                    line.address.try_into().unwrap(),
+                    &line.bytes,
+                    line.text,
+                );
                 let text = symbols.annotate(&text);
-                (line.address, line.bytes, text)
+                (line.address as u16, line.bytes, text)
             })
             .collect(),
         _ => {
@@ -932,6 +937,7 @@ fn assemble_for(family: &CpuFamily, text: &str, addr: u16) -> Result<Vec<u8>, St
     match family {
         CpuFamily::Z80 => z80::disassemble::assemble_one_at(text, addr),
         CpuFamily::Mos6502 => mos6502::disassemble::assemble_one(text, addr),
+        CpuFamily::M68k => Err("no assembler for the 68000 CPU yet".to_string()),
         CpuFamily::Other(name) => Err(format!("no assembler for the {name} CPU")),
     }
 }

@@ -185,6 +185,19 @@ pub(crate) fn write_file_atomically(path: &Path, bytes: &[u8]) -> std::io::Resul
     })
 }
 
+/// The audio queue and the output stage are mono until a stereo Machine
+/// exists; interleaved frames of a wider response are averaged into one sample.
+fn downmix_to_mono(channels: u8, samples: Vec<f32>) -> Vec<f32> {
+    if channels <= 1 {
+        return samples;
+    }
+    let width = usize::from(channels);
+    samples
+        .chunks_exact(width)
+        .map(|frame| frame.iter().sum::<f32>() / f32::from(channels))
+        .collect()
+}
+
 fn intern_register_label(label: &str) -> &'static str {
     let labels = REGISTER_LABELS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut labels = labels.lock().unwrap();
@@ -345,9 +358,9 @@ impl PluginHost {
     }
 
     /// Fast path for `Machine::pc` -- see `step_fast`'s own doc comment.
-    fn pc_fast(&self, instance: MachineInstanceHandle) -> u16 {
+    fn pc_fast(&self, instance: MachineInstanceHandle) -> u64 {
         // SAFETY: see `step_fast`.
-        unsafe { (self.vtable.pc)(instance) }
+        unsafe { (self.vtable.pc_wide)(instance) }
     }
 }
 
@@ -457,7 +470,7 @@ impl PluginV1MachineBackend {
         self.host.halted_fast(instance)
     }
 
-    fn pc_fast(&self, instance: MachineInstanceHandle) -> u16 {
+    fn pc_fast(&self, instance: MachineInstanceHandle) -> u64 {
         self.host.pc_fast(instance)
     }
 
@@ -1058,7 +1071,7 @@ impl HostedBackend {
         self.plugin.halted_fast(instance)
     }
 
-    fn pc_fast(&self, instance: MachineInstanceHandle) -> u16 {
+    fn pc_fast(&self, instance: MachineInstanceHandle) -> u64 {
         self.plugin.pc_fast(instance)
     }
 
@@ -1423,8 +1436,8 @@ impl HostedMachine {
         lines: u16,
     ) -> Result<Vec<plugin_api::DisassemblyLine>, String> {
         match self.call_machine(MachineCommand::Debug(DebugCommand::GetDisassembly {
-            start,
-            lines,
+            start: start.map(u64::from),
+            lines: lines.into(),
         }))? {
             MachineResponse::Debug(DebugResponse::Disassembly(lines)) => Ok(lines),
             other => Err(format!(
@@ -1448,7 +1461,7 @@ impl HostedMachine {
         space: Option<String>,
     ) -> Result<(), String> {
         match self.call_machine(MachineCommand::WriteMemory {
-            address,
+            address: address.into(),
             bytes: bytes.to_vec(),
             space,
         })? {
@@ -1512,7 +1525,7 @@ impl HostedMachine {
     }
 
     pub(crate) fn pc(&self) -> u16 {
-        <Self as Machine>::pc(self)
+        <Self as Machine>::pc(self).try_into().unwrap()
     }
 
     pub(crate) fn render_frame(&self) -> Option<(u32, u32, Vec<u8>)> {
@@ -1520,15 +1533,15 @@ impl HostedMachine {
     }
 
     pub(crate) fn read_memory(&self, addr: u16) -> u8 {
-        <Self as Machine>::read_memory(self, addr)
+        <Self as Machine>::read_memory(self, addr.into())
     }
 
     pub(crate) fn load(&mut self, addr: u16, bytes: &[u8]) -> usize {
-        <Self as Machine>::load(self, addr, bytes)
+        <Self as Machine>::load(self, addr.into(), bytes)
     }
 
     pub(crate) fn set_pc(&mut self, addr: u16) {
-        <Self as Machine>::set_pc(self, addr);
+        <Self as Machine>::set_pc(self, addr.into());
     }
     pub(crate) fn set_register(&mut self, name: &str, value: u64) -> Result<(), String> {
         self.backend.set_register(self.instance, name, value)
@@ -1949,7 +1962,7 @@ impl Machine for HostedMachine {
         self.backend.halted_fast(self.instance)
     }
 
-    fn pc(&self) -> u16 {
+    fn pc(&self) -> u64 {
         self.backend.pc_fast(self.instance)
     }
 
@@ -1965,7 +1978,7 @@ impl Machine for HostedMachine {
         }
     }
 
-    fn read_memory(&self, addr: u16) -> u8 {
+    fn read_memory(&self, addr: u64) -> u8 {
         match self.call_machine(MachineCommand::ReadMemory {
             address: addr,
             len: 1,
@@ -1977,7 +1990,7 @@ impl Machine for HostedMachine {
         }
     }
 
-    fn load(&mut self, addr: u16, bytes: &[u8]) -> usize {
+    fn load(&mut self, addr: u64, bytes: &[u8]) -> usize {
         match self.call_machine(MachineCommand::LoadBytes {
             address: addr,
             bytes: bytes.to_vec(),
@@ -1988,7 +2001,7 @@ impl Machine for HostedMachine {
         }
     }
 
-    fn set_pc(&mut self, addr: u16) {
+    fn set_pc(&mut self, addr: u64) {
         let _ = self.call_machine(MachineCommand::SetPc { address: addr });
     }
 
@@ -1998,10 +2011,11 @@ impl Machine for HostedMachine {
 
     fn drain_audio(&mut self) -> Vec<f32> {
         match self.call_machine(MachineCommand::DrainAudio) {
-            Ok(MachineResponse::AudioPcmMono {
+            Ok(MachineResponse::AudioPcm {
+                channels,
                 sample_rate: AUDIO_SAMPLE_RATE,
                 samples,
-            }) => samples,
+            }) => downmix_to_mono(channels, samples),
             Ok(_) => Vec::new(),
             Err(_) => Vec::new(),
         }
@@ -2137,6 +2151,10 @@ mod tests {
         0
     }
 
+    extern "C" fn test_pc_wide(_instance: MachineInstanceHandle) -> u64 {
+        0
+    }
+
     static TEST_VTABLE: MachinePluginVTableV1 = MachinePluginVTableV1 {
         size: MachinePluginVTableV1::expected_size(),
         list_profiles: test_list_profiles,
@@ -2147,6 +2165,7 @@ mod tests {
         step: test_step,
         halted: test_halted,
         pc: test_pc,
+        pc_wide: test_pc_wide,
     };
 
     fn test_descriptor(abi_major: u16, abi_minor: u16) -> PluginDescriptorV1 {
@@ -2184,6 +2203,8 @@ mod tests {
             media_kinds: vec![MediaKind::Snapshot],
             options: Vec::new(),
             key_names: Vec::new(),
+            cpus: Vec::new(),
+            axis_names: Vec::new(),
         }
     }
 
@@ -2239,6 +2260,7 @@ mod tests {
             step: test_step_future,
             halted: test_halted,
             pc: test_pc,
+            pc_wide: test_pc_wide,
         },
         appended_in_a_later_minor: 0xDEAD_BEEF,
     };
@@ -2303,7 +2325,24 @@ mod tests {
         };
         assert_eq!(
             err,
-            "machine plugin ABI minor too old: host requires >= 1, plugin=0"
+            "machine plugin ABI minor too old: host requires >= 2, plugin=0"
+        );
+    }
+
+    #[test]
+    fn a_minor_one_plugin_without_pc_wide_is_refused_by_a_minor_two_host() {
+        // Minor 1 ended after `pc`; this host calls `pc_wide`, so it must
+        // never be allowed to read the missing field.
+        let descriptor = descriptor_with(
+            (&MINOR_ZERO_VTABLE as *const MinorZeroVTable).cast::<c_void>(),
+            1,
+        );
+        let Err(err) = PluginHost::from_descriptor(&descriptor) else {
+            panic!("minor 1 must be refused by an ABI-minor-2 host");
+        };
+        assert_eq!(
+            err,
+            "machine plugin ABI minor too old: host requires >= 2, plugin=1"
         );
     }
 
@@ -2384,7 +2423,7 @@ mod tests {
         .expect_err("newer plugin contract must fail against old host");
         assert_eq!(
             err,
-            "machine profile contract mismatch for zx81 from plugin.dll (retroclawd.test.machine@0.1.0): host=1, plugin=2"
+            "machine profile contract mismatch for zx81 from plugin.dll (retroclawd.test.machine@0.1.0): host=2, plugin=3"
         );
     }
 
@@ -2395,12 +2434,12 @@ mod tests {
             "retroclawd.test.machine",
             "0.1.0",
             Path::new("plugin.dll"),
-            2,
+            MACHINE_PROFILE_CONTRACT_VERSION + 1,
         )
         .expect_err("older plugin contract must fail against newer host");
         assert_eq!(
             err,
-            "machine profile contract mismatch for zx81 from plugin.dll (retroclawd.test.machine@0.1.0): host=2, plugin=1"
+            "machine profile contract mismatch for zx81 from plugin.dll (retroclawd.test.machine@0.1.0): host=3, plugin=2"
         );
     }
     /// Merged (every check kept): `validate_profile_contract_rejects_newer_plugin_contract_for_old_host`, `validate_profile_contract_rejects_older_plugin_contract_for_new_host`.

@@ -502,7 +502,7 @@ fn state_snapshot(state: &DebuggerState) -> DebuggerStateSnapshot {
         .disassembly
         .iter()
         .map(|(addr, bytes, text)| DisassemblyLine {
-            address: *addr,
+            address: u64::from(*addr),
             bytes: bytes.clone(),
             text: text.clone(),
         })
