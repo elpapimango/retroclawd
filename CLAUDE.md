@@ -825,6 +825,7 @@ guessing.
   -- never a silent loss. Only the CPC664/6128 and the Spectrum +3 plugins have a drive B (the other Spectrums and the C64 refuse `drive 1`); `--disk-writeback` no
   longer requires `--disk` (either disk will do). The stub machine has two drives and test keys `dirty-disk-a`/`dirty-disk-b` for the guest
   writing. Verified through the real 6128 firmware: AMSDOS reads `B:SAME.BIN` from drive B while `A:SAME.BIN` is a different file.
+  **`--capture-at ADDR:REG=FILE` (2026-10-18)**: headless, needs `--frames`; appends the low byte of Z80 register `REG` (A/F/B/C/D/E/H/L) to FILE each time PC reaches ADDR (`register_byte`, `parse_capture_at`). Used by rc-suite to read the CPC acid programs' text (TXT OUTPUT `0xBB5A`, register A); an interrupt landing exactly on the entry can double a character, so compare squeezed. Acid-test gap status (what was fixed, what remains) is in `TODO.md` "Acid suites".
   **Headless actions and symbol arithmetic (2026-10-16)**: `--at FRAME:ACTION[=FILE]` (`apps/retroclawd/src/scripted.rs`, needs
   `--frames`) runs the hotkey/dialog actions of a batch run: `scripted::Runner` owns a real `HostControl` and feeds it the same
   `EmuCommand`s (`Reset`, `QuickSave`, `Media(MediaOp)`, `Export` ...) the window sends, with files read through `inputs::load` (zips
