@@ -7,7 +7,7 @@
 #
 #   <folder> = the cpcwiki "Acid Tests Suite" (Kevin Thacker) unpacked, e.g. C:\Users\you\Workspace\Emulators\Acid_Tests_Suite.
 #   Patrik Rak's z80test 1.0 (MIT) is inside it: z80tests/patrik_z80test/spec/z80test-1.0/*.tap, run on the Spectrum 48K.
-#   The CPC programs that print PASS/FAIL (ppi, psg, cpc, cpcrom, crtc2 = type1ctrl, plus/asic1) are the disks Kevin Thacker built: standard
+#   The CPC programs that print PASS/FAIL (ppi, psg, cpc, cpcrom, crtc2 = type1ctrl, plus/asic1, the disc FDC programs) are the disks Kevin Thacker built: standard
 #   CPCEMU .dsk files whose header reads "MV - CPCEMU / <date>" instead of the long form (our reader accepts both).
 #   The CPC programs that print PASS/FAIL (ppi, psg, cpc, cpcrom, crtc2 (type1ctrl), plus/asic1) are the disks Kevin Thacker built; the disks are
 #   standard CPCEMU .dsk files whose header reads "MV - CPCEMU / <date>" instead of the long form (our reader accepts both).
@@ -45,6 +45,15 @@ ITEMS=(
   "cpcrom/romtest.dsk|5c0ea73d83b99953d0b8c69cef8f4cccaebc1a6c56d7f17dfe250d8870350173|machines/amstrad/software/acid/cpcrom/romtest.dsk"
   "crtc/crtc2.dsk|6ac07ad343b687d74ec60d728c25d7f8753f40159d34805a9f9995de8176ab28|machines/amstrad/software/acid/crtc/crtc2.dsk"
   "plus/asic1.dsk|b60b1ab30d82581812387ab79db7540b8205b224e299895a58ee465395a946c1|machines/amstrad/software/acid/plus/asic1.dsk"
+  "disc/fdc_gen/cpc_fdctest.dsk|ae5b081df4d7f743f76f3ba26fd8a60847972c885d861b3f2432b96744a8cc41|machines/amstrad/software/acid/disc/fdc_gen/cpc_fdctest.dsk"
+  "disc/fdc_hang/cpc_fdctest.dsk|bf6e5b4a37b200eb7e36caabd5a7931e38b9242dde835b5c43fb182703371794|machines/amstrad/software/acid/disc/fdc_hang/cpc_fdctest.dsk"
+  "disc/fdc_lowlevel/cpc_fdctest.dsk|720ec58fc0c0e45a3e6b7e017fd5c605caad9b890e9326af88246d5750778628|machines/amstrad/software/acid/disc/fdc_lowlevel/cpc_fdctest.dsk"
+  "disc/fdc_read/cpc_fdctest.dsk|b08a7758819bd806a7c528375c7a7f1966d87f4aa9b82f3324cfd0b9788b1c0f|machines/amstrad/software/acid/disc/fdc_read/cpc_fdctest.dsk"
+  "disc/fdc_seek/cpc_fdctest.dsk|e753b390b4a826a37b2e3f580dc1dd390a4b0c9c067a377bff48f018fc584899|machines/amstrad/software/acid/disc/fdc_seek/cpc_fdctest.dsk"
+  "disc/fdc_time/cpc_fdctest.dsk|c16d3c1d990d9b3f3ae1988b1645da43658e885f8c4d25f824979ed3cbdd5ac3|machines/amstrad/software/acid/disc/fdc_time/cpc_fdctest.dsk"
+  "disc/fdc_wp/cpc_fdctest.dsk|39240c770923171948c9d94a85bb31060b387e34b873f1f04ea361aa14738c90|machines/amstrad/software/acid/disc/fdc_wp/cpc_fdctest.dsk"
+  "disc/fdc_write/cpc_fdctest.dsk|a5d7a97f6907df032300a53990ddc8cb728c5c3b09c095d294e048824d71369f|machines/amstrad/software/acid/disc/fdc_write/cpc_fdctest.dsk"
+  "disc/fdctest3/cpc_fdctest.dsk|56054b066fcfba0d50d3af3dceb44b61d32c4742446af9afd426022dfc6b77b1|machines/amstrad/software/acid/disc/fdctest3/cpc_fdctest.dsk"
 )
 
 status=0

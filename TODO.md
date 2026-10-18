@@ -44,7 +44,7 @@ compared with a real 48K with a Zilog Z80; the runner answers the `scroll?` prom
 IN tests) by rerunning from reset with one more press per round, and reads the `Result:` line from the picture with the 48K ROM's own character set.
 It found three real gaps, all fixed the same day: the ULA's idle EAR bit (port 0xFE reads 0xBF with no tape playing, was 0xFF), the N flag of
 INI/IND/OUTI/OUTD (bit 7 of the byte, was always set), and SCF/CCF F3/F5 (`(Q ^ F) | A`, Q = F if the previous instruction wrote F). full, doc, flags,
-docflags and ccf now pass; **known gap: z80memptr fails 41 of 152** (MEMPTR/WZ is not modelled: ADD HL,rr, DJNZ, CALL, RET, EX (SP),HL, LD (BC),A ...).
+docflags and ccf now pass; **z80memptr gap closed 2026-10-18**: MEMPTR/WZ is modelled in the Z80 core (all six variants pass).
 **CPC acid tests (2026-10-17)**: Kevin Thacker's suite (cpcwiki) has about ten programs that print `name-PASS`/`name-FAIL` themselves and end with
 "Done."; the rest (most of crtc, cpctests, plus pictures, devices) draw pictures or raw data to compare with a real CPC, so they are **not** cases (decided:
 self-checking programs only). Run as `cpc_acid_tests` (rc-suite `tests/cpc_acid.rs`): `RUN"NAME` on the author's disk, the transcript read with the new
@@ -68,12 +68,7 @@ references, the Sinclair wiki's floating-bus page, the Kempston interface manual
 of the frame, fillers put one access at a chosen T-state, and the cycles with the access in contended and in uncontended RAM differ by the delay.
 **Spectrum**: contended memory (6,5,4,3,2,1,0,0 from 14335, 192 lines of 224, none in the border, 14361 and 228-T lines on the 128K), port contention outside 0x40-0x7F, the
 ULA answering every even port with 0xBF, Kempston (8/4/2/1, +16), AY read-back, 0x7FFD and 0x1FFD decode and the beeper (twenty 400-T periods = twenty edges 5.04 samples
-apart) all agree with the documents. **Known gaps found**: the I/O contention of ports with the high byte in 0x40-0x7F (WOS48's C:1,C:3 and C:1 x4 rows: 0x40FE is one cycle short
-at some phases, 0x7FFF is mostly not delayed) and the floating bus, which has the right order and period but samples one T-state later than the document's numbers (the late-timing
-variant) while the contention follows the early-timing ones. **C64**: raster IRQ in the right line (1, $30, $80, $F8, 256, 311), 312 lines numbered from 0, a CIA timer's
-period = latch + 1, one-shot stop and flag, ICR read clears, keyboard matrix (10 keys), joystick ports, sprite collision registers cleared on read, register mirrors every 64 bytes
-agree. **Known gaps found**: bad lines steal no cycles (a frame costs the same with the display on and off; `vic_accuracy = cycle` is the planned fix), the unconnected bits of the VIC
-registers read back as written instead of 1 ($D020 after writing 0 reads $00, BAUER says $F0), and the unused addresses $D02F-$D03F store writes instead of reading $FF.
+apart) all agree with the documents. **Gaps found, all closed 2026-10-18**: the floating bus sampled one T-state late (fixed); the "I/O contention gap" for ports 0x40-0x7F was a bug in the test's filler (it trashed BC), not the emulator; C64 bad lines already work with `--vic-accuracy cycle` (the case passes it); unconnected VIC bits now read 1 and $D02F-$D03F read $FF. Also fixed via the CPC acid tests: 8255 modes 1/2, AY invalid register select, CRTC lightpen/status, ASIC unlock sequence, CPC save state now holds the PPI. **CPC known gaps left** (in `BASELINE`): cpctest (HSYNC timing), asicfloat, asicppi (hang), asicrom, asictest (14), asic_external_ram, dmatest, pritest, and the FDC programs (mostly nec765's instant execution/no overrun); fdc_wp needs a write-protect toggle.
 
 ## Parked: checks that need real hardware (2026-10-17)
 
