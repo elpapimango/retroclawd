@@ -4,7 +4,7 @@ How any new Machine is added to retroclawd, from an 8-bit micro to a 16-bit comp
 
 ## Definition of done
 
-A Machine is done when it **matches a reference emulator** (MAME or a libretro core) on the standard scenarios below. Nothing else gates completion. Anything that cannot be matched is a **known gap** (see Blockers), listed in the report.
+A Machine is done when it **matches a reference emulator** (ZEsarUX for the ZX81, the Spectrums and the CPCs, VICE for the C64 and C128; MAME or a libretro core for a machine they do not cover) on the standard scenarios below. Nothing else gates completion. Anything that cannot be matched is a **known gap** (see Blockers), listed in the report.
 
 ## Blockers are recorded, never asked
 
@@ -58,4 +58,4 @@ Scenarios are data: a `<id>.manifest.toml` in the Family repository, run by `rc-
 
 ## Goldens
 
-Captured once by a script that runs the reference emulator headless on the scenarios (`scripts/capture_mame_screen.sh` in `retroclawd-tools` for MAME pictures; not yet run), stored in RomM keyed by hash (they derive from copyrighted software, so they stay out of git like ROMs), and pinned by the manifest (reference name and version, exact command, hash). CI compares our output to the golden and never runs the reference emulator. A diff image is written when they differ. One script regenerates goldens when the reference version changes.
+Captured once by a script that runs the reference emulator headless on the scenarios (`scripts/capture_zesarux_screen.py`, `capture_zesarux_audio.py` and `capture_vice_screen.py` in `retroclawd-tools`), stored in RomM keyed by hash (they derive from copyrighted software, so they stay out of git like ROMs), and pinned by the manifest (reference name and version, exact command, hash). CI compares our output to the golden and never runs the reference emulator. A diff image is written when they differ. One script regenerates goldens when the reference version changes.

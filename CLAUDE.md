@@ -30,6 +30,22 @@ and compares the boot screens. Using one machine on its own: build the family re
 --workspace`) and put the resulting libraries in a `plugins/` folder next to the `retroclawd` executable, or point
 `RETROCLAWD_MACHINE_PLUGIN_DIRS` at them. `retroclawd --list-plugins` shows what was found.
 
+## Scenario manifests (2026-10-18)
+
+Every machine has a `machines/<family>/<id>.manifest.toml` (zx81, zx-spectrum, zx-spectrum-128, zx-spectrum-2a3, cpc464/664/6128, c64,
+c128) holding the playbook's standard scenarios as data, run by `rc-scenarios` of `retroclawd-tools` against the **release** `retroclawd`
+and its plugins. References: ZEsarUX 13.0 and VICE 3.10 (the CPC Plus and GX4000 have none). Build the test media first
+(`machines/<family>/scenarios/build.sh`, output in the git-ignored `software/scenarios/`), then:
+
+```
+RETROCLAWD_BIN=target/release/retroclawd RETROCLAWD_MACHINE_PLUGIN_DIRS=target/release/plugins RC_ROMS=machines   RC_GOLDENS=<folder with the goldens> rc-scenarios run machines/sinclair/zx81.manifest.toml
+```
+
+Goldens are never committed (a folder of your own, or RomM by hash); `retroclawd-tools/scripts/capture_*.py` regenerate them. Known gaps
+(`status = "known-gap"`, evidence under `machines/<family>/docs/`): S6 frame length on the ZX81 (208 against 207 T-states per line), the
+CPC (80000 against 79872 per frame) and the C64/C128 (19706 against 19656); the C64's fast loader skipping SEARCHING/LOADING; the CPC
+diagnostics' CRTC/FDC lines; the C64 dead test's clock. Details and the compare options are in `retroclawd-tools/CLAUDE.md`.
+
 ## What this is
 
 Zilog Z80 CPU emulator/core in Rust, prioritizing accuracy (correct
