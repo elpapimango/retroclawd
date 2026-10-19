@@ -77,7 +77,16 @@ fdc_gen 26, fdc_seek 29, fdc_read 10, fdc_write 12, fdc_time 2, fdctest3 18, all
 DMA mode, the timing measurements of fdc_time, ready changes during a command, the format result registers and FM, the read/write
 "data error" and deleted-mark cases, overlapped seeks finishing on the same head, "read id not ready" (motor spin-down); several are
 test bugs (noted in `BASELINE`). The +3 keeps the instant controller (no `enable_timing`) but gets the ready changes, aliasing,
-per-unit PCN and Scan; its scenarios and `rc-suite` cases pass. Not emulator findings: cpctest's "GA I/O decode test" calls an uninitialised BC (its `ga_io_restore_extra` is never loaded) and resets the machine; asictest's "sprite ram mask" result buffer runs into the firmware's variables (in the harness's `UNRELIABLE`).
+per-unit PCN and Scan; its scenarios and `rc-suite` cases pass. **Later the same day**: the PRI compare moved into the CRTC's HSYNC edges
+(latched at HSYNC start, fired at its end; an HSYNC running to the end of its line fires on the line before too), a PRI clears the Gate Array
+counter's bit 5 before that counter takes the same HSYNC fall and taking the PRI's interrupt leaves the counter alone, and `nec765` gained DMA
+mode (no `EXM`/`RQM`, reads end with data errors as on a 6128, Read ID still shows `EXM` while reading the ID). Eleven more tests pass:
+pritest 17 of 20 (the trigger-bug, re-trigger and "can delay normal raster interrupt" cases), fdc_gen 27, fdc_read 14, fdc_write 13, fdc_seek
+31 ("seek (wait for end without sense int), then read id", from Read ID's search/read split). Still open: pritest's "PRI start (R2)" (three
+HSYNC positions, a VSYNC sample a few microseconds off), "enable norm during pri int handler" (reads an interrupt count left by the tests
+before it) and "im2 vector (norm)" (one classic interrupt per frame in IM2 on a Plus, cause unknown); fdc_read's track-0 cases (the program
+writes a deleted mark there, its tables expect a data mark); fdc_write's DMA write-deleted case (expects an overrun where write data expects
+a normal end). Not emulator findings: cpctest's "GA I/O decode test" calls an uninitialised BC (its `ga_io_restore_extra` is never loaded) and resets the machine; asictest's "sprite ram mask" result buffer runs into the firmware's variables (in the harness's `UNRELIABLE`).
 
 ## Parked: checks that need real hardware (2026-10-17)
 
