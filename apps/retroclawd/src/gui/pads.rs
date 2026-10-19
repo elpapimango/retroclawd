@@ -13,6 +13,16 @@
 //! `Fire1`, West/North for `Fire2`/`Fire3` where the machine has them) -- for
 //! every machine whose plugin reports those names (ZX Spectrum, CPC, C64).
 //!
+//! Analogue inputs go to the machine's *axes* (`MachineProfile::axis_names`,
+//! sent as `MachineCommand::AxisEvent`) instead of keys: in the same `[pads.N]`
+//! table, `left_x`, `left_y`, `right_x`, `right_y`, `left_trigger` and
+//! `right_trigger` name a machine axis (`left_x = "Joy1X"`; a leading `-`
+//! inverts it, `"none"` unbinds). By default pad `n`'s left stick drives
+//! `Joy{n}X`/`Joy{n}Y` when the machine reports them. Values follow screen
+//! directions: X is negative left and positive right, Y negative up and
+//! positive down (the pad's own Y is up-positive and is flipped here), both
+//! -32767..=32767; a trigger is 0 released to 32767 fully pulled.
+//!
 //! `PadRouter` is the Bevy-free part: given each pad's button state once per
 //! frame it returns which machine keys went up and down; `KeyRouter::apply`
 //! turns that into events so a key held from the keyboard and a pad at the same
@@ -130,6 +140,77 @@ impl PadButton {
     }
 }
 
+/// One analogue input of a pad.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) enum PadAxis {
+    LeftX,
+    LeftY,
+    RightX,
+    RightY,
+    LeftTrigger,
+    RightTrigger,
+}
+
+impl PadAxis {
+    pub(crate) const ALL: [PadAxis; 6] = [
+        PadAxis::LeftX,
+        PadAxis::LeftY,
+        PadAxis::RightX,
+        PadAxis::RightY,
+        PadAxis::LeftTrigger,
+        PadAxis::RightTrigger,
+    ];
+
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            PadAxis::LeftX => "left_x",
+            PadAxis::LeftY => "left_y",
+            PadAxis::RightX => "right_x",
+            PadAxis::RightY => "right_y",
+            PadAxis::LeftTrigger => "left_trigger",
+            PadAxis::RightTrigger => "right_trigger",
+        }
+    }
+
+    /// Case, `-` and `_` do not matter.
+    pub(crate) fn parse(text: &str) -> Option<PadAxis> {
+        let key = text.trim().to_ascii_lowercase().replace('-', "_");
+        PadAxis::ALL.into_iter().find(|a| a.name() == key)
+    }
+
+    fn is_trigger(self) -> bool {
+        matches!(self, PadAxis::LeftTrigger | PadAxis::RightTrigger)
+    }
+}
+
+/// One pad's analogue inputs in screen directions: sticks -1..1 (X right,
+/// Y down positive), triggers 0..1.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub(crate) struct PadAxes(pub(crate) [f32; 6]);
+
+impl PadAxes {
+    pub(crate) fn set(&mut self, axis: PadAxis, value: f32) {
+        self.0[axis as usize] = value;
+    }
+
+    fn get(self, axis: PadAxis) -> f32 {
+        self.0[axis as usize]
+    }
+}
+
+/// Where one pad axis goes: a machine axis, possibly inverted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AxisTarget {
+    pub(crate) axis: String,
+    pub(crate) invert: bool,
+}
+
+/// A pad value (-1..1, triggers 0..1) as the protocol's `i16`.
+fn axis_value(value: f32, invert: bool) -> i16 {
+    let value = if invert { -value } else { value };
+    (value.clamp(-1.0, 1.0) * 32767.0).round() as i16
+}
+
 /// The buttons of one pad held right now.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct PadState(u32);
@@ -163,6 +244,8 @@ impl PadState {
 pub(crate) struct PadBindings {
     pub(crate) deadzone: f32,
     map: HashMap<(u8, PadButton), Vec<String>>,
+    /// (pad slot, pad axis) -> machine axis; `None` = unbound by `"none"`.
+    axes: HashMap<(u8, PadAxis), Option<AxisTarget>>,
 }
 
 impl PadBindings {
@@ -201,6 +284,67 @@ impl PadBindings {
         map
     }
 
+    /// Built-in axis bindings: pad `n`'s left stick drives the machine's
+    /// `Joy{n}X`/`Joy{n}Y` when it reports them.
+    fn default_axes(names: &KeyNames) -> HashMap<(u8, PadAxis), Option<AxisTarget>> {
+        let mut map = HashMap::new();
+        for slot in 1..=2u8 {
+            for (pad_axis, suffix) in [(PadAxis::LeftX, "X"), (PadAxis::LeftY, "Y")] {
+                let wanted = format!("Joy{slot}{suffix}");
+                if let Some(axis) = names.axes.iter().find(|name| **name == wanted) {
+                    map.insert(
+                        (slot, pad_axis),
+                        Some(AxisTarget {
+                            axis: axis.clone(),
+                            invert: false,
+                        }),
+                    );
+                }
+            }
+        }
+        map
+    }
+
+    /// One `left_x = "Joy1X"` value: `Some(None)` for `"none"`, `None` to
+    /// skip (the shared layer naming an axis only other machines have).
+    fn resolve_axis(
+        targets: &[String],
+        key: &str,
+        section: &str,
+        names: &KeyNames,
+        shared: bool,
+    ) -> Result<Option<Option<AxisTarget>>, String> {
+        let [text] = targets else {
+            return Err(format!("{section}: {key} takes one axis name, not a list"));
+        };
+        let text = text.trim();
+        if text.eq_ignore_ascii_case("none") {
+            return Ok(Some(None));
+        }
+        let (invert, wanted) = match text.strip_prefix('-') {
+            Some(rest) => (true, rest.trim()),
+            None => (false, text),
+        };
+        let same = |name: &&String| name.eq_ignore_ascii_case(wanted);
+        if let Some(axis) = names.axes.iter().find(same) {
+            return Ok(Some(Some(AxisTarget {
+                axis: axis.clone(),
+                invert,
+            })));
+        }
+        if shared && names.all_axes.iter().any(|name| same(&name)) {
+            return Ok(None);
+        }
+        let available = if names.axes.is_empty() {
+            "this machine has no analogue axes".to_string()
+        } else {
+            format!("axes: {}", names.axes.join(", "))
+        };
+        Err(format!(
+            "{section}: {key} = \"{text}\": unknown axis \"{wanted}\" ({available})"
+        ))
+    }
+
     /// Defaults, then `[pads]`, then `[machines.<machine>.pads]`.
     pub(crate) fn resolve(
         config: &AppConfig,
@@ -221,6 +365,7 @@ impl PadBindings {
         }
 
         let mut map = PadBindings::defaults(names);
+        let mut axes = PadBindings::default_axes(names);
         let layers = [
             (Some(&config.pads), "[pads".to_string(), true),
             (machine_pads, machine_section, false),
@@ -244,10 +389,24 @@ impl PadBindings {
                 let mut buttons: Vec<_> = buttons.iter().collect();
                 buttons.sort_by(|a, b| a.0.cmp(b.0));
                 for (button_text, targets) in buttons {
+                    if let Some(pad_axis) = PadAxis::parse(button_text) {
+                        if let Some(target) = PadBindings::resolve_axis(
+                            targets.as_slice(),
+                            button_text,
+                            &section_name,
+                            names,
+                            shared,
+                        )? {
+                            axes.insert((slot, pad_axis), target);
+                        }
+                        continue;
+                    }
                     let button = PadButton::parse(button_text).ok_or_else(|| {
                         format!(
-                            "{section_name}: unknown pad button \"{button_text}\" (buttons: {})",
-                            PadButton::ALL.map(PadButton::name).join(", ")
+                            "{section_name}: unknown pad button \"{button_text}\" (buttons: {}; \
+                             axes: {})",
+                            PadButton::ALL.map(PadButton::name).join(", "),
+                            PadAxis::ALL.map(PadAxis::name).join(", ")
                         )
                     })?;
                     let Some(resolved) = resolve_targets(
@@ -265,15 +424,43 @@ impl PadBindings {
                 }
             }
         }
-        Ok(PadBindings { deadzone, map })
+        Ok(PadBindings {
+            deadzone,
+            map,
+            axes,
+        })
     }
 
     fn get(&self, slot: u8, button: PadButton) -> Option<&Vec<String>> {
         self.map.get(&(slot, button))
     }
 
+    fn axis(&self, slot: u8, axis: PadAxis) -> Option<&AxisTarget> {
+        self.axes.get(&(slot, axis)).and_then(Option::as_ref)
+    }
+
     /// Plain-text table for `--list-keys`.
     pub(crate) fn describe(&self) -> String {
+        let mut axis_rows: Vec<(u8, PadAxis, String)> = self
+            .axes
+            .iter()
+            .filter_map(|((slot, axis), target)| {
+                let target = target.as_ref()?;
+                let sign = if target.invert { "-" } else { "" };
+                Some((*slot, *axis, format!("{sign}{}", target.axis)))
+            })
+            .collect();
+        axis_rows.sort();
+        let axis_text: String = axis_rows
+            .iter()
+            .map(|(slot, axis, target)| {
+                format!("pad {slot} {:<12} -> axis {target}\n", axis.name())
+            })
+            .collect();
+        self.describe_buttons_only() + &axis_text
+    }
+
+    fn describe_buttons_only(&self) -> String {
         if self.map.is_empty() {
             return "(no pad bindings: this machine has no joystick keys; bind buttons in \
                     [pads.1])\n"
@@ -298,9 +485,12 @@ impl PadBindings {
     }
 }
 
-/// Lists the button names `[pads.N]` accepts.
+/// Lists the button and axis names `[pads.N]` accepts.
 pub(crate) fn describe_buttons() -> String {
-    PadButton::ALL.map(PadButton::name).join(", ") + "\n(also a/b/x/y for south/east/west/north)\n"
+    PadButton::ALL.map(PadButton::name).join(", ")
+        + "\n(also a/b/x/y for south/east/west/north)\naxes: "
+        + &PadAxis::ALL.map(PadAxis::name).join(", ")
+        + "\n"
 }
 
 /// Which connected pad is slot 1, 2, ...: the first pad seen takes slot 1, a
@@ -348,6 +538,8 @@ pub(crate) struct PadRouter {
     /// Buttons currently down and the machine keys each pressed (so a
     /// release undoes its own press even if the binding table were swapped).
     held: HashMap<(u8, PadButton), Vec<String>>,
+    /// The last value sent for each machine axis (absent = centred, 0).
+    axes_sent: HashMap<String, i16>,
 }
 
 impl PadRouter {
@@ -355,7 +547,44 @@ impl PadRouter {
         PadRouter {
             bindings,
             held: HashMap::new(),
+            axes_sent: HashMap::new(),
         }
+    }
+
+    /// Compares the pads' analogue inputs to what was sent so far; returns
+    /// `(machine axis, value)` for every bound axis whose value changed. A
+    /// pad missing from `pads` (unplugged) centres its axes.
+    pub(crate) fn route_axes(&mut self, pads: &[(u8, PadAxes)]) -> Vec<(String, i16)> {
+        let mut bound: Vec<(u8, PadAxis, AxisTarget)> = self
+            .bindings
+            .axes
+            .keys()
+            .filter_map(|&(slot, axis)| {
+                self.bindings
+                    .axis(slot, axis)
+                    .map(|target| (slot, axis, target.clone()))
+            })
+            .collect();
+        bound.sort_by_key(|(slot, axis, _)| (*slot, *axis));
+        let mut events = Vec::new();
+        for (slot, pad_axis, target) in bound {
+            let raw = pads
+                .iter()
+                .find(|(s, _)| *s == slot)
+                .map_or(0.0, |(_, axes)| axes.get(pad_axis));
+            let raw = if pad_axis.is_trigger() {
+                raw.clamp(0.0, 1.0)
+            } else {
+                raw
+            };
+            let value = axis_value(raw, target.invert);
+            let last = self.axes_sent.get(&target.axis).copied().unwrap_or(0);
+            if value != last {
+                self.axes_sent.insert(target.axis.clone(), value);
+                events.push((target.axis, value));
+            }
+        }
+        events
     }
 
     pub(crate) fn deadzone(&self) -> f32 {
@@ -533,6 +762,7 @@ mod tests {
         let names = KeyNames {
             machine: plugin_api::key_infos(["Joy1Up", "Joy1Fire1"]),
             all: plugin_api::key_infos(["Joy1Up", "Joy1Fire1", "Joy1Fire2"]),
+            ..KeyNames::default()
         };
         let shared =
             PadBindings::resolve(&cfg("[pads.1]\nl1 = \"Joy1Fire2\""), "m", &names).unwrap();
@@ -542,6 +772,102 @@ mod tests {
             PadBindings::resolve(&cfg("[machines.m.pads.1]\nl1 = \"Joy1Fire2\""), "m", &names)
                 .is_err()
         );
+    }
+
+    fn axes(names: &[&str]) -> KeyNames {
+        KeyNames {
+            axes: names.iter().map(|s| s.to_string()).collect(),
+            all_axes: names.iter().map(|s| s.to_string()).collect(),
+            ..KeyNames::default()
+        }
+    }
+
+    fn pad_axes(values: &[(PadAxis, f32)]) -> PadAxes {
+        let mut a = PadAxes::default();
+        for (axis, value) in values {
+            a.set(*axis, *value);
+        }
+        a
+    }
+
+    #[test]
+    fn axis_bindings_default_to_the_joystick_axes_and_layer_like_buttons() {
+        let names = axes(&["Joy1X", "Joy1Y", "Paddle1"]);
+        let b = PadBindings::resolve(&AppConfig::default(), "m", &names).unwrap();
+        assert_eq!(b.axis(1, PadAxis::LeftX).unwrap().axis, "Joy1X");
+        assert_eq!(b.axis(1, PadAxis::LeftY).unwrap().axis, "Joy1Y");
+        assert!(b.axis(2, PadAxis::LeftX).is_none(), "no Joy2X reported");
+
+        let b = PadBindings::resolve(
+            &cfg("[pads.1]\nleft_x = \"none\"\nright_trigger = \"-paddle1\"\nsouth = \"none\""),
+            "m",
+            &names,
+        )
+        .unwrap();
+        assert!(b.axis(1, PadAxis::LeftX).is_none(), "unbound by none");
+        let paddle = b.axis(1, PadAxis::RightTrigger).unwrap();
+        assert_eq!((paddle.axis.as_str(), paddle.invert), ("Paddle1", true));
+        assert!(b.describe().contains("right_trigger -> axis -Paddle1"));
+
+        // An unknown axis is an error naming the machine's axes; a list is too.
+        let err =
+            PadBindings::resolve(&cfg("[pads.1]\nleft_x = \"Joy9X\""), "m", &names).unwrap_err();
+        assert!(err.contains("Joy1X, Joy1Y, Paddle1"), "{err}");
+        assert!(PadBindings::resolve(&cfg("[pads.1]\nleft_x = [\"Joy1X\"]"), "m", &names).is_ok());
+        assert!(
+            PadBindings::resolve(
+                &cfg("[pads.1]\nleft_x = [\"Joy1X\", \"Joy1Y\"]"),
+                "m",
+                &names
+            )
+            .is_err()
+        );
+        // The shared layer skips an axis only other machines have.
+        let mut elsewhere = axes(&["Joy1X"]);
+        elsewhere.all_axes.push("Paddle1".to_string());
+        let b =
+            PadBindings::resolve(&cfg("[pads.1]\nleft_y = \"Paddle1\""), "m", &elsewhere).unwrap();
+        assert!(b.axis(1, PadAxis::LeftY).is_none());
+    }
+
+    #[test]
+    fn the_router_sends_axis_values_only_when_they_change() {
+        let b = PadBindings::resolve(
+            &cfg("[pads.1]\nleft_trigger = \"Paddle1\"\nright_x = \"-Joy1Y\""),
+            "m",
+            &axes(&["Joy1X", "Joy1Y", "Paddle1"]),
+        )
+        .unwrap();
+        let mut r = PadRouter::new(b);
+        // Centred and released: nothing to send.
+        assert!(r.route_axes(&[(1, PadAxes::default())]).is_empty());
+
+        let moved = pad_axes(&[(PadAxis::LeftX, -1.0), (PadAxis::LeftTrigger, 0.5)]);
+        let mut sent = r.route_axes(&[(1, moved)]);
+        sent.sort();
+        assert_eq!(
+            sent,
+            [
+                ("Joy1X".to_string(), -32767),
+                ("Paddle1".to_string(), 16384)
+            ]
+        );
+        assert!(r.route_axes(&[(1, moved)]).is_empty(), "unchanged");
+
+        // Inverted binding, and a trigger never goes negative.
+        let other = pad_axes(&[(PadAxis::RightX, 0.25), (PadAxis::LeftTrigger, -0.3)]);
+        let mut sent = r.route_axes(&[(1, other)]);
+        sent.sort();
+        assert_eq!(
+            sent,
+            [
+                ("Joy1X".to_string(), 0),
+                ("Joy1Y".to_string(), -8192),
+                ("Paddle1".to_string(), 0)
+            ]
+        );
+        // Unplugged: everything centres.
+        assert_eq!(r.route_axes(&[]), [("Joy1Y".to_string(), 0)]);
     }
 
     #[test]

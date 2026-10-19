@@ -70,7 +70,7 @@ pub(crate) fn apply_initial_window_size(
     // by coincidence only at `scale_factor == 1.0`, wrong on any real
     // HiDPI display).
     let bounds = monitor.physical_size().as_vec2() / monitor.scale_factor as f32 * percent;
-    let base_size = Vec2::new(base.width as f32, base.height as f32);
+    let base_size = base.display_size();
     let scale = video::integer_scale(bounds, base_size);
     let target = base_size * scale;
     window.resolution.set(target.x, target.y);

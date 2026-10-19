@@ -180,6 +180,12 @@ pub fn run_gui(
     let (width, height, _) = machine
         .render_frame()
         .expect("caller must check render_frame().is_some() before calling run_gui");
+    let base_resolution = BaseResolution {
+        width,
+        height,
+        pixel_aspect: machine::Machine::pixel_aspect(&machine),
+    };
+    let initial_size = base_resolution.display_size() * video::INITIAL_SCALE;
     tracing::info!(
         "run_gui: {width}x{height} @ {}Hz, clock_hz={}",
         machine.frame_hz(),
@@ -236,6 +242,7 @@ pub fn run_gui(
     // From here on a download (an `.m3u` disk swap to a URL) shows a toast.
     crate::inputs::set_toast_target(handle.messages.clone());
     let audio_queue = handle.audio_queue.clone();
+    let audio_format = handle.audio_format;
     let frame_buffer = handle.frame_buffer.clone();
     let debug_snapshot = handle.debug_snapshot.clone();
     let underrun_count = handle.underrun_count.clone();
@@ -304,11 +311,7 @@ pub fn run_gui(
             .set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "retroclawd".to_string(),
-                    resolution: (
-                        (width as f32 * video::INITIAL_SCALE) as u32,
-                        (height as f32 * video::INITIAL_SCALE) as u32,
-                    )
-                        .into(),
+                    resolution: (initial_size.x as u32, initial_size.y as u32).into(),
                     mode,
                     present_mode,
                     ..default()
@@ -318,8 +321,8 @@ pub fn run_gui(
         bevy::sprite_render::Material2dPlugin::<video::ScreenMaterial>::default(),
     ))
     .insert_resource(ClearColor(Color::BLACK))
-    .insert_resource(BaseResolution { width, height })
-    .insert_resource(AudioQueueRes(audio_queue))
+    .insert_resource(base_resolution)
+    .insert_resource(AudioQueueRes(audio_queue, audio_format))
     .insert_resource(UnderrunCountRes(underrun_count))
     .insert_resource(RequestedCountRes(requested_count))
     .insert_resource(FrameBufferRes(frame_buffer))

@@ -42,9 +42,10 @@ RETROCLAWD_BIN=target/release/retroclawd RETROCLAWD_MACHINE_PLUGIN_DIRS=target/r
 ```
 
 Goldens are never committed (a folder of your own, or RomM by hash); `retroclawd-tools/scripts/capture_*.py` regenerate them. Known gaps
-(`status = "known-gap"`, evidence under `machines/<family>/docs/`): S6 frame length on the ZX81 (208 against 207 T-states per line), the
-CPC (80000 against 79872 per frame) and the C64/C128 (19706 against 19656); the C64's fast loader skipping SEARCHING/LOADING; the CPC
-diagnostics' CRTC/FDC lines; the C64 dead test's clock. Details and the compare options are in `retroclawd-tools/CLAUDE.md`.
+(`status = "known-gap"`, evidence under `machines/<family>/docs/`): the C64's fast loader skipping SEARCHING/LOADING; the CPC
+diagnostics' CRTC/FDC lines; the C64 dead test's clock. The S6 frame-length gaps were closed 2026-10-19: each machine reports its exact
+frame through `Machine::frame_rate` / `MachineMetadata::frame_rate` (ZX81 312 x 207 T-states, its line corrected from 208 to 207; CPC
+79872; C64/C128 one raster frame, 19656 PAL), and the host paces and budgets by it. Details and the compare options are in `retroclawd-tools/CLAUDE.md`.
 
 ## What this is
 
@@ -656,8 +657,15 @@ guessing.
   including a Bevy `App` test that spawns `Gamepad` entities and checks the
   events `pad_input` sends; **not verified with a physical pad** -- this sandbox
   has no `/dev/uinput` or evdev, so gilrs itself was not exercised live. Not
-  done: pad buttons as hotkey triggers, right stick/analog triggers, rumble,
-  (per-game pad maps are in `--game-config` since 2026-10-16).
+  done: rumble (pad hotkey chords since 2026-10-16, per-game pad maps in
+  `--game-config` since 2026-10-16). **Analogue axes (2026-10-19)**: `[pads.N]`
+  also binds `left_x`/`left_y`/`right_x`/`right_y`/`left_trigger`/`right_trigger`
+  to a machine axis (`MachineProfile::axis_names`; `"-Name"` inverts, `"none"`
+  unbinds; default: pad n's left stick to `Joy{n}X`/`Joy{n}Y` when reported).
+  `PadRouter::route_axes` sends changed values (X right / Y down positive,
+  -32767..=32767, triggers 0..=32767) as `MouseEvent::Axis` to the emu thread,
+  which sends `MachineCommand::AxisEvent`. No current machine reports an axis;
+  the stub plugin does (`Joy1X`/`Joy1Y`) for the tests.
   **Keyboard layouts and keymap files** (2026-10-10, phase 5): `gui::keys::Layout`
   (`positional`, the default and the old behaviour; `symbolic`), `[input]
   layout`/`keymap` and `[machines.<id>.input]` (`app_config::InputConfig`;
@@ -1152,7 +1160,7 @@ guessing.
   only `"main"`), `MachineCommand::AxisEvent` carries analogue input (`axis_names`), `MachineResponse::AudioPcm` replaces
   `AudioPcmMono`, and `MachineMetadata` reports the exact `frame_rate`, `pixel_aspect` and audio format (zero = the old defaults).
   The host pacing and cycle budget use the exact frame rate; the debugger state and the browser page follow the machine's
-  address width (`addr_bits`); ZRCP stays 16-bit at its edge. Not consumed yet: stereo output, pixel aspect, axis events (see the
+  address width (`addr_bits`); ZRCP stays 16-bit at its edge. Stereo/sample-rate audio, pixel aspect and pad axis events are consumed since 2026-10-19 (see the
   spec's Status section).
   **Plugin ABI hardening and compatibility policy (2026-10-12)**: the policy is `docs/plugin-abi.md`
   (read it before touching `plugin-api`). Code: `plugin_api::compat` (the host's accept/refuse rules,

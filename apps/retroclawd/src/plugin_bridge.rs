@@ -185,19 +185,6 @@ pub(crate) fn write_file_atomically(path: &Path, bytes: &[u8]) -> std::io::Resul
     })
 }
 
-/// The audio queue and the output stage are mono until a stereo Machine
-/// exists; interleaved frames of a wider response are averaged into one sample.
-fn downmix_to_mono(channels: u8, samples: Vec<f32>) -> Vec<f32> {
-    if channels <= 1 {
-        return samples;
-    }
-    let width = usize::from(channels);
-    samples
-        .chunks_exact(width)
-        .map(|frame| frame.iter().sum::<f32>() / f32::from(channels))
-        .collect()
-}
-
 fn intern_register_label(label: &str) -> &'static str {
     let labels = REGISTER_LABELS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut labels = labels.lock().unwrap();
@@ -1166,6 +1153,9 @@ impl HostedBackend {
                 MachineCommand::MouseButton { button, pressed }
             }
             crate::emu_thread::MouseEvent::Scroll { delta } => MachineCommand::MouseWheel { delta },
+            crate::emu_thread::MouseEvent::Axis { axis, value } => {
+                MachineCommand::AxisEvent { axis, value }
+            }
         };
         self.expect_ack(instance, command, "mouse event")
     }
@@ -2049,11 +2039,9 @@ impl Machine for HostedMachine {
 
     fn drain_audio(&mut self) -> Vec<f32> {
         match self.call_machine(MachineCommand::DrainAudio) {
-            Ok(MachineResponse::AudioPcm {
-                channels,
-                sample_rate: AUDIO_SAMPLE_RATE,
-                samples,
-            }) => downmix_to_mono(channels, samples),
+            // Interleaved in the layout `audio_format` reports; the GUI's
+            // decoder and `--dump-audio` read it in that layout.
+            Ok(MachineResponse::AudioPcm { samples, .. }) => samples,
             Ok(_) => Vec::new(),
             Err(_) => Vec::new(),
         }
@@ -2589,6 +2577,31 @@ mod tests {
             .expect("profiles")
             .profiles;
         assert!(!profiles.is_empty(), "{library:?} offers no machine");
+    }
+
+    #[test]
+    fn an_axis_event_reaches_the_plugin_under_the_name_its_profile_reports() {
+        use plugin_api::MachineCreateRequest;
+        let machine = super::create_hosted_machine(MachineCreateRequest {
+            machine_id: "stub-machine".to_string(),
+            region: Some("pal".to_string()),
+            roms: Vec::new(),
+            options: Vec::new(),
+        })
+        .expect("the bundled stub machine");
+        let axis = |name: &str| crate::emu_thread::MouseEvent::Axis {
+            axis: name.to_string(),
+            value: -12_000,
+        };
+        assert_eq!(
+            machine.backend.mouse_event(machine.instance, axis("Joy1X")),
+            Ok(())
+        );
+        let error = machine
+            .backend
+            .mouse_event(machine.instance, axis("Paddle9"))
+            .unwrap_err();
+        assert!(error.contains("Paddle9"), "{error}");
     }
 
     #[test]

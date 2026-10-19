@@ -79,6 +79,24 @@ impl Material2d for ScreenMaterial {
 pub(crate) struct BaseResolution {
     pub(crate) width: u32,
     pub(crate) height: u32,
+    /// Width:height of one picture pixel (`Machine::pixel_aspect`); `(1, 1)`
+    /// is square.
+    pub(crate) pixel_aspect: (u16, u16),
+}
+
+impl BaseResolution {
+    /// The picture's shape on screen: the pixel grid with each pixel widened
+    /// (or narrowed) by `pixel_aspect`. Window sizing works in this shape;
+    /// `fit_screen` then stretches the texture to the window.
+    pub(crate) fn display_size(&self) -> Vec2 {
+        let (num, den) = self.pixel_aspect;
+        let aspect = if num == 0 || den == 0 {
+            1.0
+        } else {
+            f32::from(num) / f32::from(den)
+        };
+        Vec2::new(self.width as f32 * aspect, self.height as f32)
+    }
 }
 
 /// Marks the single sprite entity that displays the emulated picture, so
@@ -296,4 +314,23 @@ pub(crate) fn fit_screen(
     let scale_x = window.width() / base.width as f32;
     let scale_y = window.height() / base.height as f32;
     transform.scale = Vec3::new(scale_x.max(0.0001), scale_y.max(0.0001), 1.0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_display_size_widens_the_picture_by_its_pixel_aspect() {
+        let base = |pixel_aspect| BaseResolution {
+            width: 320,
+            height: 200,
+            pixel_aspect,
+        };
+        assert_eq!(base((1, 1)).display_size(), Vec2::new(320.0, 200.0));
+        assert_eq!(base((6, 5)).display_size(), Vec2::new(384.0, 200.0));
+        assert_eq!(base((1, 2)).display_size(), Vec2::new(160.0, 200.0));
+        // An unset aspect (a zero) is square.
+        assert_eq!(base((0, 0)).display_size(), Vec2::new(320.0, 200.0));
+    }
 }

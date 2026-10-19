@@ -68,7 +68,16 @@ references, the Sinclair wiki's floating-bus page, the Kempston interface manual
 of the frame, fillers put one access at a chosen T-state, and the cycles with the access in contended and in uncontended RAM differ by the delay.
 **Spectrum**: contended memory (6,5,4,3,2,1,0,0 from 14335, 192 lines of 224, none in the border, 14361 and 228-T lines on the 128K), port contention outside 0x40-0x7F, the
 ULA answering every even port with 0xBF, Kempston (8/4/2/1, +16), AY read-back, 0x7FFD and 0x1FFD decode and the beeper (twenty 400-T periods = twenty edges 5.04 samples
-apart) all agree with the documents. **Gaps found, all closed 2026-10-18**: the floating bus sampled one T-state late (fixed); the "I/O contention gap" for ports 0x40-0x7F was a bug in the test's filler (it trashed BC), not the emulator; C64 bad lines already work with `--vic-accuracy cycle` (the case passes it); unconnected VIC bits now read 1 and $D02F-$D03F read $FF. Also fixed via the CPC acid tests: 8255 modes 1/2, AY invalid register select, CRTC lightpen/status, ASIC unlock sequence, CPC save state now holds the PPI. **CPC known gaps left** (in `BASELINE`): cpctest (HSYNC timing), asicfloat, asicppi (hang), asicrom, asictest (14), asic_external_ram, dmatest, pritest, and the FDC programs (mostly nec765's instant execution/no overrun); fdc_wp needs a write-protect toggle.
+apart) all agree with the documents. **Gaps found, all closed 2026-10-18**: the floating bus sampled one T-state late (fixed); the "I/O contention gap" for ports 0x40-0x7F was a bug in the test's filler (it trashed BC), not the emulator; C64 bad lines already work with `--vic-accuracy cycle` (the case passes it); unconnected VIC bits now read 1 and $D02F-$D03F read $FF. Also fixed via the CPC acid tests: 8255 modes 1/2, AY invalid register select, CRTC lightpen/status, ASIC unlock sequence, CPC save state now holds the PPI. **CPC gaps closed 2026-10-19** (details in `machines/amstrad/CLAUDE.md`, "CPC Plus acid fixes"): asicfloat, asicppi, asicrom, asic_external_ram and asictest now pass completely, cpctest's HSYNC position/width pass (VSYNC sampled at the I/O cycle), dmatest 21 of 25, pritest 13 of 20. **CPC known gaps left** (in `BASELINE`): dmatest (prescale changed mid-pause, CRTC R0 length, the channel 1 interrupt test), pritest (re-trigger/trigger-bug HSYNC cases, "PRI start (R2)" at the end of the line, "PRI can delay normal raster interrupt", "enable norm during pri int handler", "im2 vector (norm)" which expects one classic raster interrupt per frame), and the FDC programs. **FDC timing model (2026-10-19, `retroclawd-crates` `nec765`, `enable_timing` on the CPC)**: the disk turns
+(300 rpm, 32 us per byte), Read/Write Data wait for their sector and move one byte every 32 us with overrun, Read ID waits for the next ID,
+Format runs index to index, Seek/Recalibrate step at the Specify rate with a PCN per unit (units 2/3 are drives 0/1: only US0 is wired)
+and keep the MSR busy bits until Sense Interrupt Status, a drive's ready change raises an interrupt per unit, and the Scan commands
+exist. Before: fdc_gen 7 passing (hung), fdc_seek 5 (hung), fdc_read/fdc_write/fdc_time hung on their overrun tests, fdctest3 0. After:
+fdc_gen 26, fdc_seek 29, fdc_read 10, fdc_write 12, fdc_time 2, fdctest3 18, all but fdctest3/fdc_wp finishing. Left (in `BASELINE`):
+DMA mode, the timing measurements of fdc_time, ready changes during a command, the format result registers and FM, the read/write
+"data error" and deleted-mark cases, overlapped seeks finishing on the same head, "read id not ready" (motor spin-down); several are
+test bugs (noted in `BASELINE`). The +3 keeps the instant controller (no `enable_timing`) but gets the ready changes, aliasing,
+per-unit PCN and Scan; its scenarios and `rc-suite` cases pass. Not emulator findings: cpctest's "GA I/O decode test" calls an uninitialised BC (its `ga_io_restore_extra` is never loaded) and resets the machine; asictest's "sprite ram mask" result buffer runs into the firmware's variables (in the harness's `UNRELIABLE`).
 
 ## Parked: checks that need real hardware (2026-10-17)
 
@@ -720,7 +729,8 @@ global > built-in defaults, per-binding override, `"none"` unbinds:
    (replacing them with host-side defaults would have needed per-machine cursor-key knowledge in the host) and
    there was no plugin-api bump (pads reuse `KeyEvent`). Verified by unit tests including a Bevy `App` test
    spawning `Gamepad` entities; **never run with a physical pad** (no `/dev/uinput`/evdev in the sandbox).
-   Not done: pad buttons as hotkey triggers, right stick/analog triggers, rumble.
+   Not done: rumble. (Pad hotkey chords since 2026-10-16; sticks and analog triggers drive machine axes since
+   2026-10-19, `[pads.N] left_x = "Joy1X"` -- no current machine reports an axis yet.)
 5. **Layouts and keymap files (phase 5) -- DONE (2026-10-10).** `[input] layout = "positional" | "symbolic"`
    (also `[machines.<id>.input]` and `--layout`), keymap files (`[input] keymap`, repeatable `--keymap`;
    `[keys]`/`[machines.<id>.keys]` plus an optional `layout`), layered below/above the inline `[keys]`.

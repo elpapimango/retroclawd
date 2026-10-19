@@ -2201,6 +2201,17 @@ fn main() -> ExitCode {
                     .collect()
             })
             .unwrap_or_default(),
+        axes: selected_profile.axis_names.clone(),
+        all_axes: machine_report
+            .as_ref()
+            .map(|report| {
+                report
+                    .profiles
+                    .iter()
+                    .flat_map(|profile| profile.axis_names.iter().cloned())
+                    .collect()
+            })
+            .unwrap_or_default(),
     };
 
     // `--config` names which file to load; with no flag, a `retroclawd.toml`
@@ -2903,8 +2914,10 @@ fn unescape_typed(text: &str) -> String {
     out
 }
 
-/// A mono 16-bit PCM `.wav` of `samples` (clamped to -1..1).
-fn wav_bytes(samples: &[f32], rate: u32) -> Vec<u8> {
+/// A 16-bit PCM `.wav` of interleaved `samples` (clamped to -1..1).
+fn wav_bytes(samples: &[f32], format: machine::AudioFormat) -> Vec<u8> {
+    let channels = u16::from(format.channels.max(1));
+    let rate = format.sample_rate;
     let data_len = (samples.len() * 2) as u32;
     let mut out = Vec::with_capacity(44 + samples.len() * 2);
     out.extend_from_slice(b"RIFF");
@@ -2912,10 +2925,10 @@ fn wav_bytes(samples: &[f32], rate: u32) -> Vec<u8> {
     out.extend_from_slice(b"WAVEfmt ");
     out.extend_from_slice(&16u32.to_le_bytes());
     out.extend_from_slice(&1u16.to_le_bytes()); // PCM
-    out.extend_from_slice(&1u16.to_le_bytes()); // mono
+    out.extend_from_slice(&channels.to_le_bytes());
     out.extend_from_slice(&rate.to_le_bytes());
-    out.extend_from_slice(&(rate * 2).to_le_bytes());
-    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&(rate * 2 * u32::from(channels)).to_le_bytes());
+    out.extend_from_slice(&(2 * channels).to_le_bytes());
     out.extend_from_slice(&16u16.to_le_bytes());
     out.extend_from_slice(b"data");
     out.extend_from_slice(&data_len.to_le_bytes());
@@ -3014,7 +3027,10 @@ fn run_headless(
             }
         }
         if let Some(path) = &args.dump_audio {
-            match fs::write(path, wav_bytes(&audio, machine::AUDIO_SAMPLE_RATE)) {
+            match fs::write(
+                path,
+                wav_bytes(&audio, machine::Machine::audio_format(&machine)),
+            ) {
                 Ok(()) => println!("wrote {} audio samples to {path}", audio.len()),
                 Err(e) => {
                     eprintln!("failed to write {path}: {e}");
@@ -3605,8 +3621,27 @@ mod tests {
     }
 
     #[test]
-    fn a_wav_is_a_mono_16_bit_pcm_riff_of_the_clamped_samples() {
-        let wav = wav_bytes(&[0.0, 0.5, -1.0, 2.0], 44_100);
+    fn a_wav_is_a_16_bit_pcm_riff_of_the_clamped_samples() {
+        let stereo = wav_bytes(
+            &[0.0, 0.5],
+            machine::AudioFormat {
+                channels: 2,
+                sample_rate: 48_000,
+            },
+        );
+        assert_eq!(u16::from_le_bytes([stereo[22], stereo[23]]), 2, "stereo");
+        assert_eq!(
+            u32::from_le_bytes(stereo[28..32].try_into().unwrap()),
+            192_000,
+            "byte rate"
+        );
+        assert_eq!(
+            u16::from_le_bytes([stereo[32], stereo[33]]),
+            4,
+            "block align"
+        );
+
+        let wav = wav_bytes(&[0.0, 0.5, -1.0, 2.0], machine::AudioFormat::MONO);
         assert_eq!(&wav[..4], b"RIFF");
         assert_eq!(&wav[8..16], b"WAVEfmt ");
         assert_eq!(u16::from_le_bytes([wav[20], wav[21]]), 1, "PCM");

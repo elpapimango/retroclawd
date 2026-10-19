@@ -10,7 +10,7 @@ use super::audio::{AudioControl, AudioControlRes};
 use super::debug_overlay::{DebugSnapshotRes, OverlayStateRes};
 use super::hotkeys::{Action, HotkeyState, Hotkeys, Trigger};
 use super::keys::{KeyRouter, LogicalKeys};
-use super::pads::{PadButton, PadRouter, PadSlots, PadState};
+use super::pads::{PadAxes, PadAxis, PadButton, PadRouter, PadSlots, PadState};
 use super::shader;
 use super::toast::ToastRes;
 use super::video::{self, ShaderSettingsRes};
@@ -790,6 +790,8 @@ pub(crate) fn record_logical_keys(
 /// Reads every connected gamepad once per frame and sends the machine keys
 /// its buttons are bound to (`gui::pads`). Pads are numbered by `PadSlots`: the
 /// first pad plugged in is `[pads.1]`.
+// A Bevy system: each parameter is one resource it reads or writes.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn pad_input(
     gamepads: Query<(Entity, &Gamepad)>,
     input_tx: Res<InputTxRes>,
@@ -798,18 +800,23 @@ pub(crate) fn pad_input(
     mut router: ResMut<KeyRouter>,
     hotkeys: Res<Hotkeys>,
     mut pad_triggers: ResMut<super::hotkeys::PadTriggers>,
+    axis_tx: Res<MouseTxRes>,
 ) {
     let deadzone = pads.deadzone();
     let present: Vec<u64> = gamepads.iter().map(|(e, _)| e.to_bits()).collect();
-    let mut states: Vec<(u8, PadState)> = slots
+    let assigned: Vec<(u8, &Gamepad)> = slots
         .assign(&present)
         .into_iter()
         .filter_map(|(slot, id)| {
             gamepads
                 .iter()
                 .find(|(entity, _)| entity.to_bits() == id)
-                .map(|(_, gamepad)| (slot, pad_state(gamepad, deadzone)))
+                .map(|(_, gamepad)| (slot, gamepad))
         })
+        .collect();
+    let mut states: Vec<(u8, PadState)> = assigned
+        .iter()
+        .map(|(slot, gamepad)| (*slot, pad_state(gamepad, deadzone)))
         .collect();
     // Pad chords from `[hotkeys]` (`pad1:select+start`): their buttons are hidden from the machine, the triggers go to
     // `hotkey_input`.
@@ -820,6 +827,33 @@ pub(crate) fn pad_input(
     for event in router.apply(releases, presses) {
         let _ = input_tx.0.send(event);
     }
+
+    let axes: Vec<(u8, PadAxes)> = assigned
+        .iter()
+        .map(|(slot, gamepad)| (*slot, pad_axes(gamepad)))
+        .collect();
+    for (axis, value) in pads.route_axes(&axes) {
+        let _ = axis_tx.0.send(MouseEvent::Axis { axis, value });
+    }
+}
+
+/// One pad's analogue inputs in `gui::pads`' screen directions (the pad's
+/// own Y is up-positive).
+fn pad_axes(gamepad: &Gamepad) -> PadAxes {
+    let mut axes = PadAxes::default();
+    let left = gamepad.left_stick();
+    let right = gamepad.right_stick();
+    axes.set(PadAxis::LeftX, left.x);
+    axes.set(PadAxis::LeftY, -left.y);
+    axes.set(PadAxis::RightX, right.x);
+    axes.set(PadAxis::RightY, -right.y);
+    for (axis, button) in [
+        (PadAxis::LeftTrigger, GamepadButton::LeftTrigger2),
+        (PadAxis::RightTrigger, GamepadButton::RightTrigger2),
+    ] {
+        axes.set(axis, gamepad.get(button).unwrap_or(0.0));
+    }
+    axes
 }
 
 /// One pad's buttons as the digital `PadButton` set.
@@ -1156,6 +1190,7 @@ south = \"Joy1Fire1\"",
         let (tx, rx) = std::sync::mpsc::channel();
         let mut app = App::new();
         app.insert_resource(InputTxRes(tx))
+            .insert_resource(super::MouseTxRes(std::sync::mpsc::channel().0))
             .insert_resource(KeyRouter::new(KeyBindings::default()))
             .insert_resource(PadRouter::new(
                 PadBindings::resolve(&config, "m", &names).unwrap(),
@@ -1214,17 +1249,28 @@ south = \"Joy1Fire1\"",
         use super::{InputTxRes, pad_input};
         use bevy::prelude::*;
 
-        let names = KeyNames::only(&plugin_api::key_infos([
+        let mut names = KeyNames::only(&plugin_api::key_infos([
             "Joy1Up",
             "Joy1Left",
             "Joy1Fire1",
             "Joy2Fire1",
         ]));
+        names.axes = vec!["Joy1X".to_string()];
         let bindings =
             PadBindings::resolve(&app_config::AppConfig::default(), "m", &names).unwrap();
         let (tx, rx) = std::sync::mpsc::channel();
+        let (axis_tx, axis_rx) = std::sync::mpsc::channel();
+        let axes = |rx: &std::sync::mpsc::Receiver<super::MouseEvent>| -> Vec<(String, i16)> {
+            rx.try_iter()
+                .filter_map(|event| match event {
+                    super::MouseEvent::Axis { axis, value } => Some((axis, value)),
+                    _ => None,
+                })
+                .collect()
+        };
         let mut app = App::new();
         app.insert_resource(InputTxRes(tx))
+            .insert_resource(super::MouseTxRes(axis_tx))
             .insert_resource(KeyRouter::new(KeyBindings::default()))
             .insert_resource(PadRouter::new(bindings))
             .insert_resource(super::super::pads::PadSlots::default())
@@ -1258,6 +1304,8 @@ south = \"Joy1Fire1\"",
         }
         app.update();
         assert_eq!(drain(&rx), [ev("Joy1Left", true)]);
+        // ... and the machine's Joy1X axis follows it.
+        assert_eq!(axes(&axis_rx), [("Joy1X".to_string(), -29490)]);
 
         // A second pad is slot 2.
         let second = app.world_mut().spawn(Gamepad::default()).id();
@@ -1281,5 +1329,6 @@ south = \"Joy1Fire1\"",
                 ev("Joy1Up", false),
             ]
         );
+        assert_eq!(axes(&axis_rx), [("Joy1X".to_string(), 0)], "centred");
     }
 }

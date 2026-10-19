@@ -109,20 +109,25 @@ pub(crate) struct EmulatorAudio {
     requested_count: RequestedCount,
     control: Arc<AudioControl>,
     output_rate: u32,
+    /// The machine's sample layout (`Machine::audio_format`).
+    format: machine::AudioFormat,
 }
 
-/// The actual `rodio::Source`: resamples the shared `machine::
-/// AUDIO_SAMPLE_RATE`-rate `AudioQueue` up (or down) to `output_rate` via
-/// linear interpolation between the two input samples bracketing each
-/// output sample's fractional input position -- see `EmulatorAudio`'s doc
-/// comment for why this has to happen here rather than upstream. The
-/// input-consumption rate this naturally settles at is `output_rate *
-/// (machine::AUDIO_SAMPLE_RATE / output_rate)` = `machine::
-/// AUDIO_SAMPLE_RATE` exactly, regardless of how often `next` itself gets
-/// called -- so the queue drains at the rate it's actually filled,
+/// The actual `rodio::Source`: resamples the shared `AudioQueue` (frames in
+/// the machine's own `machine::AudioFormat`: its channel count and sample
+/// rate) to `output_rate` via linear interpolation between the two input
+/// frames bracketing each output frame's fractional input position -- see
+/// `EmulatorAudio`'s doc comment for why this has to happen here rather than
+/// upstream. The input-consumption rate this naturally settles at is the
+/// machine's own sample rate exactly, regardless of how often `next` itself
+/// gets called -- so the queue drains at the rate it's actually filled,
 /// whatever `output_rate` turns out to be on a given machine.
 ///
-/// Emits silence (`0.0`) for an input sample that underruns rather than
+/// Output is always stereo (left, right, left, ...): a mono machine plays the
+/// same sample on both sides, a stereo machine keeps its two channels, and a
+/// machine with more channels contributes its first two.
+///
+/// Emits silence (`0.0`) for an input frame that underruns rather than
 /// ending the stream -- returning `None` from `next` would tell the audio
 /// backend playback finished, which would stop it from ever polling again
 /// even once the queue has more samples later. Counts underruns and total
@@ -130,11 +135,9 @@ pub(crate) struct EmulatorAudio {
 /// backend's own real-time callback thread, so it must stay allocation/
 /// lock-contention-free beyond the queue's own already-necessary lock)
 /// for `emu_thread`'s 1Hz diagnostics log -- see `UnderrunCount`/
-/// `RequestedCount`'s doc comments. `underrun_count` now counts genuine
-/// *input* shortfalls (once per missing input sample the resampler
-/// actually needed), not output-call-level misses -- a more meaningful
-/// number now that one output call doesn't correspond 1:1 with one input
-/// sample.
+/// `RequestedCount`'s doc comments. Both count *frames*: `requested_count`
+/// once per output frame (so `requested/s` still reads as the device rate),
+/// `underrun_count` once per missing input frame the resampler needed.
 pub(crate) struct EmulatorAudioDecoder {
     queue: AudioQueue,
     underrun_count: UnderrunCount,
@@ -143,14 +146,17 @@ pub(crate) struct EmulatorAudioDecoder {
     /// Current output gain, ramped toward `control.target_gain()`.
     gain: f32,
     output_rate: u32,
-    /// Fractional position within the input stream, in input-sample
-    /// units, advanced by `machine::AUDIO_SAMPLE_RATE / output_rate` per
-    /// output sample produced. `prev`/`next` are the two input samples
-    /// this position currently falls between; a new input sample is
-    /// popped each time the position crosses a whole-number boundary.
+    format: machine::AudioFormat,
+    /// Fractional position within the input stream, in input-frame
+    /// units, advanced by `format.sample_rate / output_rate` per output
+    /// frame produced. `prev`/`next` are the two input frames (left, right)
+    /// this position currently falls between; a new input frame is popped
+    /// each time the position crosses a whole-number boundary.
     position: f64,
-    prev: f32,
-    next: f32,
+    prev: [f32; 2],
+    next: [f32; 2],
+    /// The right half of the output frame whose left half `next` returned.
+    right_pending: Option<f32>,
     initialized: bool,
 }
 
@@ -161,6 +167,7 @@ impl EmulatorAudioDecoder {
         requested_count: RequestedCount,
         control: Arc<AudioControl>,
         output_rate: u32,
+        format: machine::AudioFormat,
     ) -> Self {
         let gain = control.target_gain();
         Self {
@@ -170,21 +177,43 @@ impl EmulatorAudioDecoder {
             control,
             gain,
             output_rate,
+            format: machine::AudioFormat {
+                channels: format.channels.max(1),
+                sample_rate: if format.sample_rate == 0 {
+                    machine::AUDIO_SAMPLE_RATE
+                } else {
+                    format.sample_rate
+                },
+            },
             position: 0.0,
-            prev: 0.0,
-            next: 0.0,
+            prev: [0.0; 2],
+            next: [0.0; 2],
+            right_pending: None,
             initialized: false,
         }
     }
 
-    fn pop_input(&mut self) -> f32 {
-        match self.queue.lock().unwrap().pop_front() {
-            Some(sample) => sample,
-            None => {
-                self.underrun_count.fetch_add(1, Ordering::Relaxed);
-                0.0
-            }
+    /// Pops one input frame as (left, right). A frame the queue cannot fill
+    /// completely is an underrun and plays as silence.
+    fn pop_input(&mut self) -> [f32; 2] {
+        let channels = usize::from(self.format.channels);
+        let mut queue = self.queue.lock().unwrap();
+        if queue.len() < channels {
+            queue.clear();
+            drop(queue);
+            self.underrun_count.fetch_add(1, Ordering::Relaxed);
+            return [0.0; 2];
         }
+        let left = queue.pop_front().unwrap_or(0.0);
+        let right = if channels >= 2 {
+            queue.pop_front().unwrap_or(0.0)
+        } else {
+            left
+        };
+        if channels > 2 {
+            queue.drain(..channels - 2);
+        }
+        [left, right]
     }
 }
 
@@ -192,6 +221,9 @@ impl Iterator for EmulatorAudioDecoder {
     type Item = Sample;
 
     fn next(&mut self) -> Option<Sample> {
+        if let Some(right) = self.right_pending.take() {
+            return Some(right);
+        }
         self.requested_count.fetch_add(1, Ordering::Relaxed);
 
         if !self.initialized {
@@ -201,19 +233,20 @@ impl Iterator for EmulatorAudioDecoder {
         }
 
         let frac = self.position.fract() as f32;
-        let output = self.prev + (self.next - self.prev) * frac;
         let target = self.control.target_gain();
         self.gain += (target - self.gain).clamp(-GAIN_RAMP_PER_SAMPLE, GAIN_RAMP_PER_SAMPLE);
-        let output = output * self.gain;
+        let [left, right] =
+            [0, 1].map(|c| (self.prev[c] + (self.next[c] - self.prev[c]) * frac) * self.gain);
 
-        self.position += machine::AUDIO_SAMPLE_RATE as f64 / self.output_rate as f64;
+        self.position += f64::from(self.format.sample_rate) / f64::from(self.output_rate);
         while self.position >= 1.0 {
             self.position -= 1.0;
             self.prev = self.next;
             self.next = self.pop_input();
         }
 
-        Some(output)
+        self.right_pending = Some(right);
+        Some(left)
     }
 }
 
@@ -223,7 +256,7 @@ impl Source for EmulatorAudioDecoder {
     }
 
     fn channels(&self) -> ChannelCount {
-        NonZero::new(1).unwrap()
+        NonZero::new(2).unwrap()
     }
 
     fn sample_rate(&self) -> SampleRate {
@@ -248,6 +281,7 @@ impl Decodable for EmulatorAudio {
             self.requested_count.clone(),
             self.control.clone(),
             self.output_rate,
+            self.format,
         )
     }
 }
@@ -256,7 +290,7 @@ impl Decodable for EmulatorAudio {
 /// itself is created by `emu_thread::spawn`, not here; `setup_audio` below
 /// just clones it into the playable `EmulatorAudio` asset.
 #[derive(Resource)]
-pub(crate) struct AudioQueueRes(pub(crate) AudioQueue);
+pub(crate) struct AudioQueueRes(pub(crate) AudioQueue, pub(crate) machine::AudioFormat);
 
 /// Wraps the emu thread's underrun counter -- see `UnderrunCount`'s doc
 /// comment. Same "created by `emu_thread::spawn`, just cloned here" shape
@@ -320,6 +354,7 @@ pub(crate) fn setup_audio(
         requested_count: requested_count.0.clone(),
         control: control.0.clone(),
         output_rate,
+        format: queue.1,
     });
     commands.spawn((AudioPlayer(handle), PlaybackSettings::LOOP));
 }
@@ -331,50 +366,82 @@ mod tests {
     use std::sync::atomic::AtomicU64;
     use std::sync::{Arc, Mutex};
 
-    #[test]
-    fn resamples_input_rate_to_a_higher_output_rate_via_linear_interpolation() {
-        // 5 input samples at machine::AUDIO_SAMPLE_RATE, read out at exactly
-        // 2x that rate -- position advances by 0.5/call, so odd calls land
-        // exactly on an input sample and even calls land exactly halfway
-        // between two -- easy to hand-verify. 5 (not 4) input samples so
-        // the resampler's one-sample-ahead lookahead pop doesn't underrun
-        // before the 6th output call finishes computing its own value.
-        let queue: AudioQueue = Arc::new(Mutex::new(VecDeque::from([1.0, 3.0, 5.0, 7.0, 9.0])));
+    fn decoder(
+        samples: Vec<f32>,
+        format: machine::AudioFormat,
+        output_rate: u32,
+    ) -> (EmulatorAudioDecoder, UnderrunCount, RequestedCount) {
         let underrun_count: UnderrunCount = Arc::new(AtomicU64::new(0));
         let requested_count: RequestedCount = Arc::new(AtomicU64::new(0));
-        let mut decoder = EmulatorAudioDecoder::new(
-            queue,
+        let decoder = EmulatorAudioDecoder::new(
+            Arc::new(Mutex::new(VecDeque::from(samples))),
             underrun_count.clone(),
             requested_count.clone(),
             Arc::new(AudioControl::default()),
-            machine::AUDIO_SAMPLE_RATE * 2,
+            output_rate,
+            format,
         );
-
-        let outputs: Vec<f32> = (0..6).map(|_| decoder.next().unwrap()).collect();
-
-        assert_eq!(outputs, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
-        assert_eq!(underrun_count.load(Ordering::Relaxed), 0);
-        assert_eq!(requested_count.load(Ordering::Relaxed), 6);
+        (decoder, underrun_count, requested_count)
     }
 
     #[test]
-    fn counts_an_underrun_once_per_missing_input_sample_not_per_output_call() {
-        let queue: AudioQueue = Arc::new(Mutex::new(VecDeque::new())); // empty throughout
-        let underrun_count: UnderrunCount = Arc::new(AtomicU64::new(0));
-        let requested_count: RequestedCount = Arc::new(AtomicU64::new(0));
-        let mut decoder = EmulatorAudioDecoder::new(
-            queue,
-            underrun_count.clone(),
-            requested_count.clone(),
-            Arc::new(AudioControl::default()),
-            machine::AUDIO_SAMPLE_RATE, // 1:1 -- exactly one input pop per output call
+    fn resamples_input_rate_to_a_higher_output_rate_via_linear_interpolation() {
+        // 5 mono input samples read out at exactly 2x the input rate --
+        // position advances by 0.5 per output frame, so odd frames land
+        // exactly on an input sample and even frames exactly halfway between
+        // two. 5 (not 4) input samples so the resampler's one-frame-ahead
+        // lookahead pop doesn't underrun before the 6th frame. A mono
+        // machine plays each value on both sides.
+        let (mut decoder, underruns, requested) = decoder(
+            vec![1.0, 3.0, 5.0, 7.0, 9.0],
+            machine::AudioFormat::MONO,
+            machine::AUDIO_SAMPLE_RATE * 2,
+        );
+
+        let outputs: Vec<f32> = (0..12).map(|_| decoder.next().unwrap()).collect();
+
+        assert_eq!(
+            outputs,
+            vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 6.0, 6.0]
+        );
+        assert_eq!(underruns.load(Ordering::Relaxed), 0);
+        assert_eq!(requested.load(Ordering::Relaxed), 6);
+    }
+
+    #[test]
+    fn a_stereo_machine_keeps_its_channels_and_its_own_sample_rate_is_used() {
+        // Stereo at 22050 Hz played on a 44100 Hz device: two output frames
+        // per input frame, left and right interpolated separately.
+        let format = machine::AudioFormat {
+            channels: 2,
+            sample_rate: 22_050,
+        };
+        let (mut decoder, underruns, _) = decoder(
+            vec![0.0, 1.0, 0.5, -1.0, 1.0, 0.0, 0.0, 0.0],
+            format,
+            44_100,
+        );
+
+        let outputs: Vec<f32> = (0..8).map(|_| decoder.next().unwrap()).collect();
+
+        assert_eq!(outputs, vec![0.0, 1.0, 0.25, 0.0, 0.5, -1.0, 0.75, -0.5]);
+        assert_eq!(underruns.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn counts_an_underrun_once_per_missing_input_frame_not_per_output_call() {
+        let (mut decoder, underruns, requested) = decoder(
+            Vec::new(),
+            machine::AudioFormat::MONO,
+            machine::AUDIO_SAMPLE_RATE, // 1:1 -- exactly one input pop per output frame
         );
 
         decoder.next(); // seeds prev+next (2 underruns), then its own loop pops 1 more (3)
+        decoder.next(); // the right half of the same frame: no pop
         decoder.next(); // one more pop in its own loop (4)
 
-        assert_eq!(underrun_count.load(Ordering::Relaxed), 4);
-        assert_eq!(requested_count.load(Ordering::Relaxed), 2);
+        assert_eq!(underruns.load(Ordering::Relaxed), 4);
+        assert_eq!(requested.load(Ordering::Relaxed), 2);
     }
 
     #[test]
@@ -413,8 +480,10 @@ mod tests {
             Arc::new(AtomicU64::new(0)),
             control.clone(),
             machine::AUDIO_SAMPLE_RATE,
+            machine::AudioFormat::MONO,
         );
         // Full volume passes samples through unchanged.
+        assert_eq!(decoder.next().unwrap(), 1.0);
         assert_eq!(decoder.next().unwrap(), 1.0);
 
         control.toggle_mute();

@@ -21,12 +21,14 @@ use crate::plugin_bridge::HostedMachine;
 /// never held across any blocking work).
 pub(crate) type AudioQueue = Arc<Mutex<VecDeque<f32>>>;
 
-/// Upper bound on queued-but-unplayed samples (~2 seconds at
-/// `machine::AUDIO_SAMPLE_RATE`) -- if the audio backend falls behind for
-/// any reason, `tick` drops the oldest samples rather than growing this
-/// unboundedly; a couple of seconds of latency is already far past the
-/// point of being useful to keep.
-const MAX_QUEUED_AUDIO_SAMPLES: usize = machine::AUDIO_SAMPLE_RATE as usize * 2;
+/// Upper bound on queued-but-unplayed samples: ~2 seconds of the machine's
+/// own `machine::AudioFormat`, whole frames only -- if the audio backend
+/// falls behind for any reason, `tick` drops the oldest frames rather than
+/// growing this unboundedly; a couple of seconds of latency is already far
+/// past the point of being useful to keep.
+fn max_queued_audio_samples(format: machine::AudioFormat) -> usize {
+    format.sample_rate as usize * 2 * usize::from(format.channels.max(1))
+}
 
 /// How often `--show-overlay`'s memory/disk/tape panel data (a
 /// `GetChipSnapshots` plugin round trip plus a small `read_memory` loop)
@@ -285,11 +287,12 @@ fn advance_one_frame_with_debugger(m: &mut HostedMachine, dbg: &mut DebuggerLink
     spent
 }
 
-/// One Kempston-mouse-shaped input event, queued from the GUI's own
-/// mouse-handling system (`gui::input::mouse_input`) into the emu thread --
-/// mirrors `(KeyCode, bool)`'s "GUI reads real input, emu thread applies
-/// it" split, just carrying three different real mouse event shapes
-/// (relative motion, a button edge, a scroll tick) instead of one.
+/// One mouse or analogue input event, queued from the GUI's own
+/// mouse-handling system (`gui::input::mouse_input`) or pad system
+/// (`gui::input::pad_input`, `Axis`) into the emu thread -- mirrors
+/// `(KeyCode, bool)`'s "GUI reads real input, emu thread applies it" split,
+/// just carrying the real mouse event shapes (relative motion, a button
+/// edge, a scroll tick) and an analogue axis position instead of a key.
 pub(crate) enum MouseEvent {
     /// Relative motion since the last event, already clamped to `i8`
     /// range -- see `mouse_input`'s own doc comment for why this is a
@@ -309,6 +312,12 @@ pub(crate) enum MouseEvent {
     /// accumulates rather than sets an absolute value.
     Scroll {
         delta: i8,
+    },
+    /// A machine analogue axis (`MachineProfile::axis_names`) moved to
+    /// `value` -- see `gui::pads` for the value range and directions.
+    Axis {
+        axis: String,
+        value: i16,
     },
 }
 
@@ -972,11 +981,14 @@ fn tick(
         if !samples.is_empty() && !control.fast_forward {
             let mut queue = audio_queue.lock().unwrap();
             queue.extend(samples);
-            // Drop the oldest samples rather than let a stalled audio backend
-            // grow this without bound -- see MAX_QUEUED_AUDIO_SAMPLES's doc
-            // comment.
-            if queue.len() > MAX_QUEUED_AUDIO_SAMPLES {
-                let excess = queue.len() - MAX_QUEUED_AUDIO_SAMPLES;
+            // Drop the oldest frames rather than let a stalled audio backend
+            // grow this without bound -- see `max_queued_audio_samples`.
+            let format = m.audio_format();
+            let max = max_queued_audio_samples(format);
+            if queue.len() > max {
+                let channels = usize::from(format.channels.max(1));
+                let excess = (queue.len() - max).div_ceil(channels) * channels;
+                let excess = excess.min(queue.len());
                 queue.drain(..excess);
             }
         }
@@ -1056,6 +1068,8 @@ fn tick(
 /// caller can't forget to shut it down.
 pub(crate) struct EmuThreadHandle {
     pub(crate) audio_queue: AudioQueue,
+    /// The layout of `audio_queue`'s samples (the machine's `audio_format`).
+    pub(crate) audio_format: machine::AudioFormat,
     pub(crate) frame_buffer: FrameBuffer,
     pub(crate) debug_snapshot: DebugSnapshotHandle,
     pub(crate) underrun_count: UnderrunCount,
@@ -1108,6 +1122,7 @@ pub(crate) fn spawn(
     media: MediaSettings,
 ) -> EmuThreadHandle {
     let audio_queue: AudioQueue = Arc::new(Mutex::new(VecDeque::new()));
+    let audio_format = machine.audio_format();
     let frame_buffer: FrameBuffer = Arc::new(Mutex::new(None));
     let debug_snapshot: DebugSnapshotHandle = Arc::new(Mutex::new(DebugSnapshot {
         halted: false,
@@ -1548,6 +1563,7 @@ pub(crate) fn spawn(
 
     EmuThreadHandle {
         audio_queue,
+        audio_format,
         frame_buffer,
         debug_snapshot,
         underrun_count,

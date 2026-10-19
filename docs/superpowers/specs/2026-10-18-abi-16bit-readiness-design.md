@@ -69,10 +69,17 @@ Done and verified (shared and host tests, Family tests, smoke test of all seven 
 - A minor-1 library is refused by the minor-2 host with the documented message (test).
 - A wrapped address on a narrow machine: `Machine` methods wrap to the machine's address space; the plugin handlers do not reject (the spec said they would; wrapping was chosen so nothing is dropped silently).
 
+Consumed since 2026-10-19:
+- Audio format: `HostedMachine::drain_audio` passes `AudioPcm` through interleaved; the audio queue holds the Machine's own
+  `audio_format` (channels, sample rate) and `gui::audio::EmulatorAudioDecoder` resamples from that rate and plays stereo (a mono
+  Machine on both sides, a stereo one kept, more channels: the first two). `--dump-audio` writes the Machine's channels and rate.
+- Pixel aspect: `BaseResolution::display_size` widens the picture by it; the initial window size uses that shape (`fit_screen`
+  stretches the texture to the window as before).
+- `AxisEvent`: `[pads.N]` binds `left_x`/`left_y`/`right_x`/`right_y`/`left_trigger`/`right_trigger` to a Machine axis (`"-Name"`
+  inverts, `"none"` unbinds); pad `n`'s left stick drives `Joy{n}X`/`Joy{n}Y` by default when reported. `PadRouter::route_axes`
+  sends changes only (X right, Y down positive, -32767..=32767; triggers 0..=32767) through the emu thread's mouse/axis channel.
+
 Not yet consumed by the Host (the ABI carries them; no current Machine needs them):
-- Stereo output: the audio queue and output stage are mono, a wider `AudioPcm` is averaged down.
-- Pixel aspect: reported by `HostedMachine::pixel_aspect`, not yet applied by `fit_screen`.
-- `AxisEvent`: no Host binding layer or pad mapping sends it.
 - A 68000 Core's symbol-table syntax and 24-bit operand widths in `machine::SymbolTable` and the debug-symbol tables; `--dump-memory`, `--org` and `.pok` stay 16-bit.
 - The C128 reports one CPU (the active one) although it has two.
 

@@ -132,6 +132,11 @@ pub(crate) struct KeyNames {
     /// for all machines) naming a key this machine lacks is skipped quietly
     /// when another machine has it, and is an error only if no machine does.
     pub(crate) all: Vec<MachineKeyInfo>,
+    /// The selected machine's analogue axis names (`MachineProfile::
+    /// axis_names`), which `[pads.N]`'s axis bindings name.
+    pub(crate) axes: Vec<String>,
+    /// Every discovered machine's axis names (same role as `all`).
+    pub(crate) all_axes: Vec<String>,
 }
 
 impl KeyNames {
@@ -141,6 +146,7 @@ impl KeyNames {
         KeyNames {
             machine: names.to_vec(),
             all: names.to_vec(),
+            ..KeyNames::default()
         }
     }
 }
@@ -1107,10 +1113,12 @@ mod tests {
         let for_zx81 = KeyNames {
             machine: zx81,
             all: all.clone(),
+            ..KeyNames::default()
         };
         let for_spectrum = KeyNames {
             machine: spectrum,
             all,
+            ..KeyNames::default()
         };
         let config = cfg("[keys]\n\"shift+2\" = \"at\"\nq = \"a\"");
         let zx = KeyBindings::resolve(&config, "zx81", &for_zx81, &defaults(), &[]).unwrap();

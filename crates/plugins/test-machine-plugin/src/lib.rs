@@ -192,9 +192,12 @@ fn machine_profile() -> MachineProfile {
         options: Vec::new(),
         key_names: Vec::new(),
         cpus: Vec::new(),
-        axis_names: Vec::new(),
+        axis_names: AXIS_NAMES.iter().map(|name| name.to_string()).collect(),
     }
 }
+
+/// The analogue axes the stub accepts (`AxisEvent` with any other name is an error).
+const AXIS_NAMES: [&str; 2] = ["Joy1X", "Joy1Y"];
 
 fn metadata() -> MachineMetadata {
     MachineMetadata {
@@ -419,7 +422,10 @@ fn handle_machine_command(
         MachineCommand::RenderFrame => {
             Err("unsupported: the stub machine has no video".to_string())
         }
-        MachineCommand::AxisEvent { .. } => Err("this machine has no analogue axes".to_string()),
+        MachineCommand::AxisEvent { axis, .. } if AXIS_NAMES.contains(&axis.as_str()) => {
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::AxisEvent { axis, .. } => Err(format!("unknown axis \"{axis}\"")),
         MachineCommand::DrainAudio => Ok(MachineResponse::AudioPcm {
             channels: 1,
             sample_rate: AUDIO_SAMPLE_RATE,
