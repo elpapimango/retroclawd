@@ -101,7 +101,15 @@ for f in "${FAM[@]}"; do
   fi
   cargo metadata --format-version 1 >/dev/null     # re-resolves Cargo.lock for the new rev
   grep -q "$NEW" Cargo.lock || { echo "Cargo.lock does not mention the new rev" >&2; exit 1; }
-  if [[ $TEST -eq 1 ]]; then cargo test --workspace 2>&1 | grep -E "^error|test result: F|FAILED|panicked" && { echo "tests failed" >&2; exit 1; } || true; echo "tests passed"; fi
+  # cargo's own exit status decides: piping it into grep under `pipefail` made a failing run look like
+  # "no failure lines found" and carried on to commit and push.
+  if [[ $TEST -eq 1 ]]; then
+    if ! test_log="$(cargo test --workspace 2>&1)"; then
+      grep -E "^error|test result: F|FAILED|panicked" <<< "$test_log" || true
+      echo "tests failed" >&2; exit 1
+    fi
+    echo "tests passed"
+  fi
   git add -A
   if git diff --cached --quiet; then echo "nothing to change"; else
     git -c user.name="${GIT_AUTHOR_NAME:-$(git config user.name || echo bump-pin)}" \
