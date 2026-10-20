@@ -40,7 +40,7 @@ fi
 # commits are normal between bumps, but then the libraries were built against other shared code than
 # the app: say so (tools/bump_pin.sh brings them together).
 SHARED_HEAD="$(git -C shared rev-parse HEAD 2>/dev/null || true)"
-for f in sinclair amstrad commodore; do
+for f in sinclair amstrad commodore atari; do
   [[ -d machines/$f ]] || continue
   pin="$(git -C machines/$f grep -ho 'retroclawd-crates", rev = "[0-9a-f]*"' -- '*Cargo.toml' 2>/dev/null | grep -o '[0-9a-f]\{40\}' | sort -u | head -1 || true)"
   if [[ -n $pin && -n $SHARED_HEAD && $pin != "$SHARED_HEAD" ]]; then

@@ -30,7 +30,7 @@ cd "$(dirname "$0")/.."
 ROOT="$PWD"
 command -v cygpath >/dev/null 2>&1 && ROOT="$(cygpath -m "$PWD")"
 
-REV=""; FAMILIES="sinclair,amstrad,commodore"; TEST=1; PUSH=0; CHECK=1
+REV=""; FAMILIES="sinclair,amstrad,commodore,atari"; TEST=1; PUSH=0; CHECK=1
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --rev) REV="$2"; shift 2 ;;

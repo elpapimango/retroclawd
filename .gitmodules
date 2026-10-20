@@ -10,3 +10,6 @@
 [submodule "shared"]
 	path = shared
 	url = https://github.com/elpapimango/retroclawd-crates
+[submodule "machines/atari"]
+	path = machines/atari
+	url = https://github.com/elpapimango/retroclawd-atari

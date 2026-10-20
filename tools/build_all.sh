@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One command to build the app AND the machines.
 #
-#   tools/build_all.sh [--debug] [--families sinclair,amstrad,commodore] [--update]
+#   tools/build_all.sh [--debug] [--families sinclair,amstrad,commodore,atari] [--update]
 #
 # The shared crates (retroclawd-crates) are the git submodule `shared/`; the machines live in three
 # repositories that are git submodules under machines/.
@@ -22,7 +22,7 @@ ROOT="$PWD"
 # Git Bash on Windows: hand native programs (cargo, the app) C:/... style paths.
 command -v cygpath >/dev/null 2>&1 && ROOT="$(cygpath -m "$PWD")"
 
-PROFILE=release; FLAGS=(--release); FAMILIES="sinclair,amstrad,commodore"; UPDATE=0
+PROFILE=release; FLAGS=(--release); FAMILIES="sinclair,amstrad,commodore,atari"; UPDATE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --debug) PROFILE=debug; FLAGS=(); shift ;;
