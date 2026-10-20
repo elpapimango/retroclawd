@@ -153,7 +153,7 @@ impl StBus {
 
     fn user_refused(addr: u32, fc: FunctionCode) -> bool {
         let addr = addr & 0xFF_FFFF;
-        !fc.is_supervisor() && (addr < SUPERVISOR_ONLY_BELOW || addr >= IO_BASE)
+        !fc.is_supervisor() && !(SUPERVISOR_ONLY_BELOW..IO_BASE).contains(&addr)
     }
 }
 
