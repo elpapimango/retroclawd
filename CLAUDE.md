@@ -53,6 +53,12 @@ scenario as a known gap; `docs/vic20-gaps.md` in that Family records the proof.
 Uncaptured screen goldens are omitted, never invented; use the matching
 `rc-scenarios` feature branch until its missing-capture support is merged.
 
+**C16/Plus4 media prerequisite:** `c64-tape::ted` in the Commodore Family owns
+the TAP-v2 parser/writer used by `rctape`; there is no duplicate tools parser.
+It keeps exact half-waves in slow TED timer clocks and rejects unsupported or
+malformed headers, inconsistent sizes and oversized payloads. No C16/Plus4
+Machine, Host media route or hardware cassette playback is implemented yet.
+
 ## Scenario manifests (2026-10-18)
 
 Every machine has a `machines/<family>/<id>.manifest.toml` (zx81, zx-spectrum, zx-spectrum-128, zx-spectrum-2a3, cpc464/664/6128, c64,

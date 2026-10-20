@@ -750,6 +750,12 @@ has been verified.** Its standard scenarios remain explicit known gaps;
 see `machines/commodore/docs/vic20-gaps.md`. Do not apply the broader media
 support claims for other machines to this experimental Plugin.
 
+The Family also supplies a shared C16/Plus4 TAP-v2 parser/writer, consumed by
+the `rctape` feature branch for inspection, structural validation and exact
+half-wave normalization. This is a media prerequisite, not a C16/Plus4 Machine
+or cassette playback implementation. See the Family README and tools manual
+for supported headers, size limits and explicit-output behavior.
+
 **Commodore 128 (`c128`)**
 - `--mode c128|c64` (boot into C128 or C64 mode), `--display 40|80` (VIC-IIe or VDC screen), `--vic-accuracy
   line|cycle`, `--run` (auto-type `LOAD`/`RUN` for the attached media), `--drive-type 1541|1570|1571|1581`,
