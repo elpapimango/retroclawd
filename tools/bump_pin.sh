@@ -8,12 +8,14 @@
 #   cd shared && git commit ... && git push origin HEAD:main     # the new commit must be on GitHub
 #   cd .. && tools/bump_pin.sh                                   # pin everything to shared/'s HEAD
 #
-#   tools/bump_pin.sh [--rev <sha>] [--families a,b] [--no-test] [--push]
+#   tools/bump_pin.sh [--rev <sha>] [--families a,b] [--no-test] [--no-check] [--push]
 #
 #   --rev        retroclawd-crates commit to pin (default: the HEAD of shared/; it must be pushed)
 #   --families   only these families (default: all three)
 #   --no-test    skip `cargo test --workspace` in each family
-#   --push       push each family's main branch (otherwise the commits stay local, in machines/<f>)
+#   --push       push each family's main branch (otherwise the commits stay local, in machines/<f>); before
+#                pushing anything it runs tools/check_all.sh (every check of every repository) and stops on a failure
+#   --no-check   with --push: skip tools/check_all.sh (the family `cargo test` still runs unless --no-test)
 #
 # It checks out that commit in shared/; then for each family it checks the submodule out on an
 # up-to-date `main` (refusing a dirty tree or unpushed commits), rewrites every `rev = "<old>"`, refreshes
@@ -28,14 +30,15 @@ cd "$(dirname "$0")/.."
 ROOT="$PWD"
 command -v cygpath >/dev/null 2>&1 && ROOT="$(cygpath -m "$PWD")"
 
-REV=""; FAMILIES="sinclair,amstrad,commodore"; TEST=1; PUSH=0
+REV=""; FAMILIES="sinclair,amstrad,commodore"; TEST=1; PUSH=0; CHECK=1
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --rev) REV="$2"; shift 2 ;;
     --families) FAMILIES="$2"; shift 2 ;;
     --no-test) TEST=0; shift ;;
     --push) PUSH=1; shift ;;
-    *) echo "usage: $0 [--rev <sha>] [--families a,b] [--no-test] [--push]" >&2; exit 2 ;;
+    --no-check) CHECK=0; shift ;;
+    *) echo "usage: $0 [--rev <sha>] [--families a,b] [--no-test] [--no-check] [--push]" >&2; exit 2 ;;
   esac
 done
 
@@ -118,13 +121,23 @@ for f in "${FAM[@]}"; do
 
 Shared crates now come from retroclawd-crates commit $NEW (was ${OLD:0:10}).$TRAILER"
   fi
-  [[ $PUSH -eq 1 ]] && git push origin main
   cd "$ROOT"
 done
 
+# Record the new submodule commits first: tools/check_all.sh builds with tools/build_all.sh, which checks the
+# families out at the commits this repository records.
 git add machines shared
 if git diff --cached --quiet; then echo "nothing to record here"; else
   git commit -q -m "Bump shared/ and the machine repositories to retroclawd-crates ${NEW:0:10}$TRAILER"
   echo; echo "recorded the new submodule commits in this repository; push it when you are ready."
   [[ $PUSH -eq 1 ]] || echo "(the family commits are local: rerun the bump with --push, or push each machines/<f> yourself, before pushing this repository)"
+fi
+
+if [[ $PUSH -eq 1 ]]; then
+  if [[ $CHECK -eq 1 ]]; then
+    echo; echo "== tools/check_all.sh (before pushing)"
+    tools/check_all.sh || { echo "checks failed: nothing pushed (the family commits are local in machines/<f>, the record commit here)" >&2; exit 1; }
+  fi
+  for f in "${FAM[@]}"; do git -C "machines/$f" push origin main; done
+  echo "pushed the families; push this repository when you are ready."
 fi

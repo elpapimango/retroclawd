@@ -86,7 +86,15 @@ pritest 17 of 20 (the trigger-bug, re-trigger and "can delay normal raster inter
 HSYNC positions, a VSYNC sample a few microseconds off), "enable norm during pri int handler" (reads an interrupt count left by the tests
 before it) and "im2 vector (norm)" (one classic interrupt per frame in IM2 on a Plus, cause unknown); fdc_read's track-0 cases (the program
 writes a deleted mark there, its tables expect a data mark); fdc_write's DMA write-deleted case (expects an overrun where write data expects
-a normal end). Not emulator findings: cpctest's "GA I/O decode test" calls an uninitialised BC (its `ga_io_restore_extra` is never loaded) and resets the machine; asictest's "sprite ram mask" result buffer runs into the firmware's variables (in the harness's `UNRELIABLE`).
+a normal end). **Gap sweep (2026-10-19, last)**: every remaining acid failure is now either fixed or explained in `BASELINE`'s notes
+(`retroclawd-tools/crates/rc-suite/tests/cpc_acid.rs`). Fixed: a non-zero PRI write drops a pending raster request, a DMA prescale write
+ends the pause unit in progress (dmatest 21 + 2 phase-dependent ones moved to `UNRELIABLE`, with the reason), the 765's first step
+pulse goes out at once (fdc_seek 33), fdctest3 gets the frame budget its all-N loops need (it then ends in its own buffer overrun), and the
+harness reads a doubled-letter verdict ("FAAIL"). Explained, not fixed (the evidence does not settle the mechanism; tried changes made
+other cases worse): dmatest's R0 = 0 HSYNC case and channel 2 interrupt, pritest's three, fdc_seek's overlapped seeks on one drive and
+lost steps, fdc_time's sub-millisecond timing, fdc_read/fdc_write's ready-change, data-error and FM cases, fdc_gen's spin-down case.
+The last scenario known gap (CPC diagnostics' CRTC/FDC lines) is closed against Caprice32. `tools/check_all.sh` runs every check of every
+repository; `tools/bump_pin.sh --push` runs it before pushing. Not emulator findings: cpctest's "GA I/O decode test" calls an uninitialised BC (its `ga_io_restore_extra` is never loaded) and resets the machine; asictest's "sprite ram mask" result buffer runs into the firmware's variables (in the harness's `UNRELIABLE`).
 
 ## Parked: checks that need real hardware (2026-10-17)
 

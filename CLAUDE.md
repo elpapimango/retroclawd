@@ -26,7 +26,9 @@ The detailed per-crate notes are in each repository's `CLAUDE.md`; the pre-split
 
 Everything at once: `tools/build_all.sh` / `tools\build_all.ps1` (checks out `shared/` and the families, builds the
 app and every family, stages the libraries in `target/<profile>/plugins/`); `tools/smoke_test.sh` boots every machine
-and compares the boot screens. Using one machine on its own: build the family repository (`cargo build --release
+and compares the boot screens; `tools/check_all.sh` runs every check (build, unit tests of every repository, smoke test, every
+scenario manifest, the rc-suite cases; `--acid` adds the CPC acid suite) and `tools/bump_pin.sh --push` runs it before pushing.
+Using one machine on its own: build the family repository (`cargo build --release
 --workspace`) and put the resulting libraries in a `plugins/` folder next to the `retroclawd` executable, or point
 `RETROCLAWD_MACHINE_PLUGIN_DIRS` at them. `retroclawd --list-plugins` shows what was found.
 
@@ -42,7 +44,8 @@ RETROCLAWD_BIN=target/release/retroclawd RETROCLAWD_MACHINE_PLUGIN_DIRS=target/r
 ```
 
 Goldens are never committed (a folder of your own, or RomM by hash); `retroclawd-tools/scripts/capture_*.py` regenerate them. Known gaps
-(`status = "known-gap"`, evidence under `machines/<family>/docs/`): the CPC diagnostics' CRTC/FDC lines. Closed 2026-10-19: the C64's
+(`status = "known-gap"`, evidence under `machines/<family>/docs/`): none open. Closed 2026-10-19: the CPC diagnostics' CRTC/FDC lines
+(compared with Caprice32 instead of ZEsarUX, whose FDC detection fails there; `retroclawd-tools/scripts/capture_caprice_screen.py`), the C64's
 fast loader now returns through the KERNAL's own SEARCHING/LOADING routines, and the C64 dead test's clock (the CIA TOD clock honours CRA
 `TODIN`, so a PAL machine left at 60 Hz runs at 5/6 speed, as VICE and the hardware do). The S6 frame-length gaps were closed 2026-10-19: each machine reports its exact
 frame through `Machine::frame_rate` / `MachineMetadata::frame_rate` (ZX81 312 x 207 T-states, its line corrected from 208 to 207; CPC
