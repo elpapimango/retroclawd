@@ -515,7 +515,9 @@ struct CommonArgs {
     /// `--machine c64` (normal 8K/16K and Ultimax, Simons' BASIC, Ocean,
     /// Fun Play, Super Games, Epyx Fastload, System 3, Dinamic, Zaxxon,
     /// Magic Desk and EasyFlash -- anything else is a clear error), or a
-    /// `.cpr` for the CPC Plus family. The machine resets so the cartridge
+    /// `.cpr` for the CPC Plus family, or a VIC-20 generic ROM
+    /// (.20/.40/.60/.a0/.b0, or load-address-prefixed .prg/.bin/.rom).
+    /// The selected Machine validates the format. The machine resets so the cartridge
     /// starts, as when switching a real one on.
     #[arg(long)]
     cartridge: Option<String>,
@@ -2590,11 +2592,7 @@ fn main() -> ExitCode {
             }
         };
         let extension = inputs::extension(path);
-        if !matches!(extension.as_str(), "crt" | "cpr") {
-            eprintln!("--cartridge expects a .crt (C64) or .cpr (CPC Plus) file, not .{extension}");
-            return ExitCode::FAILURE;
-        }
-        if let Err(e) = machine.apply_media(&extension, &bytes, resolved.tape_speed) {
+        if let Err(e) = machine.apply_cartridge(&extension, &bytes) {
             eprintln!("{e}");
             return ExitCode::FAILURE;
         }

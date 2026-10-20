@@ -744,17 +744,21 @@ programs, debugger integration and save states. Required firmware flags are
 
 `--execution-mode fast|accurate` clocks Chips after instructions or on each
 CPU bus event, respectively. Both modes support PAL and NTSC. Sub-clock VIC-I
-effects, interlace, paddles, light pen and cartridge attachment
+effects, interlace, paddles and light pen
 remain unimplemented. **Real PAL/NTSC boots, BASIC typing, tone pitch, state
-continuation and frame budgets pass in both modes.** Thirty-eight scenarios pass,
-with boot/input/program/cassette/disk output compared against hash-pinned VICE 3.9 captures;
-two cartridge/diagnostic gaps remain. `--tape` plays read-only VIC-20 TAP v0/v1
+continuation and frame budgets pass in both modes.** Fifty-four scenarios pass,
+with boot/input/program/cassette/disk/cartridge output compared against hash-pinned VICE 3.9 captures;
+external diagnostics remain a known gap. `--tape` plays read-only VIC-20 TAP v0/v1
 (platform 1, matching PAL/NTSC header), through the real KERNAL and VIA motor/sense/read pins.
 Tape recording and analogue motor timing are not implemented.
 `--true-drive --disk game.d64` connects the existing real 1541 at IEC device 8;
 supply `--rom-1541` or use `--firmware auto`. Writable D64, disk export/writeback,
 swapping and complete Drive save states work without a loader trap. Drive CPU
 steps remain instruction-granular in both execution modes.
+`--cartridge game.a0` accepts generic read-only ROMs: raw `.20/.40/.60/.a0/.b0`,
+or load-address-prefixed `.prg/.bin/.rom`. Real KERNAL startup, attach/eject reset,
+read-only mapping and ROM-identified Save states work. Overlapping RAM expansion
+is rejected; banking, flash, cartridge RAM, VIC CRT and multi-file assembly are unsupported.
 Calibrated single-voice RMS agrees within 1%;
 see `machines/commodore/docs/vic20-gaps.md`. Do not apply the broader media
 support claims for other machines to this experimental Plugin.

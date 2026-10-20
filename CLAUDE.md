@@ -50,10 +50,16 @@ Raw programs, PRG/P00 Host parsing and read-only VIC-20 TAP-v0/v1 playback work;
 `--true-drive` adds the existing 1541/IEC implementation for writable D64 at
 device 8, with `--rom-1541` or hash-based Firmware sourcing. Disk export,
 writeback, swapping and complete Drive states work; Drive CPU steps remain
-instruction-granular in both modes. Cartridge and recording do not work.
+instruction-granular in both modes. Recording does not work.
+Generic read-only cartridges use `--cartridge` with raw `.20/.40/.60/.a0/.b0`
+or addressed `.prg/.bin/.rom`. The Family Format owns parsing; the Machine owns
+read-only mapping, RAM-conflict rejection and attach/eject reset. The Host sends
+explicit cartridge Media without machine-specific extension gating, preserving
+PRG Program semantics. State v4 validates canonical mapped-ROM identity and reads
+old v1/v2/v3 states with no cartridge. Banking/flash/RAM cartridges and VIC CRT are absent.
 Hash-verified RomM firmware boots and types BASIC in both
-modes and regions. `machines/commodore/vic20.manifest.toml` reports 38 passing
-S1/S2/S3-program/S3-tape/S3-disk/S4/S5/S6 variants and two cartridge/diagnostic gaps. Goldens pin
+modes and regions. `machines/commodore/vic20.manifest.toml` reports 54 passing
+S1/S2/S3-program/S3-tape/S3-disk/S3-cartridge/S4/S5/S6 variants and one external-diagnostic gap. Goldens pin
 the installed VICE 3.9 executable and captures. The nonlinear mixer calibration
 fixes the single-voice gain regression: RMS agrees within 1%, including PAL
 volume 7. `docs/vic20-gaps.md` in that Family records commands and proof.

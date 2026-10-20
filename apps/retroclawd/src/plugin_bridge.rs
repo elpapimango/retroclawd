@@ -1348,6 +1348,25 @@ impl HostedBackend {
         )
     }
 
+    fn apply_cartridge(
+        &self,
+        instance: MachineInstanceHandle,
+        extension: &str,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        self.expect_ack(
+            instance,
+            MachineCommand::AttachMedia {
+                slot: MediaSlot::Cartridge { slot: 0 },
+                kind: MediaKind::Cartridge,
+                name: Some(format!("cartridge.{}", extension.to_ascii_lowercase())),
+                bytes: bytes.to_vec(),
+                options: Vec::new(),
+            },
+            "cartridge attach",
+        )
+    }
+
     fn apply_media(
         &self,
         instance: MachineInstanceHandle,
@@ -1368,18 +1387,10 @@ impl HostedBackend {
             || lower == "nib"
         {
             self.apply_disk(instance, 0, &lower, bytes)
-        } else if lower == "cpr" || lower == "crt" {
-            self.expect_ack(
-                instance,
-                MachineCommand::AttachMedia {
-                    slot: MediaSlot::Cartridge { slot: 0 },
-                    kind: MediaKind::Cartridge,
-                    name: Some(format!("cartridge.{lower}")),
-                    bytes: bytes.to_vec(),
-                    options: Vec::new(),
-                },
-                "cartridge attach",
-            )
+        } else if ["cpr", "crt", "20", "40", "60", "a0", "b0", "bin", "rom"]
+            .contains(&lower.as_str())
+        {
+            self.apply_cartridge(instance, &lower, bytes)
         } else {
             self.apply_snapshot(instance, &lower, bytes)
         }
@@ -1918,6 +1929,11 @@ impl HostedMachine {
             MachineResponse::Ack => Ok(()),
             other => Err(format!("program attach: unexpected response {other:?}")),
         }
+    }
+
+    pub(crate) fn apply_cartridge(&mut self, extension: &str, bytes: &[u8]) -> Result<(), String> {
+        self.backend
+            .apply_cartridge(self.instance, extension, bytes)
     }
 
     pub(crate) fn apply_media(
@@ -2620,6 +2636,37 @@ mod tests {
             "the plugin's own explanation: {error}"
         );
         assert!(!error.contains("machine plugin call failed"), "{error}");
+    }
+
+    #[test]
+    fn cartridge_routing_preserves_the_explicit_kind_and_effective_extension() {
+        let mut machine = super::create_hosted_machine(plugin_api::MachineCreateRequest {
+            machine_id: "stub-machine".to_string(),
+            region: Some("pal".to_string()),
+            roms: Vec::new(),
+            options: Vec::new(),
+        })
+        .unwrap();
+        // The stub rejects cartridges, so its error proves the selected command and name.
+        for extension in ["prg", "A0", "crt", "cpr"] {
+            let error = machine.apply_cartridge(extension, &[0; 16]).unwrap_err();
+            assert!(
+                error.contains(&format!("Cartridge .{}", extension.to_ascii_lowercase())),
+                "{error}"
+            );
+        }
+        for extension in ["20", "40", "60", "A0", "b0", "bin", "rom", "crt", "cpr"] {
+            let error = machine.apply_media(extension, &[0; 16], 1).unwrap_err();
+            assert!(
+                error.contains(&format!("Cartridge .{}", extension.to_ascii_lowercase())),
+                "{error}"
+            );
+        }
+        let error = machine.apply_media("prg", &[0; 16], 1).unwrap_err();
+        assert!(
+            !error.contains("Cartridge"),
+            "implicit PRG must not be reclassified: {error}"
+        );
     }
 
     #[test]
