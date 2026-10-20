@@ -739,6 +739,22 @@ retroclawd cpc6128 --rom machines/amstrad/roms/cpc/cpc6128.rom --ram-banks 3 --r
   `--true-drive` (a real drive CPU on the IEC bus), and the ROM options `--rom-kernal`, `--rom-basic`,
   `--rom-char`, `--rom-c64-kernal`, `--rom-c64-basic`. `retroclawd c128 --help` has the full list.
 
+**Commodore execution modes (`c64`, `c128`)**
+
+`--execution-mode fast|accurate` selects the existing instruction-batched or
+per-bus-cycle VIC-II/VIC-IIe engine. Fast is the default. Accurate is PAL-only
+and improves raster effects and BA stalls; it does not change Host pacing.
+The C128 Z80 and 2 MHz CPU paths remain instruction-batched. Media traps and
+true-drive emulation remain independent Options.
+
+Set `execution_mode = "accurate"` under `[machines.c64]` or `[machines.c128]`
+in application configuration, or under `[options]` in a game configuration.
+Normal CLI > game > application > Plugin precedence applies per Option key.
+The older `vic_accuracy = "line"|"cycle"` key remains supported; contradictory
+explicit old/new selections are errors, even across configuration layers.
+Save states retain their existing engine check and reject cross-mode loading.
+See the Commodore Family README for fidelity limits and real-time media settings.
+
 ### Current debugger and plugin status
 
 Debugger UI now supports reverse stepping, watches, conditional breakpoints, step-over, typed

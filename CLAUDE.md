@@ -33,6 +33,16 @@ Using one machine on its own: build the family repository (`cargo build --releas
 --workspace`) and put the resulting libraries in a `plugins/` folder next to the `retroclawd` executable, or point
 `RETROCLAWD_MACHINE_PLUGIN_DIRS` at them. `retroclawd --list-plugins` shows what was found.
 
+**Common execution policy:** `plugin_api::ExecutionMode` declares and parses the
+ordinary `execution_mode` Option (`--execution-mode fast|accurate`). A Plugin
+must wire it to real fidelity differences before declaring it. C64/C128 map
+fast (default) to the line engine and accurate to the PAL cycle engine;
+media traps and true-drive remain independent. Both the common Option and the
+legacy `vic_accuracy` Option omit a wire default so absence cannot override an
+explicit selection through the other key. Contradictory selections are errors;
+configuration precedence applies per key, not across aliases. Existing state
+engine metadata preserves deterministic restoration. No ABI change is involved.
+
 ## Scenario manifests (2026-10-18)
 
 Every machine has a `machines/<family>/<id>.manifest.toml` (zx81, zx-spectrum, zx-spectrum-128, zx-spectrum-2a3, cpc464/664/6128, c64,
