@@ -21,7 +21,7 @@ Machines (each family has its own repository, see Building):
 |---|---|---|
 | Sinclair | ZX81; ZX Spectrum 48K, 128K, +2, +2A, +3 | Z80 |
 | Amstrad | CPC464, CPC664, CPC6128, CPC464+/6128+, GX4000 | Z80 |
-| Commodore | C64, C128 (8502 and Z80, 40/80 columns), 1541/1570/1571/1581 drives | 6510/8502, Z80 |
+| Commodore | Experimental VIC-20; C64, C128 (8502 and Z80, 40/80 columns), 1541/1570/1571/1581 drives | 6502, 6510/8502, Z80 |
 
 The CPU cores (Z80, validated with ZEXALL/ZEXDOC; NMOS 6502 with the illegal opcodes, validated with Klaus
 Dormann's and Tom Seddon's suites) and the chips several families share (AY-3-8910, uPD765A) live in
@@ -65,7 +65,7 @@ How the repositories relate (all public, same account):
 | [`retroclawd-crates`](https://github.com/elpapimango/retroclawd-crates) (`shared/`) | the shared crates: `machine`, `plugin-api` (ABI policy), the Z80 and 6502 cores, AY-3-8910, uPD765A, `.dsk`, tape formats |
 | [`retroclawd-sinclair`](https://github.com/elpapimango/retroclawd-sinclair) (`machines/sinclair`) | ZX81, ZX Spectrum 48K/128K/+2/+2A/+3 |
 | [`retroclawd-amstrad`](https://github.com/elpapimango/retroclawd-amstrad) (`machines/amstrad`) | Amstrad CPC464/664/6128, CPC+ and GX4000 |
-| [`retroclawd-commodore`](https://github.com/elpapimango/retroclawd-commodore) (`machines/commodore`) | C64, C128 and the 1541/1570/1571/1581 drives |
+| [`retroclawd-commodore`](https://github.com/elpapimango/retroclawd-commodore) (`machines/commodore`) | Experimental VIC-20, C64, C128 and the 1541/1570/1571/1581 drives |
 
 - The application uses the shared crates **by path** through the `shared/` submodule and contains no machine
   code; it loads the machine libraries (`*_machine_plugin`) at run time. Removing a machine is deleting its library.
@@ -732,6 +732,23 @@ expansion ROM slot:
 retroclawd cpc6128 --rom machines/amstrad/roms/cpc/cpc6128.rom --ram-banks 3 --rom-slot 7=amsdos.rom --tape-mode caprice
 ```
 
+
+**Commodore VIC-20 (`vic20`, experimental)**
+
+The Commodore Family builds `vic20_machine_plugin` alongside its existing
+libraries; no machine code is linked into the Host. It provides an NMOS 6502,
+VIC-I video/sound, two VIAs, keyboard/joystick, PAL/NTSC, expansion RAM, raw/PRG
+programs, debugger integration and save states. Required firmware flags are
+`--rom-basic`, `--rom-kernal` and `--rom-char`. `--ram-expansion` selects
+`none|3k|8k|16k|24k|32k|35k`.
+
+`--execution-mode fast|accurate` clocks Chips after instructions or on each
+CPU bus event, respectively. Both modes support PAL and NTSC. Sub-clock VIC-I
+effects, interlace, paddles, light pen and cassette/disk/cartridge attachment
+remain unimplemented. **No real VIC-20 firmware boot or reference comparison
+has been verified.** Its standard scenarios remain explicit known gaps;
+see `machines/commodore/docs/vic20-gaps.md`. Do not apply the broader media
+support claims for other machines to this experimental Plugin.
 
 **Commodore 128 (`c128`)**
 - `--mode c128|c64` (boot into C128 or C64 mode), `--display 40|80` (VIC-IIe or VDC screen), `--vic-accuracy
