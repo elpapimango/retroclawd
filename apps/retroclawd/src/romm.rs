@@ -97,7 +97,7 @@ fn item_label(item: Item) -> String {
 }
 
 /// The root of everything this application caches.
-fn cache_root() -> Result<PathBuf, String> {
+pub(crate) fn cache_root() -> Result<PathBuf, String> {
     let env = |name: &str| {
         std::env::var_os(name)
             .filter(|v| !v.is_empty())

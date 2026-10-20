@@ -10,10 +10,17 @@
 //! cache and checks the downloaded bytes against the hash before they reach a
 //! machine. A firmware chosen by id instead is `--rom romm:fw/<id>`, which
 //! needs none of this.
+//!
+//! An entry may also name where the firmware is published (`url`, the
+//! `archive_sha1` of that zip and the `entry` inside it): EmuTOS for the Atari
+//! ST, free firmware a machine needs without a RomM server. Such a file is
+//! downloaded, checked against both hashes and kept in the cache folder
+//! (`<cache>/firmware/<sha1>.bin`, verified again on every use), so a later run
+//! needs no network. Lookup order per option: the cache, RomM, the URL.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 
 use plugin_api::{BinaryBlob, DebugValue, MachineOptionInfo, MachineOptionKind};
 use serde::Deserialize;
@@ -42,6 +49,55 @@ struct RawEntry {
     parts: Vec<String>,
     #[serde(default)]
     when: BTreeMap<String, String>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    archive_sha1: Option<String>,
+    #[serde(default)]
+    entry: Option<String>,
+}
+
+/// Where a firmware is published: a zip at `url` with SHA-1 `archive_sha1`, holding `entry`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UrlSource {
+    pub(crate) url: String,
+    pub(crate) archive_sha1: String,
+    pub(crate) entry: String,
+}
+
+/// Downloads a URL's body (the HTTP client in production, a fake in tests).
+pub(crate) trait Fetcher {
+    fn get(&self, url: &str) -> Result<Vec<u8>, String>;
+}
+
+/// The largest download or zip entry accepted.
+const MAX_DOWNLOAD: u64 = 64 << 20;
+
+struct HttpFetcher;
+
+impl Fetcher for HttpFetcher {
+    fn get(&self, url: &str) -> Result<Vec<u8>, String> {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let response = client.get(url).send().map_err(|e| e.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("HTTP {}", response.status()));
+        }
+        if response.content_length().is_some_and(|n| n > MAX_DOWNLOAD) {
+            return Err(format!("larger than {} MiB", MAX_DOWNLOAD >> 20));
+        }
+        let mut body = Vec::new();
+        response
+            .take(MAX_DOWNLOAD + 1)
+            .read_to_end(&mut body)
+            .map_err(|e| e.to_string())?;
+        if body.len() as u64 > MAX_DOWNLOAD {
+            return Err(format!("larger than {} MiB", MAX_DOWNLOAD >> 20));
+        }
+        Ok(body)
+    }
 }
 
 /// What an entry accepts.
@@ -60,6 +116,7 @@ pub(crate) struct Entry {
     pub(crate) label: String,
     pub(crate) wants: Wants,
     pub(crate) when: BTreeMap<String, String>,
+    pub(crate) source: Option<UrlSource>,
 }
 
 fn clean_hash(hash: &str, origin: &str, label: &str) -> Result<String, String> {
@@ -97,12 +154,35 @@ pub(crate) fn parse(text: &str, origin: &str) -> Result<Vec<Entry>, String> {
                     ));
                 }
             };
+            let source = match (raw.url, raw.archive_sha1, raw.entry) {
+                (None, None, None) => None,
+                (Some(url), Some(archive_sha1), Some(entry)) => {
+                    if !matches!(&wants, Wants::Any(h) if h.len() == 1) {
+                        return Err(format!(
+                            "{origin}: \"{}\" with a url needs exactly one sha1 (the file inside the zip)",
+                            raw.label
+                        ));
+                    }
+                    Some(UrlSource {
+                        url,
+                        archive_sha1: clean_hash(&archive_sha1, origin, &raw.label)?,
+                        entry,
+                    })
+                }
+                _ => {
+                    return Err(format!(
+                        "{origin}: \"{}\" needs all of url, archive_sha1 and entry, or none",
+                        raw.label
+                    ));
+                }
+            };
             Ok(Entry {
                 machines: raw.machines,
                 option: raw.option,
                 label: raw.label,
                 wants,
                 when: raw.when,
+                source,
             })
         })
         .collect()
@@ -188,17 +268,19 @@ fn find<'a>(
 }
 
 /// The entry that matched and the files to fetch, each with the SHA-1 it must have.
+#[cfg(test)]
 type Match<'a> = (&'a Entry, Vec<(&'a RemoteFirmware, String)>);
 
-/// One option's outcome.
+/// One option's outcome (the RomM-only matching rules `fill_from` follows; kept for their tests).
+#[cfg(test)]
 #[derive(Debug)]
 pub(crate) struct Planned<'a> {
-    pub(crate) key: String,
     pub(crate) required: bool,
     /// The entry that matched and the files to fetch (with the SHA-1 each must have), or the labels tried.
     pub(crate) found: Result<Match<'a>, Vec<String>>,
 }
 
+#[cfg(test)]
 /// For every `File` option without a value that has an applicable entry, what
 /// the server can supply. Options no entry applies to (a drive ROM without
 /// `--true-drive`) are left alone.
@@ -227,7 +309,6 @@ pub(crate) fn plan<'a>(
             .find_map(|e| find(&e.wants, remote).map(|files| (*e, files)))
             .ok_or_else(|| applicable.iter().map(|e| e.label.clone()).collect());
         planned.push(Planned {
-            key: info.key.clone(),
             required: info.required,
             found,
         });
@@ -280,11 +361,187 @@ fn declared_file_keys(declared: &[MachineOptionInfo]) -> String {
     keys.join(", ")
 }
 
-/// `--firmware auto`: fills `have`-less file options from RomM. Returns the
-/// blobs to add to the machine's ROMs and the keys of required options that
-/// nothing satisfied (with what was looked for), already worded for the user.
+/// The verified cached copy of the file with SHA-1 `sha1`. A copy that does not
+/// hash to its name is removed (and fetched again by the caller).
+fn cached(cache: &std::path::Path, sha1: &str) -> Option<Vec<u8>> {
+    let path = cache.join(format!("{sha1}.bin"));
+    let bytes = fs::read(&path).ok()?;
+    if sha1_hex(&bytes) == sha1 {
+        return Some(bytes);
+    }
+    eprintln!(
+        "firmware: the cached {} does not hash to its name; removed, fetching again",
+        path.display()
+    );
+    let _ = fs::remove_file(&path);
+    None
+}
+
+/// Stores `bytes` as `<sha1>.bin` (written aside, then renamed into place).
+fn store(cache: &std::path::Path, sha1: &str, bytes: &[u8]) {
+    let path = cache.join(format!("{sha1}.bin"));
+    let partial = cache.join(format!("{sha1}.part"));
+    let result = fs::create_dir_all(cache)
+        .and_then(|()| fs::write(&partial, bytes))
+        .and_then(|()| fs::rename(&partial, &path));
+    if let Err(e) = result {
+        eprintln!("firmware: cannot cache {}: {e}", path.display());
+    }
+}
+
+/// Downloads `source`, checks the zip's SHA-1, takes `source.entry` out of it and
+/// checks that against `want`.
+fn fetch_url(source: &UrlSource, want: &str, fetcher: &dyn Fetcher) -> Result<Vec<u8>, String> {
+    let url = &source.url;
+    let archive = fetcher
+        .get(url)
+        .map_err(|e| format!("{url}: {e} (wanted SHA-1 {want})"))?;
+    let actual = sha1_hex(&archive);
+    if actual != source.archive_sha1 {
+        return Err(format!(
+            "{url} has SHA-1 {actual} but firmware.toml pins {}",
+            source.archive_sha1
+        ));
+    }
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(archive))
+        .map_err(|e| format!("{url}: not a zip: {e}"))?;
+    let file = zip
+        .by_name(&source.entry)
+        .map_err(|e| format!("{url}: no {}: {e}", source.entry))?;
+    if file.size() > MAX_DOWNLOAD {
+        return Err(format!(
+            "{url}#{}: larger than {} MiB",
+            source.entry,
+            MAX_DOWNLOAD >> 20
+        ));
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_DOWNLOAD)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("{url}#{}: {e}", source.entry))?;
+    let actual = sha1_hex(&bytes);
+    if actual != want {
+        return Err(format!(
+            "{url}#{} has SHA-1 {actual} but firmware.toml pins {want}",
+            source.entry
+        ));
+    }
+    Ok(bytes)
+}
+
+/// The image `entry` yields from the cache, RomM or its URL, in that order.
+fn obtain(
+    entry: &Entry,
+    remote: &[RemoteFirmware],
+    fetcher: &dyn Fetcher,
+    cache: &std::path::Path,
+) -> Result<Option<Vec<u8>>, String> {
+    if let Wants::Any(hashes) = &entry.wants
+        && let Some(bytes) = hashes.iter().find_map(|h| cached(cache, h))
+    {
+        return Ok(Some(bytes));
+    }
+    if let Some(files) = find(&entry.wants, remote) {
+        let bytes = realize(&files)?;
+        if let [(_, hash)] = files.as_slice() {
+            store(cache, hash, &bytes);
+        }
+        return Ok(Some(bytes));
+    }
+    match (&entry.source, &entry.wants) {
+        (Some(source), Wants::Any(hashes)) => {
+            let bytes = fetch_url(source, &hashes[0], fetcher)?;
+            store(cache, &hashes[0], &bytes);
+            Ok(Some(bytes))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// `--firmware auto` with its inputs given: fills every `have`-less file option
+/// some entry applies to. `region` is also a `when` key (`when = { region = "ntsc" }`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fill_from(
+    entries: &[Entry],
+    machine: &str,
+    region: &str,
+    declared: &[MachineOptionInfo],
+    values: &HashMap<String, DebugValue>,
+    have: &HashSet<String>,
+    remote: &[RemoteFirmware],
+    fetcher: &dyn Fetcher,
+    cache: &std::path::Path,
+) -> Result<Vec<BinaryBlob>, String> {
+    let mut values = values.clone();
+    values
+        .entry("region".to_string())
+        .or_insert_with(|| DebugValue::Text(region.to_string()));
+    let mut blobs = Vec::new();
+    let mut missing = Vec::new();
+    for info in declared {
+        if info.kind != MachineOptionKind::File || have.contains(&info.key) {
+            continue;
+        }
+        let applicable: Vec<&Entry> = entries
+            .iter()
+            .filter(|e| applies(e, machine, &info.key, &values))
+            .collect();
+        if applicable.is_empty() {
+            continue;
+        }
+        let mut problems = Vec::new();
+        let mut found = None;
+        for entry in &applicable {
+            match obtain(entry, remote, fetcher, cache) {
+                Ok(Some(bytes)) => {
+                    found = Some((entry.label.clone(), bytes));
+                    break;
+                }
+                Ok(None) => {}
+                Err(e) => problems.push(format!("{}: {e}", entry.label)),
+            }
+        }
+        match found {
+            Some((label, bytes)) => {
+                eprintln!("firmware: {} <- {label}", info.key);
+                blobs.push(BinaryBlob {
+                    key: info.key.clone(),
+                    bytes,
+                });
+            }
+            None => {
+                let wanted: Vec<String> = applicable.iter().map(|e| e.label.clone()).collect();
+                let detail = if problems.is_empty() {
+                    String::new()
+                } else {
+                    format!(" [{}]", problems.join("; "))
+                };
+                let text = format!("{} (wanted: {}){detail}", info.key, wanted.join("; "));
+                if info.required {
+                    missing.push(text);
+                } else {
+                    eprintln!("firmware: nothing found for {text}");
+                }
+            }
+        }
+    }
+    if missing.is_empty() {
+        Ok(blobs)
+    } else {
+        Err(format!(
+            "--firmware auto: no firmware with a matching SHA-1 for: {}\n\
+             see `retroclawd romm match {machine}`; or name a file with --<option> romm:fw/<id>",
+            missing.join(", ")
+        ))
+    }
+}
+
+/// `--firmware auto`: fills `have`-less file options from the cache, RomM or the
+/// published URL. Returns the blobs to add to the machine's ROMs; required options
+/// nothing satisfied are one error, worded for the user.
 pub(crate) fn auto_fill(
     machine: &str,
+    region: &str,
     declared: &[MachineOptionInfo],
     values: &HashMap<String, DebugValue>,
     have: &HashSet<String>,
@@ -293,18 +550,19 @@ pub(crate) fn auto_fill(
     for warning in warnings {
         eprintln!("firmware: {warning}");
     }
-    if entries
+    let mine: Vec<&Entry> = entries
         .iter()
-        .all(|e| !e.machines.iter().any(|m| m == machine))
-    {
+        .filter(|e| e.machines.iter().any(|m| m == machine))
+        .collect();
+    if mine.is_empty() {
         return Err(format!(
             "--firmware auto: no firmware.toml next to the machine libraries lists \"{machine}\" \
              (searched {})",
             searched.join(", ")
         ));
     }
-    for entry in &entries {
-        if entry.machines.iter().any(|m| m == machine) && names_undeclared_option(entry, declared) {
+    for entry in &mine {
+        if names_undeclared_option(entry, declared) {
             eprintln!(
                 "firmware: \"{}\" names option \"{}\", which {machine} does not declare (file options: {}); fix the firmware.toml",
                 entry.label,
@@ -313,46 +571,26 @@ pub(crate) fn auto_fill(
             );
         }
     }
-    let remote = romm::firmware_index()?;
-    let mut blobs = Vec::new();
-    let mut missing = Vec::new();
-    for item in plan(&entries, machine, declared, values, have, &remote) {
-        match item.found {
-            Ok((entry, files)) => {
-                let names: Vec<String> = files
-                    .iter()
-                    .map(|(f, _)| format!("romm:fw/{} ({})", f.id, f.name))
-                    .collect();
-                eprintln!(
-                    "firmware: {} <- {}: {}",
-                    item.key,
-                    entry.label,
-                    names.join(" + ")
-                );
-                blobs.push(BinaryBlob {
-                    key: item.key,
-                    bytes: realize(&files)?,
-                });
-            }
-            Err(tried) if item.required => {
-                missing.push(format!("{} (wanted: {})", item.key, tried.join("; ")))
-            }
-            Err(tried) => eprintln!(
-                "firmware: nothing on the RomM server for {} (wanted: {})",
-                item.key,
-                tried.join("; ")
-            ),
+    let remote = match romm::firmware_index() {
+        Ok(remote) => remote,
+        Err(e) if mine.iter().any(|e| e.source.is_some()) => {
+            eprintln!("firmware: no RomM server ({e}); using the cache and the published URLs");
+            Vec::new()
         }
-    }
-    if missing.is_empty() {
-        Ok(blobs)
-    } else {
-        Err(format!(
-            "--firmware auto: RomM has no firmware with a matching SHA-1 for: {}\n\
-             see `retroclawd romm match {machine}`; or name a file with --<option> romm:fw/<id>",
-            missing.join(", ")
-        ))
-    }
+        Err(e) => return Err(e),
+    };
+    let cache = romm::cache_root()?.join("firmware");
+    fill_from(
+        &entries,
+        machine,
+        region,
+        declared,
+        values,
+        have,
+        &remote,
+        &HttpFetcher,
+        &cache,
+    )
 }
 
 // ----------------------------------------------------------- the verb
@@ -458,6 +696,7 @@ mod tests {
             label: "C64 KERNAL".into(),
             wants: Wants::Any(vec![H1.into()]),
             when: BTreeMap::new(),
+            source: None,
         }
     }
 
@@ -632,5 +871,188 @@ sha1 = ["01228eae6f066bd9b7b2b6a7fa3f667e41dad393"]
     #[test]
     fn sha1_matches_a_known_digest() {
         assert_eq!(sha1_hex(b"abc"), "a9993e364706816aba3e25717850c26c9cd0d89d");
+    }
+
+    // ------------------------------------------------- URL sources
+
+    /// A zip holding `name` with `bytes`, stored.
+    fn zip_with(name: &str, bytes: &[u8]) -> Vec<u8> {
+        let mut out = std::io::Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(&mut out);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file(name, opts).unwrap();
+        zip.write_all(bytes).unwrap();
+        zip.finish().unwrap();
+        out.into_inner()
+    }
+
+    struct FakeFetcher {
+        body: Result<Vec<u8>, String>,
+        calls: std::cell::Cell<u32>,
+    }
+
+    impl Fetcher for FakeFetcher {
+        fn get(&self, _url: &str) -> Result<Vec<u8>, String> {
+            self.calls.set(self.calls.get() + 1);
+            self.body.clone()
+        }
+    }
+
+    const ROM: &[u8] = b"pretend this is a TOS image";
+
+    fn url_entry(region: &str, archive_sha1: &str, rom_sha1: &str) -> Entry {
+        Entry {
+            machines: vec!["atari-st".into()],
+            option: "rom".into(),
+            label: format!("EmuTOS ({region})"),
+            wants: Wants::Any(vec![rom_sha1.into()]),
+            when: BTreeMap::from([("region".to_string(), region.to_string())]),
+            source: Some(UrlSource {
+                url: format!("https://example.invalid/emutos-{region}.zip"),
+                archive_sha1: archive_sha1.into(),
+                entry: format!("emutos/{region}.img"),
+            }),
+        }
+    }
+
+    fn fill(
+        entries: &[Entry],
+        region: &str,
+        fetcher: &dyn Fetcher,
+        cache: &std::path::Path,
+    ) -> Result<Vec<BinaryBlob>, String> {
+        fill_from(
+            entries,
+            "atari-st",
+            region,
+            &[file_option("rom", true)],
+            &HashMap::new(),
+            &HashSet::new(),
+            &[],
+            fetcher,
+            cache,
+        )
+    }
+
+    #[test]
+    fn a_url_entry_parses_and_needs_all_three_fields() {
+        let good = "[[rom]]
+machines=[\"atari-st\"]
+option=\"rom\"
+label=\"E\"
+sha1=[\"904ea9dc09ff8286f6e0272c12255dfe85beb17a\"]
+            url=\"https://x/e.zip\"
+archive_sha1=\"6f146a126065f0671a1df3d9a273c01f962e9d06\"
+entry=\"e/uk.img\"
+";
+        let parsed = parse(good, "t").unwrap();
+        assert_eq!(parsed[0].source.as_ref().unwrap().entry, "e/uk.img");
+        let partial = "[[rom]]
+machines=[\"atari-st\"]
+option=\"rom\"
+label=\"E\"
+sha1=[\"904ea9dc09ff8286f6e0272c12255dfe85beb17a\"]
+url=\"https://x/e.zip\"
+";
+        let err = parse(partial, "t").unwrap_err();
+        assert!(err.contains("url, archive_sha1 and entry"), "{err}");
+    }
+
+    #[test]
+    fn a_url_source_downloads_verifies_and_caches() {
+        let cache = tempfile::tempdir().unwrap();
+        let zip = zip_with("emutos/pal.img", ROM);
+        let entries = [url_entry("pal", &sha1_hex(&zip), &sha1_hex(ROM))];
+        let fetcher = FakeFetcher {
+            body: Ok(zip),
+            calls: Default::default(),
+        };
+        let blobs = fill(&entries, "pal", &fetcher, cache.path()).unwrap();
+        assert_eq!(blobs[0].bytes, ROM);
+        assert_eq!(fetcher.calls.get(), 1);
+        let again = fill(&entries, "pal", &fetcher, cache.path()).unwrap();
+        assert_eq!(again[0].bytes, ROM);
+        assert_eq!(fetcher.calls.get(), 1, "the second run uses the cache");
+    }
+
+    #[test]
+    fn a_wrong_archive_hash_is_refused() {
+        let cache = tempfile::tempdir().unwrap();
+        let zip = zip_with("emutos/pal.img", ROM);
+        let entries = [url_entry("pal", H1, &sha1_hex(ROM))];
+        let fetcher = FakeFetcher {
+            body: Ok(zip),
+            calls: Default::default(),
+        };
+        let err = fill(&entries, "pal", &fetcher, cache.path()).unwrap_err();
+        assert!(err.contains("SHA-1") && err.contains(H1), "{err}");
+    }
+
+    #[test]
+    fn a_wrong_entry_hash_is_refused() {
+        let cache = tempfile::tempdir().unwrap();
+        let zip = zip_with("emutos/pal.img", ROM);
+        let entries = [url_entry("pal", &sha1_hex(&zip), H2)];
+        let fetcher = FakeFetcher {
+            body: Ok(zip),
+            calls: Default::default(),
+        };
+        let err = fill(&entries, "pal", &fetcher, cache.path()).unwrap_err();
+        assert!(err.contains(H2), "{err}");
+    }
+
+    #[test]
+    fn a_tampered_cache_file_is_refused_and_refetched() {
+        let cache = tempfile::tempdir().unwrap();
+        let zip = zip_with("emutos/pal.img", ROM);
+        let entries = [url_entry("pal", &sha1_hex(&zip), &sha1_hex(ROM))];
+        let fetcher = FakeFetcher {
+            body: Ok(zip),
+            calls: Default::default(),
+        };
+        fill(&entries, "pal", &fetcher, cache.path()).unwrap();
+        let cached = cache.path().join(format!("{}.bin", sha1_hex(ROM)));
+        std::fs::write(&cached, b"tampered").unwrap();
+        let blobs = fill(&entries, "pal", &fetcher, cache.path()).unwrap();
+        assert_eq!(blobs[0].bytes, ROM);
+        assert_eq!(fetcher.calls.get(), 2);
+        assert_eq!(std::fs::read(&cached).unwrap(), ROM);
+    }
+
+    #[test]
+    fn offline_with_no_cache_names_the_url_and_hash() {
+        let cache = tempfile::tempdir().unwrap();
+        let entries = [url_entry("pal", H1, H2)];
+        let fetcher = FakeFetcher {
+            body: Err("connection refused".into()),
+            calls: Default::default(),
+        };
+        let err = fill(&entries, "pal", &fetcher, cache.path()).unwrap_err();
+        assert!(
+            err.contains("https://example.invalid/emutos-pal.zip"),
+            "{err}"
+        );
+        assert!(
+            err.contains(H2) && err.contains("connection refused"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn region_selects_the_ntsc_image() {
+        let cache = tempfile::tempdir().unwrap();
+        let pal_zip = zip_with("emutos/pal.img", b"pal");
+        let ntsc_zip = zip_with("emutos/ntsc.img", b"ntsc");
+        let entries = [
+            url_entry("pal", &sha1_hex(&pal_zip), &sha1_hex(b"pal")),
+            url_entry("ntsc", &sha1_hex(&ntsc_zip), &sha1_hex(b"ntsc")),
+        ];
+        let fetcher = FakeFetcher {
+            body: Ok(ntsc_zip),
+            calls: Default::default(),
+        };
+        let blobs = fill(&entries, "ntsc", &fetcher, cache.path()).unwrap();
+        assert_eq!(blobs[0].bytes, b"ntsc");
     }
 }

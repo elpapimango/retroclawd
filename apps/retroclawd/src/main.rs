@@ -2363,6 +2363,7 @@ fn main() -> ExitCode {
             .collect();
         match firmware::auto_fill(
             &resolved.machine_id,
+            region_name(resolved.region.into()),
             &declared_options,
             &resolved_options.values,
             &have,
