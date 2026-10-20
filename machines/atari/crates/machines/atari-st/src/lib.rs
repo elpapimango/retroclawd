@@ -4,6 +4,10 @@
 
 mod bus;
 mod config;
+mod machine;
+mod scheduler;
 
 pub use bus::{IoStop, ROM_BASE, ROM_SIZE, StBus};
 pub use config::{Accuracy, Config, RamSize, Region};
+pub use machine::AtariSt;
+pub use scheduler::{CLASS_VIDEO, Event, Scheduler};
