@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/machines/atari-st"]
+members = ["crates/machines/atari-st", "crates/plugins/atari-st-machine-plugin", "crates/plugin-dlls/atari-st"]
 
 # Same release profile as the retroclawd host.
 [profile.release]
@@ -16,3 +16,9 @@ opt-level = 3
 
 [profile.release.package.machine]
 opt-level = 3
+
+[profile.release.package.atari-st-machine-plugin]
+strip = false
+
+[profile.release.package.atari-st-machine-plugin-dll]
+strip = false

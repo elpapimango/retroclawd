@@ -9,6 +9,7 @@ use mc68000::{Cpu, RunState};
 
 use crate::bus::{IoStop, StBus};
 use crate::config::{Config, Region};
+use crate::diag::Diag;
 use crate::scheduler::{self, CLASS_VIDEO, Event, Scheduler};
 
 /// Interrupt level of the vertical blank (ST Internals vector table: `$070` "Interrupt level 4 (VBL)").
@@ -24,6 +25,7 @@ pub struct AtariSt {
     now: u64,
     vbl_count: u64,
     last_vbl_at: u64,
+    diag: Diag,
 }
 
 impl AtariSt {
@@ -36,6 +38,7 @@ impl AtariSt {
             now: 0,
             vbl_count: 0,
             last_vbl_at: 0,
+            diag: Diag::new(cfg.trace_limit),
         };
         m.power_on();
         Ok(m)
@@ -73,6 +76,29 @@ impl AtariSt {
 
     pub fn cpu(&self) -> &Cpu {
         &self.cpu
+    }
+
+    /// The PCs of the first `trace_limit` instructions.
+    pub fn trace(&self) -> &[u32] {
+        self.diag.trace()
+    }
+
+    pub fn trace_full(&self) -> bool {
+        self.diag.trace_full()
+    }
+
+    /// The diagnostic report of the I/O stop, once, after the machine has stopped.
+    pub fn take_stop_report(&mut self) -> Option<String> {
+        let stop = self.bus.stop()?.clone();
+        // The instruction that touched the device, not the one after it.
+        let pc = self.diag.last_pc().unwrap_or(self.cpu.pc);
+        let bytes: Vec<u8> = (0..10).map(|i| self.bus.peek(pc + i)).collect();
+        let text = format!(
+            "${pc:06X} {}",
+            mc68000::disassemble::disassemble(&bytes, pc).0
+        );
+        let clock = self.clock_hz();
+        self.diag.take_report(&self.cpu, &stop, clock, &text)
     }
 
     /// Lets `clocks` pass and processes the events due by then.
@@ -122,7 +148,14 @@ impl Machine for AtariSt {
         let clocks = if self.bus.stop().is_some() {
             4
         } else {
-            self.cpu.step(&mut self.bus)
+            if self.cpu.run_state() == RunState::Running {
+                self.diag.instruction(self.cpu.pc, self.cpu.prefetch()[0]);
+            }
+            let clocks = self.cpu.step(&mut self.bus);
+            if let Some(e) = self.cpu.take_exception() {
+                self.diag.exception(e);
+            }
+            clocks
         };
         self.advance(clocks);
         clocks

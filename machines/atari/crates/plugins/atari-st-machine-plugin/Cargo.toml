@@ -1,0 +1,19 @@
+[package]
+name = "atari-st-machine-plugin"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "atari_st_machine_plugin_impl"
+
+[dependencies]
+build-info = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "10ba4a4a66e2f1e8b0dcf7f7c56bdde1899024fc" }
+machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "10ba4a4a66e2f1e8b0dcf7f7c56bdde1899024fc" }
+mc68000 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "10ba4a4a66e2f1e8b0dcf7f7c56bdde1899024fc" }
+plugin-api = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "10ba4a4a66e2f1e8b0dcf7f7c56bdde1899024fc" }
+serde = { version = "1", features = ["derive"] }
+atari-st = { path = "../../machines/atari-st" }
+
+[build-dependencies]
+build-info = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "10ba4a4a66e2f1e8b0dcf7f7c56bdde1899024fc" }

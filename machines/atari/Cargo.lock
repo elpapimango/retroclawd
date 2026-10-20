@@ -12,6 +12,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "atari-st-machine-plugin"
+version = "0.1.0"
+dependencies = [
+ "atari-st",
+ "build-info",
+ "machine",
+ "mc68000",
+ "plugin-api",
+ "serde",
+]
+
+[[package]]
+name = "atari-st-machine-plugin-dll"
+version = "0.1.0"
+dependencies = [
+ "atari-st-machine-plugin",
+ "plugin-api",
+]
+
+[[package]]
+name = "bincode"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36eaf5d7b090263e8150820482d5d93cd964a81e4019913c972f4edcc6edb740"
+dependencies = [
+ "bincode_derive",
+ "serde",
+ "unty",
+]
+
+[[package]]
+name = "bincode_derive"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf95709a440f45e986983918d0e8a1f30a9b1df04918fc828670606804ac3c09"
+dependencies = [
+ "virtue",
+]
+
+[[package]]
+name = "build-info"
+version = "0.1.0"
+
+[[package]]
 name = "machine"
 version = "0.1.0"
 
@@ -19,6 +63,14 @@ version = "0.1.0"
 name = "mc68000"
 version = "0.1.0"
 dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "plugin-api"
+version = "0.1.0"
+dependencies = [
+ "bincode",
  "serde",
 ]
 
@@ -87,10 +139,14 @@ version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 
-[[patch.unused]]
-name = "build-info"
-version = "0.1.0"
+[[package]]
+name = "unty"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
 
-[[patch.unused]]
-name = "plugin-api"
-version = "0.1.0"
+[[package]]
+name = "virtue"
+version = "0.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "051eb1abcf10076295e815102942cc58f9d5e3b4560e46e53c21e8ff6f3af7b1"

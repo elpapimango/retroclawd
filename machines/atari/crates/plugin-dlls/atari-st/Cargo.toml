@@ -1,0 +1,14 @@
+[package]
+name = "atari-st-machine-plugin-dll"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Shared-library build of atari-st-machine-plugin: only the C entry points, all logic lives in atari-st-machine-plugin"
+
+[lib]
+name = "atari_st_machine_plugin"
+crate-type = ["cdylib"]
+
+[dependencies]
+plugin-api = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "10ba4a4a66e2f1e8b0dcf7f7c56bdde1899024fc" }
+atari-st-machine-plugin = { path = "../../plugins/atari-st-machine-plugin" }
