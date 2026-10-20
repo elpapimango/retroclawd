@@ -47,9 +47,13 @@ engine metadata preserves deterministic restoration. No ABI change is involved.
 with no Host machine-specific code. It uses the common execution Option:
 instruction-batched or per-CPU-bus-cycle peripheral clocks, on PAL and NTSC.
 Raw programs, PRG/P00 Host parsing and read-only VIC-20 TAP-v0/v1 playback work;
-disk, cartridge and recording do not. Hash-verified RomM firmware boots and types BASIC in both
-modes and regions. `machines/commodore/vic20.manifest.toml` reports 30 passing
-S1/S2/S3-program/S3-tape/S4/S5/S6 variants and three media/diagnostic gaps. Goldens pin
+`--true-drive` adds the existing 1541/IEC implementation for writable D64 at
+device 8, with `--rom-1541` or hash-based Firmware sourcing. Disk export,
+writeback, swapping and complete Drive states work; Drive CPU steps remain
+instruction-granular in both modes. Cartridge and recording do not work.
+Hash-verified RomM firmware boots and types BASIC in both
+modes and regions. `machines/commodore/vic20.manifest.toml` reports 38 passing
+S1/S2/S3-program/S3-tape/S3-disk/S4/S5/S6 variants and two cartridge/diagnostic gaps. Goldens pin
 the installed VICE 3.9 executable and captures. The nonlinear mixer calibration
 fixes the single-voice gain regression: RMS agrees within 1%, including PAL
 volume 7. `docs/vic20-gaps.md` in that Family records commands and proof.
