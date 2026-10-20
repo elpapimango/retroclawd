@@ -746,9 +746,10 @@ programs, debugger integration and save states. Required firmware flags are
 CPU bus event, respectively. Both modes support PAL and NTSC. Sub-clock VIC-I
 effects, interlace, paddles and light pen
 remain unimplemented. **Real PAL/NTSC boots, BASIC typing, tone pitch, state
-continuation and frame budgets pass in both modes.** Fifty-four scenarios pass,
-with boot/input/program/cassette/disk/cartridge output compared against hash-pinned VICE 3.9 captures;
-external diagnostics remain a known gap. `--tape` plays read-only VIC-20 TAP v0/v1
+continuation and frame budgets pass in both modes.** Sixty-two scenarios pass,
+with boot/input/program/cassette/disk/cartridge output and external Dead Test memory
+compared against hash-pinned VICE 3.9 captures. There are no known scenario gaps;
+this does not establish full hardware fidelity. `--tape` plays read-only VIC-20 TAP v0/v1
 (platform 1, matching PAL/NTSC header), through the real KERNAL and VIA motor/sense/read pins.
 Tape recording and analogue motor timing are not implemented.
 `--true-drive --disk game.d64` connects the existing real 1541 at IEC device 8;

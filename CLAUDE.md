@@ -58,8 +58,11 @@ explicit cartridge Media without machine-specific extension gating, preserving
 PRG Program semantics. State v4 validates canonical mapped-ROM identity and reads
 old v1/v2/v3 states with no cartridge. Banking/flash/RAM cartridges and VIC CRT are absent.
 Hash-verified RomM firmware boots and types BASIC in both
-modes and regions. `machines/commodore/vic20.manifest.toml` reports 54 passing
-S1/S2/S3-program/S3-tape/S3-disk/S3-cartridge/S4/S5/S6 variants and one external-diagnostic gap. Goldens pin
+modes and regions. `machines/commodore/vic20.manifest.toml` reports 62 passing
+S1-S7 variants and no known scenario gaps. External GPL-3.0 Dead Test v1.1.01
+matches all 1024 VICE memory bytes in both Regions/modes, as a cartridge and
+full-expansion replacement KERNAL. `tools/fetch_diagnostics` fetches its three
+hash-pinned release assets; peripheral/fidelity limits remain documented. Goldens pin
 the installed VICE 3.9 executable and captures. The nonlinear mixer calibration
 fixes the single-voice gain regression: RMS agrees within 1%, including PAL
 volume 7. `docs/vic20-gaps.md` in that Family records commands and proof.
