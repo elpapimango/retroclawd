@@ -106,6 +106,15 @@ No real hardware is available, so these stay parked until someone has it; everyt
   entities; gilrs itself was never exercised. To check: a physical pad, bind `reset = ["f12", "pad:select+start"]`, hold Select then
   press Start, and confirm Select alone does not reach the machine as a joystick button once it is part of a chord.
 
+## Atari ST: next slices (after slice 1, 2026-10-20)
+
+Spec section 23 order. Next: GLUE/MMU registers (`$FF8001` memory configuration; EmuTOS then probes MOVEC as
+illegal and `$FF8006` with a bus error, see the Hatari trace), then the Shifter (video base, palette, resolution,
+frame render), the MFP, ACIA + IKBD, the YM2149 on `ay-3-8910`, `wd1770` moved to retroclawd-crates with the
+DMA chip and `.st` images. Open hardware facts to source (Atari's hardware specification is behind Cloudflare
+from here; download it by hand): RAM above the configured top, ROM writes, the NTSC crystal (32.0424 vs
+32.04245 MHz), MFP and ACIA clocks.
+
 ## Current direction
 
 **Per-family repositories and a shared-crates repository (2026-10-12, done).** Machine code left this repository:

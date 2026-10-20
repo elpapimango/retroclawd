@@ -911,3 +911,19 @@ tools.
   from this host).
 - Not yet read: Hatari manual and docs, the ASE wiki and repository, the EmuTOS manual, Motorola and WD datasheets.
   These are required reading inside the slices that need them, and are listed in §26.
+
+## Status (2026-10-20): slice 1 done
+
+- **CPU**: `mc68000` (retroclawd-crates): full 68000 instruction set, exceptions (group 0/1/2), interrupts, STOP,
+  trace, double fault; SingleStepTests 68000/v1 996 322 / 1 000 060 exact including clock counts (3 736 ASR cases kept
+  to the PRM, 2 bad upstream cases, issue #4); bus-transaction order exact in 573 973 / 991 995 (Phase 3 work);
+  differential against `m68k` 0.14.6 on 20 000 exception-free random instructions; disassembler checked against the
+  core for every opcode's length.
+- **Machine**: `atari-st` plugin (retroclawd-atari), bus, scheduler, diagnostics, trace; EmuTOS 1.4 stops at
+  `$FF8001` after 3 instructions, identical across runs and equal to Hatari 2.6.1's first PCs.
+- **Host**: `--firmware auto` URL source and cache; submodule and scripts.
+- **[H?] that became [H]**: `$0-$7` mirror the ROM, user-mode bus errors below `$800` and on I/O, supervisor bus
+  errors on nonexistent memory (TOS documentation 3.5); reset sequence and clock counts (UM 6.3.1, Table 8-14);
+  exception frames (UM 6.2-6.3); PAL frame 512 x 313 clocks and 8.021247 MHz (two atari-forum threads).
+- **Still [H?]**: NTSC crystal, RAM above the configured top, ROM and `$0-$7` writes, the empty cartridge port.
+- **Deviations**: see the slice ledger summary in the final report (rulings).

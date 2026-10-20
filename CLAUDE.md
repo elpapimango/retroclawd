@@ -15,6 +15,7 @@ git submodules here, and the three machine repositories depend on the shared cra
 | `elpapimango/retroclawd-sinclair` (`machines/sinclair`) | ZX81, ZX Spectrum 48K/128K/+2/+2A/+3, snapshot formats `.z80/.sna/.szx/.p`, Sinclair keyboard |
 | `elpapimango/retroclawd-amstrad` (`machines/amstrad`) | CPC464/664/6128, CPC+ / GX4000, `.cpr` cartridges, SNA snapshots, i8255 |
 | `elpapimango/retroclawd-commodore` (`machines/commodore`) | C64, C128, 1541/1570/1571/1581, VIC-II, SID, CIAs, VIA, WD1770, VDC, CBM disk formats |
+| `elpapimango/retroclawd-atari` (`machines/atari`) | Atari ST/STF/STFM (`atari-st`, slice 1 of the 16-bit work: CPU, memory map, scheduler, EmuTOS to its first device) |
 
 Stays here: the app (`apps/retroclawd`, including the debuggers `debug-ui`, `debug-zrcp`, `debug-log`: ordinary
 modules behind cargo features, no longer plugins), the app-only crates (`app-config`, `game-config`, `file-loader`, `pok`), `crates/plugins/test-machine-plugin` (a
@@ -50,6 +51,18 @@ fast loader now returns through the KERNAL's own SEARCHING/LOADING routines, and
 `TODIN`, so a PAL machine left at 60 Hz runs at 5/6 speed, as VICE and the hardware do). The S6 frame-length gaps were closed 2026-10-19: each machine reports its exact
 frame through `Machine::frame_rate` / `MachineMetadata::frame_rate` (ZX81 312 x 207 T-states, its line corrected from 208 to 207; CPC
 79872; C64/C128 one raster frame, 19656 PAL), and the host paces and budgets by it. Details and the compare options are in `retroclawd-tools/CLAUDE.md`.
+
+## Atari ST (slice 1, 2026-10-20)
+
+Design `docs/superpowers/specs/2026-10-19-atari-st-design.md`, plan `docs/superpowers/plans/2026-10-19-atari-st-slice1.md`.
+The 68000 is `mc68000` in `shared/` (SingleStepTests 68000/v1: 996 322 of 1 000 060 cases exact, the rest an ASR carry
+disagreement with the PRM and two bad upstream cases; `scripts/fetch_singlesteptests.sh` fetches the suite, never committed).
+`atari-st` maps the 192 KB TOS at `$FC0000` (mirrored at `$0-$7`), RAM, bus errors, and a deterministic event scheduler
+(VBL autovector, 160256 clocks per PAL frame); EmuTOS 1.4 runs until its first access to a device that is not emulated
+yet (the MMU at `$FF8001`, after 3 instructions) and stops there with a bounded report (`--diag-file`, `--trace-file`).
+Firmware: `--firmware auto` now also downloads from a `firmware.toml` `url` (zip SHA-1 `archive_sha1`, file `entry`,
+both hashes checked) and caches it under `<cache>/firmware/<sha1>.bin`; lookup order cache, RomM, URL; `when = { region =
+... }` matches `--region`. Reference emulator: Hatari 2.6.1 (black box; `retroclawd-tools/scripts/capture_hatari_trace.py`).
 
 ## What this is
 
