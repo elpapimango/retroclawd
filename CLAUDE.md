@@ -48,10 +48,11 @@ with no Host machine-specific code. It uses the common execution Option:
 instruction-batched or per-CPU-bus-cycle peripheral clocks, on PAL and NTSC.
 Raw programs and PRG/P00 Host parsing work; cassette, disk and cartridge
 attachment do not. Hash-verified RomM firmware boots and types BASIC in both
-modes and regions. `machines/commodore/vic20.manifest.toml` reports 20 passing
-S1/S2/S4/S5/S6 variants and five S3/S7 known gaps; boot/input goldens pin the
-installed VICE 3.9 executable and captures. Tone pitch matches, audio gain
-does not. `docs/vic20-gaps.md` in that Family records commands and proof.
+modes and regions. `machines/commodore/vic20.manifest.toml` reports 26 passing
+S1/S2/S3-program/S4/S5/S6 variants and four media/diagnostic gaps. Goldens pin
+the installed VICE 3.9 executable and captures. The nonlinear mixer calibration
+fixes the single-voice gain regression: RMS agrees within 1%, including PAL
+volume 7. `docs/vic20-gaps.md` in that Family records commands and proof.
 Uncaptured screen goldens are omitted, never invented; use the matching
 `rc-scenarios` feature branch until its missing-capture support is merged.
 
