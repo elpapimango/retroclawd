@@ -5,7 +5,7 @@
 use std::collections::VecDeque;
 use std::fmt::Write as _;
 
-use mc68000::{Cpu, ExceptionRecord, Size};
+use mc68000::{Cpu, ExceptionRecord, FaultInfo, Size};
 
 use crate::bus::IoStop;
 
@@ -60,23 +60,22 @@ impl Diag {
         self.trace_limit != 0 && self.trace.len() as u32 >= self.trace_limit
     }
 
-    /// The stop report, the first time it is asked for.
-    pub fn take_report(
-        &mut self,
-        cpu: &Cpu,
-        stop: &IoStop,
-        clock_hz: u64,
-        disassembly: &str,
-    ) -> Option<String> {
+    /// Whether the report has been given already (checked before any of its work is done).
+    pub fn reported(&self) -> bool {
+        self.reported
+    }
+
+    /// The report headed by `headline`, the first time it is asked for.
+    pub fn take_report(&mut self, cpu: &Cpu, headline: &str, disassembly: &str) -> Option<String> {
         if self.reported {
             return None;
         }
         self.reported = true;
-        Some(self.report(cpu, stop, clock_hz, disassembly))
+        Some(self.report(cpu, headline, disassembly))
     }
 
-    fn report(&self, cpu: &Cpu, stop: &IoStop, clock_hz: u64, disassembly: &str) -> String {
-        let mut out = String::new();
+    /// The first line for an unemulated device.
+    pub fn io_headline(stop: &IoStop, clock_hz: u64) -> String {
         let size = if stop.size == Size::Byte {
             "byte"
         } else {
@@ -84,15 +83,38 @@ impl Diag {
         };
         let direction = if stop.write { "write" } else { "read" };
         let ms = stop.at_cycle as f64 * 1000.0 / clock_hz.max(1) as f64;
-        let _ = write!(out, "stop: {direction} {size} ${:06X}", stop.addr);
-        if stop.write {
-            let _ = write!(out, " = ${:X}", stop.value);
-        }
-        let _ = writeln!(
-            out,
-            " (fc {}): no device emulated there yet; cycle {} ({ms:.3} ms)",
-            stop.fc.0, stop.at_cycle
-        );
+        let value = if stop.write {
+            format!(" = ${:X}", stop.value)
+        } else {
+            String::new()
+        };
+        format!(
+            "stop: {direction} {size} ${:06X}{value} (fc {}): no device emulated there yet; cycle {} ({ms:.3} ms)",
+            stop.addr, stop.fc.0, stop.at_cycle
+        )
+    }
+
+    /// The first line for a halted CPU (UM 6.3.9.1: a bus or address error while processing one, or while reading
+    /// the reset vectors).
+    pub fn halt_headline(fault: Option<FaultInfo>, cycle: u64, clock_hz: u64) -> String {
+        let ms = cycle as f64 * 1000.0 / clock_hz.max(1) as f64;
+        let cause = match fault {
+            Some(f) => format!(
+                "fault on the {} of ${:08X} (fc {})",
+                if f.write { "write" } else { "read" },
+                f.addr,
+                f.fc.0
+            ),
+            None => "cause unknown".to_string(),
+        };
+        format!(
+            "cpu halted (double bus fault or a fault reading the reset vectors): {cause}; cycle {cycle} ({ms:.3} ms)"
+        )
+    }
+
+    fn report(&self, cpu: &Cpu, headline: &str, disassembly: &str) -> String {
+        let mut out = String::new();
+        let _ = writeln!(out, "{headline}");
         let regs = |prefix: char, values: &[u32]| {
             values
                 .iter()

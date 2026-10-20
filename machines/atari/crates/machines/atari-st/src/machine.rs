@@ -88,17 +88,27 @@ impl AtariSt {
     }
 
     /// The diagnostic report of the I/O stop, once, after the machine has stopped.
+    /// The diagnostic report of a stop (an unemulated device, or a halted CPU), once.
     pub fn take_stop_report(&mut self) -> Option<String> {
-        let stop = self.bus.stop()?.clone();
+        if self.diag.reported() {
+            return None;
+        }
+        let clock = self.clock_hz();
+        let headline = match self.bus.stop() {
+            Some(stop) => Diag::io_headline(stop, clock),
+            None if self.cpu.run_state() == RunState::Halted => {
+                Diag::halt_headline(self.cpu.halt_reason(), self.now, clock)
+            }
+            None => return None,
+        };
         // The instruction that touched the device, not the one after it.
         let pc = self.diag.last_pc().unwrap_or(self.cpu.pc);
-        let bytes: Vec<u8> = (0..10).map(|i| self.bus.peek(pc + i)).collect();
+        let bytes: Vec<u8> = (0..10).map(|i| self.bus.peek(pc.wrapping_add(i))).collect();
         let text = format!(
             "${pc:06X} {}",
             mc68000::disassemble::disassemble(&bytes, pc).0
         );
-        let clock = self.clock_hz();
-        self.diag.take_report(&self.cpu, &stop, clock, &text)
+        self.diag.take_report(&self.cpu, &headline, &text)
     }
 
     /// Lets `clocks` pass and processes the events due by then.

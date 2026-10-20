@@ -84,3 +84,31 @@ fn exceptions_appear_in_the_report() {
     let r = report.expect("stopped");
     assert!(r.contains("vector 4"), "{r}");
 }
+
+#[test]
+fn a_halted_cpu_is_reported_once() {
+    // Reset SSP $8001 (odd): the ILLEGAL's exception frame faults, and so does the address error's frame.
+    let mut rom = rom(&[0x4AFC]);
+    rom[0..4].copy_from_slice(&0x8001u32.to_be_bytes());
+    let mut m = AtariSt::new(Config {
+        ram: RamSize::M1,
+        region: Region::Pal,
+        accuracy: Accuracy::Fast,
+        rom,
+        trace_limit: 0,
+    })
+    .unwrap();
+    let mut reports = Vec::new();
+    for _ in 0..100 {
+        m.step();
+        reports.extend(m.take_stop_report());
+    }
+    assert!(m.halted());
+    assert_eq!(reports.len(), 1);
+    assert!(reports[0].contains("cpu halted"), "{}", reports[0]);
+    assert!(
+        reports[0].contains("$00007FF"),
+        "the faulting address: {}",
+        reports[0]
+    );
+}

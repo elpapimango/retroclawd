@@ -60,6 +60,27 @@ enum Region {
     None,
 }
 
+/// The image must start the CPU inside itself: the reset PC (long 1 of the image, read through the `$0-$7` mirror)
+/// even and within `$FC0000-$FEFFFF`. A TOS image starts with `BRA.S` (`$602E` in TOS 1.0x and EmuTOS 1.4); seen as
+/// `$2E60`, the image is byte-swapped, a common result of reading the two ROM chips separately.
+fn check_reset_pc(rom: &[u8]) -> Result<(), String> {
+    if rom[0..2] == [0x2E, 0x60] {
+        return Err("this TOS image looks byte-swapped (it starts 2E 60 instead of 60 2E): swap each pair of bytes".into());
+    }
+    let pc = u32::from_be_bytes([rom[4], rom[5], rom[6], rom[7]]) & 0xFF_FFFF;
+    if pc & 1 != 0 {
+        return Err(format!(
+            "the image's reset PC ${pc:06X} is odd: not a TOS image for the ST"
+        ));
+    }
+    if !(ROM_BASE..ROM_BASE + ROM_SIZE as u32).contains(&pc) {
+        return Err(format!(
+            "the image's reset PC ${pc:06X} is outside the ROM at $FC0000-$FEFFFF: not a 192 KB TOS image for the ST"
+        ));
+    }
+    Ok(())
+}
+
 impl StBus {
     pub fn new(cfg: &Config) -> Result<Self, String> {
         if cfg.rom.len() != ROM_SIZE {
@@ -73,6 +94,7 @@ impl StBus {
                 }
             ));
         }
+        check_reset_pc(&cfg.rom)?;
         Ok(Self {
             ram: vec![0; cfg.ram.bytes()],
             rom: cfg.rom.clone(),

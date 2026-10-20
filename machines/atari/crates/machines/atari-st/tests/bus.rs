@@ -127,3 +127,32 @@ fn a_rom_of_the_wrong_size_is_refused_with_the_sizes() {
     assert!(err.contains("196608") && err.contains("262144"), "{err}");
     assert!(err.contains("STE"), "{err}");
 }
+
+fn config(rom: Vec<u8>) -> Config {
+    Config {
+        ram: RamSize::M1,
+        region: Region::Pal,
+        accuracy: Accuracy::Fast,
+        rom,
+        trace_limit: 0,
+    }
+}
+
+#[test]
+fn a_byte_swapped_rom_is_refused_as_swapped() {
+    let swapped: Vec<u8> = rom().chunks(2).flat_map(|w| [w[1], w[0]]).collect();
+    let err = StBus::new(&config(swapped)).unwrap_err();
+    assert!(err.contains("byte-swapped"), "{err}");
+}
+
+#[test]
+fn a_reset_pc_outside_the_rom_is_refused() {
+    let mut r = rom();
+    r[4..8].copy_from_slice(&0x0000_3000u32.to_be_bytes());
+    let err = StBus::new(&config(r)).unwrap_err();
+    assert!(err.contains("$003000") && err.contains("$FC0000"), "{err}");
+    let mut r = rom();
+    r[4..8].copy_from_slice(&0x00FC_0031u32.to_be_bytes());
+    let err = StBus::new(&config(r)).unwrap_err();
+    assert!(err.contains("odd"), "{err}");
+}
