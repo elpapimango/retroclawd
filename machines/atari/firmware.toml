@@ -1,0 +1,30 @@
+# Which firmware satisfies which machine option (see retroclawd-sinclair's firmware.toml for the format).
+#
+# EmuTOS (GPL-2.0, https://emutos.sourceforge.io/) is the firmware for development, tests and CI: the 192 KB
+# images are for the ST, STF, STFM and Mega ST ("only work with a plain 68000", readme.txt in the zip). It is not
+# committed anywhere; `retroclawd atari-st --firmware auto` downloads the official release zip, checks the zip's
+# SHA-1 (published by SourceForge for the file) and the image's SHA-1 (pinned by this project from the 2026-10-19
+# download: an integrity identifier, not an upstream signature; changing it needs a review), and caches the image.
+#
+#   url, archive_sha1, entry   where to fetch it when no RomM server has it: the zip, its SHA-1, the file inside
+#   when = { region = ... }    the PAL image (uk) for --region pal, the NTSC image (us) for --region ntsc
+
+[[rom]]
+machines = ["atari-st"]
+option = "rom"
+label = "EmuTOS 1.4 192K (English, PAL)"
+sha1 = ["904ea9dc09ff8286f6e0272c12255dfe85beb17a"]
+url = "https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-192k-1.4.zip"
+archive_sha1 = "6f146a126065f0671a1df3d9a273c01f962e9d06"
+entry = "emutos-192k-1.4/etos192uk.img"
+when = { region = "pal" }
+
+[[rom]]
+machines = ["atari-st"]
+option = "rom"
+label = "EmuTOS 1.4 192K (English, NTSC)"
+sha1 = ["c03ae6379c88b31303dd6ebe63087054f716cba0"]
+url = "https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-192k-1.4.zip"
+archive_sha1 = "6f146a126065f0671a1df3d9a273c01f962e9d06"
+entry = "emutos-192k-1.4/etos192us.img"
+when = { region = "ntsc" }

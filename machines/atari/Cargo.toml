@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = []
+
+# Same release profile as the retroclawd host.
+[profile.release]
+strip = true
+opt-level = "s"
+
+[profile.profiling]
+inherits = "release"
+debug = true
+
+[profile.release.package.mc68000]
+opt-level = 3
+
+[profile.release.package.machine]
+opt-level = 3

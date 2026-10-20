@@ -1,0 +1,9 @@
+/target
+*.log
+dist/
+# Firmware and software are copyrighted or fetched, never committed. EmuTOS comes from `retroclawd --firmware auto`
+# (see firmware.toml); keep your own TOS dumps here.
+/roms/
+/software/
+# Local cross-repository testing only (see CLAUDE.md); never committed.
+/.cargo/
