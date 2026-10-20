@@ -745,8 +745,10 @@ programs, debugger integration and save states. Required firmware flags are
 `--execution-mode fast|accurate` clocks Chips after instructions or on each
 CPU bus event, respectively. Both modes support PAL and NTSC. Sub-clock VIC-I
 effects, interlace, paddles, light pen and cassette/disk/cartridge attachment
-remain unimplemented. **No real VIC-20 firmware boot or reference comparison
-has been verified.** Its standard scenarios remain explicit known gaps;
+remain unimplemented. **Real PAL/NTSC boots, BASIC typing, tone pitch, state
+continuation and frame budgets pass in both modes.** Twenty scenarios pass,
+with boot/input compared against hash-pinned VICE 3.9 captures; five
+media/reference/diagnostic gaps remain. Audio gain differs from VICE;
 see `machines/commodore/docs/vic20-gaps.md`. Do not apply the broader media
 support claims for other machines to this experimental Plugin.
 
