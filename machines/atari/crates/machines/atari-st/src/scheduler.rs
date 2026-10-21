@@ -40,6 +40,7 @@ pub fn crystal_hz(region: Region) -> u32 {
 /// Classes order events on the same clock: video, then the MFP, ACIA, FDC, DMA, then CPU interrupt sampling.
 pub const CLASS_VIDEO: u8 = 0;
 pub const CLASS_MFP: u8 = 1;
+pub const CLASS_ACIA: u8 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Event {
@@ -47,6 +48,8 @@ pub enum Event {
     LineEnd,
     /// The MFP's next timer timeout; the number tells a stale event (one scheduled before a later MFP write) apart.
     MfpTimeout(u64),
+    /// ACIA `port` has a character starting or completing; the generation tells a stale event apart.
+    AciaService { port: u8, generation: u64 },
 }
 
 /// The shape of one frame in CPU clocks.

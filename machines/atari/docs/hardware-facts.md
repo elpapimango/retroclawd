@@ -23,6 +23,7 @@ inventing a value.
 | *ST-Log 34* | "A millisecond timer", ST-Log issue 34, July 1989, p.60, https://www.atarimagazines.com/st-log/issue34/60_1_A_MILLISECOND_TIMER.php |
 | *Hatari io* | Hatari 2.6.1, `--machine st --tos etos192uk.img --memsize <n> --trace io_all,cpu_exception`; `retroclawd-tools/scripts/capture_hatari_trace.py --kind io` |
 | *forum* | atari-forum.com threads cited in `scheduler.rs` (frame timing) |
+| *MC6850* | Motorola MC6850 data sheet (DS9493R, 1985), https://docs.ampnuts.ru/eevblog.docs/Tektronix/TLA_Ensoniq/Datasheets/MC6850.pdf (SHA-256 `294a8b9f557d03a2a7f4d736d060244f39216dad2d5479d2e47954feb4f34655`) |
 | *YM2149* | Yamaha YM2149 catalog, September 1992, https://bitsavers.org/components/yamaha/YM2149_199209.pdf (SHA-256 `a4b946bf525fc1a7c6dec9e7662ce2342d3a3c627f980c7c3b1a396df7e91d20`) |
 
 The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 403 from cpcwiki); every `[H?]` and
@@ -87,7 +88,8 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | GPIP I7 | mono detect: low = mono monitor | `[H]` | *Internals* p.~95 (video connector pin 4) |
 | GPIP I5 | FDC/ACSI interrupt, high when idle | `[O]` | GPIP read `$A1` (*Hatari io* line 67) |
 | GPIP I0 | Centronics BUSY, high with nothing attached | `[O]` | same read |
-| GPIP I1-I4, I6 | low | `[O]` | same read; I4 (ACIA) is low before EmuTOS resets the ACIAs |
+| GPIP I1-I3, I6 | low | `[O]` | same read |
+| GPIP I4 | the ACIAs' shared IRQ, active low; low until both ACIAs have had a master reset | `[H]` *Internals* p.61; the power-on level `[O]` | `$A1` before EmuTOS resets the ACIAs, `$B1` after |
 | RESET instruction | resets the MFP | `[D]` | *MC68901* §2.2.3 (RESET input); other devices are not reset until sourced |
 
 ## MFP (`mc68901`)
@@ -119,3 +121,20 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | D/A | 5-bit: step 31 full scale, each step 2^(-1/4) lower, step 0 silent; fixed level L at step 2L + 1 | `[D]` | *YM2149* Fig. 1 |
 | RESET instruction | the YM is not reset | `[H?]` | no source wires the 68000's RESET output to the YM |
 | Audio | mono, 44 100 Hz, sample `n` taken at cycle `ceil((n + 1) × clock / 44 100)` | — | a host choice, not a hardware fact |
+
+## ACIAs (`acia.rs`, `mc6850`)
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| Addresses | `$FFFC00` keyboard control/status, `$FFFC02` keyboard data, `$FFFC04` MIDI control/status, `$FFFC06` MIDI data (bytes) | `[H]` | *Internals* p.62 |
+| Odd and word accesses | no fact: the machine stops | — | — |
+| Registers | control, status, master reset, TDR/shift register, RDRF/overrun sequence, CTS/DCD | `[D]` | *MC6850* |
+| Power-up | in master reset until software resets it | `[D]` | *MC6850* "Master Reset" ("must be set immediately after power-up") |
+| Clock | 500 kHz | `[H]` | *Internals* p.47 |
+| Clock ratio | CPU clock / 16; a bit is `divide × 16` CPU cycles | `[H?]` | 8 MHz / 16 = 500 kHz; Hatari uses 501 327 Hz, the same ratio |
+| Line speeds | keyboard ÷64 (7812.5 baud), MIDI ÷16 (31 250 baud), 8N1 | `[H]` | *Internals* p.47 (set by software through the control register) |
+| CTS, DCD, RTS | not connected; CTS and DCD read low | `[H]` | *Internals* p.47; `[O]` status `$02` after the reset |
+| Interrupt | both IRQs on GPIP I4, MFP channel 6 | `[H]` | *Internals* p.61, *TOS hyp* `$118` |
+| Transmit start | the transmitter takes a written character at its next bit-clock edge | `[O]` | Hatari: TDRE back within one bit after the write (`--trace acia`) |
+| Bit-clock phase | edges counted from the last control-register write | `[H?]` | not documented |
+| RESET instruction | the ACIAs are not reset | `[D]` | the MC6850 has no reset input |

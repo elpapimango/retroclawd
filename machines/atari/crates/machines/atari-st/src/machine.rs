@@ -7,10 +7,11 @@
 use machine::{Addr, FrameRate, Machine, RunStats};
 use mc68000::{Cpu, RunState};
 
+use crate::acia::SerialPeer;
 use crate::bus::{IoStop, StBus};
 use crate::config::{Config, Region};
 use crate::diag::Diag;
-use crate::scheduler::{self, CLASS_MFP, CLASS_VIDEO, Event, FrameGeometry, Scheduler};
+use crate::scheduler::{self, CLASS_ACIA, CLASS_MFP, CLASS_VIDEO, Event, FrameGeometry, Scheduler};
 
 pub struct AtariSt {
     cpu: Cpu,
@@ -158,6 +159,10 @@ impl AtariSt {
     fn advance(&mut self, clocks: u32) {
         // An MFP write during the instruction happened at its start (fast mode, `bus.now`): reschedule from there,
         // before the events the instruction crossed, so none of them sees the MFP ahead of its own time.
+        if std::mem::take(&mut self.bus.acia_dirty) {
+            self.schedule_acia(0);
+            self.schedule_acia(1);
+        }
         if std::mem::take(&mut self.bus.mfp_dirty) {
             self.schedule_mfp(self.now);
         }
@@ -171,6 +176,16 @@ impl AtariSt {
                     self.schedule_mfp(at);
                 }
                 Event::MfpTimeout(_) => {}
+                Event::AciaService { port, generation }
+                    if generation == self.bus.acias.ports[port as usize].generation =>
+                {
+                    self.bus.acias.ports[port as usize].service(at);
+                    self.bus.update_acia_irq(at);
+                    self.bus.mfp_dirty = false;
+                    self.schedule_mfp(at);
+                    self.schedule_acia(port as usize);
+                }
+                Event::AciaService { .. } => {}
             }
         }
         self.cpu.set_ipl(self.bus.ipl());
@@ -212,6 +227,42 @@ impl AtariSt {
             self.sched
                 .schedule(when, CLASS_MFP, Event::MfpTimeout(self.mfp_event));
         }
+    }
+
+    /// One service event at ACIA `port`'s next due action; any older one is now stale.
+    fn schedule_acia(&mut self, port: usize) {
+        let p = &mut self.bus.acias.ports[port];
+        p.generation += 1;
+        if let Some(at) = p.next_due() {
+            let generation = p.generation;
+            self.sched.schedule(
+                at.max(self.bus.now),
+                CLASS_ACIA,
+                Event::AciaService {
+                    port: port as u8,
+                    generation,
+                },
+            );
+        }
+    }
+
+    /// Connects `peer` to ACIA `port` (0 keyboard, 1 MIDI).
+    pub fn attach_serial_peer(&mut self, port: usize, peer: Box<dyn SerialPeer + Send>) {
+        let now = self.now;
+        let p = &mut self.bus.acias.ports[port];
+        p.peer = peer;
+        p.pull_rx(now);
+        self.schedule_acia(port);
+    }
+
+    /// When ACIA `port`'s transmitter last took a character into its shift register.
+    pub fn serial_tx_started_at(&self, port: usize) -> Option<u64> {
+        self.bus.acias.tx_started_at(port)
+    }
+
+    /// The bus, for tests that continue with bus cycles of their own.
+    pub fn into_bus(self) -> StBus {
+        self.bus
     }
 
     fn render(&mut self) {

@@ -16,6 +16,7 @@
 //! writes, without a bus error; writes to `$0-$7` and to the ROM are ignored; an empty cartridge port reads `$FF`;
 //! `$400000-$F9FFFF` and `$FF0000-$FF7FFF` are nonexistent (bus error).
 
+use crate::acia::Acias;
 use crate::config::Config;
 use crate::io::{self, Decode, Device};
 use crate::iolog::IoAccess;
@@ -76,6 +77,9 @@ pub struct StBus {
     pub(crate) mfp: Mfp,
     pub(crate) shifter: Shifter,
     pub(crate) psg: Psg,
+    pub(crate) acias: Acias,
+    /// An ACIA register was accessed: its service events may have moved.
+    pub(crate) acia_dirty: bool,
     pub(crate) monitor: Monitor,
     clock: MfpClock,
     /// MFP ticks the MFP has been advanced by.
@@ -149,6 +153,8 @@ impl StBus {
             vbl_pending: false,
             mfp,
             shifter: Shifter::new(cfg.region == crate::config::Region::Pal),
+            acias: Acias::new(),
+            acia_dirty: false,
             psg: Psg::new((scheduler::crystal_hz(cfg.region) / scheduler::CPU_DIVIDER) as u64),
             monitor: cfg.monitor,
             clock: MfpClock::new(scheduler::crystal_hz(cfg.region)),
@@ -200,6 +206,18 @@ impl StBus {
 
     pub fn psg(&self) -> &Psg {
         &self.psg
+    }
+
+    /// ACIA `n`: 0 keyboard, 1 MIDI.
+    pub fn acia(&self, n: usize) -> &mc6850::Acia {
+        &self.acias.ports[n].chip
+    }
+
+    /// GPIP I4 follows the ACIAs' shared IRQ line, at CPU cycle `at`.
+    pub(crate) fn update_acia_irq(&mut self, at: u64) {
+        self.catch_up_mfp(at);
+        self.mfp.set_input(4, self.acias.gpip_level());
+        self.mfp_dirty = true;
     }
 
     /// MFP ticks so far.
@@ -335,6 +353,22 @@ impl StBus {
                 } else {
                     self.psg.read(addr) as u32
                 };
+                self.log_io(addr, size, write, v);
+                return Ok(v);
+            }
+            Decode::Device(Device::Acia) => {
+                // Internals p.62: control/status at $FFFC00 and $FFFC04, data at $FFFC02 and $FFFC06.
+                let port = ((addr - 0xFF_FC00) / 4) as usize;
+                let rs = addr & 2 != 0;
+                let now = self.now;
+                let v = if write {
+                    self.acias.ports[port].write(rs, value as u8, now);
+                    value
+                } else {
+                    self.acias.ports[port].read(rs, now) as u32
+                };
+                self.acia_dirty = true;
+                self.update_acia_irq(now);
                 self.log_io(addr, size, write, v);
                 return Ok(v);
             }

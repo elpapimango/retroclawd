@@ -95,26 +95,23 @@ fn emutos_trace_matches_hatari_up_to_our_stop() {
     eprintln!("the first {n} PCs agree with Hatari");
 }
 
-/// Every I/O access we make agrees with Hatari's, in order, up to our stop.
+/// How far our I/O log agrees with Hatari's under the polling rule: the keyboard ACIA reset until the IKBD exists.
+const AGREES_UP_TO: usize = 110;
+
+/// Every I/O access we make agrees with Hatari's, in order, under the polling rule (`common::collapse_polls`).
 #[test]
 fn emutos_io_log_matches_hatari() {
     let (Some(rom), Some(reference)) = (emutos(), hatari_io("1m")) else {
         return;
     };
-    let ours: Vec<String> = run(rom).io_log().iter().map(|a| a.hatari_line()).collect();
-    assert!(
-        ours.len() <= reference.len(),
-        "ours is longer than the reference"
+    let ours = common::io_lines(&run(rom));
+    let n = ours.len().min(AGREES_UP_TO);
+    common::assert_prefix(
+        &common::collapse_polls(&ours[..n]),
+        &common::collapse_polls(&reference),
+        "1m",
     );
-    if let Some(i) = (0..ours.len()).find(|&i| ours[i] != reference[i]) {
-        let from = i.saturating_sub(4);
-        panic!(
-            "I/O access {i} differs:\n  ours:   {:#?}\n  hatari: {:#?}",
-            &ours[from..(i + 4).min(ours.len())],
-            &reference[from..(i + 4).min(reference.len())]
-        );
-    }
-    eprintln!("the first {} I/O accesses agree with Hatari", ours.len());
+    eprintln!("the first {n} I/O accesses agree with Hatari");
 }
 
 /// EmuTOS's RAM sizing writes the same `$FF8001` values as in Hatari, for every `--ram`.

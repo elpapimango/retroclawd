@@ -114,29 +114,20 @@ fn audio_sample_count_is_exact() {
     );
 }
 
-/// Slice 3's end: EmuTOS runs to its first access to the keyboard ACIA; every access before it equals Hatari's, for
-/// every RAM size.
+/// Slice 3's end: EmuTOS's accesses up to its first keyboard ACIA write equal Hatari's, for every RAM size.
 #[test]
-fn emutos_runs_to_the_keyboard_acia() {
+fn emutos_matches_hatari_up_to_the_keyboard_acia() {
     let Some(rom) = common::emutos() else { return };
     for (name, ram) in RAM_SIZES {
         let a = common::run_until_stop(rom.clone(), ram);
-        let stop = a.io_stop().expect("stopped");
+        let ours = common::io_lines(&a);
         assert_eq!(
-            stop.reason,
-            atari_st::StopReason::NotEmulated(atari_st::Device::Acia),
+            ours[109], "IO write.b $fffffc00 = $03 pc=fc5160",
             "--ram {name}"
         );
-        assert_eq!((stop.addr, stop.write, stop.value), (0xFFFC00, true, 0x03));
-        let ours = common::io_lines(&a);
-        assert_eq!(ours.last().unwrap(), "IO write.b $fffffc00 = $03 pc=fc5160");
         if let Some(reference) = common::hatari_io(name) {
-            assert_eq!(ours.len(), 110, "--ram {name}");
-            common::assert_prefix(&ours, &reference, name);
-            eprintln!(
-                "--ram {name}: {} I/O accesses compared with Hatari",
-                ours.len()
-            );
+            common::assert_prefix(&ours[..110], &reference, name);
+            eprintln!("--ram {name}: 110 I/O accesses compared with Hatari");
         }
     }
 }

@@ -2,6 +2,7 @@
 //! Design: `docs/superpowers/specs/2026-10-19-atari-st-design.md` in the retroclawd repository.
 #![forbid(unsafe_code)]
 
+mod acia;
 mod bus;
 mod config;
 mod diag;
@@ -13,6 +14,7 @@ mod mmu;
 mod psg;
 mod scheduler;
 
+pub use acia::{NullPeer, SerialPeer};
 pub use bus::{HBL_LEVEL, IoStop, MFP_LEVEL, ROM_BASE, ROM_SIZE, StBus, StopReason, VBL_LEVEL};
 pub use config::{Accuracy, Config, RamSize, Region};
 pub use io::{Decode, Device, decode};
@@ -23,5 +25,7 @@ pub use mc68901;
 pub use mfp_clock::{MFP_HZ, MfpClock};
 pub use mmu::{BankSize, installed_banks};
 pub use psg::Psg;
-pub use scheduler::{CLASS_MFP, CLASS_VIDEO, Event, FrameGeometry, Scheduler, geometry};
+pub use scheduler::{
+    CLASS_ACIA, CLASS_MFP, CLASS_VIDEO, Event, FrameGeometry, Scheduler, geometry,
+};
 pub use st_shifter::{self, Monitor, Resolution};
