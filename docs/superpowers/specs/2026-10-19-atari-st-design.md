@@ -942,3 +942,18 @@ Plan `docs/superpowers/plans/2026-10-20-atari-st-slice2.md`.
   Shifter registers, GPIP wiring `[H]` (*Atari ST Internals*, Abacus 1985); interrupt levels and MFP channels `[H]`
   (TOS documentation); MFP clock 2.4576 MHz `[H]` (ST-Log 34).
 - **Still open**: see `machines/atari/docs/hardware-facts.md` (`[H?]`), and TODO.md "Atari ST: next slices".
+
+## Status (2026-10-21): slices 3-5 done
+
+Plan `docs/superpowers/plans/2026-10-21-atari-st-slices3-5.md`.
+
+- **Devices**: YM2149 (`ay-3-8910` YM variant: Table 4 envelopes, Fig. 1 DAC), keyboard and MIDI ACIAs (`mc6850`), IKBD
+  (`ikbd`, from Atari's 1985 protocol document), DMA chip, WD1772 (`wd1770`, moved to retroclawd-crates), two drives,
+  `.st` images (`st-floppy`). Every I/O device is emulated; writing to a floppy stops the machine (Phase 2).
+- **EmuTOS 1.4**: boots to the desktop (same picture in three runs), boots an executable floppy built by the tests,
+  reads a key; over 1500 frames its I/O agrees with Hatari 2.6.1's: exactly for the first 110 accesses, under the
+  polling rule up to the first DMA access (six RAM sizes), and per code location (streams over 50 frames; sets plus
+  exact IKBD and FDC command sequences over 1500).
+- **Conflicts recorded**: DMA status bit 0 (the book says 0 = no error; Hatari and EmuTOS show 1), `$FF8604` upper
+  byte (book: 1s; Hatari: 0s), IKBD version (`$F0` first release; `$F1` observed).
+- **Still open**: `machines/atari/docs/hardware-facts.md` (`[H?]` rows) and TODO.md "Atari ST: next slices".

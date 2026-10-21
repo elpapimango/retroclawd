@@ -106,10 +106,16 @@ No real hardware is available, so these stay parked until someone has it; everyt
   entities; gilrs itself was never exercised. To check: a physical pad, bind `reset = ["f12", "pad:select+start"]`, hold Select then
   press Start, and confirm Select alone does not reach the machine as a joystick button once it is part of a chord.
 
-## Atari ST: next slices (after slice 2, 2026-10-20)
+## Atari ST: next slices (after slices 3-5, 2026-10-21)
 
-Spec section 23 order. Next: the YM2149 on `ay-3-8910` (EmuTOS's next access, `$FF8800`; port A drive select), then
-ACIA + IKBD (`$FFFC00`, right after), `wd1770` moved to retroclawd-crates with the DMA chip and `.st` images.
+Next: slice 6, the Phase 1 exit (spec section 24): an `atari-st.manifest.toml` with the S1/S2/S4/S5/S6 scenarios
+against Hatari (PSG tone, keyboard/mouse/joystick through `--at`); a FAT12 floppy made by our tools listed on the
+desktop; the injected-fault diagnostics test; the 68000 SingleStepTests expected failures justified; `check_all.sh`
+running the Atari manifest. Deferred from the slices 3-5 review (plan ledger): serde on the PSG/ACIA/DMA/drive state,
+a DMA transfer across the top of RAM test, drive numbers >= 2 refused by the plugin, the DMA HDC/sector-count bit
+order, index interrupts while the FDC is idle, IKBD reset cancelling a byte in flight and its queue size, word/long
+accesses to the PSG (`MOVE.L`/`MOVEP` in games; no fact yet), a looser `.st` geometry rule for images with stale BPBs,
+the AY envelope hold bug (shapes 1101/1111) in `ay-3-8910`, the joystick bit order (`[H?]`), a GUI check of disk swaps.
 Open hardware facts (`machines/atari/docs/hardware-facts.md`, `[H?]` and `[O]` rows; Atari's hardware specification
 is behind Cloudflare from here, download it by hand): the MMU's address multiplexing (modelled as DRAM row/column,
 checked only through EmuTOS's sizing), RAM above the configured top, unused register bits, the mono frame's line
