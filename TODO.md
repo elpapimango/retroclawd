@@ -1066,13 +1066,16 @@ the debug contract are wired. This is a working slice, not the complete baseline
 `machines/atari/atari-800.manifest.toml`: **36 passed, 0 failed, 8 known gaps**.
 Raw/XEX Programs and read-only ATR boot have independently captured Atari800
 7.2.1 reference memory. XEX executes ordered INITAD/RUNAD; D1: status/read uses
-actual PIA/POKEY serial pins, not ROM traps. Version 2 State preserves in-flight
-SIO and pending XEX and still reads version 1 (eject attached disks first).
+actual PIA/POKEY serial pins, not ROM traps. Version 3 State preserves in-flight
+SIO, pending XEX and the IRQ-mask sample; versions 1/2 remain readable
+(eject attached disks before loading version 1).
 S2 reference printable-input automation remains blocked. S7 now executes:
-fast 23/34/1, accurate 21/36/1 passed/failed/skipped versus reference 25/32/1.
+fast 24/33/1, accurate 22/35/1 passed/failed/skipped versus reference 25/32/1.
 POKEY async receive timer hold and shared SHY/SHX/SHA/TAS high-byte stores are
-fixed; the illegal-instruction test now passes. IRQ polling needs persistent
-state and compatibility-safe restores across 6502 Machines. Accurate instruction
+fixed; the illegal-instruction test now passes. CLI/SEI/PLP mask sampling also
+passes, with explicit State migrations across all affected Machines and Drives.
+Old-file readers remain; keep original files for rollback to older Plugins.
+This is not a cycle-exact IRQ/NMI/BRK pipeline. Accurate instruction
 timing and Chip DMA/video/pipeline failures remain. These are not acceptance passes.
 S4 checks documented pitch only, not reference RMS calibration.
 Original Atari firmware, general Media, games, P/M, scrolling, GTIA special modes
