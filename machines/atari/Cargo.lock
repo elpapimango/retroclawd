@@ -47,6 +47,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "atari-media"
+version = "0.1.0"
+
+[[package]]
 name = "atari-st"
 version = "0.1.0"
 dependencies = [

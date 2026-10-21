@@ -2,6 +2,18 @@
 
 ## Atari 8-bit
 
+- **XEX and ATR format facts**, Atari800 7.2.1, revision
+  `63a381884175e3cbfc745ff00dfb3d70d928eb50`:
+  [`src/binload.c`](https://github.com/atari800/atari800/blob/63a381884175e3cbfc745ff00dfb3d70d928eb50/src/binload.c)
+  (`BINLOAD_Loader`, `loader_cont`: signature, separators, little-endian inclusive segments);
+  [`src/afile.h`](https://github.com/atari800/atari800/blob/63a381884175e3cbfc745ff00dfb3d70d928eb50/src/afile.h)
+  (`AFILE_ATR_Header`: fields and magic);
+  [`src/sio.c`](https://github.com/atari800/atari800/blob/63a381884175e3cbfc745ff00dfb3d70d928eb50/src/sio.c)
+  (`SIO_Mount`, `SIO_SizeOfSector`: paragraph count, protection, logical boot sectors).
+  `atari-media` independently implements the container facts, not emulator code.
+  It rejects noncanonical/extended ATR geometry rather than guessing; no filesystem,
+  loader execution, copy protection, or SIO behavior lives in the format crate.
+
 - **Altirra Hardware Reference Manual, 2026-01-02**, Avery Lee:
   <https://www.virtualdub.org/downloads/Altirra%20Hardware%20Reference%20Manual.pdf>.
   Hardware description, not translated implementation code. Chapters 2/4/5/6/14:
