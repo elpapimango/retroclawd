@@ -4,11 +4,14 @@ Atari ST family emulation for [retroclawd](https://github.com/elpapimango/retroc
 `atari_st_machine_plugin` shared library the application loads at run time. The application links none of it;
 removing the library removes the machine.
 
-State: slice 1 of the plan in the application repository
-(`docs/superpowers/plans/2026-10-19-atari-st-slice1.md`, design in
+State: slice 2 of the plan in the application repository
+(`docs/superpowers/plans/2026-10-20-atari-st-slice2.md`, design in
 `docs/superpowers/specs/2026-10-19-atari-st-design.md`): the MC68000 (from `retroclawd-crates`), the ST bus with
-the ROM at `$FC0000`, a deterministic event scheduler, and EmuTOS 1.4 running until its first access to a device
-that is not emulated yet, where it stops with a diagnostic.
+the ROM at `$FC0000`, the memory controller (`$FF8001`, every `--ram` size), the Shifter (registers and a
+frame-based picture), the MC68901 MFP (interrupts and timers) and HBL/VBL/MFP interrupts from a deterministic event
+scheduler. EmuTOS 1.4 runs until its first access to the YM2149 (`$FF8800`), with every I/O access on the way equal
+to Hatari 2.6.1's, and stops there with a diagnostic. Every hardware fact used is listed with its source in
+`docs/hardware-facts.md`.
 
 ## Build
 
