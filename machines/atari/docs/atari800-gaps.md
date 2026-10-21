@@ -178,12 +178,12 @@ The real release Host now boots the ATR without ROM patches and completes all
 | Execution | Passed | Failed | Skipped |
 |---|---:|---:|---:|
 | Host fast | 24 | 33 | 1 |
-| Host accurate | 24 | 33 | 1 |
+| Host accurate | 25 | 32 | 1 |
 | Atari800 7.2.1, patches disabled, identical replacement ROMs | 25 | 32 | 1 |
 
 These are diagnostic observations, **not acceptance passes**. The reference
 itself fails hardware tests; equal totals would not establish conformance.
-Equal Host mode totals do not establish cycle-exact timing.
+Host mode totals do not establish cycle-exact timing.
 The asynchronous POKEY receive test exposed timers 3/4 running while waiting
 for the start bit. Holding/resetting them until that edge fixes that case;
 a regression exercises the actual timer hold and subsequent receive.
@@ -232,14 +232,42 @@ arbitration fix, without a serial timing adjustment. Release workspace tests,
 strict Clippy, real firmware input/reset/in-flight SIO tests and all 36
 unchanged-golden manifest passes remain intact; the same eight gaps stay open.
 
-Remaining observed failures include BRK interrupt timing,
+The accurate-mode BRK test now passes in both Regions. Its `cpu_bugs.s`
+enables VBI just before a BRK and requires NMI to take over the BRK vector,
+while retaining the BRK return address and stacked flags. Two missing pieces
+caused the failure: the Core unconditionally selected the IRQ vector, and
+ANTIC raised NMI at cycle 12 instead of documented cycle 8.
+
+The Core samples `Bus::take_nmi_edge` after cycle 4, before pushing status;
+BRK still pushes PC+2/B=1, IRQ still pushes PC/B=0, and both cost seven bus
+cycles. A connected Bus consumes only an early edge; late edges stay pending.
+Sources: NESdev's Visual6502-derived
+[interrupt hijacking sequence](https://www.nesdev.org/wiki/CPU_interrupts#Interrupt_hijacking)
+and Altirra Hardware Reference chapter 3, "Overlapping interrupts", plus
+section 4.8, "DLI timing". ANTIC's nominal NMI now occurs at cycle 8.
+Core tests inject an edge after each of the seven BRK/IRQ cycles. The Machine
+regression replays the diagnostic's instruction prefix at VBI, checks the
+stack frame and proves deterministic continuation from a State saved before
+the BRK. Both regressions failed before the fix.
+
+No new latch or State schema is needed: the Machine's existing serialized
+Hardware NMI edge survives until consumed. CPU serde and the Plugin ABI are
+unchanged. The shared pin for this increment is
+`293f6d33c9a1648c199e0d6c2a67cba05a87a6b2`.
+Fast mode still fails the BRK case because it advances Chips only after an
+instruction; its 24/33/1 result is unchanged. Accurate mode reaches 25/32/1,
+matching the reference's total, **not its complete results or conformance**.
+Detector latency, consecutive-interrupt inhibition, blocked-NMI behavior and
+exact NMIEN edge timing remain incomplete.
+
+Remaining observed failures include fast-mode BRK interrupt timing,
 ANTIC DMA/scroll/WSYNC/NMIST/VCOUNT/DLI, POKEY
 polynomial/pipeline/IRQ/serial/two-tone behavior, PIA control bit 6 and GTIA
 players/missiles/collisions/special modes. XL banking checks also run against
 this non-XL Machine. These are not all newly diagnosed Machine bugs.
 
-Private `acid-dma-{pal,ntsc}-{fast,accurate}.txt` transcripts retain the current
-failures; `acid-irq-*`, `acid-store-*` and `acid-host-*` retain preceding baselines. Existing
+Private `acid-brk-{pal,ntsc}-{fast,accurate}.txt` transcripts retain the current
+failures; `acid-dma-*`, `acid-irq-*`, `acid-store-*` and `acid-host-*` retain preceding baselines. Existing
 `--capture-at 0xfaab:A=FILE` records the replacement OS's real
 E: output entry, obtained from IOCB0 ICPTL, rather than synthesizing results.
 Reference monitor transcripts, native PNGs and RAM retain independent evidence.
@@ -259,7 +287,9 @@ No golden or tolerance was weakened.
   incomplete linked-low events/two-tone/serial clocking, no external clocks,
   linear audio mixer, unconnected paddles only. Basic framed serial I/O works;
   exact pipeline timing remains incomplete.
-- IRQ/NMI delivery remains at instruction boundaries. Warm reset uses the
+- Ordinary IRQ/NMI delivery remains at instruction boundaries; accurate
+  BRK/IRQ vector selection can consume an NMI raised during the sequence.
+  Warm reset uses the
   Atari 800's ANTIC RNMI and preserves RAM rather than resetting the CPU.
 - No XL/XE MMU, banked RAM, self-test ROM or additional Machine profiles yet.
 

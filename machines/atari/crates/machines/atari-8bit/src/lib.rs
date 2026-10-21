@@ -246,6 +246,9 @@ impl Bus for AtariBus {
             self.read(address);
         }
     }
+    fn take_nmi_edge(&mut self) -> bool {
+        std::mem::take(&mut self.hardware.nmi)
+    }
 }
 
 pub struct Atari800 {
@@ -857,6 +860,40 @@ mod tests {
         m.write_bus(0xd302, 4);
         assert_eq!(m.read_memory(0xd300), 0xde);
     }
+    #[test]
+    fn accurate_vbi_hijacks_brk_without_changing_its_stack_frame() {
+        let mut m = machine(Timing::Accurate);
+        m.bus.roms.os[10234..10236].copy_from_slice(&[0x00, 0xe1]);
+        m.bus.roms.os[10238..10240].copy_from_slice(&[0x00, 0xe2]);
+        // Acid800 cpu_bugs.s: enable VBI, LDA abs, LDA zp, NOP, BRK.
+        m.load_program(
+            0x2000,
+            &[
+                0xa9, 0x40, 0x8d, 0x0e, 0xd4, 0xad, 0x00, 0x01, 0xa5, 0x01, 0xea, 0x00,
+            ],
+        )
+        .unwrap();
+        m.set_pc(0x2000);
+        while m.bus.hardware.antic.y != 247 || m.bus.hardware.antic.x != 104 {
+            m.bus.tick();
+        }
+        for _ in 0..5 {
+            m.step();
+        }
+        assert_eq!(m.cpu.pc, 0x200b);
+        let saved = m.save_state();
+        assert_eq!(m.step(), 7);
+        assert_eq!(m.cpu.pc, 0xe100, "VBI must replace BRK's IRQ vector");
+        assert_eq!(m.read_memory(0x01fa), 0x20);
+        assert_eq!(m.read_memory(0x01f9), 0x0d);
+        assert_eq!(m.read_memory(0x01f8) & 0x30, 0x30);
+        assert!(!m.bus.hardware.nmi, "hijacked edge must not fire twice");
+        let future = m.save_state();
+        m.load_state(&saved).unwrap();
+        m.step();
+        assert_eq!(m.save_state(), future);
+    }
+
     #[test]
     fn accurate_dma_halts_each_rmw_write() {
         for start in [20, 21] {

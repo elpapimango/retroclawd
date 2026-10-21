@@ -271,7 +271,9 @@ impl Antic {
                 self.status |= 0x80;
             }
         }
-        if self.x == 12
+        // Altirra Hardware Reference 4.8, "DLI timing": NMI at cycle 8.
+        // https://www.virtualdub.org/downloads/Altirra%20Hardware%20Reference%20Manual.pdf
+        if self.x == 8
             && ((self.y == 248 && self.registers[14] & 0x40 != 0)
                 || (dli && self.registers[14] & 0x80 != 0))
         {
@@ -397,7 +399,10 @@ mod tests {
             let mut interrupts = 0;
             for _ in 0..114 * if pal { 312 } else { 262 } {
                 a.tick(|_| 0);
-                interrupts += u32::from(a.take_nmi());
+                if a.take_nmi() {
+                    assert_eq!((a.x, a.y), (9, 248));
+                    interrupts += 1;
+                }
             }
             assert_eq!((a.x, a.y, interrupts), (0, 0, 1));
             assert_eq!(a.read(15), 0x5f);

@@ -24,6 +24,10 @@
   The WSYNC discussion (pages 77-78) separately specifies RDY, which cannot
   stop NMOS write cycles. The Machine distinguishes DMA HALT from WSYNC RDY;
   no CPU cycle count is changed to compensate for arbitration.
+  Section 4.8 (pages 74-76), "DLI timing", places NMI at cycle 8;
+  chapter 3, "Overlapping interrupts", describes NMI hijacking BRK/IRQ.
+  Accurate mode connects the existing Hardware NMI edge to the shared
+  Core's vector-selection hook. Fast mode remains instruction-batched.
   Initial Chips deliberately document what is not implemented.
 - **Atari800 7.2.1**, GPL-2.0-or-later, source
   `63a381884175e3cbfc745ff00dfb3d70d928eb50`,
@@ -51,7 +55,7 @@
   its refresh allowance exposed accurate mode letting writes skip DMA.
   Current observations and remaining failures are in `docs/atari800-gaps.md`.
 - **NMOS 6502 and MOS 6520 PIA**: reused from `retroclawd-crates` revision
-  `bf0faf6e36950b43ff1443074487fad7075320fa`; the shared repository's
+  `293f6d33c9a1648c199e0d6c2a67cba05a87a6b2`; the shared repository's
   credits cover the Core conformance suites and PIA sources.
 
 ## Atari ST
