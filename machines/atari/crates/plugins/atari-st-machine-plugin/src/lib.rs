@@ -13,14 +13,14 @@ use std::sync::{Mutex, OnceLock};
 use atari_st::{Accuracy, AtariSt, Config, Monitor, RamSize, Region};
 use machine::{AUDIO_SAMPLE_RATE, Machine};
 use plugin_api::{
-    ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, BinaryBlob, CodecError, CpuFamily, CpuInfo,
-    DebugCommand, DebugResponse, DebugValue, DisassemblyLine, MACHINE_PROFILE_CONTRACT_VERSION,
-    MachineCapability, MachineCommand, MachineCreateRequest, MachineCreateResponse,
-    MachineInstanceCallRequest, MachineInstanceCallResponse, MachineInstanceHandle,
-    MachineMetadata, MachineOptionInfo, MachineOptionKind, MachinePluginVTableV1, MachineProfile,
-    MachineResponse, MediaSnapshot, PluginDescriptorV1, PluginKind,
-    REQUIRED_MACHINE_DEBUG_CAPABILITIES, RcBuffer, RcCallResult, RcSlice, RcStatus, RegisterField,
-    RegisterSnapshot, StatusCode,
+    ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, BinaryBlob, ChipSnapshot, CodecError, CpuFamily,
+    CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine,
+    MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest,
+    MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse,
+    MachineInstanceHandle, MachineMetadata, MachineOptionInfo, MachineOptionKind,
+    MachinePluginVTableV1, MachineProfile, MachineResponse, MediaSnapshot, NamedValue,
+    PluginDescriptorV1, PluginKind, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RcBuffer, RcCallResult,
+    RcSlice, RcStatus, RegisterField, RegisterSnapshot, StatusCode,
 };
 
 const MACHINE_ID: &str = "atari-st";
@@ -422,6 +422,64 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     Ok(MachineCreateResponse { instance, metadata })
 }
 
+/// MFP register names in register order (MC68901 register map).
+const MFP_REGISTERS: [&str; 24] = [
+    "gpip", "aer", "ddr", "iera", "ierb", "ipra", "iprb", "isra", "isrb", "imra", "imrb", "vr",
+    "tacr", "tbcr", "tcdcr", "tadr", "tbdr", "tcdr", "tddr", "scr", "ucr", "rsr", "tsr", "udr",
+];
+
+/// The devices' state for the debugger: MMU, Shifter, MFP and the scheduler.
+fn chip_snapshots(machine: &AtariSt) -> Vec<ChipSnapshot> {
+    let chip = |id: &str, fields: Vec<(String, u64)>| ChipSnapshot {
+        chip_id: id.to_string(),
+        fields: fields
+            .into_iter()
+            .map(|(key, v)| NamedValue {
+                key,
+                value: DebugValue::U64(v),
+            })
+            .collect(),
+        blobs: Vec::new(),
+    };
+    let bus = machine.bus();
+    let shifter = bus.shifter();
+    let mut video = vec![
+        ("video_base".to_string(), shifter.video_base() as u64),
+        ("resolution".to_string(), shifter.resolution() as u64),
+        ("sync_50hz".to_string(), shifter.sync_50hz() as u64),
+    ];
+    video.extend(
+        shifter
+            .palette()
+            .iter()
+            .enumerate()
+            .map(|(i, &c)| (format!("palette{i}"), c as u64)),
+    );
+    let mut mfp: Vec<(String, u64)> = MFP_REGISTERS
+        .iter()
+        .enumerate()
+        .map(|(i, name)| (name.to_string(), bus.mfp().read(i as u8) as u64))
+        .collect();
+    mfp.push(("irq".to_string(), bus.mfp().irq() as u64));
+    vec![
+        chip("mmu", vec![("config".to_string(), bus.mmu_config() as u64)]),
+        chip("shifter", video),
+        chip("mfp", mfp),
+        chip(
+            "scheduler",
+            vec![
+                ("now".to_string(), machine.now()),
+                ("frame".to_string(), machine.vbl_count()),
+                ("line".to_string(), machine.line() as u64),
+                (
+                    "next_event_at".to_string(),
+                    machine.next_event_at().unwrap_or(u64::MAX),
+                ),
+            ],
+        ),
+    ]
+}
+
 fn register_snapshot(machine: &AtariSt) -> RegisterSnapshot {
     let registers = machine
         .registers()
@@ -520,7 +578,9 @@ fn handle_debug_command(
             disks: Vec::new(),
             cartridge: None,
         })),
-        DebugCommand::GetChipSnapshots => Ok(DebugResponse::ChipSnapshots(Vec::new())),
+        DebugCommand::GetChipSnapshots => Ok(DebugResponse::ChipSnapshots(chip_snapshots(
+            &record.machine,
+        ))),
         DebugCommand::OnCpu { cpu, command } => {
             if cpu == "main" {
                 handle_debug_command(record, *command)
@@ -918,5 +978,44 @@ mod tests {
 "
         );
         let _ = std::fs::remove_file(&io);
+    }
+
+    #[test]
+    fn chip_snapshots_name_every_device() {
+        let id = create(&[0x60FE], Vec::new());
+        let chips = {
+            let state = state().lock().unwrap();
+            chip_snapshots(&state.instances[&id].machine)
+        };
+        let ids: Vec<&str> = chips.iter().map(|c| c.chip_id.as_str()).collect();
+        assert_eq!(ids, ["mmu", "shifter", "mfp", "scheduler"]);
+        let field = |chip: &str, key: &str| {
+            chips
+                .iter()
+                .find(|c| c.chip_id == chip)
+                .and_then(|c| c.fields.iter().find(|f| f.key == key))
+                .map(|f| f.value.clone())
+        };
+        assert_eq!(field("mfp", "gpip"), Some(DebugValue::U64(0xA1)));
+        assert_eq!(field("mfp", "vr"), Some(DebugValue::U64(0x08)));
+        assert_eq!(field("shifter", "palette15"), Some(DebugValue::U64(0)));
+        assert_eq!(field("mmu", "config"), Some(DebugValue::U64(0)));
+        assert!(field("scheduler", "next_event_at").is_some());
+        state().lock().unwrap().instances.remove(&id);
+    }
+
+    #[test]
+    fn mono_monitor_is_refused_with_the_missing_fact() {
+        let err = create_machine(MachineCreateRequest {
+            machine_id: MACHINE_ID.to_string(),
+            region: Some("pal".to_string()),
+            roms: vec![BinaryBlob {
+                key: "rom".to_string(),
+                bytes: rom(&[0x60FE]),
+            }],
+            options: vec![text("monitor", "mono")],
+        })
+        .expect_err("refused");
+        assert!(err.contains("mono"), "{err}");
     }
 }

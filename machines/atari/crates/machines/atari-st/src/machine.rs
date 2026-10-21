@@ -84,6 +84,16 @@ impl AtariSt {
         &self.bus
     }
 
+    /// The line of the current frame.
+    pub fn line(&self) -> u32 {
+        self.line
+    }
+
+    /// The time of the next scheduled event.
+    pub fn next_event_at(&self) -> Option<u64> {
+        self.sched.next_at()
+    }
+
     /// Vertical blanks so far, and the time of the last one.
     pub fn vbl_count(&self) -> u64 {
         self.vbl_count

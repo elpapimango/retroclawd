@@ -76,7 +76,7 @@ pub fn geometry(sync_50hz: bool, monitor: st_shifter::Monitor) -> Result<FrameGe
             lines: 263,
         }),
         st_shifter::Monitor::Mono => Err(
-            "the mono monitor is not supported yet: the number of lines in its frame has no hardware source              (docs/hardware-facts.md)"
+            "the mono monitor is not supported yet: the number of lines in its frame has no hardware source (docs/hardware-facts.md)"
                 .to_string(),
         ),
     }

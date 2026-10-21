@@ -186,6 +186,11 @@ impl StBus {
         &self.mfp
     }
 
+    /// The memory configuration register (`$FF8001`).
+    pub fn mmu_config(&self) -> u8 {
+        self.mmu.read_config()
+    }
+
     pub fn shifter(&self) -> &Shifter {
         &self.shifter
     }
