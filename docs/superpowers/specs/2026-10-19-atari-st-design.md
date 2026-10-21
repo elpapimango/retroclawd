@@ -927,3 +927,18 @@ tools.
   exception frames (UM 6.2-6.3); PAL frame 512 x 313 clocks and 8.021247 MHz (two atari-forum threads).
 - **Still [H?]**: NTSC crystal, RAM above the configured top, ROM and `$0-$7` writes, the empty cartridge port.
 - **Deviations**: see the slice ledger summary in the final report (rulings).
+
+## Status (2026-10-20): slice 2 done
+
+Plan `docs/superpowers/plans/2026-10-20-atari-st-slice2.md`.
+
+- **Devices**: MMU (`$FF8001`, row/column bank mapping), Shifter (`st-shifter`, frame-based render), MFP (`mc68901`,
+  from the Motorola datasheet), HBL/VBL/MFP interrupts, exact MFP clock domain.
+- **Decode policy**: `io.rs` lists every I/O address with a fact; any other address stops the machine ("no hardware
+  fact"). Hatari-observed (`[O]`) rows cover single addresses only.
+- **EmuTOS 1.4**: runs to its first YM2149 write; all 106 I/O accesses equal Hatari 2.6.1's; the RAM sizing writes
+  Hatari's `$FF8001` values for all six `--ram` sizes; the first 5000 PCs agree.
+- **Facts now sourced**: MFP register map, reset, interrupts and timers `[D]` (MC68901 datasheet, 1984); `$FF8001`,
+  Shifter registers, GPIP wiring `[H]` (*Atari ST Internals*, Abacus 1985); interrupt levels and MFP channels `[H]`
+  (TOS documentation); MFP clock 2.4576 MHz `[H]` (ST-Log 34).
+- **Still open**: see `machines/atari/docs/hardware-facts.md` (`[H?]`), and TODO.md "Atari ST: next slices".

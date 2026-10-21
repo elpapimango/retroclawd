@@ -52,14 +52,22 @@ fast loader now returns through the KERNAL's own SEARCHING/LOADING routines, and
 frame through `Machine::frame_rate` / `MachineMetadata::frame_rate` (ZX81 312 x 207 T-states, its line corrected from 208 to 207; CPC
 79872; C64/C128 one raster frame, 19656 PAL), and the host paces and budgets by it. Details and the compare options are in `retroclawd-tools/CLAUDE.md`.
 
-## Atari ST (slice 1, 2026-10-20)
+## Atari ST (slices 1-2, 2026-10-20)
 
-Design `docs/superpowers/specs/2026-10-19-atari-st-design.md`, plan `docs/superpowers/plans/2026-10-19-atari-st-slice1.md`.
+Design `docs/superpowers/specs/2026-10-19-atari-st-design.md`, plans `docs/superpowers/plans/2026-10-19-atari-st-slice1.md`
+and `docs/superpowers/plans/2026-10-20-atari-st-slice2.md`. Every hardware fact used is listed with its source in
+`machines/atari/docs/hardware-facts.md` (`[D]` datasheet, `[H]` documentation, `[O]` observed in Hatari, `[H?]`
+unresolved); an I/O address without a fact stops the machine instead of returning an invented value.
 The 68000 is `mc68000` in `shared/` (SingleStepTests 68000/v1: 996 322 of 1 000 060 cases exact, the rest an ASR carry
 disagreement with the PRM and two bad upstream cases; `scripts/fetch_singlesteptests.sh` fetches the suite, never committed).
-`atari-st` maps the 192 KB TOS at `$FC0000` (mirrored at `$0-$7`), RAM, bus errors, and a deterministic event scheduler
-(VBL autovector, 160256 clocks per PAL frame); EmuTOS 1.4 runs until its first access to a device that is not emulated
-yet (the MMU at `$FF8001`, after 3 instructions) and stops there with a bounded report (`--diag-file`, `--trace-file`).
+`atari-st` maps the 192 KB TOS at `$FC0000` (mirrored at `$0-$7`), RAM through the memory controller (`$FF8001`, DRAM
+row/column aliasing so TOS sizes every `--ram` like Hatari), the Shifter (`st-shifter`: video base, sync mode, palette,
+resolution, a frame-based 640x400 picture), the MC68901 MFP (`mc68901`: GPIP, interrupt controller, timers; USART
+registers only), HBL/VBL/MFP interrupts (levels 2/4/6) and the MFP's 2.4576 MHz clock as an exact ratio of the CPU
+clock. EmuTOS 1.4 runs until its first write to the YM2149 (`$FF8800` from `$FC6D88`), its 106 I/O accesses equal to
+Hatari 2.6.1's (`--io-trace-file`, Hatari's `--trace io_all` format; `capture_hatari_trace.py --kind io`), and stops
+there with a bounded report (`--diag-file`, `--trace-file`). `--monitor mono` is refused until the mono frame's line
+count is sourced.
 Firmware: `--firmware auto` now also downloads from a `firmware.toml` `url` (zip SHA-1 `archive_sha1`, file `entry`,
 both hashes checked) and caches it under `<cache>/firmware/<sha1>.bin`; lookup order cache, RomM, URL; `when = { region =
 ... }` matches `--region`. Reference emulator: Hatari 2.6.1 (black box; `retroclawd-tools/scripts/capture_hatari_trace.py`).
