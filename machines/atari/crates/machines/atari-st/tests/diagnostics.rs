@@ -1,5 +1,7 @@
 //! The bounded bring-up diagnostics: the I/O stop report and the PC trace.
 
+mod common;
+
 use atari_st::{Accuracy, AtariSt, Config, Monitor, RamSize, Region};
 use machine::Machine;
 
@@ -117,4 +119,48 @@ fn a_halted_cpu_is_reported_once() {
         "the faulting address: {}",
         reports[0]
     );
+}
+
+/// EmuTOS with one boot-path instruction (the 50th the CPU runs, long before the MFP set-up) replaced by
+/// `MOVE.B $FF9000,D0`: the machine stops there with a full, bounded report, and the same one every run.
+#[test]
+fn emutos_with_an_injected_fault_reports_it() {
+    let Some(tos) = common::emutos() else { return };
+    let mut probe = AtariSt::new(Config {
+        trace_limit: 50,
+        ..common::config(tos.clone(), RamSize::M1)
+    })
+    .unwrap();
+    while probe.trace().len() < 50 {
+        probe.step();
+    }
+    let pc = probe.trace()[49];
+    assert!((0xFC_0000..0xFF_0000).contains(&pc), "in ROM: ${pc:06X}");
+    let at = (pc - 0xFC_0000) as usize;
+    let mut rom = tos;
+    rom[at..at + 6].copy_from_slice(&[0x10, 0x39, 0x00, 0xFF, 0x90, 0x00]);
+    let run = || {
+        let mut m = AtariSt::new(common::config(rom.clone(), RamSize::M1)).unwrap();
+        for _ in 0..1_000_000 {
+            m.step();
+            if let Some(r) = m.take_stop_report() {
+                assert!(m.halted());
+                return r;
+            }
+        }
+        panic!("no stop");
+    };
+    let r = run();
+    assert!(r.contains("no hardware fact for $FF9000"), "{r}");
+    assert!(
+        r.contains(&format!("instruction: ${pc:06X} move.b $ff9000,d0")),
+        "{r}"
+    );
+    assert!(
+        r.contains("D0=") && r.contains("A7=") && r.contains("SR=$"),
+        "{r}"
+    );
+    assert!(r.contains("history (last"), "{r}");
+    assert!(r.lines().count() < 400, "bounded");
+    assert_eq!(r, run(), "deterministic");
 }
