@@ -24,6 +24,7 @@ inventing a value.
 | *Hatari io* | Hatari 2.6.1, `--machine st --tos etos192uk.img --memsize <n> --trace io_all,cpu_exception`; `retroclawd-tools/scripts/capture_hatari_trace.py --kind io` |
 | *forum* | atari-forum.com threads cited in `scheduler.rs` (frame timing) |
 | *MC6850* | Motorola MC6850 data sheet (DS9493R, 1985), https://docs.ampnuts.ru/eevblog.docs/Tektronix/TLA_Ensoniq/Datasheets/MC6850.pdf (SHA-256 `294a8b9f557d03a2a7f4d736d060244f39216dad2d5479d2e47954feb4f34655`) |
+| *IKBD* | Atari, *Intelligent Keyboard (ikbd) Protocol*, revised 26 February 1985, scan in https://bitsavers.org/pdf/atari/ST/Atari_ST_GEM_Programming_1986/GEM_0883.pdf (SHA-256 `9f216bf7a02b9141b2bc3a9bb97225c18149d261aae4059b186e3119d3779d82`) |
 | *YM2149* | Yamaha YM2149 catalog, September 1992, https://bitsavers.org/components/yamaha/YM2149_199209.pdf (SHA-256 `a4b946bf525fc1a7c6dec9e7662ce2342d3a3c627f980c7c3b1a396df7e91d20`) |
 
 The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 403 from cpcwiki); every `[H?]` and
@@ -138,3 +139,22 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Transmit start | the transmitter takes a written character at its next bit-clock edge | `[O]` | Hatari: TDRE back within one bit after the write (`--trace acia`) |
 | Bit-clock phase | edges counted from the last control-register write | `[H?]` | not documented |
 | RESET instruction | the ACIAs are not reset | `[D]` | the MC6850 has no reset input |
+
+## IKBD (`ikbd`)
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| Commands, reports, defaults | §3-§9 (relative mouse default, threshold 1, Y=0 at top, joystick 1 events, port 0 a joystick after any joystick command) | `[H]` | *IKBD* |
+| Relative mouse record | `%111110LR` (bit 1 left, bit 0 right), dx, dy; split beyond -128..127 | `[H]` | *IKBD* §4.1 (page image) |
+| Joystick event | `$FE`/`$FF` (joystick 0/1), then `%x000yyyy` (x trigger) | `[H]` | *IKBD* §5.1 |
+| Stick bits | bit 0 up, 1 down, 2 left, 3 right | `[H?]` | the document and *Internals* p.77 say only "a bit for each direction" |
+| Scan codes | Appendix A, 95 keys | `[H]` | *IKBD* Appendix A (page images) |
+| Version code | `$F1` | `[O]` | *Hatari io* line 148; *IKBD* §8 allows `$F0` (first release) or `$F1` (second) |
+| Reset reply delay | 502 002 CPU cycles after the RESET's second byte (or power-up) | `[O]` | Hatari `--trace ikbd_all,acia` (VBL 6 cycle 150 494 to VBL 10 cycle 11 472); *IKBD* §9.1 bound 300 ms |
+| Power-up reply | sent while the ACIA is still in reset, so it is lost | `[O]` | Hatari: "ikbd acia not initialized, can't send byte=0xf1" |
+| Clock at power-up | 00-00-00 00:00:00, BCD, one-second steps | `[O]` | Hatari: `$1C` at 1.2 s answers `00 00 00 00 00 01` |
+| Calendar carries | two-digit year, leap when divisible by 4 | `[H?]` | not documented |
+| Output queue | 256 bytes; a packet that does not fit is dropped | `[H?]` | *IKBD* §9.14 "<tbd>"; the 6301 has 128 bytes of RAM (*Internals* p.69) |
+| Memory load/read/execute (`$20-$22`) | consumed; reads answer zeros; nothing executes | `[H?]` | the 6301's memory is not modelled |
+| Joystick monitoring, fire monitoring, joystick key code (`$17-$19`) | parameters consumed, no reports | `[H?]` | Phase 2 |
+| Key names | the host's key names for the same position (`KeyA`, `Digit1`, `Escape`, `NumpadEnter`, `IntlBackslash` for the ISO key, `Undo`, `Help`) | — | a naming choice, not a hardware fact |
