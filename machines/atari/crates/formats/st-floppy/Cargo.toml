@@ -1,0 +1,11 @@
+[package]
+name = "st-floppy"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Atari ST .st floppy images: geometry, sectors, MFM tracks for a WD1772"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+wd1770 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "b28ea9a680edb578afcb37cb018e41059e7a81c5" }
+

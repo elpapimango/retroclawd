@@ -25,6 +25,7 @@ inventing a value.
 | *forum* | atari-forum.com threads cited in `scheduler.rs` (frame timing) |
 | *MC6850* | Motorola MC6850 data sheet (DS9493R, 1985), https://docs.ampnuts.ru/eevblog.docs/Tektronix/TLA_Ensoniq/Datasheets/MC6850.pdf (SHA-256 `294a8b9f557d03a2a7f4d736d060244f39216dad2d5479d2e47954feb4f34655`) |
 | *IKBD* | Atari, *Intelligent Keyboard (ikbd) Protocol*, revised 26 February 1985, scan in https://bitsavers.org/pdf/atari/ST/Atari_ST_GEM_Programming_1986/GEM_0883.pdf (SHA-256 `9f216bf7a02b9141b2bc3a9bb97225c18149d261aae4059b186e3119d3779d82`) |
+| *WD177X* | Western Digital WD177X-00 data sheet, *1986 Storage Management Products Handbook* pp.1-1 to 1-26, https://bitsavers.org/components/westernDigital/_dataBooks/1986_Storage_Management_Products_Handbook.pdf (SHA-256 `72382885abfde5cdee875384aed7ca97c17112db047d7792d3a4b4d3ed0c895f`) |
 | *YM2149* | Yamaha YM2149 catalog, September 1992, https://bitsavers.org/components/yamaha/YM2149_199209.pdf (SHA-256 `a4b946bf525fc1a7c6dec9e7662ce2342d3a3c627f980c7c3b1a396df7e91d20`) |
 
 The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 403 from cpcwiki); every `[H?]` and
@@ -159,3 +160,18 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Joystick monitoring, fire monitoring, joystick key code (`$17-$19`) | parameters consumed, no reports | `[H?]` | Phase 2 |
 | Keyboard line | 7812.5 baud, 8N1, 10 bits a character (1024 CPU cycles a bit) | `[H]` *Internals* p.47; the IKBD's own bit clock equal to the ACIA's `[H?]` | — |
 | Key names | the host's key names for the same position (`KeyA`, `Digit1`, `Escape`, `NumpadEnter`, `IntlBackslash` for the ISO key, `Undo`, `Help`) | — | a naming choice, not a hardware fact |
+
+## Floppy images (`st-floppy`)
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| Boot sector | BPB fields little-endian: bytes/sector 11, sectors/cluster 13, reserved 14, FATs 16, directory entries 17, total sectors 19, media 21, sectors/FAT 22, sectors/track 24, sides 26, hidden 28 | `[H]` | *Internals* pp.178-179 |
+| Executable boot sector | the big-endian word sum of the 512 bytes is `$1234`; the program starts at offset 30 | `[H]` | *Internals* p.179 |
+| Geometry rule | a plausible BPB that agrees with the size; a plausible BPB that disagrees is an error; otherwise the size table | — | design §13 (never guess) |
+| Size table | 360K 80×1×9, 400K 80×1×10, 720K 80×2×9, 800K 80×2×10, 820K 82×2×10 | `[H?]` | the common ST formats |
+| Track format | gap I 60 × `$4E`; per sector 12 × `$00`, 3 × `$A1`, `$FE` C H R N CRC, 22 × `$4E`, 12 × `$00`, 3 × `$A1`, `$FB`, data, CRC, 24 × `$4E`; gap IV `$4E` | `[D]` | *WD177X* p.1-18 |
+| Short gaps | gaps I and III down to 2 bytes; gap II fixed | `[D]` | *WD177X* p.1-18 "Non-Standard Formats" |
+| Sector size code | N = 2 for 512 bytes | `[D]` | *WD177X* sector length table |
+| Track length | 6250 bytes (250 kbit/s MFM, 300 rpm) | `[H?]` | drive speed not sourced |
+| Sector order on a track | 1, 2, 3, … (no interleave) | `[H?]` | the image does not record it |
+| 11 sectors per track | refused: they do not fit 6250 bytes in the data sheet's format | — | — |

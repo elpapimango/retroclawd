@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/chips/ikbd", "crates/chips/mc68901", "crates/chips/st-shifter", "crates/machines/atari-st", "crates/plugins/atari-st-machine-plugin", "crates/plugin-dlls/atari-st"]
+members = ["crates/chips/ikbd", "crates/formats/st-floppy", "crates/chips/mc68901", "crates/chips/st-shifter", "crates/machines/atari-st", "crates/plugins/atari-st-machine-plugin", "crates/plugin-dlls/atari-st"]
 
 # Same release profile as the retroclawd host.
 [profile.release]
