@@ -1,0 +1,99 @@
+machine = "atari-800"
+display_name = "Atari 800"
+family = "atari"
+default_region = "pal"
+
+[implementation]
+status = "in-progress"
+boot_verified = true
+note = "C16/Plus4 are parked by the owner. Continue the original dependency order with Atari 800, then 800XL/65XE/130XE, inside the established Atari Family. Do not infer 8-bit hardware from the existing ST."
+
+[core]
+reuse = "mos6502"
+variant = "NMOS 6502; no 6510 CPU port"
+tests = ["Klaus Dormann functional tests", "Tom Seddon single-instruction tests"]
+note = "Reuse rcasm/rcdis 6502 syntax and existing debugger support. Accurate mode must advance bus cycles, not just alter pacing."
+
+[chips]
+new = ["ANTIC", "GTIA", "POKEY", "MOS 6520 PIA"]
+placement = "Atari custom Chips remain in this Family. The CPU-independent PIA belongs in shared crates for reuse, with Atari wiring outside it."
+verified_absent = "No ANTIC, GTIA, POKEY or 6520/6821 PIA implementation was found in the initialized shared, Atari, Commodore, Sinclair or Amstrad crates."
+
+[reference]
+emulator = "Atari800"
+version = "7.2.1 Win64"
+source_revision = "63a381884175e3cbfc745ff00dfb3d70d928eb50"
+source_url = "https://github.com/atari800/atari800"
+license = "GPL-2.0-or-later"
+archive_url = "https://github.com/atari800/atari800/releases/download/ATARI800_7_2_1/atari800-7.2.1-win64.zip"
+archive_sha256 = "82eb30836613a03b3a82d594da71b47667f2eef844d9cd808e3a367f250613ab"
+note = "Portable executable downloaded privately, never committed. Select the same explicit OS/BASIC bytes and Region; disable reference ROM/SIO patches."
+
+[timing]
+cycles_per_line = 114
+pal_lines = 312
+ntsc_lines = 262
+pal_cycles_per_frame = 35568
+ntsc_cycles_per_frame = 29868
+note = "Altirra Hardware Reference section 2.2 gives fractional crystal-derived CPU rates. The Machine clock_hz interface is integer; document any rounding and use internally consistent exact frame budgets."
+
+[memory]
+ram = "0000-bfff (48 KiB default)"
+basic_cartridge = "a000-bfff when an 8 KiB BASIC ROM is supplied"
+os = "d800-ffff, 10240 bytes"
+gtia = "d000-d0ff, low 5 register bits decoded"
+pokey = "d200-d2ff, low 4 register bits decoded"
+pia = "d300-d3ff, alternate PIA register ordering: PORTA/PORTB/PACTL/PBCTL"
+antic = "d400-d4ff, low 4 register bits decoded"
+note = "400/800 has four joystick ports; PIA B is not XL/XE ROM banking. No XL/XE profile until its distinct MMU and RAM behavior are implemented."
+
+[firmware_policy]
+stock_roms_available = false
+note = "Configured RomM reports zero ROMs and zero firmware for Atari 800 and Atari 8-bit. Do not download unlicensed original firmware or silently claim an alternate OS is an Atari ROM. Private verification may use explicitly identified, permissively licensed Altirra replacements."
+
+[[firmware]]
+option = "rom_os"
+label = "AltirraOS 800 3.11 replacement"
+size = 10240
+sha1 = "24b16053b5a11ed2f35f208c9a061d973b8be3e7"
+sha256 = "1bbb1d3f72017654725fc71ad6aa8ffd786637541fd49ddda3c32f7ada73db18"
+source = "https://github.com/atari800/atari800/blob/63a381884175e3cbfc745ff00dfb3d70d928eb50/src/roms/altirraos_800.c"
+license = "Avery Lee's permissive notice permits copying/distribution with copyright and notice preserved. Private extraction preserves that notice; no ROM bytes are committed."
+
+[[firmware]]
+option = "rom_basic"
+label = "Altirra BASIC 1.59 replacement (version displayed by the verified ROM)"
+size = 8192
+sha1 = "95778af5688ec180baa9db364577d113bfc189ea"
+sha256 = "19fd64377895eb5d4414319855322dd3f860c21fdc1df9adc0e98ab72c540913"
+source = "https://github.com/atari800/atari800/blob/63a381884175e3cbfc745ff00dfb3d70d928eb50/src/roms/altirra_basic.c"
+license = "Copyright 2008-2022 Avery Lee; copying/distribution permitted without royalty if copyright and notice are preserved, without warranty. Private extraction retains that notice; no ROM bytes are committed."
+
+[scenarios]
+required = ["S1 boot", "S2 input", "S3 each supported medium", "S4 audio", "S5 state and reset", "S6 timing", "S7 hardware diagnostics"]
+optional = ["S8 instruction trace"]
+removed = []
+hardware_diagnostics = "Acid800 1.2; licensing and execution must be verified before claiming a result."
+media = "Raw Program first; Atari XEX, ATR, CAS and CART require their own verified Format/Media paths. Existing C64 PRG parsing is not an Atari loader."
+assumptions = ["PAL default follows existing Host convention; NTSC remains a separate verified Region", "Start with 48 KiB Atari 800 and an explicit optional BASIC ROM", "Use permissive alternate ROMs only when explicitly named; no stock-ROM compatibility claim"]
+
+[[source]]
+kind = "hardware measurements and register reference"
+title = "Altirra Hardware Reference Manual, 2026-01-02"
+url = "https://www.virtualdub.org/downloads/Altirra%20Hardware%20Reference%20Manual.pdf"
+sections = ["2.1-2.7 architecture, clocks, PIA and banking", "4 ANTIC", "5 POKEY", "6 GTIA", "14.3-14.6 register reference"]
+note = "Read as hardware documentation, not translated implementation code. AtariArchives manufacturer-manual transcriptions returned a human-verification page; Motorola's hosted 6821 PDF returned HTTP 403."
+
+[[source]]
+kind = "reference emulator"
+title = "Atari800 7.2.1"
+revision = "63a381884175e3cbfc745ff00dfb3d70d928eb50"
+files = ["src/antic.h", "src/gtia.h", "src/pokey.h", "src/akey.h", "src/sysrom.c", "src/memory.c"]
+license = "GPL-2.0-or-later"
+
+[[source]]
+kind = "memory map and stock-ROM metadata cross-check"
+title = "MAME Atari 400/800 driver"
+revision = "9071ca1a6d1f1625045054c6f1fd0346a7e5a511"
+url = "https://github.com/mamedev/mame/blob/9071ca1a6d1f1625045054c6f1fd0346a7e5a511/src/mame/atari/atari400.cpp"
+license = "GPL-2.0-or-later"

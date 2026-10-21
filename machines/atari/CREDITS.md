@@ -1,5 +1,42 @@
 # Credits and sources
 
+## Atari 8-bit
+
+- **Altirra Hardware Reference Manual, 2026-01-02**, Avery Lee:
+  <https://www.virtualdub.org/downloads/Altirra%20Hardware%20Reference%20Manual.pdf>.
+  Hardware description, not translated implementation code. Chapters 2/4/5/6/14:
+  clock/raster counts, 400/800 map, PIA wiring, ANTIC display lists/DMA/WSYNC/NMI,
+  POKEY divisors/polynomials/keyboard matrix/serial status and GTIA registers.
+  Initial Chips deliberately document what is not implemented.
+- **Atari800 7.2.1**, GPL-2.0-or-later, source
+  `63a381884175e3cbfc745ff00dfb3d70d928eb50`,
+  <https://github.com/atari800/atari800>. Reference boot/raw Program execution
+  uses a private portable Win64 build, explicit ROMs, no ROM patches, monitor
+  frame boundaries and its native screenshots. No emulator implementation was
+  translated. ZIP SHA-256:
+  `82eb30836613a03b3a82d594da71b47667f2eef844d9cd808e3a367f250613ab`.
+- **AltirraOS 800 3.11 and replacement BASIC displaying 1.59**, Avery Lee,
+  distributed as `src/roms/altirraos_800.c` and `altirra_basic.c` at that pinned
+  Atari800 revision. Their notices permit copying/distribution with copyright
+  and notice preserved, without warranty. Private extraction retains both
+  notices; no ROM bytes are committed. These are replacements, not original
+  Atari firmware. Exact hashes are in the intake and `firmware.toml`.
+- **MAME Atari 400/800 driver**, revision
+  `9071ca1a6d1f1625045054c6f1fd0346a7e5a511`,
+  `src/mame/atari/atari400.cpp`: independent memory-map and ROM metadata
+  cross-check; not copied implementation.
+- **Acid800 1.2**, copyright 2010-2022 Avery Lee, MIT as stated in its
+  `README.html`, <https://www.virtualdub.org/downloads/Acid800-1.2.7z>.
+  Downloaded privately, archive SHA-256
+  `4074e6a40db1833e97603e334ca130f5923bff34a0d4f8a83e2ecf9617de1b20`.
+  ATR attachment is explicitly refused by the current Plugin; the suite has
+  not executed and no diagnostic score is claimed.
+- **NMOS 6502 and MOS 6520 PIA**: reused from `retroclawd-crates` revision
+  `76ca5a025b9ba5b4d1ec0b9fbd7c46281313610a`; the shared repository's
+  credits cover the Core conformance suites and PIA sources.
+
+## Atari ST
+
 - **EmuTOS 1.4** (GPL-2.0, https://emutos.sourceforge.io/, files at
   https://sourceforge.net/projects/emutos/files/emutos/1.4/): the firmware the machine is developed and tested
   with. Fetched by the host's `--firmware auto` from the official zip, never committed. Facts used from the release

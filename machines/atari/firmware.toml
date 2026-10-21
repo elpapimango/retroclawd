@@ -28,3 +28,18 @@ url = "https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-192k-1
 archive_sha1 = "6f146a126065f0671a1df3d9a273c01f962e9d06"
 entry = "emutos-192k-1.4/etos192us.img"
 when = { region = "ntsc" }
+
+# Explicitly identified replacements, matched only from cache or RomM.
+# Their upstream distribution is C arrays, not a supported direct ROM URL.
+# Supplying --rom-os / --rom-basic always takes precedence.
+[[rom]]
+machines = ["atari-800"]
+option = "rom_os"
+label = "AltirraOS 800 3.11 replacement (not original Atari firmware)"
+sha1 = ["24b16053b5a11ed2f35f208c9a061d973b8be3e7"]
+
+[[rom]]
+machines = ["atari-800"]
+option = "rom_basic"
+label = "Altirra BASIC 1.59 replacement (not original Atari BASIC)"
+sha1 = ["95778af5688ec180baa9db364577d113bfc189ea"]

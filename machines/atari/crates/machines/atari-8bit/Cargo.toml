@@ -1,0 +1,16 @@
+[package]
+name = "atari-8bit"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "76ca5a025b9ba5b4d1ec0b9fbd7c46281313610a" }
+mos6502 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "76ca5a025b9ba5b4d1ec0b9fbd7c46281313610a" }
+pia-6520 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "76ca5a025b9ba5b4d1ec0b9fbd7c46281313610a" }
+antic = { path = "../../chips/antic" }
+gtia = { path = "../../chips/gtia" }
+pokey = { path = "../../chips/pokey" }
+serde = { version = "1", features = ["derive"] }
+bincode = { version = "2", features = ["serde"] }
+sha1 = "0.10"

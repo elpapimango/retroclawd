@@ -1,0 +1,13 @@
+[package]
+name = "atari-8bit-machine-plugin-dll"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "atari_8bit_machine_plugin"
+crate-type = ["cdylib"]
+
+[dependencies]
+plugin-api = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "76ca5a025b9ba5b4d1ec0b9fbd7c46281313610a" }
+atari-8bit-machine-plugin = { path = "../../plugins/atari-8bit-machine-plugin" }
