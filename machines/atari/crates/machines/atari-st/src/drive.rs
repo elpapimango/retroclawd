@@ -43,6 +43,10 @@ impl StDrive {
         self.image.take()
     }
 
+    pub fn image(&self) -> Option<&Image> {
+        self.image.as_ref()
+    }
+
     pub fn has_disk(&self) -> bool {
         self.image.is_some()
     }

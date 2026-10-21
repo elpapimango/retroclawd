@@ -14,13 +14,13 @@ use atari_st::{Accuracy, AtariSt, Config, Monitor, RamSize, Region};
 use machine::{AUDIO_SAMPLE_RATE, Machine};
 use plugin_api::{
     ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, BinaryBlob, ChipSnapshot, CodecError, CpuFamily,
-    CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine, HostMouseButton,
+    CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine, DiskStatus, HostMouseButton,
     MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest,
     MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse,
     MachineInstanceHandle, MachineKeyInfo, MachineMetadata, MachineOptionInfo, MachineOptionKind,
-    MachinePluginVTableV1, MachineProfile, MachineResponse, MediaSnapshot, NamedValue,
-    PluginDescriptorV1, PluginKind, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RcBuffer, RcCallResult,
-    RcSlice, RcStatus, RegisterField, RegisterSnapshot, StatusCode,
+    MachinePluginVTableV1, MachineProfile, MachineResponse, MediaKind, MediaSlot, MediaSnapshot,
+    NamedValue, PluginDescriptorV1, PluginKind, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RcBuffer,
+    RcCallResult, RcSlice, RcStatus, RegisterField, RegisterSnapshot, StatusCode,
 };
 
 const MACHINE_ID: &str = "atari-st";
@@ -235,8 +235,13 @@ fn machine_profile() -> MachineProfile {
         default_region: Some("pal".to_string()),
         contract_version: MACHINE_PROFILE_CONTRACT_VERSION,
         debug_capabilities: REQUIRED_MACHINE_DEBUG_CAPABILITIES.to_vec(),
-        capabilities: vec![MachineCapability::Video, MachineCapability::Debug],
-        media_kinds: Vec::new(),
+        capabilities: vec![
+            MachineCapability::Video,
+            MachineCapability::Audio,
+            MachineCapability::Disk,
+            MachineCapability::Debug,
+        ],
+        media_kinds: vec![MediaKind::Disk],
         options: vec![
             MachineOptionInfo {
                 required: true,
@@ -271,6 +276,15 @@ fn machine_profile() -> MachineProfile {
                 MachineOptionKind::Text,
                 None,
                 "Write the PC of every instruction to this file",
+            ),
+            option(
+                "drives",
+                MachineOptionKind::Int {
+                    min: Some(1),
+                    max: Some(2),
+                },
+                Some(DebugValue::U64(2)),
+                "Floppy drives fitted (A, and B with 2)",
             ),
             option(
                 "trace_limit",
@@ -389,6 +403,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let mut trace_limit = DEFAULT_TRACE_LIMIT;
     let mut diag_file = None;
     let mut io_trace_file = None;
+    let mut drives = 2u8;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
             ("ram", DebugValue::Text(v)) => {
@@ -412,6 +427,8 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             }
             ("trace_file", DebugValue::Text(v)) => trace_file = Some(PathBuf::from(v)),
             ("trace_limit", DebugValue::U64(v)) => trace_limit = *v,
+            ("drives", DebugValue::U64(v @ 1..=2)) => drives = *v as u8,
+            ("drives", other) => return Err(format!("option \"drives\": 1 or 2, not {other:?}")),
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(PathBuf::from(v)),
             ("io_trace_file", DebugValue::Text(v)) => io_trace_file = Some(PathBuf::from(v)),
             (key, _) => {
@@ -449,6 +466,8 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             0
         },
     })?;
+    let mut machine = machine;
+    machine.set_drives(drives);
     let metadata = metadata(&machine, region_name, &model);
     let mut state = state()
         .lock()
@@ -526,6 +545,22 @@ fn chip_snapshots(machine: &AtariSt) -> Vec<ChipSnapshot> {
                     machine.next_event_at().unwrap_or(u64::MAX),
                 ),
             ],
+        ),
+        chip(
+            "dma",
+            vec![
+                ("mode".to_string(), bus.dma().mode() as u64),
+                ("status".to_string(), bus.dma().status() as u64),
+                ("address".to_string(), bus.dma_address() as u64),
+            ],
+        ),
+        chip(
+            "fdc",
+            ["status", "track", "sector", "data"]
+                .iter()
+                .enumerate()
+                .map(|(i, n)| (n.to_string(), bus.dma().fdc_register_value(i as u8) as u64))
+                .collect(),
         ),
     ]
 }
@@ -697,19 +732,54 @@ fn handle_machine_command(
         MachineCommand::SaveSnapshot { .. } => {
             Err("unsupported: the atari-st has no snapshot format".to_string())
         }
+        MachineCommand::AttachMedia {
+            slot: MediaSlot::Disk { drive },
+            bytes,
+            ..
+        } => {
+            let image = atari_st::st_floppy::Image::parse(&bytes).map_err(|e| e.to_string())?;
+            record.machine.insert_disk(drive, image)?;
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::DetachMedia {
+            slot: MediaSlot::Disk { drive },
+        } => {
+            record.machine.eject_disk(drive);
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::ExportDisk {
+            drive,
+            only_if_modified,
+        } => Ok(MachineResponse::DiskImage(if only_if_modified {
+            None
+        } else {
+            record
+                .machine
+                .disk(drive)
+                .map(atari_st::st_floppy::Image::to_bytes)
+        })),
+        MachineCommand::MarkDiskSaved { .. } => Ok(MachineResponse::Ack),
         MachineCommand::AttachMedia { .. }
         | MachineCommand::DetachMedia { .. }
-        | MachineCommand::ExportDisk { .. }
-        | MachineCommand::MarkDiskSaved { .. }
         | MachineCommand::ExportTape { .. }
         | MachineCommand::Freeze
         | MachineCommand::ExportCartridge
         | MachineCommand::ExportPrinter => {
-            Err("unsupported: atari-st media arrive in later slices".to_string())
+            Err("unsupported: the atari-st takes floppy disks (.st) only".to_string())
         }
         MachineCommand::GetMediaSnapshot => Ok(MachineResponse::MediaSnapshot(MediaSnapshot {
             tape: None,
-            disks: Vec::new(),
+            disks: (0..record.machine.drives())
+                .map(|d| DiskStatus {
+                    attached: record.machine.disk(d).is_some(),
+                    image_id: None,
+                    drive: Some(d),
+                    head: None,
+                    track: None,
+                    sector: None,
+                    controller_phase: None,
+                })
+                .collect(),
             cartridge: None,
         })),
         MachineCommand::KeyEvent { key, pressed } => {
@@ -1125,6 +1195,88 @@ mod tests {
         state().lock().unwrap().instances.remove(&id);
     }
 
+    fn attach(
+        id: MachineInstanceHandle,
+        drive: u8,
+        bytes: Vec<u8>,
+    ) -> Result<MachineResponse, String> {
+        command(
+            id,
+            MachineCommand::AttachMedia {
+                slot: MediaSlot::Disk { drive },
+                kind: MediaKind::Disk,
+                name: Some("disk.st".to_string()),
+                bytes,
+                options: Vec::new(),
+            },
+        )
+    }
+
+    #[test]
+    fn attach_st_inserts_into_drive_a() {
+        let id = create(&[0x60FE], Vec::new());
+        assert!(matches!(
+            attach(id, 0, vec![0; 737_280]),
+            Ok(MachineResponse::Ack)
+        ));
+        let Ok(MachineResponse::MediaSnapshot(media)) =
+            command(id, MachineCommand::GetMediaSnapshot)
+        else {
+            panic!("no media snapshot");
+        };
+        assert!(media.disks.iter().any(|d| d.attached && d.drive == Some(0)));
+        let Ok(MachineResponse::DiskImage(Some(bytes))) = command(
+            id,
+            MachineCommand::ExportDisk {
+                drive: 0,
+                only_if_modified: false,
+            },
+        ) else {
+            panic!("no image");
+        };
+        assert_eq!(bytes.len(), 737_280);
+        assert!(matches!(
+            command(
+                id,
+                MachineCommand::ExportDisk {
+                    drive: 0,
+                    only_if_modified: true
+                }
+            ),
+            Ok(MachineResponse::DiskImage(None))
+        ));
+        assert!(matches!(
+            command(
+                id,
+                MachineCommand::DetachMedia {
+                    slot: MediaSlot::Disk { drive: 0 }
+                }
+            ),
+            Ok(MachineResponse::Ack)
+        ));
+        state().lock().unwrap().instances.remove(&id);
+    }
+
+    #[test]
+    fn attach_garbage_is_an_error_with_the_geometry_message() {
+        let id = create(&[0x60FE], Vec::new());
+        let err = attach(id, 0, vec![0; 1000]).unwrap_err();
+        assert!(err.contains("512-byte sectors"), "{err}");
+        state().lock().unwrap().instances.remove(&id);
+    }
+
+    #[test]
+    fn drive_b_refused_with_drives_1() {
+        let one = NamedValue {
+            key: "drives".to_string(),
+            value: DebugValue::U64(1),
+        };
+        let id = create(&[0x60FE], vec![one]);
+        let err = attach(id, 1, vec![0; 737_280]).unwrap_err();
+        assert!(err.contains("no drive B"), "{err}");
+        state().lock().unwrap().instances.remove(&id);
+    }
+
     #[test]
     fn chip_snapshots_name_every_device() {
         let id = create(&[0x60FE], Vec::new());
@@ -1133,7 +1285,7 @@ mod tests {
             chip_snapshots(&state.instances[&id].machine)
         };
         let ids: Vec<&str> = chips.iter().map(|c| c.chip_id.as_str()).collect();
-        assert_eq!(ids, ["mmu", "shifter", "mfp", "scheduler"]);
+        assert_eq!(ids, ["mmu", "shifter", "mfp", "scheduler", "dma", "fdc"]);
         let field = |chip: &str, key: &str| {
             chips
                 .iter()

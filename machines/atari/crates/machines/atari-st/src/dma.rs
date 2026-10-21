@@ -61,6 +61,16 @@ impl Dma {
         }
     }
 
+    /// The mode register as last written.
+    pub fn mode(&self) -> u16 {
+        self.mode
+    }
+
+    /// The FDC's register `reg` (0 status, 1 track, 2 sector, 3 data), without side effects.
+    pub fn fdc_register_value(&self, reg: u8) -> u8 {
+        self.fdc.peek(reg)
+    }
+
     pub(crate) fn hdc_selected(&self) -> bool {
         self.mode & 0x08 != 0
     }

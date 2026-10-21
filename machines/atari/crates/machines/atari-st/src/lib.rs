@@ -33,4 +33,5 @@ pub use psg::Psg;
 pub use scheduler::{
     CLASS_ACIA, CLASS_FDC, CLASS_MFP, CLASS_VIDEO, Event, FrameGeometry, Scheduler, geometry,
 };
+pub use st_floppy;
 pub use st_shifter::{self, Monitor, Resolution};

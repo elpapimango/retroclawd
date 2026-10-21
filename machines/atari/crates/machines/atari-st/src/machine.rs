@@ -277,6 +277,16 @@ impl AtariSt {
         self.bus.dma.fdc.floppy.drive_mut(drive as usize).eject()
     }
 
+    /// The disk in drive `drive`, if any.
+    pub fn disk(&self, drive: u8) -> Option<&st_floppy::Image> {
+        self.bus.dma.fdc.floppy.drive(drive as usize).image()
+    }
+
+    /// Floppy drives fitted.
+    pub fn drives(&self) -> u8 {
+        self.bus.dma.fdc.floppy.fitted()
+    }
+
     /// Phase 1 never writes to a disk.
     pub fn disk_modified(&self, _drive: u8) -> bool {
         false
