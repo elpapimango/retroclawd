@@ -1063,10 +1063,16 @@ GTIA and POKEY reuse shared NMOS 6502 and MOS 6520 PIA. Keyboard/BASIC execution
 raw Programs, digital joysticks, tone pitch, State, warm reset, frame budgets and
 the debug contract are wired. This is a working slice, not the complete baseline.
 
-`machines/atari/atari-800.manifest.toml`: **24 passed, 0 failed, 8 known gaps**.
-Reference boot content and raw Program memory are pinned Atari800 7.2.1 captures;
-S2 reference printable-input automation and S7 Acid800 ATR/SIO loading remain
-blocked. S4 checks documented pitch only, not reference RMS calibration.
+`machines/atari/atari-800.manifest.toml`: **36 passed, 0 failed, 8 known gaps**.
+Raw/XEX Programs and read-only ATR boot have independently captured Atari800
+7.2.1 reference memory. XEX executes ordered INITAD/RUNAD; D1: status/read uses
+actual PIA/POKEY serial pins, not ROM traps. Version 2 State preserves in-flight
+SIO and pending XEX and still reads version 1 (eject attached disks first).
+S2 reference printable-input automation remains blocked. S7 now executes:
+fast 22/35/1, accurate 20/37/1 passed/failed/skipped versus reference 25/32/1.
+POKEY async receive timer hold was fixed; Core interrupt/unstable-opcode and
+Chip DMA/video/pipeline fidelity failures remain. These are not acceptance passes.
+S4 checks documented pitch only, not reference RMS calibration.
 Original Atari firmware, general Media, games, P/M, scrolling, GTIA special modes
 and exact timing remain unverified/unimplemented. Evidence and reproduction:
 `machines/atari/docs/atari800-gaps.md`. No XL/XE profile exists yet.

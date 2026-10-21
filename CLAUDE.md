@@ -103,11 +103,15 @@ GTIA and POKEY live in the Atari Family. No Host machine-specific code or ABI
 change is needed. Explicit Altirra replacements boot and execute BASIC;
 original Atari firmware has not been verified.
 
-The Family manifest has 24 passing variants and eight known gaps: reference
-printable-key capture and Acid800 blocked by missing ATR/SIO. Raw Programs,
-documented tone pitch, State and raster counts pass; reference RMS, game
-compatibility and full hardware fidelity are not established. No XEX/ATR/CAS/CART
-loader or XL/XE profile exists yet. Read the Family intake and
+The Family manifest has 36 passing variants and eight known gaps: reference
+printable-key capture and executed Acid800 mismatches. Raw/XEX Programs,
+read-only ATR D1: boot through PIA/POKEY serial pins, documented tone pitch,
+State and raster counts pass. XEX uses ordered INITAD/RUNAD, not raw --org.
+Version 2 State preserves disk/serial/pending XEX, reads version 1, and requires
+ejecting an attached disk before legacy restore. Acid800 completes: fast
+22/35/1, accurate 20/37/1 versus reference 25/32/1 passed/failed/skipped.
+Reference RMS, OS-dependent XEX, games and full hardware fidelity are not proven.
+No CAS/CART loader or XL/XE profile exists yet. Read the Family intake and
 `machines/atari/docs/atari800-gaps.md` before extending it. C16/Plus4 stay parked.
 
 ## Atari ST (slice 1, 2026-10-20)

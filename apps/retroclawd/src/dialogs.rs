@@ -138,6 +138,7 @@ pub(crate) fn extensions_for(kind: FileKind, machine_id: &str) -> &'static [&'st
             &["p", "p81", "81", "tzx", "pzx", "csw", "voc", "wav"]
         }
         FileKind::Disk if spectrum || cpc => &["dsk", "edsk"],
+        FileKind::Disk if machine_id == "atari-800" => &["atr"],
         FileKind::Disk if machine_id == "c64" || machine_id == "c128" => {
             &["d64", "d71", "d81", "g64", "x64"]
         }
@@ -158,7 +159,9 @@ pub(crate) fn kind_of_extension(path: &str) -> Option<FileKind> {
         .to_lowercase();
     match extension.as_str() {
         "tap" | "tzx" | "cdt" | "pzx" | "csw" | "voc" | "wav" | "t64" => Some(FileKind::Tape),
-        "dsk" | "edsk" | "d64" | "d71" | "d81" | "g64" | "x64" | "nib" => Some(FileKind::Disk),
+        "dsk" | "edsk" | "d64" | "d71" | "d81" | "g64" | "x64" | "nib" | "atr" => {
+            Some(FileKind::Disk)
+        }
         "z80" | "sna" | "szx" | "p" | "p81" | "81" => Some(FileKind::Snapshot),
         "state" => Some(FileKind::State),
         _ => None,

@@ -744,14 +744,19 @@ instruction-batched/per-bus-cycle Chip clocks. The Machine reuses the shared NMO
 6502 Core and MOS 6520 PIA, with initial ANTIC, GTIA and POKEY.
 
 Explicit Altirra replacement ROMs boot to BASIC and execute `PRINT 12*34` as
-`408` in both Regions/modes. Twenty-four manifest variants pass for reference
-boot content/memory, tools-built raw Programs, documented tone pitch, State and
-frame timing. Eight known-gap variants cover uncaptured reference keyboard output
-and Acid800 blocked by missing ATR/SIO support. Original Atari ROMs, reference RMS,
+`408` in both Regions/modes. Thirty-six manifest variants pass for reference
+boot content/memory, tools-built raw/XEX Programs and ATR boot, documented tone
+pitch, State (including attached disks) and frame timing. Eight known-gap variants
+cover uncaptured reference keyboard output and executed Acid800 mismatches.
+Acid800 completes with 22/35/1 passed/failed/skipped in fast mode, 20/37/1 in
+accurate mode, versus 25/32/1 in Atari800 7.2.1; none is a conformance pass.
+Original Atari ROMs, reference RMS,
 games and full hardware fidelity are not verified.
 
-Raw `--program` Media, keyboard, four digital joysticks and the debug contract
-are wired. XEX/ATR/CAS/CART loading, P/M graphics, scrolling, GTIA special modes and
+Raw/XEX `--program`, read-only ATR on D1:, keyboard, four digital joysticks and
+the debug contract are wired. XEX uses segment INITAD/RUNAD; ATR boot runs through
+PIA/POKEY serial pins without ROM traps. OS-dependent XEX applications are not
+proven. CAS/CART loading, P/M graphics, scrolling, GTIA special modes and
 several timing details remain unimplemented. XL/XE profiles do not exist yet.
 See `machines/atari/docs/atari800-gaps.md` and the Family manifest for exact proof
 and limits. Existing build/staging discovers the new Plugin without Host machine code.

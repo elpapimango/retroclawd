@@ -1385,8 +1385,21 @@ impl HostedBackend {
             || lower == "g64"
             || lower == "x64"
             || lower == "nib"
+            || lower == "atr"
         {
             self.apply_disk(instance, 0, &lower, bytes)
+        } else if lower == "xex" {
+            self.expect_ack(
+                instance,
+                MachineCommand::AttachMedia {
+                    slot: MediaSlot::Other("program".to_string()),
+                    kind: MediaKind::Program,
+                    name: Some("program.xex".to_string()),
+                    bytes: bytes.to_vec(),
+                    options: Vec::new(),
+                },
+                "formatted program attach",
+            )
         } else if ["cpr", "crt", "20", "40", "60", "a0", "b0", "bin", "rom"]
             .contains(&lower.as_str())
         {
@@ -2667,6 +2680,23 @@ mod tests {
             !error.contains("Cartridge"),
             "implicit PRG must not be reclassified: {error}"
         );
+    }
+
+    #[test]
+    fn atari_media_routes_to_disk_and_program_not_snapshot() {
+        let mut machine = super::create_hosted_machine(plugin_api::MachineCreateRequest {
+            machine_id: "stub-machine".to_string(),
+            region: Some("pal".to_string()),
+            roms: Vec::new(),
+            options: Vec::new(),
+        })
+        .unwrap();
+        let error = machine.apply_media("ATR", b"not a disk", 1).unwrap_err();
+        assert!(error.contains("not a disk image"), "{error}");
+        let error = machine
+            .apply_media("XEX", &[0xff, 0xff, 0, 0x20, 0, 0x20, 0xea], 1)
+            .unwrap_err();
+        assert!(error.contains("Program .xex"), "{error}");
     }
 
     #[test]
