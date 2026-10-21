@@ -94,6 +94,22 @@ fast loader now returns through the KERNAL's own SEARCHING/LOADING routines, and
 frame through `Machine::frame_rate` / `MachineMetadata::frame_rate` (ZX81 312 x 207 T-states, its line corrected from 208 to 207; CPC
 79872; C64/C128 one raster frame, 19656 PAL), and the host paces and budgets by it. Details and the compare options are in `retroclawd-tools/CLAUDE.md`.
 
+## Atari 800 experimental slice
+
+`machines/atari` also builds `atari_8bit_machine_plugin`, exposing `atari-800`
+with `rom_os` (10240 bytes), optional `rom_basic` (8192 bytes), PAL/NTSC and
+fast/accurate execution. Shared NMOS 6502 and `pia-6520` are reused; ANTIC,
+GTIA and POKEY live in the Atari Family. No Host machine-specific code or ABI
+change is needed. Explicit Altirra replacements boot and execute BASIC;
+original Atari firmware has not been verified.
+
+The Family manifest has 24 passing variants and eight known gaps: reference
+printable-key capture and Acid800 blocked by missing ATR/SIO. Raw Programs,
+documented tone pitch, State and raster counts pass; reference RMS, game
+compatibility and full hardware fidelity are not established. No XEX/ATR/CAS/CART
+loader or XL/XE profile exists yet. Read the Family intake and
+`machines/atari/docs/atari800-gaps.md` before extending it. C16/Plus4 stay parked.
+
 ## Atari ST (slice 1, 2026-10-20)
 
 Design `docs/superpowers/specs/2026-10-19-atari-st-design.md`, plan `docs/superpowers/plans/2026-10-19-atari-st-slice1.md`.

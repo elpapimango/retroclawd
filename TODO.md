@@ -1020,7 +1020,11 @@ and non-MSX blueMSX targets (SVI/Coleco/SG-1000) as separate roadmap sections.
 Keep an explicit feature-delta checklist against blueMSX/libretro and hardware references. If source
 sets disagree, require executable tests or primary hardware documentation before selecting behavior.
 
-## Atari 400/800 roadmap — PARKED
+## Atari 400/800 roadmap — Atari 800 experimental slice active
+
+Resumed in the dependency-first additional-Machine request. C16/Plus4 are parked
+by the owner; start with Atari 800, then 800XL/65XE/130XE. Reuse the established
+Atari Family repository rather than creating a second Atari repository.
 
 ### TODO (2026-10-15): the Atari 8-bit family as one new family repository
 
@@ -1053,7 +1057,19 @@ for the test suite), `.atari800` state is not needed.
 
 ### DONE: baseline
 
-No Atari 400/800 (or XL/XE) machine is implemented in retroclawd yet.
+Experimental `atari-800` now boots explicit Altirra replacement OS/BASIC ROMs
+through a dynamic Plugin in PAL/NTSC and fast/accurate modes. Initial ANTIC,
+GTIA and POKEY reuse shared NMOS 6502 and MOS 6520 PIA. Keyboard/BASIC execution,
+raw Programs, digital joysticks, tone pitch, State, warm reset, frame budgets and
+the debug contract are wired. This is a working slice, not the complete baseline.
+
+`machines/atari/atari-800.manifest.toml`: **24 passed, 0 failed, 8 known gaps**.
+Reference boot content and raw Program memory are pinned Atari800 7.2.1 captures;
+S2 reference printable-input automation and S7 Acid800 ATR/SIO loading remain
+blocked. S4 checks documented pitch only, not reference RMS calibration.
+Original Atari firmware, general Media, games, P/M, scrolling, GTIA special modes
+and exact timing remain unverified/unimplemented. Evidence and reproduction:
+`machines/atari/docs/atari800-gaps.md`. No XL/XE profile exists yet.
 
 ### BACKLOG: external parity execution sequence (PARKED; gap vs Atari800/Altirra/libretro)
 
@@ -1364,4 +1380,3 @@ These are complete and should not reappear as open work:
 - Browser debugger with disassembly, memory view, Bitmap Explorer, breakpoints, pause/step,
   assemble-and-poke, and save/load operations.
 - CPC 464 firmware boot and C64 KERNAL/BASIC boot.
-

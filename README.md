@@ -22,6 +22,7 @@ Machines (each family has its own repository, see Building):
 | Sinclair | ZX81; ZX Spectrum 48K, 128K, +2, +2A, +3 | Z80 |
 | Amstrad | CPC464, CPC664, CPC6128, CPC464+/6128+, GX4000 | Z80 |
 | Commodore | Experimental VIC-20; C64, C128 (8502 and Z80, 40/80 columns), 1541/1570/1571/1581 drives | 6502, 6510/8502, Z80 |
+| Atari | Experimental Atari 800; ST first-device bring-up (not a complete ST) | 6502, 68000 |
 
 The CPU cores (Z80, validated with ZEXALL/ZEXDOC; NMOS 6502 with the illegal opcodes, validated with Klaus
 Dormann's and Tom Seddon's suites) and the chips several families share (AY-3-8910, uPD765A) live in
@@ -66,6 +67,7 @@ How the repositories relate (all public, same account):
 | [`retroclawd-sinclair`](https://github.com/elpapimango/retroclawd-sinclair) (`machines/sinclair`) | ZX81, ZX Spectrum 48K/128K/+2/+2A/+3 |
 | [`retroclawd-amstrad`](https://github.com/elpapimango/retroclawd-amstrad) (`machines/amstrad`) | Amstrad CPC464/664/6128, CPC+ and GX4000 |
 | [`retroclawd-commodore`](https://github.com/elpapimango/retroclawd-commodore) (`machines/commodore`) | Experimental VIC-20, C64, C128 and the 1541/1570/1571/1581 drives |
+| [`retroclawd-atari`](https://github.com/elpapimango/retroclawd-atari) (`machines/atari`) | Experimental Atari 800 with ANTIC/GTIA/POKEY; existing bounded ST bring-up |
 
 - The application uses the shared crates **by path** through the `shared/` submodule and contains no machine
   code; it loads the machine libraries (`*_machine_plugin`) at run time. Removing a machine is deleting its library.
@@ -732,6 +734,27 @@ expansion ROM slot:
 retroclawd cpc6128 --rom machines/amstrad/roms/cpc/cpc6128.rom --ram-banks 3 --rom-slot 7=amsdos.rom --tape-mode caprice
 ```
 
+
+**Atari 800 (`atari-800`, experimental)**
+
+The Atari Family builds `atari_8bit_machine_plugin` alongside its existing ST
+Plugin. Required `--rom-os` is 10240 bytes; optional `--rom-basic` is 8192 bytes.
+`--region pal|ntsc` and `--execution-mode fast|accurate` select real raster and
+instruction-batched/per-bus-cycle Chip clocks. The Machine reuses the shared NMOS
+6502 Core and MOS 6520 PIA, with initial ANTIC, GTIA and POKEY.
+
+Explicit Altirra replacement ROMs boot to BASIC and execute `PRINT 12*34` as
+`408` in both Regions/modes. Twenty-four manifest variants pass for reference
+boot content/memory, tools-built raw Programs, documented tone pitch, State and
+frame timing. Eight known-gap variants cover uncaptured reference keyboard output
+and Acid800 blocked by missing ATR/SIO support. Original Atari ROMs, reference RMS,
+games and full hardware fidelity are not verified.
+
+Raw `--program` Media, keyboard, four digital joysticks and the debug contract
+are wired. XEX/ATR/CAS/CART loading, P/M graphics, scrolling, GTIA special modes and
+several timing details remain unimplemented. XL/XE profiles do not exist yet.
+See `machines/atari/docs/atari800-gaps.md` and the Family manifest for exact proof
+and limits. Existing build/staging discovers the new Plugin without Host machine code.
 
 **Commodore VIC-20 (`vic20`, experimental)**
 
