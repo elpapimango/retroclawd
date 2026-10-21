@@ -6,7 +6,7 @@ Guidance for Claude Code working in this repository.
 
 The Atari ST family of [retroclawd](https://github.com/elpapimango/retroclawd) as a machine plugin, a submodule of
 the application at `machines/atari`. The design is `docs/superpowers/specs/2026-10-19-atari-st-design.md` and the
-current plan `docs/superpowers/plans/2026-10-21-atari-st-slices3-5.md`, both in the application repository: read
+current plan `docs/superpowers/plans/2026-10-21-atari-st-slice6.md`, both in the application repository: read
 them first. Every hardware fact in code is listed in `docs/hardware-facts.md` with its source and a label
 (`[D]` datasheet, `[H]` documentation, `[O]` observed in Hatari as a black box, `[H?]` unresolved); an I/O address
 with no fact stops the machine (`io.rs`) instead of returning an invented value.
