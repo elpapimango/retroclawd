@@ -1588,6 +1588,14 @@ impl HostedMachine {
         self.backend.key_event(self.instance, key, pressed)
     }
 
+    /// A mouse event with the plugin's answer (`mouse_event` drops it, for the window's input path).
+    pub(crate) fn try_mouse_event(
+        &mut self,
+        event: crate::emu_thread::MouseEvent,
+    ) -> Result<(), String> {
+        self.backend.mouse_event(self.instance, event)
+    }
+
     pub(crate) fn key_event_name(&mut self, key: &str, pressed: bool) {
         match self.backend.key_event(self.instance, key, pressed) {
             Ok(()) => {

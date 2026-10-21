@@ -886,7 +886,9 @@ guessing.
   and URLs work) and written where the command line says; actions are sorted by frame (stable), run before that frame executes
   (`frames` itself = after the last frame), their toasts are printed as `frame N: ...`, and a failure message (or an unreadable /
   empty export) makes the exit code 1. `key_down=NAME`/`key_up=NAME` press or release a machine key by its `--list-keys` name (`HostedMachine::try_key_event`, so a name the plugin
-  refuses fails the run instead of being logged and ignored). Window-only actions are refused by name. Tested with the stub machine (order, file round trip,
+  refuses fails the run instead of being logged and ignored). `mouse_move=DX,DY` (host pixels, right/down positive, sent as relative
+  steps of at most 127 that sum to the move), `mouse_down=left|right|middle` and `mouse_up=...` drive the mouse the same way
+  (`HostedMachine::try_mouse_event`). Window-only actions are refused by name. Tested with the stub machine (order, file round trip,
   failure) and live on a Spectrum 48K. `SymbolTable::substitute` (shared) also folds a constant offset after a known name
   (`CHROUT+1`, `BORDER - $10`, decimal/`$`/`0x`/`h`, chained, wrapping at 64K) and `#<NAME`/`#>NAME` (6502 low/high byte, applied after
   the offset); a register's displacement (`(IX+5)`) and an unknown name are untouched. No general expressions (`*`, parentheses).

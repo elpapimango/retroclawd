@@ -295,10 +295,31 @@ fn handle_machine_command(
             Ok(MachineResponse::Ack)
         }
         MachineCommand::KeyEvent { .. } => Ok(MachineResponse::Ack),
+        // Lets a test see the mouse: the motion received is added to RAM $FF00/$FF02 (little-endian), the buttons
+        // held are bits 0-2 (left, right, middle) of $FF04.
+        MachineCommand::MouseMotion { dx, dy } => {
+            for (at, d) in [(0xFF00usize, dx), (0xFF02, dy)] {
+                let v = i16::from_le_bytes([m.ram[at], m.ram[at + 1]]).wrapping_add(d as i16);
+                m.ram[at..at + 2].copy_from_slice(&v.to_le_bytes());
+            }
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::MouseButton { button, pressed } => {
+            let bit = match button {
+                plugin_api::HostMouseButton::Left => 1,
+                plugin_api::HostMouseButton::Right => 2,
+                plugin_api::HostMouseButton::Middle => 4,
+                plugin_api::HostMouseButton::Other(_) => 0,
+            };
+            m.ram[0xFF04] = if pressed {
+                m.ram[0xFF04] | bit
+            } else {
+                m.ram[0xFF04] & !bit
+            };
+            Ok(MachineResponse::Ack)
+        }
         MachineCommand::RequestInterrupt
         | MachineCommand::SetBorder { .. }
-        | MachineCommand::MouseMotion { .. }
-        | MachineCommand::MouseButton { .. }
         | MachineCommand::MouseWheel { .. }
         | MachineCommand::WriteIo { .. }
         | MachineCommand::SetPortWatches { .. } => Ok(MachineResponse::Ack),

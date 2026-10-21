@@ -1,6 +1,7 @@
 //! `--at FRAME:ACTION[=ARG]`: the hotkey and file-dialog actions for a `--headless --frames` run. Nothing is asked: the file an
 //! action needs is named on the command line, and the action itself is the emu thread's own (`HostControl::apply`), so a reset, a
-//! quick save or a disk swap behaves exactly as it does in the window. Names are the hotkey action names (plus `key_down`/`key_up`).
+//! quick save or a disk swap behaves exactly as it does in the window. Names are the hotkey action names (plus `key_down`/`key_up`
+//! and `mouse_move`/`mouse_down`/`mouse_up`).
 
 use std::sync::mpsc;
 
@@ -16,6 +17,10 @@ pub(crate) enum Action {
     /// a key with no character to `--type`), so a run can hold it for as many frames as it wants.
     KeyDown(String),
     KeyUp(String),
+    /// `mouse_move=DX,DY`: host pixels, right and down positive; sent as relative motion events of at most 127 each.
+    MouseMove(i32, i32),
+    /// `mouse_down=left|right|middle` / `mouse_up=...`.
+    MouseButton(MouseKey, bool),
     /// `screenshot` -> `screenshots/<machine>-<time>.png`, `screenshot=FILE` -> that file.
     Screenshot(Option<String>),
     QuickSave,
@@ -34,6 +39,25 @@ pub(crate) enum Action {
     SaveState(String),
     SaveTape(String),
     SaveDisk(String),
+}
+
+/// A mouse button for `mouse_down`/`mouse_up`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MouseKey {
+    Left,
+    Right,
+    Middle,
+}
+
+/// `(dx, dy)` as equal relative steps that each fit an `i8` (-127..=127) and sum exactly to the move.
+pub(crate) fn motion_steps(dx: i32, dy: i32) -> Vec<(i8, i8)> {
+    let n = dx.unsigned_abs().max(dy.unsigned_abs()).div_ceil(127) as i64;
+    (0..n)
+        .map(|i| {
+            let part = |d: i32| (d as i64 * (i + 1) / n - d as i64 * i / n) as i8;
+            (part(dx), part(dy))
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,6 +97,29 @@ pub(crate) fn parse(text: &str) -> Result<Scripted, String> {
         "freeze" => none(&arg).map(|()| Action::Freeze)?,
         "key_down" => Action::KeyDown(need_name(arg)?),
         "key_up" => Action::KeyUp(need_name(arg)?),
+        "mouse_move" => {
+            let arg = arg.unwrap_or_default();
+            let parsed = arg
+                .split_once(',')
+                .and_then(|(x, y)| Some((x.trim().parse().ok()?, y.trim().parse().ok()?)));
+            let (dx, dy) = parsed.ok_or_else(|| {
+                format!("--at {text}: mouse_move needs DX,DY in host pixels (mouse_move=-200,30)")
+            })?;
+            Action::MouseMove(dx, dy)
+        }
+        "mouse_down" | "mouse_up" => {
+            let button = match arg.unwrap_or_default().to_ascii_lowercase().as_str() {
+                "left" => MouseKey::Left,
+                "right" => MouseKey::Right,
+                "middle" => MouseKey::Middle,
+                other => {
+                    return Err(format!(
+                        "--at {text}: {name} needs a button: left, right or middle (not {other:?})"
+                    ));
+                }
+            };
+            Action::MouseButton(button, name == "mouse_down")
+        }
         "screenshot" => Action::Screenshot(arg.filter(|a| !a.is_empty())),
         "quick_save" => none(&arg).map(|()| Action::QuickSave)?,
         "quick_load" => none(&arg).map(|()| Action::QuickLoad)?,
@@ -99,7 +146,8 @@ pub(crate) fn parse(text: &str) -> Result<Scripted, String> {
         }
         _ => {
             return Err(format!(
-                "--at {text}: unknown action {name:?} (reset, freeze, screenshot[=FILE], quick_save, quick_load, \
+                "--at {text}: unknown action {name:?} (reset, freeze, screenshot[=FILE], key_down=K, key_up=K, mouse_move=DX,DY, \
+                 mouse_down=B, mouse_up=B, quick_save, quick_load, \
                  state_slot_next, state_slot_prev, load_tape=F, load_disk=F, eject_tape, eject_disk, load_disk_b=F, eject_disk_b, save_disk_b=F, load_snapshot=F, \
                  save_snapshot=F, load_state=F, save_state=F, save_tape=F, save_disk=F)"
             ));
@@ -195,6 +243,28 @@ impl Runner {
                 machine
                     .try_key_event(key, matches!(action, Action::KeyDown(_)))
                     .map_err(|e| format!("key {key}: {e}"))?;
+                Ok(None)
+            }
+            Action::MouseMove(dx, dy) => {
+                for (dx, dy) in motion_steps(*dx, *dy) {
+                    machine
+                        .try_mouse_event(crate::emu_thread::MouseEvent::Motion { dx, dy })
+                        .map_err(|e| format!("mouse_move: {e}"))?;
+                }
+                Ok(None)
+            }
+            Action::MouseButton(button, pressed) => {
+                let button = match button {
+                    MouseKey::Left => bevy::input::mouse::MouseButton::Left,
+                    MouseKey::Right => bevy::input::mouse::MouseButton::Right,
+                    MouseKey::Middle => bevy::input::mouse::MouseButton::Middle,
+                };
+                machine
+                    .try_mouse_event(crate::emu_thread::MouseEvent::Button {
+                        button,
+                        pressed: *pressed,
+                    })
+                    .map_err(|e| format!("mouse button: {e}"))?;
                 Ok(None)
             }
             Action::Screenshot(None) => command(self, EmuCommand::Screenshot, machine),
@@ -416,5 +486,72 @@ mod tests {
         runner.run_due(0, &mut machine);
         assert!(runner.failed, "a missing file fails the run");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn parse_mouse_actions() {
+        assert_eq!(
+            parse("5:mouse_move=-200,30").unwrap().action,
+            Action::MouseMove(-200, 30)
+        );
+        assert_eq!(
+            parse("5:mouse_down=left").unwrap().action,
+            Action::MouseButton(MouseKey::Left, true)
+        );
+        assert_eq!(
+            parse("5:mouse_up=Right").unwrap().action,
+            Action::MouseButton(MouseKey::Right, false)
+        );
+        assert!(parse("5:mouse_move=3").is_err());
+        assert!(parse("5:mouse_move=a,b").is_err());
+    }
+
+    #[test]
+    fn unknown_button_is_an_error() {
+        let e = parse("5:mouse_down=thumb").unwrap_err();
+        assert!(
+            e.contains("left") && e.contains("right") && e.contains("middle"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn a_large_move_is_split_into_steps_that_sum_to_it() {
+        for (dx, dy) in [(300, -200), (-1000, 7), (0, 0), (127, -128), (-129, 128)] {
+            let steps = motion_steps(dx, dy);
+            assert_eq!(steps.iter().map(|s| s.0 as i32).sum::<i32>(), dx);
+            assert_eq!(steps.iter().map(|s| s.1 as i32).sum::<i32>(), dy);
+            assert!(!steps.is_empty() || (dx, dy) == (0, 0));
+        }
+        assert_eq!(motion_steps(300, -200).len(), 3);
+    }
+
+    /// The stub machine adds the motion it receives to RAM `$FF00`/`$FF02` (little-endian) and keeps the buttons at
+    /// `$FF04` (bit 0 left, 1 right, 2 middle).
+    #[test]
+    fn mouse_actions_reach_the_machine() {
+        let machine_id = "stub-machine";
+        let mut machine =
+            crate::plugin_bridge::create_hosted_machine(plugin_api::MachineCreateRequest {
+                machine_id: machine_id.to_string(),
+                region: Some("pal".to_string()),
+                roms: Vec::new(),
+                options: Vec::new(),
+            })
+            .expect("the bundled stub machine");
+        let actions = vec![
+            parse("0:mouse_move=300,-200").unwrap(),
+            parse("0:mouse_down=left").unwrap(),
+            parse("1:mouse_down=right").unwrap(),
+            parse("1:mouse_up=left").unwrap(),
+        ];
+        let mut runner = Runner::new(machine_id, MediaSettings::default(), actions);
+        runner.run_due(0, &mut machine);
+        runner.run_due(1, &mut machine);
+        assert!(!runner.failed);
+        let word =
+            |a: u64| i16::from_le_bytes([machine.read_memory(a), machine.read_memory(a + 1)]);
+        assert_eq!((word(0xFF00), word(0xFF02)), (300, -200));
+        assert_eq!(machine.read_memory(0xFF04), 0b010);
     }
 }
