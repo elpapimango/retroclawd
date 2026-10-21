@@ -70,6 +70,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mc68901"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "plugin-api"
 version = "0.1.0"
 source = "git+https://github.com/elpapimango/retroclawd-crates?rev=b28ea9a680edb578afcb37cb018e41059e7a81c5#b28ea9a680edb578afcb37cb018e41059e7a81c5"
