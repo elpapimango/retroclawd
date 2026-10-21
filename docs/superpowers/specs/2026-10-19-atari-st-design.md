@@ -957,3 +957,23 @@ Plan `docs/superpowers/plans/2026-10-21-atari-st-slices3-5.md`.
 - **Conflicts recorded**: DMA status bit 0 (the book says 0 = no error; Hatari and EmuTOS show 1), `$FF8604` upper
   byte (book: 1s; Hatari: 0s), IKBD version (`$F0` first release; `$F1` observed).
 - **Still open**: `machines/atari/docs/hardware-facts.md` (`[H?]` rows) and TODO.md "Atari ST: next slices".
+
+## Status (2026-10-21): slice 6 done, Phase 1 done
+
+Plan `docs/superpowers/plans/2026-10-21-atari-st-slice6.md`. The section 24 exit criteria:
+
+- **SingleStepTests**: every case exact except an explicit list, each entry justified
+  (`shared/crates/core/68000/tests/singlestep-expected.md`): 3 736 ASR carry cases where the data disagrees with the PRM,
+  2 bad upstream cases (issue #4). The test fails on any other failure and when a listed case starts passing.
+- **Exception, STOP and IRQ tests**: green (slice 1).
+- **Desktop**: reached headless, identical in three runs; scenario S1 compares it with Hatari 2.6.1's picture.
+- **Keyboard, mouse, joystick**: scenarios S2, S2M, S2J through `--at key_down`, `--at mouse_move/mouse_down/mouse_up`.
+  Headless Hatari takes no input, so these goldens are retroclawd's own, each deterministic over three runs.
+- **PSG tone**: S4, 441.31 Hz from the YM2149 catalog formula.
+- **`.st` read**: S3, a floppy made by `rcdisk` (FAT12) lists both files in the desktop window.
+- **Injected fault**: `emutos_with_an_injected_fault_reports_it` (atari `tests/diagnostics.rs`).
+- **`check_all.sh`**: runs `scenarios-atari-st`; without EmuTOS (no cache, RomM or network) the scenarios are `SKIP`,
+  a firmware hash mismatch still fails.
+
+Not in the manifest: S5 (save states, Phase 2), S7 (no ST test program shipped), S8 (no kind yet). Next: Phase 2,
+TODO.md "Atari ST: Phase 2 next".

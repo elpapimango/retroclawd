@@ -106,12 +106,15 @@ No real hardware is available, so these stay parked until someone has it; everyt
   entities; gilrs itself was never exercised. To check: a physical pad, bind `reset = ["f12", "pad:select+start"]`, hold Select then
   press Start, and confirm Select alone does not reach the machine as a joystick button once it is part of a chord.
 
-## Atari ST: next slices (after slices 3-5, 2026-10-21)
+## Atari ST: Phase 2 next (after Phase 1, 2026-10-21)
 
-Next: slice 6, the Phase 1 exit (spec section 24): an `atari-st.manifest.toml` with the S1/S2/S4/S5/S6 scenarios
-against Hatari (PSG tone, keyboard/mouse/joystick through `--at`); a FAT12 floppy made by our tools listed on the
-desktop; the injected-fault diagnostics test; the 68000 SingleStepTests expected failures justified; `check_all.sh`
-running the Atari manifest. Deferred from the slices 3-5 review (plan ledger): serde on the PSG/ACIA/DMA/drive state,
+Phase 1 is done (slices 1-6; spec section 24, Status 2026-10-21). Next: Phase 2 (spec section 5, column "Phase 2";
+backlog section 23 item 11): disk writing and formatting, `.msa`/`.stx`, save states (spec section 19; S5 in the
+manifest), raster palette and sync/resolution border foundations, the MFP USART, the full IKBD command set (absolute
+mouse, joystick modes), cartridges, bus errors from the GLUE, ACSI, printer/RS-232/MIDI, and rcasm/rcdis for the
+68000 (item 10, can run in parallel). The scenario manifest has no S5 (states), S7 (no ST test program shipped) or S8
+(no kind yet); its input goldens are retroclawd's own because headless Hatari takes no input.
+Deferred from the slices 3-5 review (plan ledger): serde on the PSG/ACIA/DMA/drive state,
 a DMA transfer across the top of RAM test, drive numbers >= 2 refused by the plugin, the DMA HDC/sector-count bit
 order, index interrupts while the FDC is idle, IKBD reset cancelling a byte in flight and its queue size, word/long
 accesses to the PSG (`MOVE.L`/`MOVEP` in games; no fact yet), a looser `.st` geometry rule for images with stale BPBs,

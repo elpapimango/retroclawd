@@ -52,14 +52,16 @@ fast loader now returns through the KERNAL's own SEARCHING/LOADING routines, and
 frame through `Machine::frame_rate` / `MachineMetadata::frame_rate` (ZX81 312 x 207 T-states, its line corrected from 208 to 207; CPC
 79872; C64/C128 one raster frame, 19656 PAL), and the host paces and budgets by it. Details and the compare options are in `retroclawd-tools/CLAUDE.md`.
 
-## Atari ST (slices 1-5, 2026-10-21)
+## Atari ST (Phase 1 done: slices 1-6, 2026-10-21)
 
 Design `docs/superpowers/specs/2026-10-19-atari-st-design.md`, plans `docs/superpowers/plans/2026-10-19-atari-st-slice1.md`
-`docs/superpowers/plans/2026-10-20-atari-st-slice2.md` and `docs/superpowers/plans/2026-10-21-atari-st-slices3-5.md`. Every hardware fact used is listed with its source in
+`docs/superpowers/plans/2026-10-20-atari-st-slice2.md`, `docs/superpowers/plans/2026-10-21-atari-st-slices3-5.md` and
+`docs/superpowers/plans/2026-10-21-atari-st-slice6.md`. Every hardware fact used is listed with its source in
 `machines/atari/docs/hardware-facts.md` (`[D]` datasheet, `[H]` documentation, `[O]` observed in Hatari, `[H?]`
 unresolved); an I/O address without a fact stops the machine instead of returning an invented value.
 The 68000 is `mc68000` in `shared/` (SingleStepTests 68000/v1: 996 322 of 1 000 060 cases exact, the rest an ASR carry
-disagreement with the PRM and two bad upstream cases; `scripts/fetch_singlesteptests.sh` fetches the suite, never committed).
+disagreement with the PRM and two bad upstream cases, an explicit list in `tests/singlestep.rs` with its sources in
+`tests/singlestep-expected.md`; `scripts/fetch_singlesteptests.sh` fetches the suite, never committed).
 `atari-st` maps the 192 KB TOS at `$FC0000` (mirrored at `$0-$7`), RAM through the memory controller (`$FF8001`, DRAM
 row/column aliasing so TOS sizes every `--ram` like Hatari), the Shifter (`st-shifter`: video base, sync mode, palette,
 resolution, a frame-based 640x400 picture), the MC68901 MFP (`mc68901`: GPIP, interrupt controller, timers; USART
@@ -76,6 +78,12 @@ mono frame's line count is sourced.
 Firmware: `--firmware auto` now also downloads from a `firmware.toml` `url` (zip SHA-1 `archive_sha1`, file `entry`,
 both hashes checked) and caches it under `<cache>/firmware/<sha1>.bin`; lookup order cache, RomM, URL; `when = { region =
 ... }` matches `--region`. Reference emulator: Hatari 2.6.1 (black box; `retroclawd-tools/scripts/capture_hatari_trace.py`).
+Slice 6 (the Phase 1 exit): `machines/atari/atari-st.manifest.toml` (S1 desktop against Hatari's picture by
+similarity, `retroclawd-tools/scripts/capture_hatari_screen.py`; S2/S2J/S2M/S3 keys, joystick, mouse and a floppy made
+by `rcdisk` (`.st`, FAT12, `rcdisk boot`) as exact goldens made by retroclawd, since headless Hatari takes no input;
+S4 YM2149 tone; S6 frame length), media from `machines/atari/scenarios/build.sh`. `--at mouse_move=DX,DY` (split into
+steps of at most 127) and `--at mouse_down|mouse_up=left|right|middle` drive the mouse in batch runs (`scripted.rs`).
+`rc-scenarios` reports a scenario as `SKIP` when `--firmware auto` finds no EmuTOS (no cache, RomM or network).
 
 ## What this is
 
