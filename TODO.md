@@ -1070,13 +1070,16 @@ actual PIA/POKEY serial pins, not ROM traps. Version 3 State preserves in-flight
 SIO, pending XEX and the IRQ-mask sample; versions 1/2 remain readable
 (eject attached disks before loading version 1).
 S2 reference printable-input automation remains blocked. S7 now executes:
-fast 24/33/1, accurate 22/35/1 passed/failed/skipped versus reference 25/32/1.
+fast 24/33/1, accurate 24/33/1 passed/failed/skipped versus reference 25/32/1.
 POKEY async receive timer hold and shared SHY/SHX/SHA/TAS high-byte stores are
 fixed; the illegal-instruction test now passes. CLI/SEI/PLP mask sampling also
 passes, with explicit State migrations across all affected Machines and Drives.
 Old-file readers remain; keep original files for rollback to older Plugins.
-This is not a cycle-exact IRQ/NMI/BRK pipeline. Accurate instruction
-timing and Chip DMA/video/pipeline failures remain. These are not acceptance passes.
+Accurate DMA HALT now stops writes independently of WSYNC RDY. The apparent
+seven-cycle SLO was lost refresh stalls, not a missing Core cycle or POKEY timer
+bug. Both CPU timing tests and serial-port timing pass in both Regions/modes.
+This is not a cycle-exact IRQ/NMI/BRK pipeline. BRK and Chip DMA/video/pipeline
+failures remain. These are not acceptance passes.
 S4 checks documented pitch only, not reference RMS calibration.
 Original Atari firmware, general Media, games, P/M, scrolling, GTIA special modes
 and exact timing remain unverified/unimplemented. Evidence and reproduction:
