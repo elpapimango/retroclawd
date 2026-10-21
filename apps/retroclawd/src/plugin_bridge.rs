@@ -1366,6 +1366,7 @@ impl HostedBackend {
             || lower == "g64"
             || lower == "x64"
             || lower == "nib"
+            || lower == "st"
         {
             self.apply_disk(instance, 0, &lower, bytes)
         } else if lower == "cpr" || lower == "crt" {
@@ -2620,6 +2621,24 @@ mod tests {
             "the plugin's own explanation: {error}"
         );
         assert!(!error.contains("machine plugin call failed"), "{error}");
+    }
+
+    /// An Atari ST `.st` image is a disk: `--game-config` media and the extension routing hand it to the disk slot.
+    #[test]
+    fn st_extension_is_a_disk() {
+        use plugin_api::MachineCreateRequest;
+        let mut machine = super::create_hosted_machine(MachineCreateRequest {
+            machine_id: "stub-machine".to_string(),
+            region: Some("pal".to_string()),
+            roms: Vec::new(),
+            options: Vec::new(),
+        })
+        .expect("the bundled stub machine");
+        let error = machine.apply_media("st", b"anything", 1).unwrap_err();
+        assert!(
+            error.contains("not a disk image"),
+            "went to the disk slot: {error}"
+        );
     }
 
     #[test]
