@@ -178,3 +178,78 @@ fn a_mono_monitor_is_refused_until_its_line_count_is_sourced() {
     let err = AtariSt::new(cfg).err().expect("refused");
     assert!(err.contains("mono"), "{err}");
 }
+
+/// A long run with Timer C interrupting and the sync mode flipped every 64 frames by a VBL handler: every frame is
+/// exactly one of the two colour shapes, the HBLs add up to their lines, and the MFP has counted exactly the ticks
+/// of the time at the last VBL.
+#[test]
+fn long_run_keeps_exact_time_across_50_60hz_switches() {
+    let program = [
+        0x21FC, 0x00FC, 0x0080, 0x0070, // MOVE.L #$FC0080,$70.W   VBL handler
+        0x21FC, 0x00FC, 0x00C0, 0x0114, // MOVE.L #$FC00C0,$114.W  Timer C handler
+        0x11FC, 0x0048, 0xFA17, // VR $48
+        0x11FC, 0x00C0, 0xFA23, // TCDR 192
+        0x11FC, 0x0050, 0xFA1D, // TCDCR: Timer C / 64
+        0x11FC, 0x0020, 0xFA09, // IERB channel 5
+        0x11FC, 0x0020, 0xFA15, // IMRB channel 5
+        0x46FC, 0x2300, // MOVE #$2300,SR
+        BRA_SELF,
+    ];
+    let vbl: [u16; 11] = [
+        0x5278, 0x1000, // ADDQ.W #1,$1000.W
+        0x3038, 0x1000, // MOVE.W $1000.W,D0
+        0x0240, 0x003F, // ANDI.W #$3F,D0
+        0x6606, // BNE.S +6
+        0x0A38, 0x0002, 0x820A, // EORI.B #2,$FF820A.W: flip 50/60 Hz
+        0x4E73, // RTE
+    ];
+    let timer: [u16; 6] = [
+        0x52B8, 0x1004, // ADDQ.L #1,$1004.W
+        0x11FC, 0x00DF, 0xFA11, // ISRB: end of interrupt
+        0x4E73, // RTE
+    ];
+    // The program is longer than $30 bytes, so both handlers go above it.
+    let mut image = rom(&program, &[]);
+    for (at, code) in [(0x80, &vbl[..]), (0xC0, &timer[..])] {
+        for (i, w) in code.iter().enumerate() {
+            image[at + 2 * i..at + 2 + 2 * i].copy_from_slice(&w.to_be_bytes());
+        }
+    }
+    let mut m = AtariSt::new(config(image)).unwrap();
+    let clock = MfpClock::new(32_084_988);
+    let (mut lines, mut shapes, mut last) = (0u64, [0u32; 2], 0u64);
+    while m.vbl_count() < 1000 {
+        let before = m.vbl_count();
+        m.step();
+        if m.vbl_count() != before {
+            let length = m.last_vbl_at() - last;
+            last = m.last_vbl_at();
+            lines += match length {
+                160_256 => {
+                    shapes[0] += 1;
+                    313
+                }
+                133_604 => {
+                    shapes[1] += 1;
+                    263
+                }
+                other => panic!("frame {} is {other} clocks", m.vbl_count()),
+            };
+            assert_eq!(
+                m.mfp_ticks(),
+                clock.ticks_at(last),
+                "frame {}",
+                m.vbl_count()
+            );
+        }
+    }
+    assert!(m.io_stop().is_none(), "{:?}", m.io_stop());
+    assert!(shapes[0] > 0 && shapes[1] > 0, "{shapes:?}");
+    assert_eq!(m.hbl_count(), lines);
+    let timer_irqs = (0..4).fold(0u32, |v, i| v << 8 | m.read_memory(0x1004 + i) as u32);
+    assert_eq!(
+        timer_irqs as u64,
+        (clock.ticks_at(last) - 2) / (64 * 192),
+        "Timer C kept time"
+    );
+}

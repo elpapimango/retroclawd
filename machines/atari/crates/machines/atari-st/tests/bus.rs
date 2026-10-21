@@ -254,3 +254,23 @@ fn shifter_palette_word_write_and_render() {
     assert_eq!(b.shifter().video_base(), 0x010000);
     assert!(b.stop().is_none());
 }
+
+/// After a stop the rest of the stopped instruction must not reach a device, the log or RAM with the invented `$FF`
+/// (e.g. `MOVE.B $FFFA00,$FFFA03`: an even MFP byte, then AER).
+#[test]
+fn nothing_after_a_stop_reaches_devices_or_ram() {
+    let mut b = StBus::new(&Config {
+        io_log_limit: 100,
+        ..config(rom())
+    })
+    .unwrap();
+    assert_eq!(b.read(0xFFFA00, Size::Byte, SUPER), Ok(0xFF));
+    assert_eq!(b.stop().unwrap().reason, StopReason::NoFact);
+    b.write(0xFFFA03, Size::Byte, 0xFF, SUPER).unwrap();
+    b.write(0xFF8240, Size::Word, 0xFFFF, SUPER).unwrap();
+    b.write(0x1000, Size::Word, 0xFFFF, SUPER).unwrap();
+    assert_eq!(b.mfp().read(1), 0, "AER untouched");
+    assert_eq!(b.shifter().palette()[0], 0, "palette untouched");
+    assert_eq!(b.peek(0x1000), 0, "RAM untouched");
+    assert!(b.io_log().is_empty(), "{:?}", b.io_log());
+}

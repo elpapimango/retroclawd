@@ -288,6 +288,11 @@ impl StBus {
             Size::Byte => 0xFF,
             Size::Word => 0xFFFF,
         };
+        // After a stop the rest of the stopped instruction runs on invented values: it must reach no device and
+        // no log line.
+        if self.stop.is_some() {
+            return Ok(ff);
+        }
         let reason = match io::decode(addr, size) {
             Decode::BusError => return Err(BusFault),
             Decode::Device(Device::Mfp) => {
@@ -398,6 +403,8 @@ impl M68kBus for StBus {
             Region::Io => {
                 self.io(addr & 0xFF_FFFF, size, true, value, fc)?;
             }
+            // Nor RAM (see `io`).
+            Region::Ram(_) if self.stop.is_some() => {}
             Region::Ram(i) => match size {
                 Size::Byte => self.ram[i] = value as u8,
                 Size::Word => {

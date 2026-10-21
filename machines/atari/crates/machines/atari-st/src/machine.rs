@@ -156,11 +156,13 @@ impl AtariSt {
 
     /// Lets `clocks` pass and processes the events due by then, each at its own time.
     fn advance(&mut self, clocks: u32) {
-        self.now += clocks as u64;
-        self.bus.now = self.now;
+        // An MFP write during the instruction happened at its start (fast mode, `bus.now`): reschedule from there,
+        // before the events the instruction crossed, so none of them sees the MFP ahead of its own time.
         if std::mem::take(&mut self.bus.mfp_dirty) {
             self.schedule_mfp(self.now);
         }
+        self.now += clocks as u64;
+        self.bus.now = self.now;
         while let Some((at, _, event)) = self.sched.pop_due(self.now) {
             match event {
                 Event::LineEnd => self.line_end(at),
