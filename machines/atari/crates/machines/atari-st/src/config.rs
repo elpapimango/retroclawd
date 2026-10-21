@@ -57,6 +57,7 @@ pub struct Config {
     pub ram: RamSize,
     pub region: Region,
     pub accuracy: Accuracy,
+    pub monitor: st_shifter::Monitor,
     /// The TOS image as stored (big-endian, as the CPU reads it).
     pub rom: Vec<u8>,
     /// Instructions the trace file records (0: no trace).

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
-use atari_st::{Accuracy, AtariSt, Config, RamSize, Region};
+use atari_st::{Accuracy, AtariSt, Config, Monitor, RamSize, Region};
 use machine::{AUDIO_SAMPLE_RATE, Machine};
 use plugin_api::{
     ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, BinaryBlob, CodecError, CpuFamily, CpuInfo,
@@ -250,7 +250,7 @@ fn machine_profile() -> MachineProfile {
                 "monitor",
                 text_choices(&["color", "mono"]),
                 text("color"),
-                "Monitor (recorded; the picture arrives with the Shifter)",
+                "Monitor: color (mono is refused until its frame timing is sourced)",
             ),
             option(
                 "model",
@@ -334,6 +334,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         blob(&req.roms, "rom").ok_or_else(|| "missing required binary blob: rom".to_string())?;
     let mut ram = RamSize::M1;
     let mut accuracy = Accuracy::Fast;
+    let mut monitor = Monitor::Colour;
     let mut model = "stfm".to_string();
     let mut trace_file = None;
     let mut trace_limit = DEFAULT_TRACE_LIMIT;
@@ -353,7 +354,13 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
                 };
             }
             ("model", DebugValue::Text(v)) => model = v.clone(),
-            ("monitor", DebugValue::Text(_)) => {}
+            ("monitor", DebugValue::Text(v)) => {
+                monitor = match v.as_str() {
+                    "color" => Monitor::Colour,
+                    "mono" => Monitor::Mono,
+                    other => return Err(format!("option \"monitor\": unknown value \"{other}\"")),
+                };
+            }
             ("trace_file", DebugValue::Text(v)) => trace_file = Some(PathBuf::from(v)),
             ("trace_limit", DebugValue::U64(v)) => trace_limit = *v,
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(PathBuf::from(v)),
@@ -380,6 +387,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         ram,
         region,
         accuracy,
+        monitor,
         rom: rom.to_vec(),
         trace_limit: if trace_file.is_some() {
             trace_limit.min(u32::MAX as u64) as u32

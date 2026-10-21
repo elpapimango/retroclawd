@@ -19,8 +19,18 @@
 use crate::config::Config;
 use crate::io::{self, Decode, Device};
 use crate::iolog::IoAccess;
+use crate::mfp_clock::MfpClock;
 use crate::mmu::Mmu;
+use crate::scheduler;
 use mc68000::{BusFault, FunctionCode, IackResponse, M68kBus, Size};
+use mc68901::Mfp;
+use st_shifter::{Monitor, Shifter};
+
+/// Interrupt levels (TOS documentation, "The system vectors": `$68` level 2 HBL, `$70` level 4 VBL, `$78` level 6
+/// MFP).
+pub const HBL_LEVEL: u8 = 2;
+pub const VBL_LEVEL: u8 = 4;
+pub const MFP_LEVEL: u8 = 6;
 
 pub const ROM_BASE: u32 = 0xFC_0000;
 /// TOS 1.0x and the EmuTOS 192 KB images.
@@ -59,8 +69,17 @@ pub struct StBus {
     stop: Option<IoStop>,
     /// Emulated time, kept up to date by the machine, for the stop record.
     pub(crate) now: u64,
-    /// The interrupt the machine is asking for (VBL autovector), answered by the acknowledge cycle.
-    pub(crate) vbl_pending: bool,
+    /// The GLUE's interrupt latches, cleared by their acknowledge cycles.
+    hbl_pending: bool,
+    vbl_pending: bool,
+    pub(crate) mfp: Mfp,
+    pub(crate) shifter: Shifter,
+    pub(crate) monitor: Monitor,
+    clock: MfpClock,
+    /// MFP ticks the MFP has been advanced by.
+    mfp_ticks: u64,
+    /// An MFP register was written: its next timeout may have moved.
+    pub(crate) mfp_dirty: bool,
     /// The address of the instruction running, for the I/O log.
     pub(crate) pc: u32,
     io_log: Vec<IoAccess>,
@@ -114,17 +133,79 @@ impl StBus {
         }
         check_reset_pc(&cfg.rom)?;
         let mmu = Mmu::new(cfg.ram);
+        let mut mfp = Mfp::new();
+        for (line, level) in gpip_inputs(cfg.monitor) {
+            mfp.set_input(line, level);
+        }
         Ok(Self {
             ram: vec![0; mmu.ram_bytes()],
             mmu,
             rom: cfg.rom.clone(),
             stop: None,
             now: 0,
+            hbl_pending: false,
             vbl_pending: false,
+            mfp,
+            shifter: Shifter::new(cfg.region == crate::config::Region::Pal),
+            monitor: cfg.monitor,
+            clock: MfpClock::new(scheduler::crystal_hz(cfg.region)),
+            mfp_ticks: 0,
+            mfp_dirty: false,
             pc: 0,
             io_log: Vec::new(),
             io_log_limit: cfg.io_log_limit,
         })
+    }
+
+    /// The interrupt level the GLUE and the MFP ask for: the highest one pending.
+    pub fn ipl(&self) -> u8 {
+        if self.mfp.irq() {
+            MFP_LEVEL
+        } else if self.vbl_pending {
+            VBL_LEVEL
+        } else if self.hbl_pending {
+            HBL_LEVEL
+        } else {
+            0
+        }
+    }
+
+    pub fn raise_hbl(&mut self) {
+        self.hbl_pending = true;
+    }
+
+    pub fn raise_vbl(&mut self) {
+        self.vbl_pending = true;
+    }
+
+    pub fn mfp_mut(&mut self) -> &mut Mfp {
+        &mut self.mfp
+    }
+
+    pub fn mfp(&self) -> &Mfp {
+        &self.mfp
+    }
+
+    pub fn shifter(&self) -> &Shifter {
+        &self.shifter
+    }
+
+    /// MFP ticks so far.
+    pub fn mfp_ticks(&self) -> u64 {
+        self.mfp_ticks
+    }
+
+    pub(crate) fn mfp_clock(&self) -> MfpClock {
+        self.clock
+    }
+
+    /// Advances the MFP to CPU clock `cycle` (never backwards).
+    pub(crate) fn catch_up_mfp(&mut self, cycle: u64) {
+        let target = self.clock.ticks_at(cycle);
+        if target > self.mfp_ticks {
+            self.mfp.tick(target - self.mfp_ticks);
+            self.mfp_ticks = target;
+        }
     }
 
     /// The completed I/O accesses so far (at most `io_log_limit`).
@@ -204,6 +285,31 @@ impl StBus {
         };
         let reason = match io::decode(addr, size) {
             Decode::BusError => return Err(BusFault),
+            Decode::Device(Device::Mfp) => {
+                self.catch_up_mfp(self.now);
+                // Internals pp.60-61: register n at $FFFA01 + 2n.
+                let reg = ((addr - 0xFF_FA01) / 2) as u8;
+                let v = if write {
+                    self.mfp.write(reg, value as u8);
+                    self.mfp_dirty = true;
+                    value
+                } else {
+                    self.mfp.read(reg) as u32
+                };
+                self.log_io(addr, size, write, v);
+                return Ok(v);
+            }
+            Decode::Device(Device::Shifter) => {
+                let word = size == Size::Word;
+                let v = if write {
+                    self.shifter.write(addr, word, value as u16);
+                    value
+                } else {
+                    self.shifter.read(addr, word).unwrap_or(0xFFFF) as u32
+                };
+                self.log_io(addr, size, write, v);
+                return Ok(v);
+            }
             Decode::Device(Device::Mmu) => {
                 let v = if write {
                     self.mmu.write_config(value as u8);
@@ -301,8 +407,50 @@ impl M68kBus for StBus {
         Ok(())
     }
 
-    fn iack(&mut self, _level: u8) -> IackResponse {
-        self.vbl_pending = false;
-        IackResponse::Autovector
+    /// HBL and VBL are autovectored (VPA); the MFP puts its vector on the bus, and with nothing to give the cycle
+    /// ends as spurious.
+    fn iack(&mut self, level: u8) -> IackResponse {
+        match level {
+            MFP_LEVEL => {
+                self.catch_up_mfp(self.now);
+                match self.mfp.iack() {
+                    Some(v) => IackResponse::Vector(v),
+                    None => IackResponse::Spurious,
+                }
+            }
+            VBL_LEVEL => {
+                self.vbl_pending = false;
+                IackResponse::Autovector
+            }
+            HBL_LEVEL => {
+                self.hbl_pending = false;
+                IackResponse::Autovector
+            }
+            _ => IackResponse::Spurious,
+        }
     }
+
+    /// The RESET instruction: [D] the MFP's RESET input (MC68901 §2.2.3). Other devices keep their state until a
+    /// source says the line reaches them.
+    fn reset_devices(&mut self) {
+        self.catch_up_mfp(self.now);
+        self.mfp.reset();
+        self.mfp_dirty = true;
+    }
+}
+
+/// The GPIP lines' levels from the outside world (`docs/hardware-facts.md`, "Timing and interrupts"): I7 mono detect
+/// ([H] Internals p.61, low = mono), I5 FDC/HDC idle high and I0 Centronics BUSY high ([O] the `$A1` Hatari reads
+/// with a colour monitor); I1-I4 and I6 low ([O] same read).
+fn gpip_inputs(monitor: Monitor) -> [(u8, bool); 8] {
+    [
+        (0, true),
+        (1, false),
+        (2, false),
+        (3, false),
+        (4, false),
+        (5, true),
+        (6, false),
+        (7, monitor == Monitor::Colour),
+    ]
 }

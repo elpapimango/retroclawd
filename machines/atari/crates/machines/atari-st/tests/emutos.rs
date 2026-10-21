@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use atari_st::{Accuracy, AtariSt, Config, RamSize, Region};
+use atari_st::{Accuracy, AtariSt, Config, Device, Monitor, RamSize, Region, StopReason};
 use machine::Machine;
 
 const ETOS192UK_SHA1: &str = "904ea9dc09ff8286f6e0272c12255dfe85beb17a";
@@ -55,6 +55,7 @@ fn run_with(rom: Vec<u8>, ram: RamSize) -> AtariSt {
         ram,
         region: Region::Pal,
         accuracy: Accuracy::Fast,
+        monitor: Monitor::Colour,
         rom,
         trace_limit: 1_000_000,
         io_log_limit: 1_000_000,
@@ -207,4 +208,22 @@ fn emutos_sizes_ram_like_hatari() {
             .collect());
         assert_eq!(ours, mmu(reference), "--ram {name}");
     }
+}
+
+/// Slice 2's end: EmuTOS sets up the MMU, the MFP and the Shifter and stops at its first write to the YM2149, the
+/// same way every time.
+#[test]
+fn emutos_runs_to_the_psg() {
+    let Some(rom) = emutos() else { return };
+    let a = run(rom.clone());
+    let b = run(rom);
+    let stop = a.io_stop().expect("stopped");
+    assert_eq!(stop.reason, StopReason::NotEmulated(Device::Psg));
+    assert_eq!((stop.addr, stop.write, stop.value), (0xFF8800, true, 0x07));
+    let last = a.io_log().last().expect("logged");
+    assert_eq!(last.pc, 0xFC6D88);
+    assert_eq!(a.io_log().len(), 106);
+    assert_eq!(a.io_log(), b.io_log());
+    assert_eq!(a.registers(), b.registers());
+    assert_eq!(a.render_frame(), b.render_frame());
 }

@@ -1,6 +1,8 @@
 //! The ST memory map as the CPU sees it (tests against `StBus` through the 68000 bus trait).
 
-use atari_st::{Accuracy, Config, Decode, Device, RamSize, Region, StBus, StopReason, decode};
+use atari_st::{
+    Accuracy, Config, Decode, Device, Monitor, RamSize, Region, StBus, StopReason, decode,
+};
 use mc68000::{FunctionCode, M68kBus, Size};
 
 const SUPER: FunctionCode = FunctionCode::SUPERVISOR_DATA;
@@ -19,6 +21,7 @@ fn bus() -> StBus {
         ram: RamSize::M1,
         region: Region::Pal,
         accuracy: Accuracy::Fast,
+        monitor: Monitor::Colour,
         rom: rom(),
         trace_limit: 0,
         io_log_limit: 0,
@@ -121,6 +124,7 @@ fn a_rom_of_the_wrong_size_is_refused_with_the_sizes() {
         ram: RamSize::M1,
         region: Region::Pal,
         accuracy: Accuracy::Fast,
+        monitor: Monitor::Colour,
         rom: vec![0; 262_144],
         trace_limit: 0,
         io_log_limit: 0,
@@ -135,6 +139,7 @@ fn config(rom: Vec<u8>) -> Config {
         ram: RamSize::M1,
         region: Region::Pal,
         accuracy: Accuracy::Fast,
+        monitor: Monitor::Colour,
         rom,
         trace_limit: 0,
         io_log_limit: 0,
@@ -228,4 +233,24 @@ fn stops_name_the_device_or_the_missing_fact() {
     let mut b = bus();
     b.read(0xFF9000, Size::Byte, SUPER).unwrap();
     assert_eq!(b.stop().unwrap().reason, StopReason::NoFact);
+}
+
+#[test]
+fn mfp_registers_reachable_at_odd_addresses() {
+    let mut b = bus();
+    b.write(0xFFFA17, Size::Byte, 0x48, SUPER).unwrap(); // VR
+    assert_eq!(b.read(0xFFFA17, Size::Byte, SUPER), Ok(0x48));
+    b.write(0xFFFA25, Size::Byte, 0x99, SUPER).unwrap(); // TDDR, timer stopped
+    assert_eq!(b.read(0xFFFA25, Size::Byte, SUPER), Ok(0x99));
+    assert!(b.stop().is_none());
+}
+
+#[test]
+fn shifter_palette_word_write_and_render() {
+    let mut b = bus();
+    b.write(0xFF8240, Size::Word, 0x0777, SUPER).unwrap();
+    assert_eq!(b.read(0xFF8240, Size::Word, SUPER), Ok(0x0777));
+    b.write(0xFF8201, Size::Byte, 0x01, SUPER).unwrap();
+    assert_eq!(b.shifter().video_base(), 0x010000);
+    assert!(b.stop().is_none());
 }

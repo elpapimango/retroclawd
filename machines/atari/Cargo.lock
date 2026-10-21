@@ -8,7 +8,9 @@ version = "0.1.0"
 dependencies = [
  "machine",
  "mc68000",
+ "mc68901",
  "serde",
+ "st-shifter",
 ]
 
 [[package]]

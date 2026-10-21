@@ -1,6 +1,6 @@
 //! The bounded bring-up diagnostics: the I/O stop report and the PC trace.
 
-use atari_st::{Accuracy, AtariSt, Config, RamSize, Region};
+use atari_st::{Accuracy, AtariSt, Config, Monitor, RamSize, Region};
 use machine::Machine;
 
 /// A 192 KB ROM: SSP `$8000`, reset PC `$FC0030`, then `program`.
@@ -19,6 +19,7 @@ fn machine(program: &[u16], trace_limit: u32) -> AtariSt {
         ram: RamSize::M1,
         region: Region::Pal,
         accuracy: Accuracy::Fast,
+        monitor: Monitor::Colour,
         rom: rom(program),
         trace_limit,
         io_log_limit: 0,
@@ -72,6 +73,7 @@ fn exceptions_appear_in_the_report() {
         ram: RamSize::M1,
         region: Region::Pal,
         accuracy: Accuracy::Fast,
+        monitor: Monitor::Colour,
         rom,
         trace_limit: 0,
         io_log_limit: 0,
@@ -96,6 +98,7 @@ fn a_halted_cpu_is_reported_once() {
         ram: RamSize::M1,
         region: Region::Pal,
         accuracy: Accuracy::Fast,
+        monitor: Monitor::Colour,
         rom,
         trace_limit: 0,
         io_log_limit: 0,

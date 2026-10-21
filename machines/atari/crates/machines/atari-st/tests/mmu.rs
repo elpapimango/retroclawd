@@ -1,7 +1,7 @@
 //! The memory controller: the configuration register at `$FF8001` and how CPU addresses reach the fitted banks
 //! (facts: `docs/hardware-facts.md`, "MMU").
 
-use atari_st::{Accuracy, BankSize, Config, RamSize, Region, StBus, installed_banks};
+use atari_st::{Accuracy, BankSize, Config, Monitor, RamSize, Region, StBus, installed_banks};
 use mc68000::{FunctionCode, M68kBus, Size};
 
 const SUPER: FunctionCode = FunctionCode::SUPERVISOR_DATA;
@@ -18,6 +18,7 @@ fn bus(ram: RamSize) -> StBus {
         ram,
         region: Region::Pal,
         accuracy: Accuracy::Fast,
+        monitor: Monitor::Colour,
         rom: rom(),
         trace_limit: 0,
         io_log_limit: 0,

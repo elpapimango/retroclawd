@@ -10,12 +10,7 @@ use mc68000::{Cpu, RunState};
 use crate::bus::{IoStop, StBus};
 use crate::config::{Config, Region};
 use crate::diag::Diag;
-use crate::scheduler::{self, CLASS_VIDEO, Event, Scheduler};
-
-/// Interrupt level of the vertical blank (ST Internals vector table: `$070` "Interrupt level 4 (VBL)").
-const VBL_LEVEL: u8 = 4;
-/// The picture until the Shifter exists: black, the size of the high-resolution screen.
-const SCREEN: (u32, u32) = (640, 400);
+use crate::scheduler::{self, CLASS_MFP, CLASS_VIDEO, Event, FrameGeometry, Scheduler};
 
 pub struct AtariSt {
     cpu: Cpu,
@@ -25,19 +20,34 @@ pub struct AtariSt {
     now: u64,
     vbl_count: u64,
     last_vbl_at: u64,
+    hbl_count: u64,
+    /// This frame's shape (chosen at its start) and the lines done in it.
+    geometry: FrameGeometry,
+    line: u32,
+    /// The number of the one MFP timeout event that is current.
+    mfp_event: u64,
+    /// The picture drawn at the last VBL (640 x 400 RGB).
+    frame: Vec<u8>,
     diag: Diag,
 }
 
 impl AtariSt {
     pub fn new(cfg: Config) -> Result<Self, String> {
+        let bus = StBus::new(&cfg)?;
+        let geometry = scheduler::geometry(bus.shifter.sync_50hz(), cfg.monitor)?;
         let mut m = Self {
             cpu: Cpu::new(),
-            bus: StBus::new(&cfg)?,
+            bus,
             sched: Scheduler::new(),
             region: cfg.region,
             now: 0,
             vbl_count: 0,
             last_vbl_at: 0,
+            hbl_count: 0,
+            geometry,
+            line: 0,
+            mfp_event: 0,
+            frame: vec![0; (st_shifter::WIDTH * st_shifter::HEIGHT * 3) as usize],
             diag: Diag::new(cfg.trace_limit),
         };
         m.power_on();
@@ -46,14 +56,32 @@ impl AtariSt {
 
     fn power_on(&mut self) {
         self.sched = Scheduler::new();
-        self.sched
-            .schedule(self.cycles_per_frame(), CLASS_VIDEO, Event::Vbl);
+        self.sched.schedule(
+            self.geometry.clocks_per_line as u64,
+            CLASS_VIDEO,
+            Event::LineEnd,
+        );
         let clocks = self.cpu.reset(&mut self.bus);
         self.advance(clocks);
     }
 
+    /// The current frame's length in CPU clocks.
     pub fn cycles_per_frame(&self) -> u64 {
-        scheduler::cycles_per_frame(self.region)
+        self.geometry.clocks()
+    }
+
+    /// Lines ended so far (each one an HBL request).
+    pub fn hbl_count(&self) -> u64 {
+        self.hbl_count
+    }
+
+    /// MFP timer clocks so far.
+    pub fn mfp_ticks(&self) -> u64 {
+        self.bus.mfp_ticks()
+    }
+
+    pub fn bus(&self) -> &StBus {
+        &self.bus
     }
 
     /// Vertical blanks so far, and the time of the last one.
@@ -116,23 +144,67 @@ impl AtariSt {
         self.diag.take_report(&self.cpu, &headline, &text)
     }
 
-    /// Lets `clocks` pass and processes the events due by then.
+    /// Lets `clocks` pass and processes the events due by then, each at its own time.
     fn advance(&mut self, clocks: u32) {
         self.now += clocks as u64;
         self.bus.now = self.now;
+        if std::mem::take(&mut self.bus.mfp_dirty) {
+            self.schedule_mfp(self.now);
+        }
         while let Some((at, _, event)) = self.sched.pop_due(self.now) {
             match event {
-                Event::Vbl => {
-                    self.vbl_count += 1;
-                    self.last_vbl_at = at;
-                    self.bus.vbl_pending = true;
-                    self.sched
-                        .schedule(at + self.cycles_per_frame(), CLASS_VIDEO, Event::Vbl);
+                Event::LineEnd => self.line_end(at),
+                Event::MfpTimeout(n) if n == self.mfp_event => {
+                    self.bus.catch_up_mfp(at);
+                    self.schedule_mfp(at);
                 }
+                Event::MfpTimeout(_) => {}
             }
         }
-        self.cpu
-            .set_ipl(if self.bus.vbl_pending { VBL_LEVEL } else { 0 });
+        self.cpu.set_ipl(self.bus.ipl());
+    }
+
+    /// The end of a line: the HBL; after the frame's last line the VBL, the picture, and the next frame's shape
+    /// from the sync mode then in force.
+    fn line_end(&mut self, at: u64) {
+        self.hbl_count += 1;
+        self.bus.raise_hbl();
+        self.line += 1;
+        if self.line == self.geometry.lines {
+            self.line = 0;
+            self.vbl_count += 1;
+            self.last_vbl_at = at;
+            self.bus.raise_vbl();
+            self.bus.catch_up_mfp(at);
+            self.render();
+            // A mono monitor is refused at creation, so this cannot fail later.
+            if let Ok(g) = scheduler::geometry(self.bus.shifter.sync_50hz(), self.bus.monitor) {
+                self.geometry = g;
+            }
+        }
+        self.sched.schedule(
+            at + self.geometry.clocks_per_line as u64,
+            CLASS_VIDEO,
+            Event::LineEnd,
+        );
+    }
+
+    /// One MFP timeout event at the next timer timeout after `at`; any older one is now stale.
+    fn schedule_mfp(&mut self, at: u64) {
+        self.bus.catch_up_mfp(at);
+        self.mfp_event += 1;
+        if let Some(ticks) = self.bus.mfp().next_timeout() {
+            let clock = self.bus.mfp_clock();
+            let when = clock.cycle_for(self.bus.mfp_ticks() + ticks).max(at);
+            self.sched
+                .schedule(when, CLASS_MFP, Event::MfpTimeout(self.mfp_event));
+        }
+    }
+
+    fn render(&mut self) {
+        let bus = &self.bus;
+        bus.shifter
+            .render(bus.monitor, &|a| bus.peek(a), &mut self.frame);
     }
 }
 
@@ -148,10 +220,11 @@ impl Machine for AtariSt {
         }
     }
 
+    /// The power-on frame (the host paces by it; TOS may switch 50/60 Hz later).
     fn frame_rate(&self) -> FrameRate {
         FrameRate {
             num: scheduler::crystal_hz(self.region),
-            den: scheduler::CPU_DIVIDER * self.cycles_per_frame() as u32,
+            den: scheduler::CPU_DIVIDER * scheduler::cycles_per_frame(self.region) as u32,
         }
     }
 
@@ -203,11 +276,7 @@ impl Machine for AtariSt {
     }
 
     fn render_frame(&self) -> Option<(u32, u32, Vec<u8>)> {
-        Some((
-            SCREEN.0,
-            SCREEN.1,
-            vec![0; (SCREEN.0 * SCREEN.1 * 3) as usize],
-        ))
+        Some((st_shifter::WIDTH, st_shifter::HEIGHT, self.frame.clone()))
     }
 
     fn read_memory(&self, addr: Addr) -> u8 {
@@ -237,8 +306,9 @@ impl Machine for AtariSt {
         Err("Atari ST save states arrive in Phase 2".into())
     }
 
-    /// The reset button: CPU reset exception, RAM kept (spec section 14).
+    /// The reset button: the RESET line resets the CPU and the MFP ([D] MC68901 §2.2.3); RAM kept (spec section 9).
     fn reset(&mut self) {
+        mc68000::M68kBus::reset_devices(&mut self.bus);
         let clocks = self.cpu.reset(&mut self.bus);
         self.advance(clocks);
     }
