@@ -21,6 +21,7 @@ use crate::io::{self, Decode, Device};
 use crate::iolog::IoAccess;
 use crate::mfp_clock::MfpClock;
 use crate::mmu::Mmu;
+use crate::psg::Psg;
 use crate::scheduler;
 use mc68000::{BusFault, FunctionCode, IackResponse, M68kBus, Size};
 use mc68901::Mfp;
@@ -74,6 +75,7 @@ pub struct StBus {
     vbl_pending: bool,
     pub(crate) mfp: Mfp,
     pub(crate) shifter: Shifter,
+    pub(crate) psg: Psg,
     pub(crate) monitor: Monitor,
     clock: MfpClock,
     /// MFP ticks the MFP has been advanced by.
@@ -147,6 +149,7 @@ impl StBus {
             vbl_pending: false,
             mfp,
             shifter: Shifter::new(cfg.region == crate::config::Region::Pal),
+            psg: Psg::new((scheduler::crystal_hz(cfg.region) / scheduler::CPU_DIVIDER) as u64),
             monitor: cfg.monitor,
             clock: MfpClock::new(scheduler::crystal_hz(cfg.region)),
             mfp_ticks: 0,
@@ -193,6 +196,10 @@ impl StBus {
 
     pub fn shifter(&self) -> &Shifter {
         &self.shifter
+    }
+
+    pub fn psg(&self) -> &Psg {
+        &self.psg
     }
 
     /// MFP ticks so far.
@@ -316,6 +323,17 @@ impl StBus {
                     value
                 } else {
                     self.shifter.read(addr, word).unwrap_or(0xFFFF) as u32
+                };
+                self.log_io(addr, size, write, v);
+                return Ok(v);
+            }
+            Decode::Device(Device::Psg) => {
+                self.psg.catch_up(self.now);
+                let v = if write {
+                    self.psg.write(addr, value as u8);
+                    value
+                } else {
+                    self.psg.read(addr) as u32
                 };
                 self.log_io(addr, size, write, v);
                 return Ok(v);

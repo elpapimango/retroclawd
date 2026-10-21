@@ -188,6 +188,7 @@ impl AtariSt {
             self.last_vbl_at = at;
             self.bus.raise_vbl();
             self.bus.catch_up_mfp(at);
+            self.bus.psg.catch_up(at);
             self.render();
             // A mono monitor is refused at creation, so this cannot fail later.
             if let Ok(g) = scheduler::geometry(self.bus.shifter.sync_50hz(), self.bus.monitor) {
@@ -285,6 +286,12 @@ impl Machine for AtariSt {
             ("SR", c.sr() as u64),
         ]);
         regs
+    }
+
+    /// The YM2149's output, mono at 44 100 Hz, up to now.
+    fn drain_audio(&mut self) -> Vec<f32> {
+        self.bus.psg.catch_up(self.now);
+        self.bus.psg.drain()
     }
 
     fn render_frame(&self) -> Option<(u32, u32, Vec<u8>)> {

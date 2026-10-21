@@ -6,65 +6,20 @@
 //! `$XDG_CACHE_HOME/retroclawd`, `~/.cache/retroclawd`; file `firmware/<sha1>.bin`). Without it the tests print
 //! where they looked and pass.
 
+mod common;
+use common::{MAX_CYCLES, emutos, hatari_io};
+
 use std::path::PathBuf;
 
-use atari_st::{Accuracy, AtariSt, Config, Device, Monitor, RamSize, Region, StopReason};
+use atari_st::{AtariSt, RamSize};
 use machine::Machine;
 
-const ETOS192UK_SHA1: &str = "904ea9dc09ff8286f6e0272c12255dfe85beb17a";
-/// Long enough for many frames of boot; the run ends earlier at the first unemulated device.
-const MAX_CYCLES: u64 = 10_000_000;
-
-fn cache_root() -> Option<PathBuf> {
-    let env = |name: &str| {
-        std::env::var_os(name)
-            .filter(|v| !v.is_empty())
-            .map(PathBuf::from)
-    };
-    env("RETROCLAWD_CACHE_DIR")
-        .or_else(|| env("LOCALAPPDATA").map(|p| p.join("retroclawd").join("cache")))
-        .or_else(|| env("XDG_CACHE_HOME").map(|p| p.join("retroclawd")))
-        .or_else(|| env("HOME").map(|p| p.join(".cache").join("retroclawd")))
-}
-
-fn emutos() -> Option<Vec<u8>> {
-    let path = std::env::var_os("RC_EMUTOS")
-        .map(PathBuf::from)
-        .or_else(|| {
-            cache_root().map(|c| c.join("firmware").join(format!("{ETOS192UK_SHA1}.bin")))
-        })?;
-    match std::fs::read(&path) {
-        Ok(bytes) => Some(bytes),
-        Err(_) => {
-            eprintln!(
-                "EmuTOS not found at {} (set RC_EMUTOS, or run `retroclawd atari-st --firmware auto` once)",
-                path.display()
-            );
-            None
-        }
-    }
-}
-
-/// Runs to the stop (or `MAX_CYCLES`); returns the machine.
 fn run(rom: Vec<u8>) -> AtariSt {
-    run_with(rom, RamSize::M1)
+    common::run_until_stop(rom, RamSize::M1)
 }
 
 fn run_with(rom: Vec<u8>, ram: RamSize) -> AtariSt {
-    let mut m = AtariSt::new(Config {
-        ram,
-        region: Region::Pal,
-        accuracy: Accuracy::Fast,
-        monitor: Monitor::Colour,
-        rom,
-        trace_limit: 1_000_000,
-        io_log_limit: 1_000_000,
-    })
-    .unwrap();
-    while m.io_stop().is_none() && m.now() < MAX_CYCLES {
-        m.step();
-    }
-    m
+    common::run_until_stop(rom, ram)
 }
 
 #[test]
@@ -140,24 +95,6 @@ fn emutos_trace_matches_hatari_up_to_our_stop() {
     eprintln!("the first {n} PCs agree with Hatari");
 }
 
-/// Hatari's I/O log for `--memsize <size>` (`capture_hatari_trace.py --kind io`), from `RC_GOLDENS`.
-fn hatari_io(size: &str) -> Option<Vec<String>> {
-    let path = std::env::var_os("RC_GOLDENS")
-        .map(PathBuf::from)?
-        .join("atari-st")
-        .join(format!("emutos14-uk-io-{size}.txt"));
-    match std::fs::read_to_string(&path) {
-        Ok(text) => Some(text.lines().map(str::to_string).collect()),
-        Err(_) => {
-            eprintln!(
-                "no Hatari I/O log at {} (capture_hatari_trace.py --kind io makes it)",
-                path.display()
-            );
-            None
-        }
-    }
-}
-
 /// Every I/O access we make agrees with Hatari's, in order, up to our stop.
 #[test]
 fn emutos_io_log_matches_hatari() {
@@ -184,14 +121,7 @@ fn emutos_io_log_matches_hatari() {
 #[test]
 fn emutos_sizes_ram_like_hatari() {
     let Some(rom) = emutos() else { return };
-    for (name, ram) in [
-        ("256k", RamSize::K256),
-        ("512k", RamSize::K512),
-        ("1m", RamSize::M1),
-        ("2m", RamSize::M2),
-        ("2.5m", RamSize::M2_5),
-        ("4m", RamSize::M4),
-    ] {
+    for (name, ram) in common::RAM_SIZES {
         let Some(reference) = hatari_io(name) else {
             continue;
         };
@@ -208,22 +138,4 @@ fn emutos_sizes_ram_like_hatari() {
             .collect());
         assert_eq!(ours, mmu(reference), "--ram {name}");
     }
-}
-
-/// Slice 2's end: EmuTOS sets up the MMU, the MFP and the Shifter and stops at its first write to the YM2149, the
-/// same way every time.
-#[test]
-fn emutos_runs_to_the_psg() {
-    let Some(rom) = emutos() else { return };
-    let a = run(rom.clone());
-    let b = run(rom);
-    let stop = a.io_stop().expect("stopped");
-    assert_eq!(stop.reason, StopReason::NotEmulated(Device::Psg));
-    assert_eq!((stop.addr, stop.write, stop.value), (0xFF8800, true, 0x07));
-    let last = a.io_log().last().expect("logged");
-    assert_eq!(last.pc, 0xFC6D88);
-    assert_eq!(a.io_log().len(), 106);
-    assert_eq!(a.io_log(), b.io_log());
-    assert_eq!(a.registers(), b.registers());
-    assert_eq!(a.render_frame(), b.render_frame());
 }

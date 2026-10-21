@@ -102,12 +102,12 @@ fn nonexistent_memory_is_a_bus_error_in_supervisor_mode() {
 #[test]
 fn first_io_access_records_a_stop() {
     let mut b = bus();
-    assert!(b.read(0xFF8800, Size::Byte, SUPER).is_ok());
+    assert!(b.read(0xFF9000, Size::Byte, SUPER).is_ok());
     let stop = b.stop().expect("stop recorded");
-    assert_eq!(stop.addr, 0xFF8800);
+    assert_eq!(stop.addr, 0xFF9000);
     assert!(!stop.write);
     b.write(0xFFFC00, Size::Byte, 3, SUPER).unwrap();
-    assert_eq!(b.stop().unwrap().addr, 0xFF8800, "the first stop is kept");
+    assert_eq!(b.stop().unwrap().addr, 0xFF9000, "the first stop is kept");
 }
 
 #[test]
@@ -225,10 +225,10 @@ fn bus_error_rows_fault_without_a_stop() {
 #[test]
 fn stops_name_the_device_or_the_missing_fact() {
     let mut b = bus();
-    b.write(0xFF8800, Size::Byte, 7, SUPER).unwrap();
+    b.write(0xFFFC00, Size::Byte, 3, SUPER).unwrap();
     assert_eq!(
         b.stop().unwrap().reason,
-        StopReason::NotEmulated(Device::Psg)
+        StopReason::NotEmulated(Device::Acia)
     );
     let mut b = bus();
     b.read(0xFF9000, Size::Byte, SUPER).unwrap();

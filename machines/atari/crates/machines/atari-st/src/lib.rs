@@ -10,6 +10,7 @@ mod iolog;
 mod machine;
 mod mfp_clock;
 mod mmu;
+mod psg;
 mod scheduler;
 
 pub use bus::{HBL_LEVEL, IoStop, MFP_LEVEL, ROM_BASE, ROM_SIZE, StBus, StopReason, VBL_LEVEL};
@@ -21,5 +22,6 @@ pub use mc68000;
 pub use mc68901;
 pub use mfp_clock::{MFP_HZ, MfpClock};
 pub use mmu::{BankSize, installed_banks};
+pub use psg::Psg;
 pub use scheduler::{CLASS_MFP, CLASS_VIDEO, Event, FrameGeometry, Scheduler, geometry};
 pub use st_shifter::{self, Monitor, Resolution};

@@ -23,6 +23,7 @@ inventing a value.
 | *ST-Log 34* | "A millisecond timer", ST-Log issue 34, July 1989, p.60, https://www.atarimagazines.com/st-log/issue34/60_1_A_MILLISECOND_TIMER.php |
 | *Hatari io* | Hatari 2.6.1, `--machine st --tos etos192uk.img --memsize <n> --trace io_all,cpu_exception`; `retroclawd-tools/scripts/capture_hatari_trace.py --kind io` |
 | *forum* | atari-forum.com threads cited in `scheduler.rs` (frame timing) |
+| *YM2149* | Yamaha YM2149 catalog, September 1992, https://bitsavers.org/components/yamaha/YM2149_199209.pdf (SHA-256 `a4b946bf525fc1a7c6dec9e7662ce2342d3a3c627f980c7c3b1a396df7e91d20`) |
 
 The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 403 from cpcwiki); every `[H?]` and
 `[O]` row below should be checked against it first.
@@ -99,3 +100,22 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | TSR at power-on | `$80` | `[O]` | *Hatari io* line 88 "IO read.b $fffffa2d = $80" |
 | Timers | delay mode, prescalers 4, 10, 16, 50, 64, 100, 200; data 0 counts 256; event count and pulse width on A and B | `[D]` | *MC68901* §5 |
 | Interrupts | pending set on an enabled channel's event; IMR masks the IRQ output only; S bit selects software end-of-interrupt; vector = VR bits 7-4 + channel | `[D]` | *MC68901* §3-4 |
+
+## PSG (`psg.rs`, `ay-3-8910` YM2149 variant)
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| Addresses | `$FF8800` write = register select, read = selected register; `$FF8802` write = data | `[H]` | *Internals* pp.59-60 |
+| `$FF8802` read | `$FF` | `[H]` | *Internals* p.60 ("will give you $FF only") |
+| `$FF8801`, `$FF8803` | act as `$FF8800`, `$FF8802` (the chip sees A1 only) | `[H?]` | not documented; EmuTOS uses only the even addresses |
+| Register select | the low 4 bits pick the register; upper bits nonzero select nothing (chip address) | `[D]` | *YM2149* "Address" (DA7-DA4 are the chip select) |
+| Registers | R0-R15 widths and meaning | `[D]` | *YM2149* Table 3 |
+| Port direction | R7 bit 6 port A, bit 7 port B: 1 = output; an output port reads back its latch | `[D]` | *YM2149* "Mixer" |
+| Input port read | `$FF`, drives nothing | `[H?]` | the ST wires port A and B as outputs |
+| Port A | bit 0 side select, 1 drive 0 select, 2 drive 1 select, 3 RTS, 4 DTR, 5 Centronics strobe, 6 general output, 7 reserved | `[H]` | *Internals* p.60 (read with `pdftotext -raw`; the layout text shifts the rows) |
+| Clock | "2 MHz" at the YM's CLOCK pin | `[H]` | *Internals* schematic (figure 2.3-2) |
+| Clock ratio | CPU clock / 4, SEL keeping the master clock equal to the input | `[H?]` | the 2 MHz label and the 8 MHz CPU |
+| Tone, noise, envelope | `fT = fM/(16 TP)`, `fN = fM/(16 NP)`, `fE = fM/(256 EP)` with 32 steps; shapes per Table 4 | `[D]` | *YM2149* sections (1), (2), (5), (6), Table 4 |
+| D/A | 5-bit: step 31 full scale, each step 2^(-1/4) lower, step 0 silent; fixed level L at step 2L + 1 | `[D]` | *YM2149* Fig. 1 |
+| RESET instruction | the YM is not reset | `[H?]` | no source wires the 68000's RESET output to the YM |
+| Audio | mono, 44 100 Hz, sample `n` taken at cycle `ceil((n + 1) × clock / 44 100)` | — | a host choice, not a hardware fact |
