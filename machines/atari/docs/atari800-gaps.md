@@ -3,10 +3,11 @@
 ## Verified slice
 
 `atari-800` is a 48 KiB Atari 800 using the shared NMOS 6502 Core and MOS 6520
-PIA, plus initial ANTIC, GTIA and POKEY Chips. It is not an XL/XE profile.
+PIA, plus ANTIC, GTIA and POKEY Chips. It is not an XL/XE profile.
 PAL is the default; NTSC is separate. Fast mode batches instruction accesses;
-accurate mode advances Chips on every read/write/dummy cycle and stalls reads,
-not writes, for ANTIC. Neither mode claims cycle-exact Atari compatibility.
+accurate mode advances Chips on every read/write/dummy cycle. ANTIC DMA HALT
+stops all accesses; WSYNC RDY stops only reads.
+Neither mode claims cycle-exact Atari compatibility.
 
 Private verification used explicitly identified, permissively licensed
 AltirraOS 800 3.11 and the replacement BASIC ROM that displays **1.59**.
@@ -117,12 +118,23 @@ each complete `$4000:256` capture has the unchanged S3 golden hash above.
 Capture adapter options are `--disk FILE` and `--xex FILE`; neither uses raw
 monitor injection.
 
-Machine State version 3 includes the disk, serial bit/queue phase, pending
-XEX lifecycle and the Core's delayed IRQ-mask sample. It reads versions 1 and 2;
+Machine State version 4 includes the disk, serial bit/queue phase, pending
+XEX lifecycle, the Core's delayed IRQ-mask sample and explicit ANTIC, GTIA,
+POKEY and Machine timing extensions. It reads versions 1, 2 and 3;
 legacy States restore no poll history, matching their original live-I check.
 Loading a version 1 State with a disk currently attached explicitly requires
-ejecting first. Older Plugins cannot read version 3: preserve original files
-for rollback. The ROM-gated integration
+ejecting first. Older Plugins cannot read version 4: preserve original files
+for rollback. Original Chip and Core serialized field layouts are unchanged.
+Version 4 retains scroll/refresh/DMA history, graphics shifters and delayed
+writes/output, noise and divider/borrow/resync pipelines, serial clock phase,
+the sampled IRQ line, pending NMI detection and the bus latch.
+Validation occurs before replacing the running Machine. Legacy POKEY countdowns
+continue with their original semantics until their first reload or STIMER;
+they are never clipped to the newly selected divisor. Unrecorded legacy
+pipeline history cannot be recovered. Preserved published version-2 and
+version-3 files load through the real Plugin and produce identical duplicate
+upgraded continuations; their original hashes remain unchanged.
+The ROM-gated integration
 test saves during the second sector transfer and checks exact continuation in
 all four Region/mode combinations.
 
@@ -172,8 +184,9 @@ The 92176-byte ATR SHA-256 is
 Extract the archive locally and put that file at
 `software/diagnostics/acid800.atr`; do not commit it.
 
-The real release Host now boots the ATR without ROM patches and completes all
-58 test entries by 5000 Frames. PAL and NTSC give the same respective totals:
+The real release Host boots the ATR without ROM patches and completes all
+58 test entries by 5000 Frames. The BRK-only baseline, before the fidelity
+increment below, was:
 
 | Execution | Passed | Failed | Skipped |
 |---|---:|---:|---:|
@@ -257,17 +270,14 @@ unchanged. The shared pin for this increment is
 Fast mode still fails the BRK case because it advances Chips only after an
 instruction; its 24/33/1 result is unchanged. Accurate mode reaches 25/32/1,
 matching the reference's total, **not its complete results or conformance**.
-Detector latency, consecutive-interrupt inhibition, blocked-NMI behavior and
-exact NMIEN edge timing remain incomplete.
+Those BRK-only results preceded the fidelity increment below.
 
-Remaining observed failures include fast-mode BRK interrupt timing,
-ANTIC DMA/scroll/WSYNC/NMIST/VCOUNT/DLI, POKEY
-polynomial/pipeline/IRQ/serial/two-tone behavior, PIA control bit 6 and GTIA
-players/missiles/collisions/special modes. XL banking checks also run against
-this non-XL Machine. These are not all newly diagnosed Machine bugs.
+That increment's observed failures included ANTIC DMA/scroll/interrupt timing,
+POKEY polynomial/pipeline behavior and GTIA graphics. See the current limits
+below rather than interpreting that historical list as the present status.
 
-Private `acid-brk-{pal,ntsc}-{fast,accurate}.txt` transcripts retain the current
-failures; `acid-dma-*`, `acid-irq-*`, `acid-store-*` and `acid-host-*` retain preceding baselines. Existing
+Private `acid-brk-{pal,ntsc}-{fast,accurate}.txt` transcripts retain that baseline;
+`acid-dma-*`, `acid-irq-*`, `acid-store-*` and `acid-host-*` retain preceding baselines. Existing
 `--capture-at 0xfaab:A=FILE` records the replacement OS's real
 E: output entry, obtained from IOCB0 ICPTL, rather than synthesizing results.
 Reference monitor transcripts, native PNGs and RAM retain independent evidence.
@@ -277,18 +287,73 @@ reference's actual capture: both Region goldens hash to
 All four S7 cases execute and report a mismatch, not an uncaptured placeholder.
 No golden or tolerance was weakened.
 
+## Ten-area fidelity increment
+
+The final release captures `acid-ten-final-{pal,ntsc}-{fast,accurate}.txt`
+complete all 58 entries with identical Region totals:
+
+| Execution | Passed | Failed | Skipped |
+|---|---:|---:|---:|
+| Host fast | 36 | 21 | 1 |
+| Host accurate | 46 | 11 | 1 |
+| Atari800 7.2.1 baseline | 25 | 32 | 1 |
+
+Accurate mode gains 21 passing cases and fast mode gains 12. No previously
+passing case regresses in either mode. Accurate mode passes every POKEY
+case, normal/virtual DMA, NMIST/NMIRES, VCOUNT, WSYNC, DLI, blocked NMI,
+vertical scrolling/VSCROL+NMI and normal GTIA collision/retrigger/resize/overlap.
+Fast mode remains instruction-batched and does not inherit those exact-phase
+claims. These are hardware-diagnostic observations, not full acceptance.
+
+The following mechanisms are implemented, not merely scheduled:
+
+| Area | Behavior and focused proof |
+|---|---|
+| NMIST/NMIRES | Mutually exclusive VBI/DLI status, retained RNMI and dominant status-update/write phases. |
+| VCOUNT | Cycle-111 increment and the one-clock end-of-frame anomaly. |
+| WSYNC | One following clock, read-only hold, consecutive RMW writes and horizontal-blank release. |
+| DLI | Normal detection delay and the extra clock when enabled at the deadline. |
+| Blocked NMI | A short pulse during status push is lost; an earlier pulse hijacks the vector without changing the stack frame. |
+| DMA/refresh | Normal fetch slots, displaced/coalesced refresh, virtual DMA sampling CPU data without HALT, and current-clock GTIA collision readback. |
+| Scrolling | Expanded horizontal fetch/crop, entry/interior/exit row behavior, VSCROL deadlines and scroll-region continuity across vertical blank. |
+| POKEY noise | Shared 9/17-bit register, initialization shifts, RANDOM taps and per-channel delays. |
+| POKEY timers | Shared prescalers, byte counters, borrow/IRQ/STIMER pipelines, linked channels, two-tone resync and serial propagation. |
+| PM graphics | ANTIC one/two-line PM addressing and enable history feed live GTIA shifters, sizing, VDELAY, priorities and collision latches. |
+
+The normal PM path has a whole-Machine DMA/collision and in-flight State
+regression, not only disconnected Chip tests. All new phases are part of
+State version 4. Truncated and invalid timing extensions are rejected
+without mutating the running Machine.
+
+Two integration failures required Machine/ANTIC fixes rather than tuning
+GTIA to a diagnostic. Reading collision latches before the current video
+clock dropped the last `$DD` collision; GTIA reads now sample after that
+clock. DMA between the two writes of INC WSYNC consumed RDY's delay, but
+the second write incorrectly rearmed it. The next opcode then sometimes
+executed before the hold, shifting subsequent SIZE writes by one CPU clock.
+Keeping the existing hold fixes both refresh alignments and the actual
+resize test, without position-dependent GTIA delays. Both mechanisms have
+failing-before/passing-after regressions and real diagnostic proof.
+
+These changes do not implement abnormal DMA rings, every mid-line
+DMACTL/HSCROL transition, GTIA special modes or all hardware variants.
+Passing the normal mechanisms does not close every associated Acid800 test.
+
 ## Remaining hardware limits
 
-- ANTIC: no P/M DMA, horizontal/vertical scrolling, abnormal DMA, exact refresh
-  displacement or mid-scanline GTIA color preservation.
-- GTIA: no players/missiles, collision generation, special modes 9/10/11 or
-  composite artifacting; the palette is an analytical approximation.
-- POKEY: period-level timers rather than complete shared-divider pipelines,
-  incomplete linked-low events/two-tone/serial clocking, no external clocks,
-  linear audio mixer, unconnected paddles only. Basic framed serial I/O works;
-  exact pipeline timing remains incomplete.
-- Ordinary IRQ/NMI delivery remains at instruction boundaries; accurate
-  BRK/IRQ vector selection can consume an NMI raised during the sequence.
+- ANTIC: abnormal DMA and shift-clock rings, dynamic start/stop deadlines and
+  interrupted line buffering remain incomplete. The HSCROL corruption and
+  high-resolution bug cases are not closed.
+- GTIA: special modes 9/10/11, phantom DMA and composite artifacting remain
+  incomplete; the palette is an analytical approximation. The Acid800 PM DMA
+  readout uses GTIA mode 10 and is not closed by normal PM DMA proof.
+- POKEY: external serial clocks, sub-cycle high-pass behavior, nonlinear
+  analogue mixing and connected paddles are not implemented. Passing the
+  diagnostic cases is not full analogue or temperature-variant validation.
+- Ordinary IRQ/NMI delivery remains at instruction boundaries, with explicit
+  pin/detection history; accurate BRK/IRQ vector selection can consume an NMI
+  raised during the sequence. This is not a complete transistor-level Core
+  interrupt pipeline.
   Warm reset uses the
   Atari 800's ANTIC RNMI and preserves RAM rather than resetting the CPU.
 - No XL/XE MMU, banked RAM, self-test ROM or additional Machine profiles yet.

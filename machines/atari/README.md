@@ -11,13 +11,18 @@ the ROM at `$FC0000`, a deterministic event scheduler, and EmuTOS 1.4 running un
 that is not emulated yet, where it stops with a diagnostic.
 
 **Atari 800 is experimental.** `atari-800` boots explicitly identified Altirra
-replacement OS/BASIC ROMs in PAL/NTSC and fast/accurate modes. Initial ANTIC,
+replacement OS/BASIC ROMs in PAL/NTSC and fast/accurate modes. ANTIC,
 GTIA and POKEY reuse the shared NMOS 6502 and MOS 6520 PIA. Raw/XEX Programs,
 keyboard, four digital joysticks, audio, State and the debug contract are wired.
 Read-only ATR on D1: boots through actual PIA/POKEY serial pins, without ROM
 traps. XEX uses ordered INITAD/RUNAD; OS-dependent applications are not proven.
-CAS/CART loading, P/M graphics, scrolling and several timing details remain
-unimplemented. The manifest has 36 passing variants; S2 reference keyboard
+Normal PM graphics, scrolling, interrupt/DMA phases and POKEY pipelines are
+implemented. State v4 retains their history and reads versions 1-3; preserve
+original files for rollback to older Plugins. Acid800 completes at 46/11/1
+passed/failed/skipped in accurate mode and 36/21/1 in fast mode, identically in
+both Regions, without regressing prior passes. CAS/CART loading, abnormal DMA,
+GTIA special modes and some timing details remain unimplemented.
+The manifest has 36 passing variants; S2 reference keyboard
 capture and four executed S7 Acid800 mismatches remain known gaps.
 See [acceptance and limits](docs/atari800-gaps.md) and
 `atari-800.manifest.toml`; this is not a game-compatibility or Acid800 pass claim.

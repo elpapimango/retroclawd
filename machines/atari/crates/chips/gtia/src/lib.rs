@@ -1,11 +1,14 @@
-//! GTIA normal playfield colors, console switches, speaker and trigger latches.
+//! GTIA normal playfield and player/missile graphics, collisions and input.
 //! Source: Altirra Hardware Reference (2026-01-02), chapter 6 and section 14.3:
 //! <https://www.virtualdub.org/downloads/Altirra%20Hardware%20Reference%20Manual.pdf>.
-//! Initial slice: no P/M graphics/collisions, GTIA special modes or composite
-//! artifacting. RGB is an analytical YIQ approximation, not a measured palette.
+//! No GTIA special modes or composite artifacting. RGB is an analytical YIQ
+//! approximation, not a measured palette.
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
+
+mod graphics;
+pub use graphics::GtiaGraphicsState;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Gtia {
@@ -14,6 +17,10 @@ pub struct Gtia {
     latched: [bool; 4],
     console: u8,
     pal: bool,
+    // Keep the published v1-v3 Gtia field sequence unchanged. The Machine
+    // persists this extension separately in its versioned state envelope.
+    #[serde(skip)]
+    graphics: GtiaGraphicsState,
 }
 
 impl Gtia {
@@ -24,11 +31,12 @@ impl Gtia {
             latched: [true; 4],
             console: 7,
             pal,
+            graphics: GtiaGraphicsState::default(),
         }
     }
     pub fn read(&self, offset: u8) -> u8 {
         match offset & 31 {
-            0..=15 => 0,
+            0..=15 => self.graphics.collisions[usize::from(offset & 15)],
             16..=19 => u8::from(self.latched[usize::from(offset & 3)]),
             20 => {
                 if self.pal {
@@ -42,7 +50,9 @@ impl Gtia {
         }
     }
     pub fn write(&mut self, offset: u8, value: u8) {
-        self.registers[usize::from(offset & 31)] = value;
+        let index = usize::from(offset & 31);
+        self.registers[index] = value;
+        self.graphics_write(index, value);
         self.update_triggers();
     }
     pub fn register(&self, index: usize) -> u8 {
@@ -108,6 +118,7 @@ impl Gtia {
         if self.console > 7 {
             return Err("invalid GTIA state".to_string());
         }
+        self.graphics.validate()?;
         Ok(())
     }
 }

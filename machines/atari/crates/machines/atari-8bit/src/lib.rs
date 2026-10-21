@@ -114,6 +114,18 @@ struct Hardware {
     screen: Vec<u8>,
     sample_phase: u64,
     nmi: bool,
+    #[serde(skip)]
+    nmi_ready_at: u64,
+    #[serde(skip)]
+    bus_value: u8,
+    #[serde(skip)]
+    irq_sample: bool,
+}
+
+impl Hardware {
+    fn irq(&self) -> bool {
+        self.pokey.irq() || self.pia.irq(Side::A) || self.pia.irq(Side::B)
+    }
 }
 
 struct AtariBus {
@@ -161,11 +173,52 @@ impl AtariBus {
     }
     fn tick(&mut self) {
         let h = &mut self.hardware;
+        let x = h.antic.x;
         let y = h.antic.y;
-        let line = h
-            .antic
-            .tick(|address| memory_read(&h.ram, &self.roms, address));
-        h.nmi |= h.antic.take_nmi();
+        if x == 0 {
+            h.gtia.begin_scanline();
+        }
+        let mut data_bus = h.bus_value;
+        h.antic.tick_with_bus(
+            |address| {
+                let value = memory_read(&h.ram, &self.roms, address);
+                data_bus = value;
+                value
+            },
+            h.bus_value,
+        );
+        h.bus_value = data_bus;
+        if let Some((player, byte)) = h.antic.take_pm_transfer() {
+            if player == 4 {
+                h.gtia.dma_missiles(byte, y & 1 != 0);
+            } else {
+                h.gtia
+                    .dma_player(usize::from(player), byte, y & 1 != 0)
+                    .expect("ANTIC only transfers players 0-3");
+            }
+        }
+        let visible = (8..248).contains(&y);
+        for half in 0..2 {
+            let pixel = (17..113)
+                .contains(&x)
+                .then(|| usize::from(x - 17) * 4 + half * 2);
+            let playfield = pixel.map_or([0; 2], |pixel| {
+                [h.antic.pixel_at(pixel), h.antic.pixel_at(pixel + 1)]
+            });
+            let colors = h.gtia.tick_color_clock(playfield, visible);
+            if let Some(pixel) = pixel.filter(|_| visible) {
+                let start = usize::from(y - 8) * WIDTH + pixel;
+                h.screen[start..start + 2].copy_from_slice(&colors);
+            }
+        }
+        if h.antic.take_nmi() {
+            h.nmi = true;
+            // AHR 4.8: NMI at cycle 8, ordinary acknowledgment from cycle 10.
+            h.nmi_ready_at = h.antic.cycles + 1;
+        }
+        // Poll before the final clock's pin update, not at the following
+        // instruction boundary (AHR 3, IRQ timing; Acid800 POKEY IRQ sled).
+        h.irq_sample = h.irq();
         h.pokey.tick();
         h.pia.tick(1);
         let input = self.sio.tick(
@@ -173,15 +226,6 @@ impl AtariBus {
             h.pokey.serial_output(),
         );
         h.pokey.set_serial_input(input);
-        if line && (8..248).contains(&y) {
-            let start = usize::from(y - 8) * WIDTH;
-            for (pixel, &code) in h.screen[start..start + WIDTH]
-                .iter_mut()
-                .zip(h.antic.line())
-            {
-                *pixel = h.gtia.color(code);
-            }
-        }
         self.hardware.sample_phase += u64::from(AUDIO_SAMPLE_RATE);
         if self.hardware.sample_phase >= self.clock_hz() {
             self.hardware.sample_phase -= self.clock_hz();
@@ -219,16 +263,26 @@ impl AtariBus {
 impl Bus for AtariBus {
     fn read(&mut self, address: u16) -> u8 {
         self.access(false);
+        if address & 0xff00 == 0xd000 {
+            // GTIA collision latches include this clock's video before the
+            // CPU samples them, including the final visible clock at $DD.
+            self.finish();
+            let value = self.peek(address);
+            self.hardware.bus_value = value;
+            return value;
+        }
         let value = if address & 0xff00 == 0xd300 {
             self.hardware.pia.read_alt(address as u8)
         } else {
             self.peek(address)
         };
+        self.hardware.bus_value = value;
         self.finish();
         value
     }
     fn write(&mut self, address: u16, value: u8) {
         self.access(true);
+        self.hardware.bus_value = value;
         match address & 0xff00 {
             0xd000 => self.hardware.gtia.write(address as u8, value),
             0xd200 => self.hardware.pokey.write(address as u8, value),
@@ -248,6 +302,13 @@ impl Bus for AtariBus {
     }
     fn take_nmi_edge(&mut self) -> bool {
         std::mem::take(&mut self.hardware.nmi)
+    }
+    fn interrupt_status_pushed(&mut self) {
+        // AHR 4.8 "Missed NMIs": a short ANTIC pulse coincident with
+        // interrupt acknowledgment is lost, unlike an earlier hijacking edge.
+        if self.hardware.nmi_ready_at == self.hardware.antic.cycles + 1 {
+            self.hardware.nmi = false;
+        }
     }
 }
 
@@ -283,6 +344,16 @@ struct State {
     program: Option<XexLoader>,
 }
 
+#[derive(Serialize, Deserialize)]
+struct TimingState {
+    antic: antic::AnticTimingState,
+    gtia: gtia::GtiaGraphicsState,
+    pokey: pokey::PokeyTimingState,
+    nmi_ready_at: u64,
+    bus_value: u8,
+    irq_sample: bool,
+}
+
 impl Atari800 {
     pub fn new(roms: Roms, pal: bool, timing: Timing) -> Result<Self, String> {
         roms.validate()?;
@@ -306,6 +377,9 @@ impl Atari800 {
                     screen: vec![0; WIDTH * HEIGHT],
                     sample_phase: 0,
                     nmi: false,
+                    nmi_ready_at: 0,
+                    bus_value: 0xff,
+                    irq_sample: false,
                 },
             },
         };
@@ -481,13 +555,12 @@ impl Machine for Atari800 {
         if let Some(loader) = &mut self.program {
             loader.armed = true;
         }
-        if std::mem::take(&mut self.bus.hardware.nmi) {
+        if self.bus.hardware.antic.cycles >= self.bus.hardware.nmi_ready_at
+            && std::mem::take(&mut self.bus.hardware.nmi)
+        {
             self.cpu.request_nmi();
         }
-        if self.bus.hardware.pokey.irq()
-            || self.bus.hardware.pia.irq(Side::A)
-            || self.bus.hardware.pia.irq(Side::B)
-        {
+        if self.bus.hardware.irq_sample {
             self.cpu.request_irq();
         }
         let start = self.cycles();
@@ -558,6 +631,7 @@ impl Machine for Atari800 {
         self.program = None;
         self.bus.hardware.antic.reset_button();
         self.bus.hardware.nmi = true;
+        self.bus.hardware.nmi_ready_at = 0;
         self.cpu.halted = false;
         self.bus.audio.clear();
     }
@@ -567,7 +641,7 @@ impl Machine for Atari800 {
                 State {
                     base: StateV1 {
                         magic: *b"A800",
-                        version: 3,
+                        version: 4,
                         rom: self.bus.roms.fingerprint(),
                         timing: self.timing(),
                         cpu: self.cpu,
@@ -583,6 +657,14 @@ impl Machine for Atari800 {
                     }),
                 },
                 self.cpu.irq_poll_mask(),
+                TimingState {
+                    antic: self.bus.hardware.antic.save_timing(),
+                    gtia: self.bus.hardware.gtia.save_graphics(),
+                    pokey: self.bus.hardware.pokey.save_timing(),
+                    nmi_ready_at: self.bus.hardware.nmi_ready_at,
+                    bus_value: self.bus.hardware.bus_value,
+                    irq_sample: self.bus.hardware.irq_sample,
+                },
             ),
             bincode::config::standard(),
         )
@@ -592,7 +674,7 @@ impl Machine for Atari800 {
         if bytes.len() > 67_108_864 {
             return Err("Atari 800 state exceeds 64 MiB".to_string());
         }
-        if bytes.get(..4) != Some(b"A800") || !matches!(bytes.get(4), Some(1..=3)) {
+        if bytes.get(..4) != Some(b"A800") || !matches!(bytes.get(4), Some(1..=4)) {
             return Err("invalid Atari 800 state header".to_string());
         }
         let (mut state, serial, sio, program, used) = if bytes[4] == 1 {
@@ -622,7 +704,7 @@ impl Machine for Atari800 {
             let sio = Sio::restore(state.sio, self.clock_hz())?;
             (state.base, state.serial, sio, state.program, used)
         };
-        let (mask, extra) = if bytes[4] == 3 {
+        let (mask, extra) = if bytes[4] >= 3 {
             bincode::serde::decode_from_slice::<Option<bool>, _>(
                 &bytes[used..],
                 bincode::config::standard(),
@@ -630,6 +712,32 @@ impl Machine for Atari800 {
             .map_err(|e| format!("invalid Atari 800 IRQ state: {e}"))?
         } else {
             (None, 0)
+        };
+        let used = used + extra;
+        let extra = if bytes[4] == 4 {
+            let (timing, extra): (TimingState, usize) = bincode::serde::decode_from_slice(
+                &bytes[used..],
+                bincode::config::standard().with_limit::<67_108_864>(),
+            )
+            .map_err(|e| format!("invalid Atari 800 timing state: {e}"))?;
+            if timing.nmi_ready_at > state.hardware.antic.cycles.saturating_add(2) {
+                return Err("invalid Atari 800 NMI detection phase".to_string());
+            }
+            state.hardware.antic.restore_timing(timing.antic)?;
+            state.hardware.gtia.restore_graphics(timing.gtia)?;
+            state.hardware.pokey.restore_timing(timing.pokey)?;
+            state.hardware.nmi_ready_at = timing.nmi_ready_at;
+            state.hardware.bus_value = timing.bus_value;
+            state.hardware.irq_sample = timing.irq_sample;
+            extra
+        } else {
+            state.hardware.antic.restore_legacy_timing();
+            state.hardware.gtia.initialize_legacy_graphics();
+            state.hardware.pokey.reconstruct_legacy_timing()?;
+            state.hardware.nmi_ready_at = 0;
+            state.hardware.bus_value = 0xff;
+            state.hardware.irq_sample = state.hardware.irq();
+            0
         };
         if used + extra != bytes.len() {
             return Err("invalid Atari 800 state header or trailing bytes".to_string());
@@ -860,6 +968,211 @@ mod tests {
         m.write_bus(0xd302, 4);
         assert_eq!(m.read_memory(0xd300), 0xde);
     }
+    #[test]
+    fn rmw_wsync_restarts_the_next_opcode_after_either_refresh_alignment() {
+        for start in [20, 21] {
+            let mut m = machine(Timing::Accurate);
+            m.load_program(0x4000, &[0xee, 0x0a, 0xd4, 0x8d, 0x1e, 0xd0])
+                .unwrap();
+            m.set_pc(0x4000);
+            while m.cycles() < start {
+                m.bus.tick();
+            }
+            m.step();
+            m.step();
+            assert_eq!(m.bus.hardware.antic.x, 109);
+            assert_eq!(m.cpu.pc, 0x4006);
+        }
+    }
+
+    #[test]
+    fn gtia_collision_read_includes_the_current_color_clocks() {
+        let mut m = machine(Timing::Accurate);
+        m.bus.hardware.ram[0x2000..0x2006].copy_from_slice(&[0x4e, 0, 0x30, 0x41, 0, 0x20]);
+        m.bus.hardware.ram[0x3000..0x3030].fill(0xff);
+        for (register, value) in [(0, 0x23), (2, 0), (3, 0x20)] {
+            m.bus.hardware.antic.write(register, value);
+        }
+        m.bus.hardware.gtia.write(4, 0xdd);
+        m.bus.hardware.gtia.write(0x11, 2);
+        while m.bus.hardware.antic.y != 8 || m.bus.hardware.antic.x != 111 {
+            m.bus.tick();
+        }
+        assert_eq!(m.bus.hardware.gtia.read(0), 0);
+        m.bus.in_cpu = true;
+        assert_eq!(m.bus.read(0xd000), 4);
+    }
+
+    #[test]
+    fn antic_player_dma_reaches_gtia_collision_latches_and_survives_state() {
+        let mut m = machine(Timing::Accurate);
+        m.bus.hardware.ram[0x2000..0x2006].copy_from_slice(&[0x4e, 0, 0x30, 0x41, 0, 0x20]);
+        m.bus.hardware.ram[0x3000..0x3028].fill(0xff);
+        m.bus.hardware.ram[0x3408] = 0x80;
+        for (register, value) in [(0, 0x3e), (2, 0), (3, 0x20), (7, 0x30)] {
+            m.bus.hardware.antic.write(register, value);
+        }
+        m.bus.hardware.gtia.write(0, 0x50);
+        m.bus.hardware.gtia.write(0x1d, 2);
+        while m.bus.hardware.antic.y != 8 || m.bus.hardware.antic.x != 40 {
+            m.bus.tick();
+        }
+        let saved = m.save_state();
+        for _ in 0..60 {
+            m.bus.tick();
+        }
+        assert_eq!(m.bus.hardware.gtia.read(4) & 4, 4);
+        let future = m.save_state();
+        m.load_state(&saved).unwrap();
+        for _ in 0..60 {
+            m.bus.tick();
+        }
+        assert_eq!(m.save_state(), future);
+    }
+
+    #[test]
+    fn irq_asserted_after_the_last_poll_waits_through_one_instruction() {
+        let mut m = machine(Timing::Accurate);
+        m.load_program(0x4000, &[0xe8, 0xe8, 0xea]).unwrap();
+        m.set_pc(0x4000);
+        m.cpu.p &= !0x04;
+        m.bus.hardware.pia.write_alt(2, 1);
+        m.bus.hardware.pia.set_c1(Side::A, false);
+        assert!(m.bus.hardware.pia.irq(Side::A));
+        let saved = m.save_state();
+        assert_eq!(m.step(), 2);
+        assert_eq!(m.cpu.x, 1);
+        assert_eq!(m.step(), 7);
+        let future = m.save_state();
+        m.load_state(&saved).unwrap();
+        m.step();
+        m.step();
+        assert_eq!(m.save_state(), future);
+    }
+
+    #[test]
+    fn timing_extension_continues_chip_pipelines_and_rejects_bad_data_atomically() {
+        for timing in [Timing::Fast, Timing::Accurate] {
+            let mut m = machine(timing);
+            m.load_program(0x4000, &[0xea, 0x4c, 0, 0x40]).unwrap();
+            m.set_pc(0x4000);
+            m.bus.hardware.pokey.write(15, 3);
+            m.bus.hardware.pokey.write(0, 1);
+            m.bus.hardware.pokey.write(1, 0x8f);
+            m.bus.hardware.pokey.write(8, 0x40);
+            for delay in [0, 1, 3, 67] {
+                m.bus.hardware.pokey.write(9, 0);
+                m.bus.hardware.gtia.write(0, 0x40);
+                m.bus.hardware.gtia.write(0x0d, 0x80);
+                for _ in 0..delay {
+                    m.bus.tick();
+                }
+                let saved = m.save_state();
+                for _ in 0..100 {
+                    m.step();
+                }
+                let future = m.save_state();
+                m.load_state(&saved).unwrap();
+                for _ in 0..100 {
+                    m.step();
+                }
+                assert_eq!(m.save_state(), future, "pipeline delay {delay}");
+                let (state, mask, mut extension): (State, Option<bool>, TimingState) =
+                    bincode::serde::decode_from_slice::<(State, Option<bool>, TimingState), _>(
+                        &saved,
+                        bincode::config::standard(),
+                    )
+                    .unwrap()
+                    .0;
+                extension.nmi_ready_at = u64::MAX;
+                let malformed = bincode::serde::encode_to_vec(
+                    (state, mask, extension),
+                    bincode::config::standard(),
+                )
+                .unwrap();
+                assert!(
+                    m.load_state(&malformed)
+                        .unwrap_err()
+                        .contains("NMI detection phase")
+                );
+                assert_eq!(m.save_state(), future);
+                for cut in [1, 3, 10] {
+                    assert!(m.load_state(&saved[..saved.len() - cut]).is_err());
+                    assert_eq!(m.save_state(), future);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn virtual_font_dma_samples_cpu_data_without_reading_font_memory() {
+        let mut m = machine(Timing::Accurate);
+        m.bus.hardware.ram[0x2000..0x2003].copy_from_slice(&[0x57, 0, 0x30]);
+        m.bus.hardware.antic.write(0, 0x23);
+        m.bus.hardware.antic.write(2, 0);
+        m.bus.hardware.antic.write(3, 0x20);
+        m.bus.hardware.antic.write(4, 2);
+        m.bus.hardware.antic.write(9, 0x40);
+        while m.bus.hardware.antic.y != 8 || m.bus.hardware.antic.x != 106 {
+            m.bus.tick();
+        }
+        m.bus.hardware.ram[0x5000] = 0x50;
+        m.bus.hardware.bus_value = 0;
+        m.bus.in_cpu = true;
+        assert_eq!(m.bus.read(0x5000), 0x50);
+        assert_eq!(m.bus.hardware.antic.pixel_at(374), 1);
+        assert_eq!(m.bus.hardware.bus_value, 0x50);
+    }
+
+    #[test]
+    fn nmi_pulse_during_status_push_is_lost_but_an_earlier_one_hijacks() {
+        for start in [4, 5] {
+            let mut m = machine(Timing::Accurate);
+            m.bus.roms.os[10234..10236].copy_from_slice(&[0x00, 0xe1]);
+            m.bus.roms.os[10238..10240].copy_from_slice(&[0x00, 0xe2]);
+            m.load_program(0x2000, &[0, 0xea]).unwrap();
+            m.set_pc(0x2000);
+            m.bus.hardware.antic.write(14, 0x40);
+            while m.bus.hardware.antic.y != 248 || m.bus.hardware.antic.x != start {
+                m.bus.tick();
+            }
+            assert_eq!(m.step(), 7);
+            assert_eq!(m.cpu.pc, if start == 4 { 0xe200 } else { 0xe100 });
+            assert!(!m.bus.hardware.nmi);
+            assert_eq!(m.step(), 2, "no second NMI follows the sequence");
+        }
+    }
+
+    #[test]
+    fn timing_state_preserves_an_nmi_between_edge_and_detection() {
+        let mut m = machine(Timing::Accurate);
+        m.bus.hardware.antic.write(14, 0x40);
+        while m.bus.hardware.antic.y != 248 || m.bus.hardware.antic.x != 9 {
+            m.bus.tick();
+        }
+        assert!(m.bus.hardware.nmi);
+        assert_eq!(m.bus.hardware.nmi_ready_at, m.cycles() + 1);
+        let saved = m.save_state();
+        for _ in 0..3 {
+            m.step();
+        }
+        let future = m.save_state();
+        m.load_state(&saved).unwrap();
+        for _ in 0..3 {
+            m.step();
+        }
+        assert_eq!(m.save_state(), future);
+        let (mut state, _): (State, usize) =
+            bincode::serde::decode_from_slice(&saved, bincode::config::standard()).unwrap();
+        state.base.version = 3;
+        let legacy =
+            bincode::serde::encode_to_vec((state, None::<bool>), bincode::config::standard())
+                .unwrap();
+        m.load_state(&legacy).unwrap();
+        assert!(m.bus.hardware.nmi);
+        assert_eq!(m.bus.hardware.nmi_ready_at, 0);
+    }
+
     #[test]
     fn accurate_vbi_hijacks_brk_without_changing_its_stack_frame() {
         let mut m = machine(Timing::Accurate);

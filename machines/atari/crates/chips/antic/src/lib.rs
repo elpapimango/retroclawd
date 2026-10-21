@@ -1,8 +1,9 @@
 //! ANTIC display-list, playfield DMA and scan counters.
 //! Source: Altirra Hardware Reference (2026-01-02), chapter 4 and section 14.6.
 //! <https://www.virtualdub.org/downloads/Altirra%20Hardware%20Reference%20Manual.pdf>
-//! This initial engine omits scrolling, P/M DMA, abnormal DMA and exact
-//! refresh displacement. It does not claim Acid800 conformance.
+//! Models normal playfield/PM DMA, displaced refresh, scrolling and interrupt
+//! deadlines. Abnormal DMA rings and dynamic start/stop clocks remain incomplete.
+//! It does not claim Acid800 conformance.
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,20 @@ pub const WIDTH: usize = 384;
 pub const HEIGHT: usize = 240;
 const ROWS: [u8; 16] = [1, 1, 8, 10, 8, 16, 8, 16, 8, 4, 4, 2, 1, 2, 1, 1];
 const BYTES: [u8; 16] = [0, 0, 40, 40, 40, 40, 20, 20, 10, 10, 20, 20, 20, 40, 40, 40];
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct AnticTimingState {
+    first_line: bool,
+    refresh_pending: bool,
+    vscroll: bool,
+    ending_scroll: bool,
+    end_row: u8,
+    vscroll_latch: u8,
+    dli: bool,
+    nmi_enable: u8,
+    nmi_enable_late: u8,
+    dma_control: [u8; 2],
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Antic {
@@ -33,6 +48,10 @@ pub struct Antic {
     nmi: bool,
     wsync_until: u64,
     wsync_delay: u8,
+    #[serde(skip)]
+    timing: AnticTimingState,
+    #[serde(skip)]
+    pm_transfer: Option<(u8, u8)>,
 }
 
 impl Antic {
@@ -57,6 +76,8 @@ impl Antic {
             nmi: false,
             wsync_until: 0,
             wsync_delay: 0,
+            timing: AnticTimingState::default(),
+            pm_transfer: None,
         }
     }
 
@@ -65,6 +86,32 @@ impl Antic {
     }
     pub fn register(&self, index: usize) -> u8 {
         self.registers[index & 15]
+    }
+    pub fn save_timing(&self) -> AnticTimingState {
+        self.timing.clone()
+    }
+    pub fn restore_timing(&mut self, state: AnticTimingState) -> Result<(), String> {
+        if state.end_row > 15
+            || state.vscroll_latch > 15
+            || (state.nmi_enable | state.nmi_enable_late) & !0xc0 != 0
+        {
+            return Err("invalid ANTIC timing extension".to_string());
+        }
+        self.timing = state;
+        self.pm_transfer = None;
+        Ok(())
+    }
+    pub fn restore_legacy_timing(&mut self) {
+        self.timing = AnticTimingState {
+            first_line: self.row == 0,
+            end_row: self.row.wrapping_add(self.remaining.saturating_sub(1)) & 15,
+            dma_control: [self.registers[0]; 2],
+            ..AnticTimingState::default()
+        };
+        self.pm_transfer = None;
+    }
+    pub fn take_pm_transfer(&mut self) -> Option<(u8, u8)> {
+        self.pm_transfer.take()
     }
     pub fn read(&self, offset: u8) -> u8 {
         match offset & 15 {
@@ -89,10 +136,28 @@ impl Antic {
             3 => self.list = (self.list & 0xff) | (u16::from(value) << 8),
             10 => {
                 let base = self.cycles - u64::from(self.x);
-                self.wsync_until = base + 105 + if self.x >= 104 { 114 } else { 0 };
-                self.wsync_delay = 1;
+                let until = base + 105 + if self.x >= 104 { 114 } else { 0 };
+                // RDY reacts one clock after the write. A consecutive RMW
+                // write cannot restart the same hold (AHR 4.9, pp.77-78).
+                self.wsync_delay = if until == self.wsync_until && self.cycles < until {
+                    0
+                } else {
+                    2
+                };
+                self.wsync_until = until;
             }
-            15 => self.status = 0x1f,
+            15 => {
+                self.status = 0x1f;
+                // The status latch wins over a coincident bus write, including
+                // the write phase of the clock in which the new value is readable.
+                if self.x == 7 {
+                    if self.y == 248 {
+                        self.status = 0x5f;
+                    } else if self.timing.dli {
+                        self.status = 0x9f;
+                    }
+                }
+            }
             _ => {}
         }
         self.registers[index] = value;
@@ -120,6 +185,28 @@ impl Antic {
     fn active(&self) -> bool {
         (8..248).contains(&self.y)
     }
+    fn dli(&self) -> bool {
+        self.active()
+            && self.instruction & 0x80 != 0
+            && (self.wait_vblank
+                || self.row
+                    == if self.timing.ending_scroll {
+                        self.registers[5] & 15
+                    } else {
+                        self.timing.end_row
+                    })
+    }
+    fn cycle_status(&self) -> u8 {
+        // The latch updates at the end of cycle 6. A write to NMIRES
+        // on that cycle loses to the update (AHR 4.8, "Reading interrupt status").
+        if self.x == 6 && self.y == 248 {
+            (self.status & 0x20) | 0x5f
+        } else if self.x == 6 && self.timing.dli {
+            (self.status & 0x20) | 0x9f
+        } else {
+            self.status
+        }
+    }
     fn mode(&self) -> usize {
         usize::from(self.instruction & 15)
     }
@@ -131,20 +218,41 @@ impl Antic {
             _ => 0,
         }
     }
+    fn fetch_count(&self) -> u8 {
+        let width = self.registers[0] & 3;
+        let width = if self.instruction & 0x10 != 0 && width != 0 {
+            (width + 1).min(3)
+        } else {
+            width
+        };
+        match width {
+            1 => BYTES[self.mode()] * 4 / 5,
+            2 => BYTES[self.mode()],
+            3 => BYTES[self.mode()] * 6 / 5,
+            _ => 0,
+        }
+    }
     fn fetch_slot(&self) -> Option<(usize, bool)> {
         if !self.active() || self.wait_vblank || self.mode() < 2 {
             return None;
         }
-        let count = self.count();
+        let count = self.fetch_count();
         if count == 0 {
             return None;
         }
         let step = 80 / BYTES[self.mode()];
-        let start = 18i16 + (40 - i16::from(count) * i16::from(step) / 2);
+        // AHR 4.14: normal names at 18, bitmap data at 20; font +3.
+        let start = if self.mode() <= 7 { 18 } else { 20 }
+            + (40 - i16::from(count) * i16::from(step) / 2)
+            + if self.instruction & 0x10 != 0 {
+                i16::from((self.registers[4] & 15) / 2)
+            } else {
+                0
+            };
         let position = i16::from(self.x) - start;
         if position >= 0 && position % i16::from(step) == 0 {
             let i = position / i16::from(step);
-            if i < i16::from(count) && self.row == 0 {
+            if i < i16::from(count) && self.timing.first_line {
                 return Some((i as usize, false));
             }
         }
@@ -167,16 +275,34 @@ impl Antic {
     /// DMA uses HALT for bus ownership, unlike WSYNC's read-only RDY hold.
     /// Altirra Hardware Reference, chapters 2 and 4.14.
     pub fn cpu_dma_blocked(&self) -> bool {
-        (self.x >= 25 && self.x <= 57 && (self.x - 25).is_multiple_of(4))
+        self.refresh_slot() || self.timing.refresh_pending || self.other_dma()
+    }
+    fn refresh_slot(&self) -> bool {
+        self.x >= 25 && self.x <= 57 && (self.x - 25).is_multiple_of(4)
+    }
+    fn pm_slot(&self) -> Option<u8> {
+        let control = self.timing.dma_control[0];
+        if !self.active() {
+            return None;
+        }
+        match self.x {
+            0 if control & 0x0c != 0 => Some(4),
+            2..=5 if control & 8 != 0 => Some(self.x - 2),
+            _ => None,
+        }
+    }
+    fn other_dma(&self) -> bool {
+        self.pm_slot().is_some()
             || (self.active()
                 && !self.wait_vblank
                 && self.registers[0] & 0x20 != 0
                 && ((self.x == 1 && self.remaining == 0)
-                    || ((self.x == 3 || self.x == 4)
-                        && self.row == 0
+                    || ((self.x == 6 || self.x == 7)
                         && (self.mode() == 1
-                            || (self.mode() >= 2 && self.instruction & 0x40 != 0)))))
-            || self.fetch_slot().is_some()
+                            || (self.timing.first_line
+                                && self.mode() >= 2
+                                && self.instruction & 0x40 != 0)))))
+            || (self.x <= 105 && self.fetch_slot().is_some())
     }
 
     fn list_byte(&mut self, read: &mut impl FnMut(u16) -> u8) -> u8 {
@@ -202,6 +328,34 @@ impl Antic {
 
     /// Advance one system clock; return true after producing one scan line.
     pub fn tick(&mut self, mut read: impl FnMut(u16) -> u8) -> bool {
+        self.tick_with_bus(&mut read, 0xff)
+    }
+
+    pub fn tick_with_bus(&mut self, mut read: impl FnMut(u16) -> u8, bus_value: u8) -> bool {
+        self.pm_transfer = None;
+        self.timing.refresh_pending |= self.refresh_slot();
+        if !self.other_dma() {
+            self.timing.refresh_pending = false;
+        }
+        if let Some(player) = self.pm_slot() {
+            let one_line = self.timing.dma_control[0] & 0x10 != 0;
+            let shift = if one_line { 8 } else { 7 };
+            let base = u16::from(self.registers[7] & if one_line { 0xf8 } else { 0xfc }) << 8;
+            let section = if player == 4 {
+                3
+            } else {
+                u16::from(player) + 4
+            };
+            let offset = if one_line {
+                self.y & 255
+            } else {
+                (self.y / 2) & 127
+            };
+            self.pm_transfer = Some((player, read(base | (section << shift) | offset)));
+        }
+        if self.x == 0 {
+            self.timing.vscroll_latch = self.registers[5] & 15;
+        }
         if self.x == 0 && self.y == 8 {
             self.wait_vblank = false;
             self.remaining = 0;
@@ -212,22 +366,34 @@ impl Antic {
             if self.registers[0] & 0x20 != 0 {
                 self.instruction = self.list_byte(&mut read);
             }
-            self.remaining = if self.mode() == 0 {
-                ((self.instruction >> 4) & 7) + 1
+            let scroll = self.mode() >= 2 && self.instruction & 0x20 != 0;
+            self.timing.ending_scroll = self.timing.vscroll && !scroll;
+            self.row = if scroll && !self.timing.vscroll {
+                self.timing.vscroll_latch
             } else {
-                ROWS[self.mode()]
+                0
             };
+            self.timing.end_row = if self.timing.ending_scroll {
+                self.registers[5] & 15
+            } else if self.mode() == 0 {
+                (self.instruction >> 4) & 7
+            } else {
+                ROWS[self.mode()] - 1
+            };
+            self.remaining = (self.timing.end_row.wrapping_sub(self.row) & 15) + 1;
+            self.timing.vscroll = scroll;
+            self.timing.first_line = true;
         }
         if self.active()
             && !self.wait_vblank
             && self.registers[0] & 0x20 != 0
-            && self.row == 0
-            && (self.mode() == 1 || (self.mode() >= 2 && self.instruction & 0x40 != 0))
+            && (self.mode() == 1
+                || (self.timing.first_line && self.mode() >= 2 && self.instruction & 0x40 != 0))
         {
-            if self.x == 3 {
+            if self.x == 6 {
                 self.address_low = self.list_byte(&mut read);
             }
-            if self.x == 4 {
+            if self.x == 7 {
                 let high = self.list_byte(&mut read);
                 let address = u16::from_le_bytes([self.address_low, high]);
                 if self.mode() == 1 {
@@ -241,10 +407,13 @@ impl Antic {
         if let Some((i, font)) = self.fetch_slot() {
             if font {
                 let name = self.names[i];
-                let mut data = read(self.char_address(name));
-                if self.mode() == 3
-                    && ((name & 0x60 == 0x60 && self.row < 2)
-                        || (name & 0x60 != 0x60 && self.row >= 8))
+                let mut data = if self.x <= 105 {
+                    read(self.char_address(name))
+                } else {
+                    bus_value
+                };
+                if (self.mode() == 3 && name & 0x60 == 0x60 && self.row < 2)
+                    || (self.mode() <= 3 && name & 0x60 != 0x60 && (8..10).contains(&self.row))
                 {
                     data = 0;
                 }
@@ -258,37 +427,51 @@ impl Antic {
                 }
                 self.data[i] = data;
             } else {
-                self.names[i] = read(self.scan);
+                self.names[i] = if self.x <= 105 {
+                    read(self.scan)
+                } else {
+                    bus_value
+                };
                 self.data[i] = self.names[i];
                 self.scan = (self.scan & 0xf000) | (self.scan.wrapping_add(1) & 0x0fff);
             }
         }
-        let dli = self.active() && self.remaining == 1 && self.instruction & 0x80 != 0;
-        if self.x == 6 {
-            if self.y == 248 {
-                self.status = 0x5f;
-            } else if dli {
-                self.status |= 0x80;
-            }
+        if self.x == 5 {
+            self.timing.dli = self.dli();
         }
+        if self.x == 6 {
+            self.timing.nmi_enable = self.registers[14] & 0xc0;
+        }
+        if self.x == 7 {
+            self.timing.nmi_enable_late = self.registers[14] & !self.timing.nmi_enable & 0xc0;
+        }
+        let dli = self.timing.dli;
+        self.status = self.cycle_status();
         // Altirra Hardware Reference 4.8, "DLI timing": NMI at cycle 8.
         // https://www.virtualdub.org/downloads/Altirra%20Hardware%20Reference%20Manual.pdf
-        if self.x == 8
-            && ((self.y == 248 && self.registers[14] & 0x40 != 0)
-                || (dli && self.registers[14] & 0x80 != 0))
-        {
+        let enable = match self.x {
+            8 => self.timing.nmi_enable,
+            9 => self.timing.nmi_enable_late,
+            _ => 0,
+        };
+        if (self.y == 248 && enable & 0x40 != 0) || (dli && enable & 0x80 != 0) {
             self.nmi = true;
         }
         let line_done = self.x == 113;
+        if self.x == 108 && self.timing.ending_scroll {
+            self.timing.end_row = self.registers[5] & 15;
+        }
         if line_done {
             self.draw();
-            if self.active() && self.remaining > 0 {
-                self.remaining -= 1;
+            if self.active() && self.remaining > 0 && !self.wait_vblank {
+                self.remaining = self.timing.end_row.wrapping_sub(self.row) & 15;
                 if self.remaining > 0 {
-                    self.row += 1;
+                    self.row = self.row.wrapping_add(1) & 15;
                 }
             }
+            self.timing.first_line = false;
         }
+        self.timing.dma_control = [self.timing.dma_control[1], self.registers[0]];
         self.wsync_delay = self.wsync_delay.saturating_sub(1);
         self.cycles += 1;
         self.x += 1;
@@ -303,11 +486,17 @@ impl Antic {
     }
 
     fn draw(&mut self) {
-        self.line.fill(0);
+        for x in 0..WIDTH {
+            self.line[x] = self.pixel_at(x);
+        }
+    }
+
+    /// Current buffered playfield at a high-resolution screen pixel.
+    pub fn pixel_at(&self, x: usize) -> u8 {
         let mode = self.mode();
         let count = usize::from(self.count());
         if !self.active() || self.wait_vblank || mode < 2 || count == 0 {
-            return;
+            return 0;
         }
         let pixels_per_byte = match mode {
             6..=9 => 16 + usize::from(mode >= 8) * 16,
@@ -316,30 +505,41 @@ impl Antic {
         };
         let width = count * pixels_per_byte;
         let start = (WIDTH - width) / 2;
-        for i in 0..count {
-            let byte = self.data[i];
-            for x in 0..pixels_per_byte {
-                let code = match mode {
-                    2 | 3 | 15 => 5 + ((byte >> (7 - x)) & 1),
-                    4 | 5 | 8 | 10 | 13 | 14 => {
-                        let pair = (byte >> (6 - (x * 4 / pixels_per_byte) * 2)) & 3;
-                        if pair == 3 && mode <= 5 && self.names[i] & 0x80 != 0 {
-                            4
-                        } else {
-                            pair
-                        }
-                    }
-                    6 | 7 => {
-                        if byte & (0x80 >> (x / 2)) != 0 {
-                            (self.names[i] >> 6) + 1
-                        } else {
-                            0
-                        }
-                    }
-                    _ => u8::from(byte & (0x80 >> (x * 8 / pixels_per_byte)) != 0),
-                };
-                self.line[start + i * pixels_per_byte + x] = code;
+        if x < start || x >= start + width {
+            return 0;
+        }
+        let fetch_width = usize::from(self.fetch_count()) * pixels_per_byte;
+        let origin = (WIDTH - fetch_width) as isize / 2
+            + if self.instruction & 0x10 != 0 {
+                isize::from(self.registers[4] & 15) * 2
+            } else {
+                0
+            };
+        let source = x as isize - origin;
+        if source < 0 || source >= fetch_width as isize {
+            return 0;
+        }
+        let i = source as usize / pixels_per_byte;
+        let x = source as usize % pixels_per_byte;
+        let byte = self.data[i];
+        match mode {
+            2 | 3 | 15 => 5 + ((byte >> (7 - x)) & 1),
+            4 | 5 | 8 | 10 | 13 | 14 => {
+                let pair = (byte >> (6 - (x * 4 / pixels_per_byte) * 2)) & 3;
+                if pair == 3 && mode <= 5 && self.names[i] & 0x80 != 0 {
+                    4
+                } else {
+                    pair
+                }
             }
+            6 | 7 => {
+                if byte & (0x80 >> (x / 2)) != 0 {
+                    (self.names[i] >> 6) + 1
+                } else {
+                    0
+                }
+            }
+            _ => u8::from(byte & (0x80 >> (x * 8 / pixels_per_byte)) != 0),
         }
     }
 
@@ -353,7 +553,7 @@ impl Antic {
             || self.data.len() != 48
             || self.line.len() != WIDTH
             || self.line.iter().any(|&x| x > 6)
-            || self.wsync_delay > 1
+            || self.wsync_delay > 2
             || self.cycles % (114 * u64::from(self.lines))
                 != u64::from(self.y) * 114 + u64::from(self.x)
         {
@@ -366,6 +566,265 @@ impl Antic {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn descender_blanking_does_not_erase_mode_two_or_extended_rows() {
+        for (mode, row, name, expected) in [
+            (2, 1, 0x63, 6),
+            (3, 1, 0x63, 5),
+            (2, 8, 1, 5),
+            (3, 10, 1, 6),
+        ] {
+            let mut a = Antic::new(true);
+            a.y = 8;
+            a.x = 21;
+            a.row = row;
+            a.instruction = mode;
+            a.registers[0] = 0x22;
+            a.names[0] = name;
+            a.tick(|_| 0xf0);
+            assert_eq!(a.pixel_at(32), expected);
+        }
+    }
+
+    #[test]
+    fn pm_dma_fetches_each_resolution_and_forces_missiles_with_players() {
+        for (control, expected) in [
+            (
+                0x18,
+                vec![
+                    (0, 0x3308),
+                    (2, 0x3408),
+                    (3, 0x3508),
+                    (4, 0x3608),
+                    (5, 0x3708),
+                ],
+            ),
+            (
+                0x08,
+                vec![
+                    (0, 0x3584),
+                    (2, 0x3604),
+                    (3, 0x3684),
+                    (4, 0x3704),
+                    (5, 0x3784),
+                ],
+            ),
+        ] {
+            let mut a = Antic::new(true);
+            a.registers[0] = control;
+            a.registers[7] = 0x37;
+            let mut accesses = Vec::new();
+            for _ in 0..114 * 8 + 6 {
+                let (x, y) = (a.x, a.y);
+                a.tick(|address| {
+                    if y == 8 {
+                        accesses.push((x, address));
+                    }
+                    address as u8
+                });
+                if y == 8 && [0, 2, 3, 4, 5].contains(&x) {
+                    assert!(a.take_pm_transfer().is_some());
+                }
+            }
+            assert_eq!(accesses, expected);
+        }
+    }
+
+    #[test]
+    fn horizontal_scroll_expands_fetches_and_clips_to_original_width() {
+        let mut a = Antic::new(true);
+        a.y = 8;
+        a.instruction = 0x1f;
+        a.registers[0] = 0x22;
+        a.data.fill(0x80);
+        assert_eq!(a.fetch_count(), 48);
+        assert_eq!(a.pixel_at(31), 0);
+        assert_eq!(a.pixel_at(32), 6);
+        a.registers[4] = 1;
+        assert_eq!(a.pixel_at(32), 5);
+        assert_eq!(a.pixel_at(34), 6);
+        assert_eq!(a.pixel_at(352), 0);
+    }
+
+    #[test]
+    fn display_list_address_and_character_fetches_use_documented_slots() {
+        let mut a = Antic::new(true);
+        a.registers[0] = 0x22;
+        a.list = 0x2000;
+        let mut ram = vec![0; 65536];
+        ram[0x2000..0x2003].copy_from_slice(&[0x42, 0, 0x30]);
+        let mut accesses = Vec::new();
+        for _ in 0..114 * 9 {
+            let (x, y) = (a.x, a.y);
+            a.tick(|address| {
+                if y == 8 {
+                    accesses.push((x, address));
+                }
+                ram[usize::from(address)]
+            });
+        }
+        assert_eq!(
+            &accesses[..4],
+            &[(1, 0x2000), (6, 0x2001), (7, 0x2002), (18, 0x3000)]
+        );
+        assert!(accesses.iter().any(|&(x, _)| x == 21));
+    }
+
+    #[test]
+    fn refresh_waits_for_playfield_and_virtual_dma_does_not_halt_cpu() {
+        let mut a = Antic::new(true);
+        a.y = 8;
+        a.cycles = 8 * 114;
+        a.registers[0] = 0x23;
+        a.list = 0x2000;
+        for _ in 0..106 {
+            a.tick(|address| if address == 0x2000 { 2 } else { 0 });
+        }
+        assert!(a.cpu_dma_blocked(), "last refresh is displaced to 106");
+        a.tick(|_| 0);
+        assert!(
+            !a.cpu_dma_blocked(),
+            "virtual character DMA cannot halt at 107"
+        );
+    }
+
+    #[test]
+    fn dma_between_rmw_writes_cannot_rearm_wsync_delay() {
+        let mut a = Antic::new(true);
+        a.x = 24;
+        a.cycles = 24;
+        a.write(10, 0xff);
+        a.tick(|_| 0);
+        assert!(a.cpu_dma_blocked());
+        a.tick(|_| 0);
+        a.write(10, 0);
+        a.tick(|_| 0);
+        assert!(a.cpu_read_blocked());
+    }
+
+    #[test]
+    fn vertical_scroll_region_continues_across_vertical_blank() {
+        let mut a = Antic::new(true);
+        a.y = 8;
+        a.timing.vscroll = true;
+        a.registers[0] = 0x22;
+        a.registers[5] = 12;
+        a.tick(|_| 0xa2);
+        a.tick(|_| 0xa2);
+        assert_eq!(a.row, 0);
+        assert_eq!(a.remaining, 8);
+    }
+
+    #[test]
+    fn vertical_scroll_shortens_only_entry_and_exit_lines() {
+        let mut a = Antic::new(true);
+        a.registers[0] = 0x22;
+        a.registers[5] = 3;
+        a.list = 0x2000;
+        let mut starts = Vec::new();
+        for _ in 0..114 * 26 {
+            let y = a.y;
+            a.tick(|address| {
+                if (0x2000..0x2004).contains(&address) {
+                    starts.push((address, y));
+                    [0x22, 0x22, 0x02, 0x41][usize::from(address - 0x2000)]
+                } else {
+                    0
+                }
+            });
+        }
+        assert_eq!(
+            &starts[..4],
+            &[(0x2000, 8), (0x2001, 13), (0x2002, 21), (0x2003, 25)]
+        );
+    }
+
+    #[test]
+    fn last_clock_nmi_enable_delays_only_a_newly_enabled_interrupt() {
+        for (write_clock, initial, value, expected) in [
+            (6, 0, 0x40, Some(8)),
+            (7, 0, 0x40, Some(9)),
+            (8, 0, 0x40, None),
+            (6, 0x40, 0, None),
+            (7, 0x40, 0, Some(8)),
+        ] {
+            let mut a = Antic::new(true);
+            a.y = 248;
+            a.registers[14] = initial;
+            let mut pulse = None;
+            for x in 0..11 {
+                if x == write_clock {
+                    a.write(14, value);
+                }
+                a.tick(|_| 0);
+                if a.take_nmi() {
+                    pulse = Some(x);
+                }
+            }
+            assert_eq!(pulse, expected);
+        }
+    }
+
+    #[test]
+    fn nmist_sources_replace_each_other_and_nmires_loses_to_cycle_six() {
+        let mut a = Antic::new(true);
+        a.y = 39;
+        a.cycles = 39 * 114;
+        a.remaining = 1;
+        a.instruction = 0x80;
+        a.status = 0x5f;
+        for _ in 0..6 {
+            a.tick(|_| 0);
+        }
+        assert_eq!(a.read(15), 0x5f);
+        a.write(15, 0);
+        a.tick(|_| 0);
+        assert_eq!(a.read(15), 0x9f);
+        a.write(15, 0);
+        assert_eq!(a.read(15), 0x9f);
+        a.tick(|_| 0);
+        a.write(15, 0);
+        assert_eq!(a.read(15), 0x1f);
+        a.y = 248;
+        a.x = 6;
+        a.status = 0xbf;
+        a.tick(|_| 0);
+        assert_eq!(a.read(15), 0x7f, "RNMI remains latched through VBI");
+    }
+
+    #[test]
+    fn vcount_changes_at_111_with_one_cycle_end_of_frame_anomaly() {
+        for pal in [false, true] {
+            let mut a = Antic::new(pal);
+            for y in [3, 4, a.lines - 1] {
+                a.y = y;
+                a.x = 110;
+                assert_eq!(a.read(11), (y / 2) as u8);
+                a.x = 111;
+                assert_eq!(a.read(11), y.div_ceil(2) as u8);
+                a.x = 112;
+                assert_eq!(
+                    a.read(11),
+                    if y + 1 == a.lines {
+                        0
+                    } else {
+                        y.div_ceil(2) as u8
+                    }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn wsync_holds_after_the_following_cycle_not_the_write_cycle() {
+        let mut a = Antic::new(false);
+        a.write(10, 0);
+        a.tick(|_| 0); // The WSYNC write itself.
+        assert!(!a.cpu_read_blocked());
+        a.tick(|_| 0); // One following CPU cycle is allowed.
+        assert!(a.cpu_read_blocked());
+    }
+
     #[test]
     fn display_list_wrap_lms_text_and_jvb_repeat_without_cpu_patching() {
         let mut a = Antic::new(true);
@@ -414,8 +873,10 @@ mod tests {
         a.write(10, 0);
         assert!(!a.cpu_read_blocked());
         a.tick(|_| 0);
+        assert!(!a.cpu_read_blocked());
+        a.tick(|_| 0);
         assert!(a.cpu_read_blocked());
-        for _ in 1..105 {
+        for _ in 2..105 {
             a.tick(|_| 0);
         }
         assert!(!a.cpu_read_blocked());
