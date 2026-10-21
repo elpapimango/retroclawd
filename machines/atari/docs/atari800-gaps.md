@@ -175,8 +175,8 @@ The real release Host now boots the ATR without ROM patches and completes all
 
 | Execution | Passed | Failed | Skipped |
 |---|---:|---:|---:|
-| Host fast | 22 | 35 | 1 |
-| Host accurate | 20 | 37 | 1 |
+| Host fast | 23 | 34 | 1 |
+| Host accurate | 21 | 36 | 1 |
 | Atari800 7.2.1, patches disabled, identical replacement ROMs | 25 | 32 | 1 |
 
 These are diagnostic observations, **not acceptance passes**. The reference
@@ -186,14 +186,35 @@ The asynchronous POKEY receive test exposed timers 3/4 running while waiting
 for the start bit. Holding/resetting them until that edge fixes that case;
 a regression exercises the actual timer hold and subsequent receive.
 
-Remaining observed failures include BRK/CLI/SEI interrupt timing, unstable
-SHY/illegal-opcode behavior, ANTIC DMA/scroll/WSYNC/NMIST/VCOUNT/DLI, POKEY
+The shared Core high-byte store fix makes the illegal-instruction test pass
+in both Regions and modes. The actual failure wrote `$01` to `$40CD` instead
+of `$00` to `$00CD`: SHY masked with the indexed high byte and never applied
+the page-carry destination corruption. SHY/SHX/SHA/TAS now use the unindexed
+base high byte plus one and the masked destination on carry, matching the
+pinned Atari800 implementation's deterministic common case. The Core regression
+failed on that exact bus write before the fix and now covers all five opcodes,
+crossing/non-crossing/wrapping addresses and unchanged cycle counts. CPU and
+Machine State layouts are unchanged. The shared pin is
+`ae53253565d8bd34ebba7bdde8acebe55b9c028c`.
+
+CLI/SEI still fails: the Core checks the live I flag at the next boundary
+instead of retaining the instruction's interrupt-poll result. Fixing that
+requires persistent polling state and compatibility-safe restores in every
+6502 Machine; this increment does not silently change their State schemas.
+The accurate-mode illegal-instruction timing test still measures seven cycles
+for SLO `(zp,X)`, but the Core already emits eight bus events and reports eight
+cycles. That measurement is not proof of a missing Core cycle; isolate the
+Machine/Chip timing before changing the instruction.
+
+Remaining observed failures include BRK/CLI/SEI interrupt timing, the accurate
+instruction-timing measurement, ANTIC DMA/scroll/WSYNC/NMIST/VCOUNT/DLI, POKEY
 polynomial/pipeline/IRQ/serial/two-tone behavior, PIA control bit 6 and GTIA
 players/missiles/collisions/special modes. XL banking checks also run against
 this non-XL Machine. These are not all newly diagnosed Machine bugs.
 
-Private `acid-host-{pal,ntsc}-{fast,accurate}.txt` transcripts retain each
-failure. Existing `--capture-at 0xfaab:A=FILE` records the replacement OS's real
+Private `acid-store-{pal,ntsc}-{fast,accurate}.txt` transcripts retain the current
+failures; `acid-host-*` retains the preceding baseline. Existing
+`--capture-at 0xfaab:A=FILE` records the replacement OS's real
 E: output entry, obtained from IOCB0 ICPTL, rather than synthesizing results.
 Reference monitor transcripts, native PNGs and RAM retain independent evidence.
 The manifest compares the complete final 960-byte screen at `$9C40` with the

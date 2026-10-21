@@ -64,7 +64,9 @@ Private replacement-ROM test:
 `cargo test --release -p atari-8bit --test firmware -- --ignored`.
 It boots and types through POKEY in both Regions/modes, checks deterministic
 future State, warm reset and mid-transfer SIO State. It does not establish
-reference S2 or Acid800 acceptance. Actual Acid800 scores: fast 22/35/1,
-accurate 20/37/1, reference 25/32/1 passed/failed/skipped; see the gap document.
+reference S2 or Acid800 acceptance. Actual Acid800 scores: fast 23/34/1,
+accurate 21/36/1, reference 25/32/1 passed/failed/skipped; see the gap document.
+The shared high-byte store fix makes illegal instructions pass without a
+CPU State change. IRQ polling remains a separate compatibility-safe migration.
 Build fixtures with existing `rcasm`, `rcld` and `rcdisk`; never commit ROMs,
 third-party diagnostics, generated Media, goldens or reference binaries.

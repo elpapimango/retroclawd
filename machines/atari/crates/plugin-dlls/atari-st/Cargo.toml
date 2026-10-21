@@ -10,5 +10,5 @@ name = "atari_st_machine_plugin"
 crate-type = ["cdylib"]
 
 [dependencies]
-plugin-api = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "76ca5a025b9ba5b4d1ec0b9fbd7c46281313610a" }
+plugin-api = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "ae53253565d8bd34ebba7bdde8acebe55b9c028c" }
 atari-st-machine-plugin = { path = "../../plugins/atari-st-machine-plugin" }
