@@ -99,12 +99,12 @@ fn nonexistent_memory_is_a_bus_error_in_supervisor_mode() {
 #[test]
 fn first_io_access_records_a_stop() {
     let mut b = bus();
-    assert!(b.read(0xFF8001, Size::Byte, SUPER).is_ok());
+    assert!(b.read(0xFF8800, Size::Byte, SUPER).is_ok());
     let stop = b.stop().expect("stop recorded");
-    assert_eq!(stop.addr, 0xFF8001);
+    assert_eq!(stop.addr, 0xFF8800);
     assert!(!stop.write);
-    b.write(0xFF8240, Size::Word, 0x777, SUPER).unwrap();
-    assert_eq!(b.stop().unwrap().addr, 0xFF8001, "the first stop is kept");
+    b.write(0xFFFC00, Size::Byte, 3, SUPER).unwrap();
+    assert_eq!(b.stop().unwrap().addr, 0xFF8800, "the first stop is kept");
 }
 
 #[test]

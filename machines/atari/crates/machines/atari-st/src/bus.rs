@@ -19,6 +19,7 @@
 use crate::config::Config;
 use crate::io::{self, Decode, Device};
 use crate::iolog::IoAccess;
+use crate::mmu::Mmu;
 use mc68000::{BusFault, FunctionCode, IackResponse, M68kBus, Size};
 
 pub const ROM_BASE: u32 = 0xFC_0000;
@@ -53,6 +54,7 @@ pub struct IoStop {
 #[derive(Debug)]
 pub struct StBus {
     ram: Vec<u8>,
+    mmu: Mmu,
     rom: Vec<u8>,
     stop: Option<IoStop>,
     /// Emulated time, kept up to date by the machine, for the stop record.
@@ -111,8 +113,10 @@ impl StBus {
             ));
         }
         check_reset_pc(&cfg.rom)?;
+        let mmu = Mmu::new(cfg.ram);
         Ok(Self {
-            ram: vec![0; cfg.ram.bytes()],
+            ram: vec![0; mmu.ram_bytes()],
+            mmu,
             rom: cfg.rom.clone(),
             stop: None,
             now: 0,
@@ -149,10 +153,11 @@ impl StBus {
         let addr = addr & 0xFF_FFFF;
         if addr < 8 {
             Region::Rom(addr as usize)
-        } else if (addr as usize) < self.ram.len() {
-            Region::Ram(addr as usize)
         } else if addr < RAM_DECODE_END {
-            Region::UnfittedRam
+            match self.mmu.translate(addr) {
+                Some(i) => Region::Ram(i),
+                None => Region::UnfittedRam,
+            }
         } else if CARTRIDGE.contains(&addr) {
             Region::Cartridge
         } else if (ROM_BASE..ROM_BASE + ROM_SIZE as u32).contains(&addr) {
@@ -199,6 +204,16 @@ impl StBus {
         };
         let reason = match io::decode(addr, size) {
             Decode::BusError => return Err(BusFault),
+            Decode::Device(Device::Mmu) => {
+                let v = if write {
+                    self.mmu.write_config(value as u8);
+                    value
+                } else {
+                    self.mmu.read_config() as u32
+                };
+                self.log_io(addr, size, write, v);
+                return Ok(v);
+            }
             Decode::Open => {
                 self.log_io(addr, size, write, if write { value } else { ff });
                 return Ok(ff);

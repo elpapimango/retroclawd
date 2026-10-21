@@ -28,8 +28,8 @@ fn machine(program: &[u16], trace_limit: u32) -> AtariSt {
 
 #[test]
 fn the_io_stop_holds_the_machine_and_reports_once() {
-    // MOVEQ #1,D1; MOVE.B $FF8001,D0
-    let mut m = machine(&[0x7201, 0x1039, 0x00FF, 0x8001], 0);
+    // MOVEQ #1,D1; MOVE.B $FF8800,D0
+    let mut m = machine(&[0x7201, 0x1039, 0x00FF, 0x8800], 0);
     let mut reports = Vec::new();
     for _ in 0..(50 * 160_256 / 4) {
         m.step();
@@ -40,9 +40,9 @@ fn the_io_stop_holds_the_machine_and_reports_once() {
     assert!(m.halted());
     assert_eq!(reports.len(), 1);
     let r = &reports[0];
-    assert!(r.contains("stop: read byte $FF8001"), "{r}");
+    assert!(r.contains("stop: read byte $FF8800"), "{r}");
     assert!(r.contains("D1=00000001"), "{r}");
-    assert!(r.contains("move.b $ff8001,d0"), "{r}");
+    assert!(r.contains("move.b $ff8800,d0"), "{r}");
     assert!(
         r.contains("$FC0030"),
         "the history lists the instructions: {r}"
@@ -65,9 +65,9 @@ fn trace_lists_pcs_up_to_the_limit() {
 
 #[test]
 fn exceptions_appear_in_the_report() {
-    // ILLEGAL; vector 4 (in RAM at $10) points at $FC0040, whose MOVE.B $FF8001,D0 stops the machine.
+    // ILLEGAL; vector 4 (in RAM at $10) points at $FC0040, whose MOVE.B $FF8800,D0 stops the machine.
     let mut rom = rom(&[0x4AFC]);
-    rom[0x40..0x46].copy_from_slice(&[0x10, 0x39, 0x00, 0xFF, 0x80, 0x01]);
+    rom[0x40..0x46].copy_from_slice(&[0x10, 0x39, 0x00, 0xFF, 0x88, 0x00]);
     let mut m = AtariSt::new(Config {
         ram: RamSize::M1,
         region: Region::Pal,

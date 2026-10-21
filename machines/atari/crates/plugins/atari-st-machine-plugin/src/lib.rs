@@ -843,9 +843,9 @@ mod tests {
     fn the_io_stop_report_goes_to_the_diag_file_once() {
         let diag = temp("diag.txt");
         let _ = std::fs::remove_file(&diag);
-        // MOVE.B $FF8001,D0
+        // MOVE.B $FF8800,D0
         let id = create(
-            &[0x1039, 0x00FF, 0x8001],
+            &[0x1039, 0x00FF, 0x8800],
             vec![text("diag_file", diag.to_str().unwrap())],
         );
         for _ in 0..1000 {
@@ -853,7 +853,7 @@ mod tests {
         }
         assert_eq!(plugin_halted_v1(id), 1);
         let report = std::fs::read_to_string(&diag).expect("report written");
-        assert!(report.contains("stop: read byte $FF8001"), "{report}");
+        assert!(report.contains("stop: read byte $FF8800"), "{report}");
         std::fs::write(&diag, "").unwrap();
         for _ in 0..1000 {
             plugin_step_inner(id);

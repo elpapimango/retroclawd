@@ -47,8 +47,12 @@ fn emutos() -> Option<Vec<u8>> {
 
 /// Runs to the stop (or `MAX_CYCLES`); returns the machine.
 fn run(rom: Vec<u8>) -> AtariSt {
+    run_with(rom, RamSize::M1)
+}
+
+fn run_with(rom: Vec<u8>, ram: RamSize) -> AtariSt {
     let mut m = AtariSt::new(Config {
-        ram: RamSize::M1,
+        ram,
         region: Region::Pal,
         accuracy: Accuracy::Fast,
         rom,
@@ -173,4 +177,34 @@ fn emutos_io_log_matches_hatari() {
         );
     }
     eprintln!("the first {} I/O accesses agree with Hatari", ours.len());
+}
+
+/// EmuTOS's RAM sizing writes the same `$FF8001` values as in Hatari, for every `--ram`.
+#[test]
+fn emutos_sizes_ram_like_hatari() {
+    let Some(rom) = emutos() else { return };
+    for (name, ram) in [
+        ("256k", RamSize::K256),
+        ("512k", RamSize::K512),
+        ("1m", RamSize::M1),
+        ("2m", RamSize::M2),
+        ("2.5m", RamSize::M2_5),
+        ("4m", RamSize::M4),
+    ] {
+        let Some(reference) = hatari_io(name) else {
+            continue;
+        };
+        let mmu = |lines: Vec<String>| -> Vec<String> {
+            lines
+                .into_iter()
+                .filter(|l| l.contains("$ffff8001"))
+                .collect()
+        };
+        let ours = mmu(run_with(rom.clone(), ram)
+            .io_log()
+            .iter()
+            .map(|a| a.hatari_line())
+            .collect());
+        assert_eq!(ours, mmu(reference), "--ram {name}");
+    }
 }

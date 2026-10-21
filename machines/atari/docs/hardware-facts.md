@@ -48,7 +48,7 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Bits 7-4 | read back as 0 | `[H?]` | Hatari reads `$00` at power-on; nothing documents the upper bits |
 | Power-on value | `$00` | `[O]` | *Hatari io* line 1 "IO read.b $ffff8001 = $00" |
 | Banks fitted per RAM size | 256K = 128K + 128K, 512K = 512K + none, 1M = 512K + 512K, 2M = 2M + none, 2.5M = 2M + 512K, 4M = 2M + 2M | `[O]` | final `$FF8001` written by EmuTOS per `--memsize`: `$00`, `$04`, `$05`, `$08`, `$09`, `$0A` |
-| Address multiplexing when the configured bank is larger than the fitted chips | see `mmu.rs` | `[H?]` | no primary source; the rule is chosen so that EmuTOS's sizing writes Hatari's values at every RAM size |
+| Address multiplexing | the word address splits into a column (low n bits) and a row (next n bits), n = 8/9/10 for a bank configured 128K/512K/2M; smaller chips ignore the top lines, so in a 2M bank `$408` aliases `$8` on 512K and `$208` on 128K | `[H?]` | DRAM row/column addressing (16 chips of 64K/256K/1M bits, *Internals* p.55); agrees with the offsets EmuTOS 1.4's sizing checks (`$40008`, `$208`, `$80008`, `$408`, `$8` at `$FC01BC-$FC0202`) and with Hatari's final value for all six sizes |
 | No RAM at an address (above the configured total, or an empty bank) | reads `$FF`, writes ignored, no bus error | `[H?]` | slice 1 choice; a forum report says writes vanish and reads return bus noise |
 
 ## Shifter (`st-shifter`)

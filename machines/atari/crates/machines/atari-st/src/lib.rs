@@ -8,6 +8,7 @@ mod diag;
 mod io;
 mod iolog;
 mod machine;
+mod mmu;
 mod scheduler;
 
 pub use bus::{IoStop, ROM_BASE, ROM_SIZE, StBus, StopReason};
@@ -16,4 +17,5 @@ pub use io::{Decode, Device, decode};
 pub use iolog::IoAccess;
 pub use machine::AtariSt;
 pub use mc68000;
+pub use mmu::{BankSize, installed_banks};
 pub use scheduler::{CLASS_VIDEO, Event, Scheduler};
