@@ -558,24 +558,27 @@ impl Machine for Atari800 {
     }
     fn save_state(&self) -> Vec<u8> {
         bincode::serde::encode_to_vec(
-            State {
-                base: StateV1 {
-                    magic: *b"A800",
-                    version: 2,
-                    rom: self.bus.roms.fingerprint(),
-                    timing: self.timing(),
-                    cpu: self.cpu,
-                    hardware: self.bus.hardware.clone(),
+            (
+                State {
+                    base: StateV1 {
+                        magic: *b"A800",
+                        version: 3,
+                        rom: self.bus.roms.fingerprint(),
+                        timing: self.timing(),
+                        cpu: self.cpu,
+                        hardware: self.bus.hardware.clone(),
+                    },
+                    serial: self.bus.hardware.pokey.serial_state(),
+                    sio: self.bus.sio.save(),
+                    program: self.program.as_ref().map(|loader| XexLoader {
+                        segments: loader.segments.clone(),
+                        return_pc: loader.return_pc,
+                        return_sp: loader.return_sp,
+                        armed: loader.armed,
+                    }),
                 },
-                serial: self.bus.hardware.pokey.serial_state(),
-                sio: self.bus.sio.save(),
-                program: self.program.as_ref().map(|loader| XexLoader {
-                    segments: loader.segments.clone(),
-                    return_pc: loader.return_pc,
-                    return_sp: loader.return_sp,
-                    armed: loader.armed,
-                }),
-            },
+                self.cpu.irq_poll_mask(),
+            ),
             bincode::config::standard(),
         )
         .expect("Atari 800 state encoding")
@@ -584,7 +587,7 @@ impl Machine for Atari800 {
         if bytes.len() > 67_108_864 {
             return Err("Atari 800 state exceeds 64 MiB".to_string());
         }
-        if bytes.get(..4) != Some(b"A800") || !matches!(bytes.get(4), Some(1 | 2)) {
+        if bytes.get(..4) != Some(b"A800") || !matches!(bytes.get(4), Some(1..=3)) {
             return Err("invalid Atari 800 state header".to_string());
         }
         let (mut state, serial, sio, program, used) = if bytes[4] == 1 {
@@ -614,9 +617,19 @@ impl Machine for Atari800 {
             let sio = Sio::restore(state.sio, self.clock_hz())?;
             (state.base, state.serial, sio, state.program, used)
         };
-        if used != bytes.len() {
+        let (mask, extra) = if bytes[4] == 3 {
+            bincode::serde::decode_from_slice::<Option<bool>, _>(
+                &bytes[used..],
+                bincode::config::standard(),
+            )
+            .map_err(|e| format!("invalid Atari 800 IRQ state: {e}"))?
+        } else {
+            (None, 0)
+        };
+        if used + extra != bytes.len() {
             return Err("invalid Atari 800 state header or trailing bytes".to_string());
         }
+        state.cpu.restore_irq_poll_mask(mask);
         if state.rom != self.bus.roms.fingerprint()
             || state.timing != self.timing()
             || state.hardware.antic.pal() != self.pal()
@@ -677,6 +690,32 @@ mod tests {
         )
         .unwrap()
     }
+    #[test]
+    fn irq_latch_continues_after_cli_and_version2_restores_live_i() {
+        for timing in [Timing::Fast, Timing::Accurate] {
+            let mut m = machine(timing);
+            m.load_program(0x4000, &[0x58, 0x78, 0xea]).unwrap();
+            m.set_pc(0x4000);
+            m.step();
+            let saved = m.save_state();
+            m.step();
+            let future = m.save_state();
+            m.load_state(&saved).unwrap();
+            assert_eq!(m.cpu.irq_poll_mask(), Some(true));
+            m.step();
+            assert_eq!(m.save_state(), future);
+            let (mut old, _): (State, usize) =
+                bincode::serde::decode_from_slice(&saved, bincode::config::standard()).unwrap();
+            old.base.version = 2;
+            let legacy = bincode::serde::encode_to_vec(old, bincode::config::standard()).unwrap();
+            m.load_state(&legacy).unwrap();
+            assert_eq!(m.cpu.irq_poll_mask(), None);
+            let before = m.save_state();
+            assert!(m.load_state(&saved[..saved.len() - 1]).is_err());
+            assert_eq!(m.save_state(), before);
+        }
+    }
+
     #[test]
     fn xex_runs_init_before_later_segments_and_restores_mid_init() {
         use atari_media::{Segment, Xex};

@@ -6,6 +6,6 @@ license = "GPL-3.0-or-later"
 description = "Atari ST/STF/STFM: memory map, event scheduler and the Machine implementation"
 
 [dependencies]
-machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "ae53253565d8bd34ebba7bdde8acebe55b9c028c" }
-mc68000 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "ae53253565d8bd34ebba7bdde8acebe55b9c028c" }
+machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "bf0faf6e36950b43ff1443074487fad7075320fa" }
+mc68000 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "bf0faf6e36950b43ff1443074487fad7075320fa" }
 serde = { version = "1", features = ["derive"] }

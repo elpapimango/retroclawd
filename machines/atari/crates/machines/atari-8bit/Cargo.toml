@@ -5,9 +5,9 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "ae53253565d8bd34ebba7bdde8acebe55b9c028c" }
-mos6502 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "ae53253565d8bd34ebba7bdde8acebe55b9c028c" }
-pia-6520 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "ae53253565d8bd34ebba7bdde8acebe55b9c028c" }
+machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "bf0faf6e36950b43ff1443074487fad7075320fa" }
+mos6502 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "bf0faf6e36950b43ff1443074487fad7075320fa" }
+pia-6520 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "bf0faf6e36950b43ff1443074487fad7075320fa" }
 antic = { path = "../../chips/antic" }
 gtia = { path = "../../chips/gtia" }
 pokey = { path = "../../chips/pokey" }

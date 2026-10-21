@@ -117,10 +117,12 @@ each complete `$4000:256` capture has the unchanged S3 golden hash above.
 Capture adapter options are `--disk FILE` and `--xex FILE`; neither uses raw
 monitor injection.
 
-Machine State version 2 includes the disk, serial bit/queue phase and pending
-XEX lifecycle. It still reads version 1; loading a legacy State with a disk
-currently attached explicitly requires ejecting first. Older Plugins cannot
-read version 2: preserve version 1 files for rollback. The ROM-gated integration
+Machine State version 3 includes the disk, serial bit/queue phase, pending
+XEX lifecycle and the Core's delayed IRQ-mask sample. It reads versions 1 and 2;
+legacy States restore no poll history, matching their original live-I check.
+Loading a version 1 State with a disk currently attached explicitly requires
+ejecting first. Older Plugins cannot read version 3: preserve original files
+for rollback. The ROM-gated integration
 test saves during the second sector transfer and checks exact continuation in
 all four Region/mode combinations.
 
@@ -175,8 +177,8 @@ The real release Host now boots the ATR without ROM patches and completes all
 
 | Execution | Passed | Failed | Skipped |
 |---|---:|---:|---:|
-| Host fast | 23 | 34 | 1 |
-| Host accurate | 21 | 36 | 1 |
+| Host fast | 24 | 33 | 1 |
+| Host accurate | 22 | 35 | 1 |
 | Atari800 7.2.1, patches disabled, identical replacement ROMs | 25 | 32 | 1 |
 
 These are diagnostic observations, **not acceptance passes**. The reference
@@ -194,26 +196,32 @@ base high byte plus one and the masked destination on carry, matching the
 pinned Atari800 implementation's deterministic common case. The Core regression
 failed on that exact bus write before the fix and now covers all five opcodes,
 crossing/non-crossing/wrapping addresses and unchanged cycle counts. CPU and
-Machine State layouts are unchanged. The shared pin is
+Machine State layouts were unchanged by that store fix. Its shared pin was
 `ae53253565d8bd34ebba7bdde8acebe55b9c028c`.
 
-CLI/SEI still fails: the Core checks the live I flag at the next boundary
-instead of retaining the instruction's interrupt-poll result. Fixing that
-requires persistent polling state and compatibility-safe restores in every
-6502 Machine; this increment does not silently change their State schemas.
+CLI/SEI now passes in all four Region/mode runs. The Core retains I from before
+CLI/SEI/PLP for the next boundary; RTI uses restored I immediately. Every
+affected Machine and Drive saves the latch in an explicit new envelope and
+still reads its old files. Core serde bytes and the Plugin ABI stay unchanged.
+New-format continuation, legacy loading and truncated-latch refusal have
+focused regressions. This is not a cycle-exact IRQ/NMI/BRK pipeline.
+The release Host also loads a preserved published version-2 Acid800 State
+and produces byte-identical upgraded continuations on two runs. The original
+file remains unchanged. The new shared pin is
+`bf0faf6e36950b43ff1443074487fad7075320fa`.
 The accurate-mode illegal-instruction timing test still measures seven cycles
 for SLO `(zp,X)`, but the Core already emits eight bus events and reports eight
 cycles. That measurement is not proof of a missing Core cycle; isolate the
 Machine/Chip timing before changing the instruction.
 
-Remaining observed failures include BRK/CLI/SEI interrupt timing, the accurate
+Remaining observed failures include BRK interrupt timing, the accurate
 instruction-timing measurement, ANTIC DMA/scroll/WSYNC/NMIST/VCOUNT/DLI, POKEY
 polynomial/pipeline/IRQ/serial/two-tone behavior, PIA control bit 6 and GTIA
 players/missiles/collisions/special modes. XL banking checks also run against
 this non-XL Machine. These are not all newly diagnosed Machine bugs.
 
-Private `acid-store-{pal,ntsc}-{fast,accurate}.txt` transcripts retain the current
-failures; `acid-host-*` retains the preceding baseline. Existing
+Private `acid-irq-{pal,ntsc}-{fast,accurate}.txt` transcripts retain the current
+failures; `acid-store-*` and `acid-host-*` retain preceding baselines. Existing
 `--capture-at 0xfaab:A=FILE` records the replacement OS's real
 E: output entry, obtained from IOCB0 ICPTL, rather than synthesizing results.
 Reference monitor transcripts, native PNGs and RAM retain independent evidence.
