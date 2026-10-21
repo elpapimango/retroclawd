@@ -230,3 +230,45 @@ fn emutos_desktop_frame_is_deterministic() {
         std::fs::write(std::path::Path::new(&dir).join("emutos-1500.ppm"), ppm).unwrap();
     }
 }
+
+/// A key reaches EmuTOS: pressed at frame 1200 and released at 1205, its make and break codes (`$1E`, `$9E`) are
+/// read from the keyboard ACIA's data register.
+#[test]
+fn emutos_sees_a_key() {
+    let Some(rom) = emutos() else { return };
+    let mut m = AtariSt::new(common::config(rom, RamSize::M1)).unwrap();
+    let mut reads: Vec<u32> = Vec::new();
+    let mut run_to = |m: &mut AtariSt, frame: u64| {
+        while m.vbl_count() < frame {
+            m.step();
+            if m.now().is_multiple_of(64) {
+                let log = m.take_io_log();
+                reads.extend(
+                    log.iter()
+                        .filter(|a| a.addr == 0xFF_FC02 && !a.write)
+                        .map(|a| a.value),
+                );
+            }
+        }
+        let log = m.take_io_log();
+        reads.extend(
+            log.iter()
+                .filter(|a| a.addr == 0xFF_FC02 && !a.write)
+                .map(|a| a.value),
+        );
+    };
+    run_to(&mut m, 1200);
+    m.key_event("KeyA", true).unwrap();
+    run_to(&mut m, 1205);
+    m.key_event("KeyA", false).unwrap();
+    run_to(&mut m, 1300);
+    assert!(m.io_stop().is_none());
+    let make = reads
+        .iter()
+        .position(|&v| v == 0x1E)
+        .expect("make code read");
+    assert!(
+        reads[make..].contains(&0x9E),
+        "break code read after the make: {reads:02X?}"
+    );
+}
