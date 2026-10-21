@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 
 use mc68000::{Cpu, ExceptionRecord, FaultInfo, Size};
 
-use crate::bus::IoStop;
+use crate::bus::{IoStop, StopReason};
 
 const HISTORY: usize = 256;
 const EXCEPTIONS: usize = 64;
@@ -88,8 +88,15 @@ impl Diag {
         } else {
             String::new()
         };
+        let why = match stop.reason {
+            StopReason::NotEmulated(d) => format!("{} is not emulated yet", d.name()),
+            StopReason::NoFact => format!(
+                "no hardware fact for ${:06X} ({size} {direction})",
+                stop.addr
+            ),
+        };
         format!(
-            "stop: {direction} {size} ${:06X}{value} (fc {}): no device emulated there yet; cycle {} ({ms:.3} ms)",
+            "stop: {direction} {size} ${:06X}{value} (fc {}): {why}; cycle {} ({ms:.3} ms)",
             stop.addr, stop.fc.0, stop.at_cycle
         )
     }

@@ -14,3 +14,13 @@
   `996ff8df1fd6bd909ded90d5460d5639f3d8dee2c74921f3983a4cd10ff02812`): the reference emulator, run as a black box
   only (`retroclawd-tools/scripts/capture_hatari_trace.py` makes the CPU trace `tests/emutos.rs` compares). No code,
   table or comment of it is copied.
+- **Hardware documents** (read, never committed; each fact used is listed with its page in
+  `docs/hardware-facts.md`):
+  - *Atari ST Internals*, Abacus Software 1985, https://www.atarimania.com/documents/Atari-ST-Internals.pdf
+    (SHA-256 `961b981dd4e9c3206216aa70daece969f8bcc51814822b7159514e5409d3effd`).
+  - Motorola *MC68901 Multi-Function Peripheral*, Advance Information, January 1984,
+    https://bitsavers.mirrorservice.org/components/motorola/68000/MC68901_Multi-Function_Peripheral_Jan84.pdf
+    (SHA-256 `5441a092562cc5b55bb167298030647622132e0061c0be8d976e25fb60ba959c`).
+  - TOS documentation, "The system vectors", https://freemint.github.io/tos.hyp/en/the_system_vectors.html.
+  - "A millisecond timer", ST-Log 34 (July 1989), https://www.atarimagazines.com/st-log/issue34/60_1_A_MILLISECOND_TIMER.php
+    (the MFP timer clock).

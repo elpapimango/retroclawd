@@ -17,6 +17,7 @@
 //! `$400000-$F9FFFF` and `$FF0000-$FF7FFF` are nonexistent (bus error).
 
 use crate::config::Config;
+use crate::io::{self, Decode, Device};
 use mc68000::{BusFault, FunctionCode, IackResponse, M68kBus, Size};
 
 pub const ROM_BASE: u32 = 0xFC_0000;
@@ -27,9 +28,19 @@ const CARTRIDGE: std::ops::Range<u32> = 0xFA_0000..0xFC_0000;
 const IO_BASE: u32 = 0xFF_8000;
 const SUPERVISOR_ONLY_BELOW: u32 = 0x800;
 
-/// The first access to an I/O address with no device behind it yet: the machine stops there (spec section 16).
+/// Why the machine stopped at an I/O access.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StopReason {
+    /// The device is known but not emulated yet.
+    NotEmulated(Device),
+    /// No hardware fact covers the access (see `io.rs`).
+    NoFact,
+}
+
+/// The first I/O access the machine cannot answer: the machine stops there (spec section 16).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IoStop {
+    pub reason: StopReason,
     pub addr: u32,
     pub size: Size,
     pub write: bool,
@@ -148,9 +159,28 @@ impl StBus {
         }
     }
 
-    fn io(&mut self, addr: u32, size: Size, write: bool, value: u32, fc: FunctionCode) -> u32 {
+    /// One I/O access through the decode table. `Err` is a bus error; a stop answers `$FF` per byte.
+    fn io(
+        &mut self,
+        addr: u32,
+        size: Size,
+        write: bool,
+        value: u32,
+        fc: FunctionCode,
+    ) -> Result<u32, BusFault> {
+        let ff = match size {
+            Size::Byte => 0xFF,
+            Size::Word => 0xFFFF,
+        };
+        let reason = match io::decode(addr, size) {
+            Decode::BusError => return Err(BusFault),
+            Decode::Open => return Ok(ff),
+            Decode::Device(d) => StopReason::NotEmulated(d),
+            Decode::NoFact => StopReason::NoFact,
+        };
         if self.stop.is_none() {
             self.stop = Some(IoStop {
+                reason,
                 addr,
                 size,
                 write,
@@ -159,10 +189,7 @@ impl StBus {
                 at_cycle: self.now,
             });
         }
-        match size {
-            Size::Byte => 0xFF,
-            Size::Word => 0xFFFF,
-        }
+        Ok(ff)
     }
 
     fn byte(&self, region: &Region) -> u8 {
@@ -187,7 +214,7 @@ impl M68kBus for StBus {
         let region = self.region(addr);
         Ok(match region {
             Region::None => return Err(BusFault),
-            Region::Io => self.io(addr & 0xFF_FFFF, size, false, 0, fc),
+            Region::Io => self.io(addr & 0xFF_FFFF, size, false, 0, fc)?,
             _ => match size {
                 Size::Byte => self.byte(&region) as u32,
                 Size::Word => {
@@ -211,7 +238,7 @@ impl M68kBus for StBus {
         match self.region(addr) {
             Region::None => return Err(BusFault),
             Region::Io => {
-                self.io(addr & 0xFF_FFFF, size, true, value, fc);
+                self.io(addr & 0xFF_FFFF, size, true, value, fc)?;
             }
             Region::Ram(i) => match size {
                 Size::Byte => self.ram[i] = value as u8,

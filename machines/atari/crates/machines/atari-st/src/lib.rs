@@ -5,11 +5,13 @@
 mod bus;
 mod config;
 mod diag;
+mod io;
 mod machine;
 mod scheduler;
 
-pub use bus::{IoStop, ROM_BASE, ROM_SIZE, StBus};
+pub use bus::{IoStop, ROM_BASE, ROM_SIZE, StBus, StopReason};
 pub use config::{Accuracy, Config, RamSize, Region};
+pub use io::{Decode, Device, decode};
 pub use machine::AtariSt;
 pub use mc68000;
 pub use scheduler::{CLASS_VIDEO, Event, Scheduler};

@@ -1,6 +1,6 @@
 //! The ST memory map as the CPU sees it (tests against `StBus` through the 68000 bus trait).
 
-use atari_st::{Accuracy, Config, RamSize, Region, StBus};
+use atari_st::{Accuracy, Config, Decode, Device, RamSize, Region, StBus, StopReason, decode};
 use mc68000::{FunctionCode, M68kBus, Size};
 
 const SUPER: FunctionCode = FunctionCode::SUPERVISOR_DATA;
@@ -155,4 +155,74 @@ fn a_reset_pc_outside_the_rom_is_refused() {
     r[4..8].copy_from_slice(&0x00FC_0031u32.to_be_bytes());
     let err = StBus::new(&config(r)).unwrap_err();
     assert!(err.contains("odd"), "{err}");
+}
+
+#[test]
+fn io_decode_table() {
+    use Decode::{BusError, NoFact, Open};
+    use Device::*;
+    let dev = Decode::Device;
+    let rows: &[(u32, Size, Decode)] = &[
+        (0xFF8001, Size::Byte, dev(Mmu)),
+        (0xFF8000, Size::Byte, NoFact),
+        (0xFF8006, Size::Word, BusError),
+        (0xFF8201, Size::Byte, dev(Shifter)),
+        (0xFF8203, Size::Byte, dev(Shifter)),
+        (0xFF820A, Size::Byte, dev(Shifter)),
+        (0xFF8240, Size::Word, dev(Shifter)),
+        (0xFF825E, Size::Word, dev(Shifter)),
+        (0xFF8260, Size::Byte, dev(Shifter)),
+        (0xFF8205, Size::Byte, NoFact),
+        (0xFF8604, Size::Word, dev(Dma)),
+        (0xFF860F, Size::Byte, Open),
+        (0xFF8800, Size::Byte, dev(Psg)),
+        (0xFF8A3C, Size::Word, BusError),
+        (0xFFFA01, Size::Byte, dev(Mfp)),
+        (0xFFFA2F, Size::Byte, dev(Mfp)),
+        (0xFFFA00, Size::Byte, NoFact),
+        (0xFFFA01, Size::Word, NoFact),
+        (0xFFFA31, Size::Byte, NoFact),
+        (0xFFFC00, Size::Byte, dev(Acia)),
+        (0xFFFC02, Size::Byte, dev(Acia)),
+        (0xFFFC04, Size::Byte, dev(Acia)),
+        (0xFFFC06, Size::Byte, dev(Acia)),
+        (0xFFFC21, Size::Byte, Open),
+        (0xFFFC25, Size::Byte, Open),
+        (0xFFFC27, Size::Byte, Open),
+        (0xFFFC3B, Size::Byte, Open),
+        (0xFF9000, Size::Byte, NoFact),
+    ];
+    for &(addr, size, want) in rows {
+        assert_eq!(decode(addr, size), want, "${addr:06X} {size:?}");
+    }
+}
+
+#[test]
+fn open_io_reads_ff_and_ignores_writes_without_a_stop() {
+    let mut b = bus();
+    assert_eq!(b.read(0xFF860F, Size::Byte, SUPER), Ok(0xFF));
+    assert!(b.write(0xFFFC3B, Size::Byte, 0xFE, SUPER).is_ok());
+    assert_eq!(b.read(0xFFFC3B, Size::Byte, SUPER), Ok(0xFF));
+    assert!(b.stop().is_none());
+}
+
+#[test]
+fn bus_error_rows_fault_without_a_stop() {
+    let mut b = bus();
+    assert!(b.read(0xFF8006, Size::Word, SUPER).is_err());
+    assert!(b.read(0xFF8A3C, Size::Word, SUPER).is_err());
+    assert!(b.stop().is_none());
+}
+
+#[test]
+fn stops_name_the_device_or_the_missing_fact() {
+    let mut b = bus();
+    b.write(0xFF8800, Size::Byte, 7, SUPER).unwrap();
+    assert_eq!(
+        b.stop().unwrap().reason,
+        StopReason::NotEmulated(Device::Psg)
+    );
+    let mut b = bus();
+    b.read(0xFF9000, Size::Byte, SUPER).unwrap();
+    assert_eq!(b.stop().unwrap().reason, StopReason::NoFact);
 }
