@@ -178,12 +178,12 @@ The real release Host now boots the ATR without ROM patches and completes all
 | Execution | Passed | Failed | Skipped |
 |---|---:|---:|---:|
 | Host fast | 24 | 33 | 1 |
-| Host accurate | 22 | 35 | 1 |
+| Host accurate | 24 | 33 | 1 |
 | Atari800 7.2.1, patches disabled, identical replacement ROMs | 25 | 32 | 1 |
 
 These are diagnostic observations, **not acceptance passes**. The reference
 itself fails hardware tests; equal totals would not establish conformance.
-The higher fast-mode count does not establish greater timing accuracy.
+Equal Host mode totals do not establish cycle-exact timing.
 The asynchronous POKEY receive test exposed timers 3/4 running while waiting
 for the start bit. Holding/resetting them until that edge fixes that case;
 a regression exercises the actual timer hold and subsequent receive.
@@ -209,19 +209,37 @@ The release Host also loads a preserved published version-2 Acid800 State
 and produces byte-identical upgraded continuations on two runs. The original
 file remains unchanged. The new shared pin is
 `bf0faf6e36950b43ff1443074487fad7075320fa`.
-The accurate-mode illegal-instruction timing test still measures seven cycles
-for SLO `(zp,X)`, but the Core already emits eight bus events and reports eight
-cycles. That measurement is not proof of a missing Core cycle; isolate the
-Machine/Chip timing before changing the instruction.
+The accurate-mode illegal-instruction timing failure was Machine arbitration,
+not a missing Core cycle or a POKEY timer defect. `cpu_illtiming.s` repeats the
+instruction 210 times and measures VCOUNT, allowing nine refresh clocks per
+scan line. The Core already emitted and reported eight cycles for SLO `(zp,X)`.
+The Machine incorrectly treated ANTIC DMA HALT like WSYNC RDY, so a write at
+a refresh slot proceeded instead of stalling. Lost refresh holds made VCOUNT
+advance too little, yielding the apparent seven-cycle instruction.
 
-Remaining observed failures include BRK interrupt timing, the accurate
-instruction-timing measurement, ANTIC DMA/scroll/WSYNC/NMIST/VCOUNT/DLI, POKEY
+DMA now stops every CPU bus access; WSYNC still only holds reads. Hardware
+sources are Altirra Hardware Reference chapter 2 (HALT, page 30), section 4.14
+(refresh at cycles 25, 29, ..., 57, page 87) and the WSYNC RDY discussion
+(pages 77-78). Atari800 7.2.1's `src/antic.c` independently reserves nine
+refresh cycles on an otherwise blank line. A focused regression initially
+reported six elapsed clocks for a six-cycle INC crossing refresh slot 25;
+it now reports seven for either RMW write. The existing RMW-to-WSYNC regression
+still passes. No Core cycle, POKEY logic, State schema or Plugin ABI changed.
+
+Real PAL/NTSC runs now pass both ordinary and illegal-instruction timing.
+The accurate-mode serial-port timing diagnostic also passes after this
+arbitration fix, without a serial timing adjustment. Release workspace tests,
+strict Clippy, real firmware input/reset/in-flight SIO tests and all 36
+unchanged-golden manifest passes remain intact; the same eight gaps stay open.
+
+Remaining observed failures include BRK interrupt timing,
+ANTIC DMA/scroll/WSYNC/NMIST/VCOUNT/DLI, POKEY
 polynomial/pipeline/IRQ/serial/two-tone behavior, PIA control bit 6 and GTIA
 players/missiles/collisions/special modes. XL banking checks also run against
 this non-XL Machine. These are not all newly diagnosed Machine bugs.
 
-Private `acid-irq-{pal,ntsc}-{fast,accurate}.txt` transcripts retain the current
-failures; `acid-store-*` and `acid-host-*` retain preceding baselines. Existing
+Private `acid-dma-{pal,ntsc}-{fast,accurate}.txt` transcripts retain the current
+failures; `acid-irq-*`, `acid-store-*` and `acid-host-*` retain preceding baselines. Existing
 `--capture-at 0xfaab:A=FILE` records the replacement OS's real
 E: output entry, obtained from IOCB0 ICPTL, rather than synthesizing results.
 Reference monitor transcripts, native PNGs and RAM retain independent evidence.

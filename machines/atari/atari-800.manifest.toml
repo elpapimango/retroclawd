@@ -266,7 +266,7 @@ len = 960
 golden = "atari-800/S7-pal.bin"
 golden_sha256 = "9c075145199268332e04a16509c16c72a89a9b7530fed04db5f650e5d444d0c2"
 status = "known-gap"
-gap = { reason = "Acid800 completes: fast 24 passed/33 failed/1 skipped versus Atari800 25/32/1. High-byte stores and CLI/SEI mask sampling pass. BRK interrupt, ANTIC, POKEY, PIA and GTIA fidelity gaps remain. The reference also fails hardware tests; matching its total is not conformance.", evidence = "docs/atari800-gaps.md#s7-acid800" }
+gap = { reason = "Acid800 completes: fast 24 passed/33 failed/1 skipped versus Atari800 25/32/1. High-byte stores, CLI/SEI mask sampling and CPU timing pass. BRK interrupt, ANTIC, POKEY, PIA and GTIA fidelity gaps remain. The reference also fails hardware tests; matching its total is not conformance.", evidence = "docs/atari800-gaps.md#s7-acid800" }
 
 [[scenario]]
 id = "S7-accurate"
@@ -279,7 +279,7 @@ len = 960
 golden = "atari-800/S7-pal.bin"
 golden_sha256 = "9c075145199268332e04a16509c16c72a89a9b7530fed04db5f650e5d444d0c2"
 status = "known-gap"
-gap = { reason = "Acid800 completes: accurate 22 passed/35 failed/1 skipped versus reference 25/32/1. Async receive, high-byte stores and CLI/SEI mask sampling pass. BRK interrupt timing, the measured illegal-instruction timing discrepancy and Chip timing/graphics failures remain.", evidence = "docs/atari800-gaps.md#s7-acid800" }
+gap = { reason = "Acid800 completes: accurate 24 passed/33 failed/1 skipped versus reference 25/32/1. Distinguishing DMA HALT from WSYNC RDY fixes illegal-instruction and serial-port timing. BRK interrupt timing and Chip timing/graphics failures remain.", evidence = "docs/atari800-gaps.md#s7-acid800" }
 
 [[scenario]]
 id = "S7-ntsc"
@@ -292,7 +292,7 @@ len = 960
 golden = "atari-800/S7-ntsc.bin"
 golden_sha256 = "9c075145199268332e04a16509c16c72a89a9b7530fed04db5f650e5d444d0c2"
 status = "known-gap"
-gap = { reason = "NTSC Acid800 completes: fast 24 passed/33 failed/1 skipped versus reference 25/32/1. Illegal-instruction and CLI/SEI mask-sampling tests pass. This is actual diagnostic failure evidence, not a hardware pass.", evidence = "docs/atari800-gaps.md#s7-acid800" }
+gap = { reason = "NTSC Acid800 completes: fast 24 passed/33 failed/1 skipped versus reference 25/32/1. Illegal-instruction, CLI/SEI mask-sampling and CPU timing tests pass. This is actual diagnostic failure evidence, not a hardware pass.", evidence = "docs/atari800-gaps.md#s7-acid800" }
 
 [[scenario]]
 id = "S7-ntsc-accurate"
@@ -305,7 +305,7 @@ len = 960
 golden = "atari-800/S7-ntsc.bin"
 golden_sha256 = "9c075145199268332e04a16509c16c72a89a9b7530fed04db5f650e5d444d0c2"
 status = "known-gap"
-gap = { reason = "NTSC Acid800 completes: accurate 22 passed/35 failed/1 skipped versus reference 25/32/1. Illegal-instruction and CLI/SEI mask-sampling tests pass, but exact final screen memory still differs. No golden or tolerance is changed.", evidence = "docs/atari800-gaps.md#s7-acid800" }
+gap = { reason = "NTSC Acid800 completes: accurate 24 passed/33 failed/1 skipped versus reference 25/32/1. DMA HALT now stops writes independently of WSYNC RDY; illegal-instruction and serial-port timing pass. Exact final screen memory still differs. No golden or tolerance is changed.", evidence = "docs/atari800-gaps.md#s7-acid800" }
 
 # Both reference Regions and both Media paths independently reproduce the same
 # complete 256-byte pattern as S3 raw Program; the pinned bytes are unchanged.

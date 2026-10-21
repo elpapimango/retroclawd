@@ -19,6 +19,11 @@
   Hardware description, not translated implementation code. Chapters 2/4/5/6/14:
   clock/raster counts, 400/800 map, PIA wiring, ANTIC display lists/DMA/WSYNC/NMI,
   POKEY divisors/polynomials/keyboard matrix/serial status and GTIA registers.
+  Chapter 2 (page 30) identifies ANTIC's HALT bus ownership; section 4.14
+  (page 87) specifies nine blank-line refresh slots at 25, 29, ..., 57.
+  The WSYNC discussion (pages 77-78) separately specifies RDY, which cannot
+  stop NMOS write cycles. The Machine distinguishes DMA HALT from WSYNC RDY;
+  no CPU cycle count is changed to compensate for arbitration.
   Initial Chips deliberately document what is not implemented.
 - **Atari800 7.2.1**, GPL-2.0-or-later, source
   `63a381884175e3cbfc745ff00dfb3d70d928eb50`,
@@ -41,10 +46,12 @@
   `README.html`, <https://www.virtualdub.org/downloads/Acid800-1.2.7z>.
   Downloaded privately, archive SHA-256
   `4074e6a40db1833e97603e334ca130f5923bff34a0d4f8a83e2ecf9617de1b20`.
-  ATR attachment is explicitly refused by the current Plugin; the suite has
-  not executed and no diagnostic score is claimed.
+  Executed privately through PIA/POKEY SIO without ROM loader traps.
+  `cpu_illtiming.s` measures VCOUNT over 210 iterations, not a POKEY timer;
+  its refresh allowance exposed accurate mode letting writes skip DMA.
+  Current observations and remaining failures are in `docs/atari800-gaps.md`.
 - **NMOS 6502 and MOS 6520 PIA**: reused from `retroclawd-crates` revision
-  `76ca5a025b9ba5b4d1ec0b9fbd7c46281313610a`; the shared repository's
+  `bf0faf6e36950b43ff1443074487fad7075320fa`; the shared repository's
   credits cover the Core conformance suites and PIA sources.
 
 ## Atari ST

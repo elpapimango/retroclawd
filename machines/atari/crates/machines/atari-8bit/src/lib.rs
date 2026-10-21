@@ -199,11 +199,13 @@ impl AtariBus {
     }
     fn access(&mut self, write: bool) {
         if self.in_cpu && self.timing == Timing::Accurate {
-            // RDY holds reads, not writes, including the second RMW write.
-            if !write {
-                while self.hardware.antic.cpu_read_blocked() {
-                    self.tick();
-                }
+            // DMA HALT stops every access; WSYNC RDY only holds reads.
+            while if write {
+                self.hardware.antic.cpu_dma_blocked()
+            } else {
+                self.hardware.antic.cpu_read_blocked()
+            } {
+                self.tick();
             }
         }
     }
@@ -856,7 +858,23 @@ mod tests {
         assert_eq!(m.read_memory(0xd300), 0xde);
     }
     #[test]
-    fn accurate_bus_stalls_reads_not_rmw_writes_and_returns_elapsed_clocks() {
+    fn accurate_dma_halts_each_rmw_write() {
+        for start in [20, 21] {
+            let mut m = machine(Timing::Accurate);
+            m.load_program(0x2000, &[0xee, 0x00, 0x40]).unwrap();
+            m.set_pc(0x2000);
+            m.bus.hardware.ram[0x4000] = 0x81;
+            for _ in 0..start {
+                m.bus.tick();
+            }
+            // Either RMW write reaches refresh slot 25: six CPU cycles plus DMA.
+            assert_eq!(m.step(), 7, "INC starting at raster cycle {start}");
+            assert_eq!(m.read_memory(0x4000), 0x82);
+        }
+    }
+
+    #[test]
+    fn wsync_stalls_reads_not_rmw_writes_and_returns_elapsed_clocks() {
         let mut m = machine(Timing::Accurate);
         m.load_program(0x2000, &[0xee, 0x0a, 0xd4, 0xea]).unwrap();
         m.set_pc(0x2000);

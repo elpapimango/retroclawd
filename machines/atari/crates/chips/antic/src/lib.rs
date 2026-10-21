@@ -161,8 +161,13 @@ impl Antic {
     }
 
     pub fn cpu_read_blocked(&self) -> bool {
-        (self.wsync_delay == 0 && self.cycles < self.wsync_until)
-            || (self.x >= 25 && self.x <= 57 && (self.x - 25).is_multiple_of(4))
+        (self.wsync_delay == 0 && self.cycles < self.wsync_until) || self.cpu_dma_blocked()
+    }
+
+    /// DMA uses HALT for bus ownership, unlike WSYNC's read-only RDY hold.
+    /// Altirra Hardware Reference, chapters 2 and 4.14.
+    pub fn cpu_dma_blocked(&self) -> bool {
+        (self.x >= 25 && self.x <= 57 && (self.x - 25).is_multiple_of(4))
             || (self.active()
                 && !self.wait_vblank
                 && self.registers[0] & 0x20 != 0
