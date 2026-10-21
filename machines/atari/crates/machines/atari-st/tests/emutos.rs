@@ -53,6 +53,7 @@ fn run(rom: Vec<u8>) -> AtariSt {
         accuracy: Accuracy::Fast,
         rom,
         trace_limit: 1_000_000,
+        io_log_limit: 1_000_000,
     })
     .unwrap();
     while m.io_stop().is_none() && m.now() < MAX_CYCLES {
@@ -132,4 +133,44 @@ fn emutos_trace_matches_hatari_up_to_our_stop() {
         );
     }
     eprintln!("the first {n} PCs agree with Hatari");
+}
+
+/// Hatari's I/O log for `--memsize <size>` (`capture_hatari_trace.py --kind io`), from `RC_GOLDENS`.
+fn hatari_io(size: &str) -> Option<Vec<String>> {
+    let path = std::env::var_os("RC_GOLDENS")
+        .map(PathBuf::from)?
+        .join("atari-st")
+        .join(format!("emutos14-uk-io-{size}.txt"));
+    match std::fs::read_to_string(&path) {
+        Ok(text) => Some(text.lines().map(str::to_string).collect()),
+        Err(_) => {
+            eprintln!(
+                "no Hatari I/O log at {} (capture_hatari_trace.py --kind io makes it)",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
+/// Every I/O access we make agrees with Hatari's, in order, up to our stop.
+#[test]
+fn emutos_io_log_matches_hatari() {
+    let (Some(rom), Some(reference)) = (emutos(), hatari_io("1m")) else {
+        return;
+    };
+    let ours: Vec<String> = run(rom).io_log().iter().map(|a| a.hatari_line()).collect();
+    assert!(
+        ours.len() <= reference.len(),
+        "ours is longer than the reference"
+    );
+    if let Some(i) = (0..ours.len()).find(|&i| ours[i] != reference[i]) {
+        let from = i.saturating_sub(4);
+        panic!(
+            "I/O access {i} differs:\n  ours:   {:#?}\n  hatari: {:#?}",
+            &ours[from..(i + 4).min(ours.len())],
+            &reference[from..(i + 4).min(reference.len())]
+        );
+    }
+    eprintln!("the first {} I/O accesses agree with Hatari", ours.len());
 }

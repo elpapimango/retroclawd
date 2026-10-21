@@ -83,6 +83,11 @@ impl AtariSt {
         self.diag.trace()
     }
 
+    /// The I/O accesses so far, in Hatari's trace format by `IoAccess::hatari_line`.
+    pub fn io_log(&self) -> &[crate::iolog::IoAccess] {
+        self.bus.io_log()
+    }
+
     pub fn trace_full(&self) -> bool {
         self.diag.trace_full()
     }
@@ -160,6 +165,7 @@ impl Machine for AtariSt {
         } else {
             if self.cpu.run_state() == RunState::Running {
                 self.diag.instruction(self.cpu.pc, self.cpu.prefetch()[0]);
+                self.bus.pc = self.cpu.pc;
             }
             let clocks = self.cpu.step(&mut self.bus);
             if let Some(e) = self.cpu.take_exception() {

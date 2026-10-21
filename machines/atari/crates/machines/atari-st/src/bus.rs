@@ -18,6 +18,7 @@
 
 use crate::config::Config;
 use crate::io::{self, Decode, Device};
+use crate::iolog::IoAccess;
 use mc68000::{BusFault, FunctionCode, IackResponse, M68kBus, Size};
 
 pub const ROM_BASE: u32 = 0xFC_0000;
@@ -58,6 +59,10 @@ pub struct StBus {
     pub(crate) now: u64,
     /// The interrupt the machine is asking for (VBL autovector), answered by the acknowledge cycle.
     pub(crate) vbl_pending: bool,
+    /// The address of the instruction running, for the I/O log.
+    pub(crate) pc: u32,
+    io_log: Vec<IoAccess>,
+    io_log_limit: u32,
 }
 
 /// Where an address falls.
@@ -112,7 +117,27 @@ impl StBus {
             stop: None,
             now: 0,
             vbl_pending: false,
+            pc: 0,
+            io_log: Vec::new(),
+            io_log_limit: cfg.io_log_limit,
         })
+    }
+
+    /// The completed I/O accesses so far (at most `io_log_limit`).
+    pub fn io_log(&self) -> &[IoAccess] {
+        &self.io_log
+    }
+
+    fn log_io(&mut self, addr: u32, size: Size, write: bool, value: u32) {
+        if (self.io_log.len() as u32) < self.io_log_limit {
+            self.io_log.push(IoAccess {
+                pc: self.pc,
+                addr,
+                size,
+                write,
+                value,
+            });
+        }
     }
 
     /// The first unimplemented I/O access, if there was one.
@@ -174,11 +199,18 @@ impl StBus {
         };
         let reason = match io::decode(addr, size) {
             Decode::BusError => return Err(BusFault),
-            Decode::Open => return Ok(ff),
+            Decode::Open => {
+                self.log_io(addr, size, write, if write { value } else { ff });
+                return Ok(ff);
+            }
             Decode::Device(d) => StopReason::NotEmulated(d),
             Decode::NoFact => StopReason::NoFact,
         };
         if self.stop.is_none() {
+            // The stopping access is logged only when it is a write: a read's value would be invented.
+            if write {
+                self.log_io(addr, size, write, value);
+            }
             self.stop = Some(IoStop {
                 reason,
                 addr,

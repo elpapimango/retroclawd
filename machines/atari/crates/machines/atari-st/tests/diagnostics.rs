@@ -21,6 +21,7 @@ fn machine(program: &[u16], trace_limit: u32) -> AtariSt {
         accuracy: Accuracy::Fast,
         rom: rom(program),
         trace_limit,
+        io_log_limit: 0,
     })
     .unwrap()
 }
@@ -73,6 +74,7 @@ fn exceptions_appear_in_the_report() {
         accuracy: Accuracy::Fast,
         rom,
         trace_limit: 0,
+        io_log_limit: 0,
     })
     .unwrap();
     m.load(0x10, &0x00FC_0040u32.to_be_bytes());
@@ -96,6 +98,7 @@ fn a_halted_cpu_is_reported_once() {
         accuracy: Accuracy::Fast,
         rom,
         trace_limit: 0,
+        io_log_limit: 0,
     })
     .unwrap();
     let mut reports = Vec::new();

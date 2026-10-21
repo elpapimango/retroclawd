@@ -21,6 +21,7 @@ fn bus() -> StBus {
         accuracy: Accuracy::Fast,
         rom: rom(),
         trace_limit: 0,
+        io_log_limit: 0,
     })
     .expect("valid config")
 }
@@ -122,6 +123,7 @@ fn a_rom_of_the_wrong_size_is_refused_with_the_sizes() {
         accuracy: Accuracy::Fast,
         rom: vec![0; 262_144],
         trace_limit: 0,
+        io_log_limit: 0,
     })
     .unwrap_err();
     assert!(err.contains("196608") && err.contains("262144"), "{err}");
@@ -135,6 +137,7 @@ fn config(rom: Vec<u8>) -> Config {
         accuracy: Accuracy::Fast,
         rom,
         trace_limit: 0,
+        io_log_limit: 0,
     }
 }
 

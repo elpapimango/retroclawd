@@ -38,6 +38,7 @@ fn machine(rom: Vec<u8>, region: Region) -> AtariSt {
         accuracy: Accuracy::Fast,
         rom,
         trace_limit: 0,
+        io_log_limit: 0,
     })
     .unwrap()
 }

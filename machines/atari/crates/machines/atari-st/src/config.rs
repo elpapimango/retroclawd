@@ -61,4 +61,6 @@ pub struct Config {
     pub rom: Vec<u8>,
     /// Instructions the trace file records (0: no trace).
     pub trace_limit: u32,
+    /// I/O accesses the I/O log records (0: none).
+    pub io_log_limit: u32,
 }

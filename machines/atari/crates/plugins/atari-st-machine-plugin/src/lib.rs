@@ -28,6 +28,8 @@ const PLUGIN_ID: &[u8] = b"retroclawd.atari-st.machine";
 const PLUGIN_VERSION: &[u8] = build_info::version_tag!().as_bytes();
 const RAM_CHOICES: [&str; 6] = ["256k", "512k", "1m", "2m", "2.5m", "4m"];
 const DEFAULT_TRACE_LIMIT: u64 = 100_000;
+/// I/O accesses the `io_trace_file` records.
+const IO_LOG_LIMIT: u32 = 100_000;
 
 const fn static_slice(bytes: &'static [u8]) -> RcSlice {
     RcSlice {
@@ -77,6 +79,8 @@ struct InstanceRecord {
     breakpoints: Vec<u64>,
     trace_file: Option<PathBuf>,
     trace_written: bool,
+    io_trace_file: Option<PathBuf>,
+    io_trace_written: bool,
     diag_file: Option<PathBuf>,
 }
 
@@ -95,6 +99,29 @@ impl InstanceRecord {
         }
         if !self.trace_written && (self.machine.trace_full() || self.machine.halted()) {
             self.write_trace();
+        }
+        if !self.io_trace_written && self.machine.halted() {
+            self.write_io_trace();
+        }
+    }
+
+    fn write_io_trace(&mut self) {
+        let Some(path) = &self.io_trace_file else {
+            return;
+        };
+        self.io_trace_written = true;
+        let text: String = self
+            .machine
+            .io_log()
+            .iter()
+            .map(|a| {
+                a.hatari_line()
+                    + "
+"
+            })
+            .collect();
+        if let Err(e) = std::fs::write(path, text) {
+            eprintln!("atari-st: cannot write {}: {e}", path.display());
         }
     }
 
@@ -117,6 +144,9 @@ impl Drop for InstanceRecord {
     fn drop(&mut self) {
         if !self.trace_written {
             self.write_trace();
+        }
+        if !self.io_trace_written {
+            self.write_io_trace();
         }
     }
 }
@@ -250,6 +280,12 @@ fn machine_profile() -> MachineProfile {
                 "Instructions the trace file records",
             ),
             option(
+                "io_trace_file",
+                MachineOptionKind::Text,
+                None,
+                "Write every I/O register access to this file, in the format of Hatari's --trace io_all",
+            ),
+            option(
                 "diag_file",
                 MachineOptionKind::Text,
                 None,
@@ -302,6 +338,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let mut trace_file = None;
     let mut trace_limit = DEFAULT_TRACE_LIMIT;
     let mut diag_file = None;
+    let mut io_trace_file = None;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
             ("ram", DebugValue::Text(v)) => {
@@ -320,6 +357,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             ("trace_file", DebugValue::Text(v)) => trace_file = Some(PathBuf::from(v)),
             ("trace_limit", DebugValue::U64(v)) => trace_limit = *v,
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(PathBuf::from(v)),
+            ("io_trace_file", DebugValue::Text(v)) => io_trace_file = Some(PathBuf::from(v)),
             (key, _) => {
                 return Err(format!(
                     "unsupported machine-create option \"{key}\" for {MACHINE_ID}"
@@ -348,6 +386,11 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         } else {
             0
         },
+        io_log_limit: if io_trace_file.is_some() {
+            IO_LOG_LIMIT
+        } else {
+            0
+        },
     })?;
     let metadata = metadata(&machine, region_name, &model);
     let mut state = state()
@@ -363,6 +406,8 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             breakpoints: Vec::new(),
             trace_file,
             trace_written: false,
+            io_trace_file,
+            io_trace_written: false,
             diag_file,
         },
     );
@@ -786,6 +831,7 @@ mod tests {
             "accuracy",
             "trace_file",
             "trace_limit",
+            "io_trace_file",
             "diag_file",
         ] {
             assert!(keys.contains(&key), "{key} missing from {keys:?}");
@@ -842,5 +888,27 @@ mod tests {
         assert_eq!(lines, ["FC0030", "FC0032", "FC0034", "FC0034", "FC0034"]);
         state().lock().unwrap().instances.remove(&id);
         let _ = std::fs::remove_file(&trace);
+    }
+
+    #[test]
+    fn io_trace_file_is_written_on_drop() {
+        let io = temp("io.txt");
+        let _ = std::fs::remove_file(&io);
+        // MOVE.B #$12,$FFFC3B (an open address); BRA.S *
+        let id = create(
+            &[0x13FC, 0x0012, 0x00FF, 0xFC3B, 0x60FE],
+            vec![text("io_trace_file", io.to_str().unwrap())],
+        );
+        for _ in 0..10 {
+            plugin_step_inner(id);
+        }
+        state().lock().unwrap().instances.remove(&id);
+        let text = std::fs::read_to_string(&io).expect("I/O trace written");
+        assert_eq!(
+            text,
+            "IO write.b $fffffc3b = $12 pc=fc0030
+"
+        );
+        let _ = std::fs::remove_file(&io);
     }
 }
