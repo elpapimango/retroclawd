@@ -109,7 +109,8 @@ read-only ATR D1: boot through PIA/POKEY serial pins, documented tone pitch,
 State and raster counts pass. XEX uses ordered INITAD/RUNAD, not raw --org.
 Version 2 State preserves disk/serial/pending XEX, reads version 1, and requires
 ejecting an attached disk before legacy restore. Acid800 completes: fast
-22/35/1, accurate 20/37/1 versus reference 25/32/1 passed/failed/skipped.
+23/34/1, accurate 21/36/1 versus reference 25/32/1 passed/failed/skipped.
+Shared high-byte stores are fixed; IRQ polling remains a separate State migration.
 Reference RMS, OS-dependent XEX, games and full hardware fidelity are not proven.
 No CAS/CART loader or XL/XE profile exists yet. Read the Family intake and
 `machines/atari/docs/atari800-gaps.md` before extending it. C16/Plus4 stay parked.

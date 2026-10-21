@@ -1069,9 +1069,11 @@ Raw/XEX Programs and read-only ATR boot have independently captured Atari800
 actual PIA/POKEY serial pins, not ROM traps. Version 2 State preserves in-flight
 SIO and pending XEX and still reads version 1 (eject attached disks first).
 S2 reference printable-input automation remains blocked. S7 now executes:
-fast 22/35/1, accurate 20/37/1 passed/failed/skipped versus reference 25/32/1.
-POKEY async receive timer hold was fixed; Core interrupt/unstable-opcode and
-Chip DMA/video/pipeline fidelity failures remain. These are not acceptance passes.
+fast 23/34/1, accurate 21/36/1 passed/failed/skipped versus reference 25/32/1.
+POKEY async receive timer hold and shared SHY/SHX/SHA/TAS high-byte stores are
+fixed; the illegal-instruction test now passes. IRQ polling needs persistent
+state and compatibility-safe restores across 6502 Machines. Accurate instruction
+timing and Chip DMA/video/pipeline failures remain. These are not acceptance passes.
 S4 checks documented pitch only, not reference RMS calibration.
 Original Atari firmware, general Media, games, P/M, scrolling, GTIA special modes
 and exact timing remain unverified/unimplemented. Evidence and reproduction:

@@ -748,8 +748,10 @@ Explicit Altirra replacement ROMs boot to BASIC and execute `PRINT 12*34` as
 boot content/memory, tools-built raw/XEX Programs and ATR boot, documented tone
 pitch, State (including attached disks) and frame timing. Eight known-gap variants
 cover uncaptured reference keyboard output and executed Acid800 mismatches.
-Acid800 completes with 22/35/1 passed/failed/skipped in fast mode, 20/37/1 in
+Acid800 completes with 23/34/1 passed/failed/skipped in fast mode, 21/36/1 in
 accurate mode, versus 25/32/1 in Atari800 7.2.1; none is a conformance pass.
+The shared SHY/SHX/SHA/TAS address-mask fix makes the illegal-instruction test
+pass; IRQ polling and accurate-mode timing failures remain.
 Original Atari ROMs, reference RMS,
 games and full hardware fidelity are not verified.
 
