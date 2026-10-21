@@ -11,6 +11,9 @@ use pia_6520::{Pia, Side};
 use pokey::Pokey;
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
+use std::collections::VecDeque;
+mod sio;
+use sio::{Sio, SioState};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Timing {
@@ -120,6 +123,7 @@ struct AtariBus {
     in_cpu: bool,
     palette: [[u8; 3]; 256],
     audio: Vec<f32>,
+    sio: Sio,
 }
 
 fn memory_read(ram: &[u8], roms: &Roms, address: u16) -> u8 {
@@ -164,6 +168,11 @@ impl AtariBus {
         h.nmi |= h.antic.take_nmi();
         h.pokey.tick();
         h.pia.tick(1);
+        let input = self.sio.tick(
+            h.pia.c2_output(Side::B).unwrap_or(true),
+            h.pokey.serial_output(),
+        );
+        h.pokey.set_serial_input(input);
         if line && (8..248).contains(&y) {
             let start = usize::from(y - 8) * WIDTH;
             for (pixel, &code) in h.screen[start..start + WIDTH]
@@ -240,10 +249,19 @@ impl Bus for AtariBus {
 pub struct Atari800 {
     pub cpu: mos6502::Cpu,
     bus: AtariBus,
+    program: Option<XexLoader>,
 }
 
 #[derive(Serialize, Deserialize)]
-struct State {
+struct XexLoader {
+    segments: VecDeque<(u16, Vec<u8>)>,
+    return_pc: u16,
+    return_sp: u8,
+    armed: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StateV1 {
     magic: [u8; 4],
     version: u8,
     rom: [u8; 20],
@@ -252,17 +270,27 @@ struct State {
     hardware: Hardware,
 }
 
+#[derive(Serialize, Deserialize)]
+struct State {
+    base: StateV1,
+    serial: pokey::SerialState,
+    sio: SioState,
+    program: Option<XexLoader>,
+}
+
 impl Atari800 {
     pub fn new(roms: Roms, pal: bool, timing: Timing) -> Result<Self, String> {
         roms.validate()?;
         let mut machine = Self {
             cpu: mos6502::Cpu::new(),
+            program: None,
             bus: AtariBus {
                 roms,
                 timing,
                 in_cpu: false,
                 palette: Gtia::palette(),
                 audio: Vec::new(),
+                sio: Sio::new(if pal { 1_773_447 } else { 1_789_772 }),
                 hardware: Hardware {
                     ram: vec![0; 49152],
                     antic: Antic::new(pal),
@@ -344,6 +372,83 @@ impl Atari800 {
         self.load(u64::from(address), bytes);
         Ok(())
     }
+    pub fn attach_disk(&mut self, bytes: &[u8]) -> Result<(), String> {
+        self.bus.sio.attach(bytes)
+    }
+    pub fn eject_disk(&mut self) {
+        self.bus.sio.detach();
+    }
+    pub fn disk_attached(&self) -> bool {
+        self.bus.sio.attached()
+    }
+    pub fn export_disk(&self) -> Option<Vec<u8>> {
+        self.bus.sio.export()
+    }
+    pub fn disk_reads(&self) -> u64 {
+        self.bus.sio.reads()
+    }
+    pub fn disk_sector(&self) -> u16 {
+        self.bus.sio.sector()
+    }
+    pub fn disk_busy(&self) -> bool {
+        self.bus.sio.busy()
+    }
+    pub fn load_xex(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let xex = atari_media::Xex::parse(bytes)?;
+        for segment in &xex.segments {
+            if segment
+                .bytes
+                .iter()
+                .enumerate()
+                .any(|(i, _)| !self.can_write(segment.start.wrapping_add(i as u16)))
+            {
+                return Err("Atari XEX segment overlaps ROM, I/O or unmapped memory".to_string());
+            }
+        }
+        let entry = xex
+            .segments
+            .first()
+            .ok_or("Atari XEX has no segments")?
+            .start;
+        self.load(0x2e0, &entry.to_le_bytes());
+        self.load(0x2e2, &[0, 0]);
+        self.program = Some(XexLoader {
+            segments: xex
+                .segments
+                .into_iter()
+                .map(|segment| (segment.start, segment.bytes))
+                .collect(),
+            return_pc: self.cpu.pc,
+            return_sp: self.cpu.sp,
+            armed: false,
+        });
+        self.next_xex_segment();
+        Ok(())
+    }
+    fn next_xex_segment(&mut self) {
+        let mut loader = self.program.take().expect("active XEX loader");
+        while let Some((start, bytes)) = loader.segments.pop_front() {
+            self.load(u64::from(start), &bytes);
+            let init = u16::from_le_bytes([self.read_memory(0x2e2), self.read_memory(0x2e3)]);
+            self.load(0x2e2, &[0, 0]);
+            if init != 0 {
+                // Execute INITAD on the real Core; resume loading only when its
+                // RTS returns to the caller's PC and stack depth. No ROM patch.
+                let ret = loader.return_pc.wrapping_sub(1);
+                self.load(0x100 | u64::from(self.cpu.sp), &[(ret >> 8) as u8]);
+                self.cpu.sp = self.cpu.sp.wrapping_sub(1);
+                self.load(0x100 | u64::from(self.cpu.sp), &[ret as u8]);
+                self.cpu.sp = self.cpu.sp.wrapping_sub(1);
+                self.cpu.pc = init;
+                self.cpu.halted = false;
+                loader.armed = false;
+                self.program = Some(loader);
+                return;
+            }
+        }
+        self.cpu.pc = u16::from_le_bytes([self.read_memory(0x2e0), self.read_memory(0x2e1)]);
+        self.cpu.halted = false;
+    }
 }
 
 impl Machine for Atari800 {
@@ -363,6 +468,14 @@ impl Machine for Atari800 {
         Clock::new(self.frame_hz()).run(self, running)
     }
     fn step(&mut self) -> u32 {
+        if self.program.as_ref().is_some_and(|loader| {
+            loader.armed && self.cpu.pc == loader.return_pc && self.cpu.sp == loader.return_sp
+        }) {
+            self.next_xex_segment();
+        }
+        if let Some(loader) = &mut self.program {
+            loader.armed = true;
+        }
         if std::mem::take(&mut self.bus.hardware.nmi) {
             self.cpu.request_nmi();
         }
@@ -429,6 +542,7 @@ impl Machine for Atari800 {
         count
     }
     fn set_pc(&mut self, address: Addr) {
+        self.program = None;
         self.cpu.pc = address as u16;
         self.cpu.halted = false;
     }
@@ -436,6 +550,7 @@ impl Machine for Atari800 {
         std::mem::take(&mut self.bus.audio)
     }
     fn reset(&mut self) {
+        self.program = None;
         self.bus.hardware.antic.reset_button();
         self.bus.hardware.nmi = true;
         self.cpu.halted = false;
@@ -444,27 +559,62 @@ impl Machine for Atari800 {
     fn save_state(&self) -> Vec<u8> {
         bincode::serde::encode_to_vec(
             State {
-                magic: *b"A800",
-                version: 1,
-                rom: self.bus.roms.fingerprint(),
-                timing: self.timing(),
-                cpu: self.cpu,
-                hardware: self.bus.hardware.clone(),
+                base: StateV1 {
+                    magic: *b"A800",
+                    version: 2,
+                    rom: self.bus.roms.fingerprint(),
+                    timing: self.timing(),
+                    cpu: self.cpu,
+                    hardware: self.bus.hardware.clone(),
+                },
+                serial: self.bus.hardware.pokey.serial_state(),
+                sio: self.bus.sio.save(),
+                program: self.program.as_ref().map(|loader| XexLoader {
+                    segments: loader.segments.clone(),
+                    return_pc: loader.return_pc,
+                    return_sp: loader.return_sp,
+                    armed: loader.armed,
+                }),
             },
             bincode::config::standard(),
         )
         .expect("Atari 800 state encoding")
     }
     fn load_state(&mut self, bytes: &[u8]) -> Result<(), String> {
-        if bytes.len() > 1_048_576 {
-            return Err("Atari 800 state exceeds 1 MiB".to_string());
+        if bytes.len() > 67_108_864 {
+            return Err("Atari 800 state exceeds 64 MiB".to_string());
         }
-        let (state, used): (State, usize) = bincode::serde::decode_from_slice(
-            bytes,
-            bincode::config::standard().with_limit::<1_048_576>(),
-        )
-        .map_err(|e| format!("invalid Atari 800 state: {e}"))?;
-        if used != bytes.len() || state.magic != *b"A800" || state.version != 1 {
+        if bytes.get(..4) != Some(b"A800") || !matches!(bytes.get(4), Some(1 | 2)) {
+            return Err("invalid Atari 800 state header".to_string());
+        }
+        let (mut state, serial, sio, program, used) = if bytes[4] == 1 {
+            if self.disk_attached() {
+                return Err(
+                    "legacy Atari 800 state has no disk; eject it before restoring".to_string(),
+                );
+            }
+            let (base, used): (StateV1, usize) = bincode::serde::decode_from_slice(
+                bytes,
+                bincode::config::standard().with_limit::<67_108_864>(),
+            )
+            .map_err(|e| format!("invalid legacy Atari 800 state: {e}"))?;
+            (
+                base,
+                pokey::SerialState::default(),
+                Sio::new(self.clock_hz()),
+                None,
+                used,
+            )
+        } else {
+            let (state, used): (State, usize) = bincode::serde::decode_from_slice(
+                bytes,
+                bincode::config::standard().with_limit::<67_108_864>(),
+            )
+            .map_err(|e| format!("invalid Atari 800 state: {e}"))?;
+            let sio = Sio::restore(state.sio, self.clock_hz())?;
+            (state.base, state.serial, sio, state.program, used)
+        };
+        if used != bytes.len() {
             return Err("invalid Atari 800 state header or trailing bytes".to_string());
         }
         if state.rom != self.bus.roms.fingerprint()
@@ -483,8 +633,29 @@ impl Machine for Atari800 {
         state.hardware.gtia.validate()?;
         state.hardware.pokey.validate()?;
         state.hardware.pia.validate()?;
+        state.hardware.pokey.restore_serial(serial)?;
+        if let Some(loader) = &program {
+            let mut length = 0usize;
+            for (start, bytes) in &loader.segments {
+                length = length.saturating_add(bytes.len());
+                if bytes.is_empty()
+                    || bytes.len() > 65536 - usize::from(*start)
+                    || bytes
+                        .iter()
+                        .enumerate()
+                        .any(|(i, _)| !self.can_write(start.wrapping_add(i as u16)))
+                {
+                    return Err("invalid pending Atari XEX segment in State".to_string());
+                }
+            }
+            if length > 16_777_216 || loader.segments.len() > 65536 {
+                return Err("pending Atari XEX exceeds State limits".to_string());
+            }
+        }
         self.cpu = state.cpu;
         self.bus.hardware = state.hardware;
+        self.bus.sio = sio;
+        self.program = program;
         self.bus.audio.clear();
         Ok(())
     }
@@ -505,6 +676,91 @@ mod tests {
             timing,
         )
         .unwrap()
+    }
+    #[test]
+    fn xex_runs_init_before_later_segments_and_restores_mid_init() {
+        use atari_media::{Segment, Xex};
+        let bytes = Xex {
+            segments: vec![
+                Segment {
+                    start: 0x2000,
+                    bytes: vec![0xa9, 1, 0x8d, 0, 0x40, 0x60],
+                },
+                Segment {
+                    start: 0x2e2,
+                    bytes: vec![0, 0x20],
+                },
+                Segment {
+                    start: 0x4000,
+                    bytes: vec![2],
+                },
+                Segment {
+                    start: 0x3000,
+                    bytes: vec![0xa9, 3, 0x8d, 1, 0x40, 0x4c, 5, 0x30],
+                },
+                Segment {
+                    start: 0x2e0,
+                    bytes: vec![0, 0x30],
+                },
+            ],
+        }
+        .to_bytes()
+        .unwrap();
+        let mut m = machine(Timing::Accurate);
+        m.load_xex(&bytes).unwrap();
+        assert_eq!(m.pc(), 0x2000);
+        m.step();
+        let saved = m.save_state();
+        for _ in 0..20 {
+            m.step();
+        }
+        assert_eq!(m.read_memory(0x4000), 2);
+        assert_eq!(m.read_memory(0x4001), 3);
+        let future = m.save_state();
+        m.load_state(&saved).unwrap();
+        for _ in 0..20 {
+            m.step();
+        }
+        assert_eq!(m.save_state(), future);
+        let bad = Xex {
+            segments: vec![
+                Segment {
+                    start: 0x4000,
+                    bytes: vec![9],
+                },
+                Segment {
+                    start: 0xa000,
+                    bytes: vec![9],
+                },
+            ],
+        }
+        .to_bytes()
+        .unwrap();
+        assert!(m.load_xex(&bad).is_err());
+        assert_eq!(m.save_state(), future);
+    }
+    #[test]
+    fn legacy_state_is_readable_and_invalid_disk_state_is_atomic() {
+        let mut m = machine(Timing::Fast);
+        m.load_program(0x4000, &[42]).unwrap();
+        let (state, _): (State, usize) =
+            bincode::serde::decode_from_slice(&m.save_state(), bincode::config::standard())
+                .unwrap();
+        let mut old = state.base;
+        old.version = 1;
+        let bytes = bincode::serde::encode_to_vec(old, bincode::config::standard()).unwrap();
+        m.load_program(0x4000, &[99]).unwrap();
+        m.load_state(&bytes).unwrap();
+        assert_eq!(m.read_memory(0x4000), 42);
+        let disk = atari_media::Atr::blank(720, 128).unwrap().to_bytes();
+        m.attach_disk(&disk).unwrap();
+        let saved = m.save_state();
+        assert!(m.load_state(&bytes).is_err());
+        assert!(m.attach_disk(b"not an ATR").is_err());
+        assert_eq!(m.save_state(), saved);
+        m.eject_disk();
+        m.load_state(&saved).unwrap();
+        assert_eq!(m.export_disk(), Some(disk));
     }
     #[test]
     fn map_rom_protection_pia_mirrors_and_atomic_program_load() {

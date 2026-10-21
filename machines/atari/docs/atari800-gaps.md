@@ -27,7 +27,10 @@ The manifest records S1, S3 Program, S4 pure tone, S5 State and S6 timing
 for both Regions and execution modes. S2 reference input and S7 diagnostics
 remain known gaps, not passes. S4 establishes the documented pitch and an
 audible signal, **not reference RMS or analogue mixer calibration**.
-The executed manifest result is **24 passed, 0 failed, 8 known gaps, 0 closed**.
+The executed manifest result is **36 passed, 0 failed, 8 known gaps, 0 closed**.
+The added twelve variants cover XEX, ATR boot and disk-bearing State in both
+Regions and modes. S7 now executes and differs from the independently captured
+reference; S2 still has no reference golden.
 No game/demo/application compatibility claim follows from these small scenarios.
 
 ## Reference capture
@@ -83,9 +86,10 @@ cursor, so it is **not** a valid typed golden. The manifest omits that golden,
 reports S2 as not run, and never substitutes the Host's picture. Further work
 must use a working reference input path and capture the actual result.
 
-## S3 Media limits
+## S3 Media and State
 
-Only raw Program Media is advertised. `scenarios/build.sh` uses existing
+Raw and segmented XEX Programs and read-only ATR disks are advertised.
+`scenarios/build.sh` uses existing
 `rcasm` to assemble `scenarios/atari800/program.asm` at `$2000`.
 The 46-byte fixture SHA-256 is
 `e92710e9354bdab87da92692d23e671280bf978c7d6f9438ce4e3e6de4e7db0e`.
@@ -93,7 +97,41 @@ The reference executes it and writes all 256 bytes at `$4000`; the golden
 SHA-256 is
 `7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd`.
 
-XEX loading, ATR disks, CAS tapes, CART headers/banking and external SIO devices
+The same build uses `rcld build` with `scenarios/atari800/program.toml` to make
+a genuine segmented XEX with RUNAD `$2000`. The Plugin handles segment addresses,
+ordered INITAD calls on the real Core, and final RUNAD; `--org` does not replace
+the file's addresses. Later segments are not written until INITAD returns.
+Loading validates all segments before mutation. A focused test saves midway
+through INITAD and proves the restored loader produces the identical future.
+Like raw `--program`, this starts standalone content without first booting the
+OS. OS-dependent XEX applications are not yet proven.
+
+`rcasm` builds a standard one-sector boot Program at `$0700`; `rcdisk create`
+and `rcdisk add --sector 1` put it in a 720-sector ATR. The replacement OS boots
+it through PIA CB2 COMMAND and POKEY serial input/output. The read-only D1:
+peripheral implements checksummed status/read commands, ACK/NAK/completion,
+128/256-byte sectors and explicit refusal of writes. There is no CPU/SIO ROM
+trap, disk CPU, FDC/rotation model, additional drive or cassette implementation.
+The reference independently boots the ATR and loads the XEX in both Regions;
+each complete `$4000:256` capture has the unchanged S3 golden hash above.
+Capture adapter options are `--disk FILE` and `--xex FILE`; neither uses raw
+monitor injection.
+
+Machine State version 2 includes the disk, serial bit/queue phase and pending
+XEX lifecycle. It still reads version 1; loading a legacy State with a disk
+currently attached explicitly requires ejecting first. Older Plugins cannot
+read version 2: preserve version 1 files for rollback. The ROM-gated integration
+test saves during the second sector transfer and checks exact continuation in
+all four Region/mode combinations.
+
+Legacy compatibility is covered against the published version 1 field schema.
+An earlier private development `host-boot.state`, written before the first
+published Atari 800 commit, fails with `InvalidBooleanValue(8)` and is not
+silently repaired. Its exact development schema is unverified. A separate
+build of the old published Plugin for additional binary-to-binary proof was
+blocked by execution approval; do not treat that additional check as passed.
+
+CAS tapes, CART headers/banking and other external SIO devices
 are not implemented or advertised. The optional BASIC ROM is a fixed 8 KiB
 cartridge window, not a general cartridge loader. Unsupported Media requests
 return an explicit Plugin error. No silent loader trap or generic PRG parser
@@ -127,17 +165,42 @@ The included `README.html` licenses the suite under MIT, copyright 2010-2022
 Avery Lee, and describes the main suite as a bootable ATR that incrementally
 loads tests. The artifact is `out\Release\Acid800\acid800.atr`.
 
-An actual Host attempt with that ATR and `--headless --frames 300 --disk`
-exited 1 with:
+The 92176-byte ATR SHA-256 is
+`331541731e2e1070a59fa886cc21dfda09628f6217834d6f294be7ca06877484`.
+Extract the archive locally and put that file at
+`software/diagnostics/acid800.atr`; do not commit it.
 
-```text
-unsupported Atari 800 operation: only raw Program Media, keyboard, digital joysticks, State and the debug contract are implemented
-```
+The real release Host now boots the ATR without ROM patches and completes all
+58 test entries by 5000 Frames. PAL and NTSC give the same respective totals:
 
-The private `acid800-host-refusal.txt` records that failure. **The suite has not
-executed; there is no diagnostic score or result golden.** ATR/SIO support is
-the immediate dependency for this route. Known timing/video gaps below are
-additional reasons not to imply that Acid800 would pass once it can load.
+| Execution | Passed | Failed | Skipped |
+|---|---:|---:|---:|
+| Host fast | 22 | 35 | 1 |
+| Host accurate | 20 | 37 | 1 |
+| Atari800 7.2.1, patches disabled, identical replacement ROMs | 25 | 32 | 1 |
+
+These are diagnostic observations, **not acceptance passes**. The reference
+itself fails hardware tests; equal totals would not establish conformance.
+The higher fast-mode count does not establish greater timing accuracy.
+The asynchronous POKEY receive test exposed timers 3/4 running while waiting
+for the start bit. Holding/resetting them until that edge fixes that case;
+a regression exercises the actual timer hold and subsequent receive.
+
+Remaining observed failures include BRK/CLI/SEI interrupt timing, unstable
+SHY/illegal-opcode behavior, ANTIC DMA/scroll/WSYNC/NMIST/VCOUNT/DLI, POKEY
+polynomial/pipeline/IRQ/serial/two-tone behavior, PIA control bit 6 and GTIA
+players/missiles/collisions/special modes. XL banking checks also run against
+this non-XL Machine. These are not all newly diagnosed Machine bugs.
+
+Private `acid-host-{pal,ntsc}-{fast,accurate}.txt` transcripts retain each
+failure. Existing `--capture-at 0xfaab:A=FILE` records the replacement OS's real
+E: output entry, obtained from IOCB0 ICPTL, rather than synthesizing results.
+Reference monitor transcripts, native PNGs and RAM retain independent evidence.
+The manifest compares the complete final 960-byte screen at `$9C40` with the
+reference's actual capture: both Region goldens hash to
+`9c075145199268332e04a16509c16c72a89a9b7530fed04db5f650e5d444d0c2`.
+All four S7 cases execute and report a mismatch, not an uncaptured placeholder.
+No golden or tolerance was weakened.
 
 ## Remaining hardware limits
 
@@ -146,8 +209,9 @@ additional reasons not to imply that Acid800 would pass once it can load.
 - GTIA: no players/missiles, collision generation, special modes 9/10/11 or
   composite artifacting; the palette is an analytical approximation.
 - POKEY: period-level timers rather than complete shared-divider pipelines,
-  incomplete linked-low events/two-tone/serial clocking, no serial input or
-  external clocks, linear audio mixer, unconnected paddles only.
+  incomplete linked-low events/two-tone/serial clocking, no external clocks,
+  linear audio mixer, unconnected paddles only. Basic framed serial I/O works;
+  exact pipeline timing remains incomplete.
 - IRQ/NMI delivery remains at instruction boundaries. Warm reset uses the
   Atari 800's ANTIC RNMI and preserves RAM rather than resetting the CPU.
 - No XL/XE MMU, banked RAM, self-test ROM or additional Machine profiles yet.

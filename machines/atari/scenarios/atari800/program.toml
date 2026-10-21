@@ -1,0 +1,7 @@
+machine = "atari"
+output = "atari800-program.xex"
+entry = 0x2000
+
+[[input]]
+bin = "atari800-program.bin"
+at = 0x2000

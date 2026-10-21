@@ -11,6 +11,7 @@ pia-6520 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "76
 antic = { path = "../../chips/antic" }
 gtia = { path = "../../chips/gtia" }
 pokey = { path = "../../chips/pokey" }
+atari-media = { path = "../../formats/atari-media" }
 serde = { version = "1", features = ["derive"] }
 bincode = { version = "2", features = ["serde"] }
 sha1 = "0.10"

@@ -12,11 +12,14 @@ that is not emulated yet, where it stops with a diagnostic.
 
 **Atari 800 is experimental.** `atari-800` boots explicitly identified Altirra
 replacement OS/BASIC ROMs in PAL/NTSC and fast/accurate modes. Initial ANTIC,
-GTIA and POKEY reuse the shared NMOS 6502 and MOS 6520 PIA. Raw Programs,
+GTIA and POKEY reuse the shared NMOS 6502 and MOS 6520 PIA. Raw/XEX Programs,
 keyboard, four digital joysticks, audio, State and the debug contract are wired.
-XEX/ATR/CAS/CART loading, SIO, P/M graphics, scrolling and several timing
-details remain unimplemented. S2 reference keyboard capture and S7 Acid800
-are known gaps. See [acceptance and limits](docs/atari800-gaps.md) and
+Read-only ATR on D1: boots through actual PIA/POKEY serial pins, without ROM
+traps. XEX uses ordered INITAD/RUNAD; OS-dependent applications are not proven.
+CAS/CART loading, P/M graphics, scrolling and several timing details remain
+unimplemented. The manifest has 36 passing variants; S2 reference keyboard
+capture and four executed S7 Acid800 mismatches remain known gaps.
+See [acceptance and limits](docs/atari800-gaps.md) and
 `atari-800.manifest.toml`; this is not a game-compatibility or Acid800 pass claim.
 
 ## Build
@@ -34,6 +37,8 @@ For Atari 800, stage `atari_8bit_machine_plugin` alongside the ST Plugin:
 ```text
 retroclawd atari-800 --rom-os OS.rom --rom-basic BASIC.rom
 retroclawd atari-800 --rom-os OS.rom --rom-basic BASIC.rom --execution-mode accurate --region ntsc
+retroclawd atari-800 --rom-os OS.rom --program standalone.xex
+retroclawd atari-800 --rom-os OS.rom --disk boot.atr
 ```
 
 `--rom-os` requires 10240 bytes; optional `--rom-basic` requires 8192 bytes.

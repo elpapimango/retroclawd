@@ -1,6 +1,80 @@
 use atari_8bit::{Atari800, Roms, Timing};
 use machine::Machine;
 
+#[test]
+#[ignore = "requires ATARI800_OS, ATARI800_BASIC, ATARI800_DISK and ATARI800_OUTPUT"]
+fn replacement_rom_boots_atr_through_serial_pins() {
+    let os = std::fs::read(std::env::var("ATARI800_OS").expect("ATARI800_OS")).unwrap();
+    let basic = std::fs::read(std::env::var("ATARI800_BASIC").expect("ATARI800_BASIC")).unwrap();
+    let disk = std::fs::read(std::env::var("ATARI800_DISK").expect("ATARI800_DISK")).unwrap();
+    let output =
+        std::path::PathBuf::from(std::env::var("ATARI800_OUTPUT").expect("ATARI800_OUTPUT"));
+    for pal in [true, false] {
+        for timing in [Timing::Fast, Timing::Accurate] {
+            let mut m = Atari800::new(
+                Roms {
+                    os: os.clone(),
+                    basic: Some(basic.clone()),
+                },
+                pal,
+                timing,
+            )
+            .unwrap();
+            m.attach_disk(&disk).unwrap();
+            let frame = if pal { 35568 } else { 29868 };
+            while m.disk_reads() < 2 && m.cycles() < frame * 300 {
+                m.step();
+            }
+            assert!(m.disk_busy(), "second sector never began");
+            let saved = m.save_state();
+            let end = m.cycles() + frame * 10;
+            while m.cycles() < end {
+                m.step();
+            }
+            let future = m.save_state();
+            m.load_state(&saved).unwrap();
+            while m.cycles() < end {
+                m.step();
+            }
+            assert_eq!(m.save_state(), future, "in-flight SIO continuation differs");
+            while m.cycles() < frame * 600 {
+                m.step();
+                assert!(!m.halted(), "jam at {:04x}", m.pc());
+            }
+            let name = format!("disk-{}-{timing:?}", if pal { "pal" } else { "ntsc" });
+            std::fs::write(
+                output.join(format!("{name}.rgb")),
+                m.render_frame().unwrap().2,
+            )
+            .unwrap();
+            let ram: Vec<_> = (0..49152).map(|address| m.read_memory(address)).collect();
+            std::fs::write(output.join(format!("{name}.ram")), ram).unwrap();
+            println!(
+                "{name}: PC={:04x}, reads={}, sector={}, POKEY={:02x?}",
+                m.pc(),
+                m.disk_reads(),
+                m.disk_sector(),
+                m.chip_registers("pokey")
+            );
+            assert!(
+                m.disk_reads() > 5,
+                "OS never read the diagnostic through SIO"
+            );
+            let saved = m.save_state();
+            let end = m.cycles() + frame * 3;
+            while m.cycles() < end {
+                m.step();
+            }
+            let future = m.save_state();
+            m.load_state(&saved).unwrap();
+            while m.cycles() < end {
+                m.step();
+            }
+            assert_eq!(m.save_state(), future);
+        }
+    }
+}
+
 /// Explicit private ROM inputs; never falls back to guessed or stock firmware.
 #[test]
 #[ignore = "requires ATARI800_OS, ATARI800_BASIC and ATARI800_OUTPUT"]

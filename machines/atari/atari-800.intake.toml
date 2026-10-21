@@ -74,14 +74,14 @@ required = ["S1 boot", "S2 input", "S3 each supported medium", "S4 audio", "S5 s
 optional = ["S8 instruction trace"]
 removed = []
 hardware_diagnostics = "Acid800 1.2; licensing and execution must be verified before claiming a result."
-media = "Raw Program first; Atari XEX, ATR, CAS and CART require their own verified Format/Media paths. Existing C64 PRG parsing is not an Atari loader."
+media = "Raw Program plus segmented XEX and standard ATR. D1: is a read-only SIO protocol peripheral wired through PIA COMMAND and POKEY serial data, not a CPU loader trap or a complete 810 CPU/FDC. CAS and CART remain unsupported."
 assumptions = ["PAL default follows existing Host convention; NTSC remains a separate verified Region", "Start with 48 KiB Atari 800 and an explicit optional BASIC ROM", "Use permissive alternate ROMs only when explicitly named; no stock-ROM compatibility claim"]
 
 [[source]]
 kind = "hardware measurements and register reference"
 title = "Altirra Hardware Reference Manual, 2026-01-02"
 url = "https://www.virtualdub.org/downloads/Altirra%20Hardware%20Reference%20Manual.pdf"
-sections = ["2.1-2.7 architecture, clocks, PIA and banking", "4 ANTIC", "5 POKEY", "6 GTIA", "14.3-14.6 register reference"]
+sections = ["2.1-2.7 architecture, clocks, PIA and banking", "4 ANTIC", "5.6 POKEY serial shift registers, IRQs and clock selection", "6 GTIA", "9.1 SIO command/data frames, checksum and timing", "10.2 disk status/read commands", "14.3-14.6 register reference"]
 note = "Read as hardware documentation, not translated implementation code. AtariArchives manufacturer-manual transcriptions returned a human-verification page; Motorola's hosted 6821 PDF returned HTTP 403."
 
 [[source]]

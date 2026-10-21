@@ -43,8 +43,11 @@ crates/plugin-dlls/atari-8bit/       thin export only
 Read `atari-800.intake.toml` and `docs/atari800-gaps.md` before changing the
 8-bit Machine; do not infer its hardware from the ST. Sources: Altirra Hardware
 Reference 2026-01-02 chapters 2/4/5/6/14 and pinned Atari800 7.2.1.
-`atari-800.manifest.toml` records actual acceptance and known gaps; no XL/XE
-profile or general Atari Media loader exists yet.
+`atari-800.manifest.toml` records 36 passing variants and eight known gaps.
+No XL/XE profile exists yet. `atari-media` parses standard ATR and segmented
+XEX without a Machine dependency; Tools pins that Format crate by git revision.
+The Machine owns ordered INITAD/RUNAD and a read-only D1: peripheral on actual
+PIA CB2/POKEY pins, never a CPU ROM/SIO loader trap.
 
 The OS starts at `$D800`, optional BASIC at `$A000`; RAM is 48 KiB. Accurate
 mode clocks every Core bus cycle and stalls only reads; fast mode batches.
@@ -52,11 +55,16 @@ ANTIC owns VBI/DLI/reset NMI; the Host's frame interrupt request is a no-op.
 Atari 800 warm reset is an RNMI, not a CPU reset. Save state validates ROM,
 Region, mode and Chip state before mutation. Joystick input levels are held
 separately from PIA output/readback so DDR writes cannot lose another port.
+Version 2 State persists disk bytes, serial bit/queue phase and pending XEX;
+version 1 still loads unless a disk is attached (eject first). Preserve old
+files for rollback: an older Plugin cannot read version 2.
 
 Private replacement-ROM test:
-`ATARI800_OS`, `ATARI800_BASIC`, `ATARI800_OUTPUT` then
+`ATARI800_OS`, `ATARI800_BASIC`, `ATARI800_DISK` (Acid800 ATR), `ATARI800_OUTPUT` then
 `cargo test --release -p atari-8bit --test firmware -- --ignored`.
 It boots and types through POKEY in both Regions/modes, checks deterministic
-future State and warm reset. It does not establish reference S2 or Acid800
-acceptance. Assemble raw fixtures with existing `rcasm`; never commit ROMs,
+future State, warm reset and mid-transfer SIO State. It does not establish
+reference S2 or Acid800 acceptance. Actual Acid800 scores: fast 22/35/1,
+accurate 20/37/1, reference 25/32/1 passed/failed/skipped; see the gap document.
+Build fixtures with existing `rcasm`, `rcld` and `rcdisk`; never commit ROMs,
 third-party diagnostics, generated Media, goldens or reference binaries.

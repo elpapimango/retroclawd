@@ -2,7 +2,7 @@
 //! Source: Altirra Hardware Reference (2026-01-02), chapter 5 and section 14.4:
 //! <https://www.virtualdub.org/downloads/Altirra%20Hardware%20Reference%20Manual.pdf>.
 //! Timers use period-level reloads; linked low-channel events, pipeline delays,
-//! two-tone, analogue saturation and serial input/external clocks remain gaps.
+//! two-tone, analogue saturation and external serial clocks remain gaps.
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
@@ -35,6 +35,35 @@ pub struct Pokey {
     serial_pending: Option<u8>,
     serial_bits: u8,
     serial_phase: bool,
+    #[serde(skip)]
+    serial: SerialState,
+}
+
+/// Additional serial State lives outside the original Chip encoding so old
+/// Machine states retain their exact field layout.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SerialState {
+    output: bool,
+    input: bool,
+    transmit: u16,
+    receive: u8,
+    receive_shift: u8,
+    receive_bits: u8,
+    receive_delay: u32,
+}
+
+impl Default for SerialState {
+    fn default() -> Self {
+        Self {
+            output: true,
+            input: true,
+            transmit: 0,
+            receive: 0xff,
+            receive_shift: 0,
+            receive_bits: 0,
+            receive_delay: 0,
+        }
+    }
 }
 
 impl Default for Pokey {
@@ -66,6 +95,7 @@ impl Default for Pokey {
             serial_pending: None,
             serial_bits: 0,
             serial_phase: false,
+            serial: SerialState::default(),
         }
     }
 }
@@ -103,7 +133,7 @@ impl Pokey {
                     !(self.poly17 as u8)
                 }
             }
-            13 => 0xff,
+            13 => self.serial.receive,
             14 => self.irq_status,
             15 => self.skstat,
             _ => 0xff,
@@ -135,7 +165,13 @@ impl Pokey {
                     self.clock114 = 78;
                     self.serial_pending = None;
                     self.serial_bits = 0;
+                    self.serial.receive_bits = 0;
+                    self.serial.receive_delay = 0;
+                    self.skstat |= 2;
                     self.irq_status &= !8;
+                }
+                if value & 0x70 == 0 {
+                    self.serial_phase = false;
                 }
                 if value & 2 == 0 {
                     self.key_state = 0;
@@ -223,18 +259,88 @@ impl Pokey {
         if !self.serial_phase {
             return;
         }
-        if self.serial_bits == 0 && self.serial_pending.take().is_some() {
-            self.serial_bits = 10;
-            self.irq_status |= 8;
-            self.signal(0x10);
-        } else if self.serial_bits > 0 {
+        if self.serial_bits > 0 {
+            self.serial.transmit >>= 1;
             self.serial_bits -= 1;
-            if self.serial_bits == 0 {
+        }
+        if self.serial_bits == 0 {
+            if let Some(byte) = self.serial_pending.take() {
+                self.serial.transmit = (u16::from(byte) << 1) | 0x200;
+                self.serial_bits = 10;
+                self.irq_status |= 8;
+                self.signal(0x10);
+            } else {
                 self.irq_status &= !8;
+                return;
             }
         }
+        self.serial.output = self.serial.transmit & 1 != 0;
+    }
+    pub fn serial_output(&self) -> bool {
+        self.serial.output
+    }
+    pub fn set_serial_input(&mut self, level: bool) {
+        self.serial.input = level;
+    }
+    pub fn serial_state(&self) -> SerialState {
+        self.serial.clone()
+    }
+    pub fn restore_serial(&mut self, state: SerialState) -> Result<(), String> {
+        if state.transmit > 0x3ff || state.receive_bits > 10 || state.receive_delay > 14_942_208 {
+            return Err("invalid POKEY serial state".to_string());
+        }
+        self.serial = state;
+        Ok(())
+    }
+    fn receive_clock(&mut self) {
+        self.skstat = (self.skstat & !0x10) | (u8::from(self.serial.input) << 4);
+        if self.registers[15] & 3 == 0 || self.registers[15] & 0x10 == 0 {
+            return;
+        }
+        if self.serial.receive_bits == 0 {
+            if self.serial.input {
+                return;
+            }
+            self.serial.receive_bits = 1;
+            self.serial.receive_delay = self.period(3);
+        }
+        self.serial.receive_delay = self.serial.receive_delay.saturating_sub(1);
+        if self.serial.receive_delay != 0 {
+            return;
+        }
+        match self.serial.receive_bits {
+            1 => {
+                if self.serial.input {
+                    self.serial.receive_bits = 0;
+                    return;
+                }
+                self.serial.receive_shift = 0;
+                self.skstat &= !2;
+            }
+            2..=9 => {
+                self.serial.receive_shift |=
+                    u8::from(self.serial.input) << (self.serial.receive_bits - 2);
+            }
+            10 => {
+                self.serial.receive = self.serial.receive_shift;
+                if !self.serial.input {
+                    self.skstat &= !0x80;
+                }
+                if self.irq_status & 0x20 == 0 {
+                    self.skstat &= !0x20;
+                }
+                self.signal(0x20);
+                self.skstat |= 2;
+                self.serial.receive_bits = 0;
+                return;
+            }
+            _ => unreachable!(),
+        }
+        self.serial.receive_bits += 1;
+        self.serial.receive_delay = self.period(3) * 2;
     }
     pub fn tick(&mut self) {
+        self.receive_clock();
         let running = self.registers[15] & 3 != 0;
         if running {
             Self::lfsr(&mut self.poly4, 4, 1);
@@ -259,6 +365,10 @@ impl Pokey {
         }
         let mut fired = [false; 4];
         for (channel, fire) in fired.iter_mut().enumerate() {
+            if channel >= 2 && self.registers[15] & 0x10 != 0 && self.serial.receive_bits == 0 {
+                self.timers[channel] = self.period(channel);
+                continue;
+            }
             let fast = channel.is_multiple_of(2)
                 && self.registers[8] & if channel == 0 { 0x40 } else { 0x20 } != 0;
             if !running && !fast {
@@ -291,7 +401,10 @@ impl Pokey {
                 self.highpass[channel] = self.outputs[channel];
             }
         }
-        if fired[3] && self.registers[15] & 0x60 == 0x20 {
+        let mode = (self.registers[15] >> 4) & 7;
+        if self.registers[15] & 3 != 0
+            && ((fired[3] && (2..=5).contains(&mode)) || (fired[1] && mode >= 6))
+        {
             self.serial_clock();
         }
     }
@@ -335,6 +448,96 @@ impl Pokey {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn serial() -> Pokey {
+        let mut p = Pokey::new();
+        p.write(4, 40);
+        p.write(6, 0);
+        p.write(8, 0x28);
+        p.write(15, 0x13);
+        p.write(9, 0);
+        p.write(14, 0x20);
+        p
+    }
+    fn receive(p: &mut Pokey, byte: u8, stop: bool) {
+        for bit in std::iter::once(false)
+            .chain((0..8).map(|bit| byte & (1 << bit) != 0))
+            .chain(std::iter::once(stop))
+        {
+            p.set_serial_input(bit);
+            for _ in 0..94 {
+                p.tick();
+            }
+        }
+        p.set_serial_input(true);
+    }
+    #[test]
+    fn serial_receive_latches_only_complete_bytes_and_requires_irq_acknowledgment() {
+        let mut p = serial();
+        receive(&mut p, 0xa5, true);
+        assert_eq!(p.read(13), 0xa5);
+        assert!(p.irq());
+        assert_eq!(p.read(15) & 0xa0, 0xa0);
+        receive(&mut p, 0x42, true);
+        assert_eq!(p.read(13), 0x42);
+        assert_eq!(p.read(15) & 0x20, 0);
+        p.write(14, 0);
+        p.write(14, 0x20);
+        p.write(10, 0);
+        receive(&mut p, 0x55, false);
+        assert_eq!(p.read(13), 0x55);
+        assert_eq!(p.read(15) & 0x80, 0);
+        assert_eq!(p.read(15) & 0x20, 0x20);
+    }
+    #[test]
+    fn serial_output_sends_lsb_first_with_start_stop_and_ready_complete_irqs() {
+        let mut p = serial();
+        p.write(15, 0x23);
+        p.write(14, 0x18);
+        p.write(13, 0xa5);
+        for _ in 0..47 {
+            p.tick();
+        }
+        assert!(!p.serial_output());
+        assert_eq!(p.read(14) & 0x18, 8);
+        for bit in (0..8).map(|bit| 0xa5 & (1 << bit) != 0).chain([true]) {
+            for _ in 0..94 {
+                p.tick();
+            }
+            assert_eq!(p.serial_output(), bit);
+        }
+        for _ in 0..94 {
+            p.tick();
+        }
+        assert_eq!(p.read(14) & 8, 0);
+    }
+    #[test]
+    fn asynchronous_receive_holds_timers_until_a_start_bit() {
+        let mut p = serial();
+        p.write(14, 4);
+        for _ in 0..2000 {
+            p.tick();
+        }
+        assert!(!p.irq());
+        p.set_serial_input(false);
+        for _ in 0..47 {
+            p.tick();
+        }
+        assert!(p.irq());
+        p.write(15, 0);
+        p.set_serial_input(true);
+        p.write(14, 0);
+        p.write(14, 4);
+        p.write(15, 0x13);
+        for _ in 0..2000 {
+            p.tick();
+        }
+        assert!(!p.irq());
+        p.write(15, 3);
+        for _ in 0..47 {
+            p.tick();
+        }
+        assert!(p.irq());
+    }
     #[test]
     fn keyboard_scans_debounces_and_acknowledges_through_irqen() {
         let mut p = Pokey::new();
