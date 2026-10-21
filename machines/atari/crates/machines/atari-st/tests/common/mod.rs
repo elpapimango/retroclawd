@@ -95,6 +95,23 @@ pub fn run_until_stop(rom: Vec<u8>, ram: RamSize) -> AtariSt {
     m
 }
 
+/// Runs `frames` frames (VBLs), or to a stop, with `disk` in drive A.
+pub fn run_frames(
+    rom: Vec<u8>,
+    ram: RamSize,
+    frames: u64,
+    disk: Option<st_floppy::Image>,
+) -> AtariSt {
+    let mut m = AtariSt::new(config(rom, ram)).unwrap();
+    if let Some(d) = disk {
+        m.insert_disk(0, d).unwrap();
+    }
+    while m.io_stop().is_none() && m.vbl_count() < frames {
+        machine::Machine::step(&mut m);
+    }
+    m
+}
+
 /// Our I/O log in Hatari's format.
 pub fn io_lines(m: &AtariSt) -> Vec<String> {
     m.io_log().iter().map(|a| a.hatari_line()).collect()
@@ -128,18 +145,64 @@ const TIMING_DEPENDENT_READS: [&str; 4] = [
     "IO read.b $fffffa25",
 ];
 
+/// The documented conflict on `$FF8604` reads: *Internals* p.59 says the upper byte reads as 1s, Hatari shows `$00`
+/// (`docs/hardware-facts.md`). The upper byte is masked; the FDC's low byte is compared.
+const FF8604_READ: &str = "IO read.w $ffff8604";
+
+fn mask(line: &str) -> String {
+    match line.split_once(" = $") {
+        Some((head, tail)) if TIMING_DEPENDENT_READS.contains(&head) => {
+            format!("{head} = $?? {}", tail.split_once(' ').map_or("", |t| t.1))
+        }
+        Some((head, tail)) if head == FF8604_READ && tail.len() > 2 => {
+            format!("{head} = $??{}", &tail[2..])
+        }
+        _ => line.to_string(),
+    }
+}
+
 /// A log ready for comparison: timing-dependent values masked, then the polling rule.
 pub fn comparable(log: &[String]) -> Vec<String> {
-    let masked: Vec<String> = log
-        .iter()
-        .map(|line| match line.split_once(" = $") {
-            Some((head, tail)) if TIMING_DEPENDENT_READS.contains(&head) => {
-                format!("{head} = $?? {}", tail.split_once(' ').map_or("", |t| t.1))
-            }
-            _ => line.clone(),
-        })
-        .collect();
+    let masked: Vec<String> = log.iter().map(|l| mask(l)).collect();
     collapse_polls(&masked)
+}
+
+/// The accesses of each instruction address (the line's `pc=`), each stream masked and under the polling rule. An
+/// interrupt handler's accesses fall between the main program's at points that depend on timing; each code
+/// location's own accesses, in their order, do not.
+pub fn streams(log: &[String]) -> std::collections::BTreeMap<String, Vec<String>> {
+    let mut by_pc: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    for line in log {
+        let pc = line.rsplit_once("pc=").map_or("", |p| p.1).to_string();
+        by_pc.entry(pc).or_default().push(mask(line));
+    }
+    by_pc
+        .into_iter()
+        .map(|(pc, s)| (pc, collapse_polls(&s)))
+        .collect()
+}
+
+/// Every code location in `reference` also runs in `ours`, and their streams (`streams`) agree as far as both go.
+pub fn assert_same_streams(ours: &[String], reference: &[String], what: &str) {
+    let (ours, reference) = (streams(ours), streams(reference));
+    for (pc, theirs) in &reference {
+        let mine = ours.get(pc).unwrap_or_else(|| {
+            panic!(
+                "{what}: pc={pc} runs in Hatari but not here: {:?}",
+                &theirs[..theirs.len().min(3)]
+            )
+        });
+        let n = mine.len().min(theirs.len());
+        if let Some(i) = (0..n).find(|&i| mine[i] != theirs[i]) {
+            panic!(
+                "{what}: pc={pc} access {i} differs:
+  ours:   {:?}
+  hatari: {:?}",
+                &mine[i..(i + 3).min(mine.len())],
+                &theirs[i..(i + 3).min(theirs.len())]
+            );
+        }
+    }
 }
 
 /// Asserts `ours` equals the first `ours.len()` lines of `reference`, showing the first difference.

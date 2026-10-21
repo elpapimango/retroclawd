@@ -18,6 +18,7 @@
 
 use crate::acia::Acias;
 use crate::config::Config;
+use crate::dma::{Dma, FDC_BYTE_CYCLES};
 use crate::io::{self, Decode, Device};
 use crate::iolog::IoAccess;
 use crate::mfp_clock::MfpClock;
@@ -78,6 +79,11 @@ pub struct StBus {
     pub(crate) shifter: Shifter,
     pub(crate) psg: Psg,
     pub(crate) acias: Acias,
+    pub(crate) dma: Dma,
+    /// A DMA/FDC register was accessed: the controller's events may have moved.
+    pub(crate) fdc_dirty: bool,
+    /// The FDC's INTRQ as GPIP I5 last saw it.
+    fdc_irq: bool,
     /// An ACIA register was accessed: its service events may have moved.
     pub(crate) acia_dirty: bool,
     pub(crate) monitor: Monitor,
@@ -154,6 +160,9 @@ impl StBus {
             mfp,
             shifter: Shifter::new(cfg.region == crate::config::Region::Pal),
             acias: Acias::new(),
+            dma: Dma::new(2),
+            fdc_dirty: false,
+            fdc_irq: false,
             acia_dirty: false,
             psg: Psg::new((scheduler::crystal_hz(cfg.region) / scheduler::CPU_DIVIDER) as u64),
             monitor: cfg.monitor,
@@ -211,6 +220,77 @@ impl StBus {
     /// ACIA `n`: 0 keyboard, 1 MIDI.
     pub fn acia(&self, n: usize) -> &mc6850::Acia {
         &self.acias.ports[n].chip
+    }
+
+    /// The DMA chip's address counter.
+    pub fn dma_address(&self) -> u32 {
+        self.dma.address
+    }
+
+    pub fn dma(&self) -> &Dma {
+        &self.dma
+    }
+
+    /// Advances the floppy controller to CPU cycle `target`, a byte time at a time while it works, moving each byte
+    /// it offers through the DMA; then GPIP I5 follows its INTRQ.
+    pub(crate) fn catch_up_fdc(&mut self, target: u64) {
+        while self.dma.fdc_at < target {
+            let gap = target - self.dma.fdc_at;
+            let step = if self.dma.busy() {
+                gap.min(FDC_BYTE_CYCLES)
+            } else {
+                gap.min(u32::MAX as u64)
+            };
+            self.dma.fdc.tick(step as u32);
+            self.dma.fdc_at += step;
+            if let Some(burst) = self.dma.service_drq() {
+                self.dma_store(&burst, self.dma.fdc_at);
+            }
+        }
+        self.update_fdc_irq(target);
+    }
+
+    /// A FIFO burst to memory at the DMA address: RAM takes it, ROM and the cartridge ignore it ([H?] as CPU writes),
+    /// the I/O area or nonexistent memory has no fact and stops the machine.
+    fn dma_store(&mut self, bytes: &[u8], at: u64) {
+        for &b in bytes {
+            let addr = self.dma.address & 0xFF_FFFF;
+            match self.region(addr) {
+                Region::Ram(i) if self.stop.is_none() => self.ram[i] = b,
+                Region::Ram(_) | Region::Rom(_) | Region::Cartridge | Region::UnfittedRam => {}
+                Region::Io | Region::None => {
+                    if self.stop.is_none() {
+                        self.stop = Some(IoStop {
+                            reason: StopReason::NoFact,
+                            addr,
+                            size: Size::Byte,
+                            write: true,
+                            value: b as u32,
+                            fc: FunctionCode::SUPERVISOR_DATA,
+                            at_cycle: at,
+                        });
+                    }
+                }
+            }
+            self.dma.address = (self.dma.address + 1) & 0xFF_FFFF;
+        }
+    }
+
+    /// GPIP I5 follows the FDC's INTRQ (active low), at CPU cycle `at`.
+    fn update_fdc_irq(&mut self, at: u64) {
+        let irq = self.dma.fdc.intrq();
+        if irq != self.fdc_irq {
+            self.fdc_irq = irq;
+            self.catch_up_mfp(at);
+            self.mfp.set_input(5, !irq);
+            self.mfp_dirty = true;
+        }
+    }
+
+    /// The drive selects and side follow PSG port A.
+    fn update_drive_select(&mut self) {
+        let port_a = self.psg.port_a();
+        self.dma.fdc.floppy.set_port_a(port_a);
     }
 
     /// GPIP I4 follows the ACIAs' shared IRQ line, at CPU cycle `at`.
@@ -348,7 +428,9 @@ impl StBus {
             Decode::Device(Device::Psg) => {
                 self.psg.catch_up(self.now);
                 let v = if write {
+                    self.catch_up_fdc(self.now);
                     self.psg.write(addr, value as u8);
+                    self.update_drive_select();
                     value
                 } else {
                     self.psg.read(addr) as u32
@@ -356,6 +438,36 @@ impl StBus {
                 self.log_io(addr, size, write, v);
                 return Ok(v);
             }
+            Decode::Device(Device::Dma)
+                if !(addr == 0xFF_8604 && !write && self.dma.hdc_selected()) =>
+            {
+                let now = self.now;
+                self.catch_up_fdc(now);
+                let v = match (addr, write) {
+                    (0xFF_8604, false) => self.dma.read_data() as u32,
+                    (0xFF_8604, true) => {
+                        self.dma.write_data(value as u16);
+                        value
+                    }
+                    (0xFF_8606, false) => self.dma.status() as u32,
+                    (0xFF_8606, true) => {
+                        self.dma.write_mode(value as u16);
+                        value
+                    }
+                    // $FF8609, $FF860B, $FF860D: address high, mid, low.
+                    (a, false) => self.dma.address_byte((a - 0xFF_8609) / 2) as u32,
+                    (a, true) => {
+                        self.dma.set_address_byte((a - 0xFF_8609) / 2, value as u8);
+                        value
+                    }
+                };
+                self.fdc_dirty = true;
+                self.update_fdc_irq(now);
+                self.log_io(addr, size, write, v);
+                return Ok(v);
+            }
+            // [H?] an HDC (ACSI) read with nothing connected.
+            Decode::Device(Device::Dma) => StopReason::NoFact,
             Decode::Device(Device::Acia) => {
                 // Internals p.62: control/status at $FFFC00 and $FFFC04, data at $FFFC02 and $FFFC06.
                 let port = ((addr - 0xFF_FC00) / 4) as usize;
@@ -386,7 +498,6 @@ impl StBus {
                 self.log_io(addr, size, write, if write { value } else { ff });
                 return Ok(ff);
             }
-            Decode::Device(d) => StopReason::NotEmulated(d),
             Decode::NoFact => StopReason::NoFact,
         };
         if self.stop.is_none() {

@@ -41,6 +41,7 @@ pub fn crystal_hz(region: Region) -> u32 {
 pub const CLASS_VIDEO: u8 = 0;
 pub const CLASS_MFP: u8 = 1;
 pub const CLASS_ACIA: u8 = 2;
+pub const CLASS_FDC: u8 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Event {
@@ -50,6 +51,8 @@ pub enum Event {
     MfpTimeout(u64),
     /// ACIA `port` has a character starting or completing; the generation tells a stale event apart.
     AciaService { port: u8, generation: u64 },
+    /// The floppy controller's next byte time while it works; the generation tells a stale event apart.
+    FdcTick(u64),
 }
 
 /// The shape of one frame in CPU clocks.

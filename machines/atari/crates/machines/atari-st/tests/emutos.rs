@@ -95,45 +95,39 @@ fn emutos_trace_matches_hatari_up_to_our_stop() {
     eprintln!("the first {n} PCs agree with Hatari");
 }
 
-/// Every I/O access we make agrees with Hatari's, in order, as `common::comparable` compares them.
+/// Hatari's 50-frame log against ours over the same 50 frames: every code location's accesses agree
+/// (`common::assert_same_streams`).
 #[test]
 fn emutos_io_log_matches_hatari() {
     let (Some(rom), Some(reference)) = (emutos(), hatari_io("1m")) else {
         return;
     };
-    let ours = common::io_lines(&run(rom));
-    common::assert_prefix(
-        &common::comparable(&ours),
-        &common::comparable(&reference),
-        "1m",
+    let ours = common::io_lines(&common::run_frames(rom, RamSize::M1, 50, None));
+    common::assert_same_streams(&ours, &reference, "1m");
+    eprintln!(
+        "{} accesses over 50 frames agree with Hatari's, code location by code location",
+        ours.len()
     );
-    eprintln!("the first {} I/O accesses agree with Hatari", ours.len());
 }
 
-/// Slice 4's end: with the ACIAs and the IKBD, EmuTOS runs to its first DMA access, every access before it equal to
-/// Hatari's under the polling rule, for every RAM size.
+/// Slice 4's end: with the ACIAs and the IKBD, EmuTOS's accesses up to its first DMA access equal Hatari's, as
+/// `common::comparable` compares them, for every RAM size.
 #[test]
-fn emutos_runs_to_the_dma_chip() {
+fn emutos_matches_hatari_up_to_the_dma_chip() {
     let Some(rom) = emutos() else { return };
+    let first_dma = "IO write.w $ffff8606 = $0080 pc=fc3734";
     for (name, ram) in common::RAM_SIZES {
-        let a = run_with(rom.clone(), ram);
-        let stop = a.io_stop().expect("stopped");
-        assert_eq!(
-            stop.reason,
-            atari_st::StopReason::NotEmulated(atari_st::Device::Dma),
-            "--ram {name}"
-        );
-        let ours = common::io_lines(&a);
-        assert_eq!(
-            ours.last().unwrap(),
-            "IO write.w $ffff8606 = $0080 pc=fc3734",
-            "--ram {name}"
-        );
+        let ours = common::io_lines(&run_with(rom.clone(), ram));
+        let end = ours
+            .iter()
+            .position(|l| l == first_dma)
+            .expect("reaches the DMA chip")
+            + 1;
         if let Some(reference) = hatari_io(name) {
-            let (ours, reference) = (common::comparable(&ours), common::comparable(&reference));
-            common::assert_prefix(&ours, &reference, name);
+            let ours = common::comparable(&ours[..end]);
+            common::assert_prefix(&ours, &common::comparable(&reference), name);
             eprintln!(
-                "--ram {name}: {} collapsed I/O accesses compared with Hatari",
+                "--ram {name}: {} compared I/O accesses up to the DMA chip agree with Hatari",
                 ours.len()
             );
         }

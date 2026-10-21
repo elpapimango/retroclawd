@@ -175,3 +175,38 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Track length | 6250 bytes (250 kbit/s MFM, 300 rpm) | `[H?]` | drive speed not sourced |
 | Sector order on a track | 1, 2, 3, … (no interleave) | `[H?]` | the image does not record it |
 | 11 sectors per track | refused: they do not fit 6250 bytes in the data sheet's format | — | — |
+
+## DMA and floppy controller (`dma.rs`, `wd1770`)
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| `$FF8604` | FDC register (A1/A0 from the mode) or the sector count, read and write | `[H]` | *Internals* p.59 |
+| `$FF8604` read, upper byte | reads as 1s | `[H]` | *Internals* p.59 ("consistently read 1"); Hatari shows `$00` — a known oracle difference, masked in the comparisons |
+| `$FF8606` write (mode) | bit 1 A0, bit 2 A1, bit 3 HDC, bit 4 sector count, bit 6 DMA off, bit 8 write | `[H]` | *Internals* p.59 (with `pdftotext -raw`) |
+| Mode bit 7 | described as FDC/HDC as well; not decoded | `[H?]` | *Internals* lists bits 3 and 7 both as FDC/HDC |
+| `$FF8606` read (status) | bit 0 error (0 = none), bit 1 sector count not zero, bit 2 FDC DRQ; other bits 0 | `[H]` for bits 0-2, `[H?]` for the rest | *Internals* p.59 |
+| DMA address | `$FF8609` high, `$FF860B` mid, `$FF860D` low; read and write; written low first | `[H]` | *Internals* p.59 |
+| FIFO | 16 bytes, written to memory a burst at a time; no bus stall in Phase 1 | `[H?]` | design §8 |
+| Sector count | 8 bits, counts 512-byte sectors; the DMA stops taking bytes at 0 | `[H?]` | — |
+| Write bit toggled | clears the FIFO and the error bit | `[H?]` | EmuTOS's `$0190`/`$0090` pattern |
+| DMA into ROM or the cartridge | ignored | `[H?]` | as a CPU write |
+| DMA into I/O or nonexistent memory | no fact: the machine stops | — | — |
+| FDC | WD1772, clocked by the CPU clock (8 MHz), so its times are the data sheet's | `[D]` *WD177X*; the clock `[H?]` | — |
+| Type I status S5 | set once the spin-up phase is over (also when skipped with h = 1) | `[D]` | *WD177X* status register description; `[O]` `$E4` after RESTORE `$0B` |
+| INTRQ | GPIP I5, active low | `[H]` | *Internals* p.61 |
+| HDC (ACSI) with nothing connected | writes vanish, I5 stays high | `[O]` | EmuTOS's probe in Hatari |
+| HDC read | no fact: the machine stops | — | — |
+| RESET instruction | FDC and DMA not reset | `[H?]` | — |
+
+## Floppy drives (`drive.rs`)
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| Selects | PSG port A bit 1 drive 0, bit 2 drive 1, active low; bit 0 side (clear = side 1) | `[H]` *Internals* p.60; polarity `[H?]` | `[O]` TOS writes `$07` to deselect, `$05` for drive A |
+| Revolution | 6250 byte times | `[H?]` | 300 rpm, 250 kbit/s |
+| Index pulse | the first 64 byte times of a revolution, only with a disk | `[H?]` | — |
+| No disk | no index pulses, no data, write-protected | `[O]` | status `$E4` |
+| Write protect | every disk in Phase 1 | `[H?]` | writes arrive in Phase 2 |
+| Motor | the motor line reaches both drives | `[H?]` | — |
+| Head range | cylinders 0-85 | `[H?]` | — |
+| Drives fitted | 2 by default, 1 with `drives = 1`; drive B absent then | `[H?]` | — |

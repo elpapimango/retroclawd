@@ -224,12 +224,7 @@ fn bus_error_rows_fault_without_a_stop() {
 
 #[test]
 fn stops_name_the_device_or_the_missing_fact() {
-    let mut b = bus();
-    b.write(0xFF8604, Size::Word, 0x80, SUPER).unwrap();
-    assert_eq!(
-        b.stop().unwrap().reason,
-        StopReason::NotEmulated(Device::Dma)
-    );
+    // Every device is emulated now: only an address without a fact stops.
     let mut b = bus();
     b.read(0xFF9000, Size::Byte, SUPER).unwrap();
     assert_eq!(b.stop().unwrap().reason, StopReason::NoFact);

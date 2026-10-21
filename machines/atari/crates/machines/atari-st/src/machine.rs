@@ -11,7 +11,10 @@ use crate::acia::SerialPeer;
 use crate::bus::{IoStop, StBus};
 use crate::config::{Config, Region};
 use crate::diag::Diag;
-use crate::scheduler::{self, CLASS_ACIA, CLASS_MFP, CLASS_VIDEO, Event, FrameGeometry, Scheduler};
+use crate::dma::FDC_BYTE_CYCLES;
+use crate::scheduler::{
+    self, CLASS_ACIA, CLASS_FDC, CLASS_MFP, CLASS_VIDEO, Event, FrameGeometry, Scheduler,
+};
 
 pub struct AtariSt {
     cpu: Cpu,
@@ -166,6 +169,9 @@ impl AtariSt {
     fn advance(&mut self, clocks: u32) {
         // An MFP write during the instruction happened at its start (fast mode, `bus.now`): reschedule from there,
         // before the events the instruction crossed, so none of them sees the MFP ahead of its own time.
+        if std::mem::take(&mut self.bus.fdc_dirty) {
+            self.schedule_fdc(self.bus.now);
+        }
         if std::mem::take(&mut self.bus.acia_dirty) {
             self.schedule_acia(0);
             self.schedule_acia(1);
@@ -193,6 +199,14 @@ impl AtariSt {
                     self.schedule_acia(port as usize);
                 }
                 Event::AciaService { .. } => {}
+                Event::FdcTick(g) if g == self.bus.dma.generation => {
+                    self.bus.catch_up_fdc(at);
+                    if std::mem::take(&mut self.bus.mfp_dirty) {
+                        self.schedule_mfp(at);
+                    }
+                    self.schedule_fdc(at);
+                }
+                Event::FdcTick(_) => {}
             }
         }
         self.cpu.set_ipl(self.bus.ipl());
@@ -211,6 +225,7 @@ impl AtariSt {
             self.bus.raise_vbl();
             self.bus.catch_up_mfp(at);
             self.bus.psg.catch_up(at);
+            self.bus.catch_up_fdc(at);
             let cps = self.clock_hz();
             if let Some(k) = self.bus.acias.ikbd() {
                 k.tick_clock(at, cps);
@@ -238,6 +253,38 @@ impl AtariSt {
             self.sched
                 .schedule(when, CLASS_MFP, Event::MfpTimeout(self.mfp_event));
         }
+    }
+
+    /// The controller's next byte time while it works; any older event is now stale.
+    fn schedule_fdc(&mut self, at: u64) {
+        self.bus.dma.generation += 1;
+        if self.bus.dma.busy() {
+            let generation = self.bus.dma.generation;
+            self.sched
+                .schedule(at + FDC_BYTE_CYCLES, CLASS_FDC, Event::FdcTick(generation));
+        }
+    }
+
+    /// Puts `image` in drive `drive` (0 = A, 1 = B).
+    pub fn insert_disk(&mut self, drive: u8, image: st_floppy::Image) -> Result<(), String> {
+        self.bus.catch_up_fdc(self.now);
+        self.bus.dma.fdc.floppy.insert(drive as usize, image)
+    }
+
+    /// Takes the disk out of drive `drive`.
+    pub fn eject_disk(&mut self, drive: u8) -> Option<st_floppy::Image> {
+        self.bus.catch_up_fdc(self.now);
+        self.bus.dma.fdc.floppy.drive_mut(drive as usize).eject()
+    }
+
+    /// Phase 1 never writes to a disk.
+    pub fn disk_modified(&self, _drive: u8) -> bool {
+        false
+    }
+
+    /// The number of floppy drives (1 or 2, default 2), before the machine runs; any disks are removed.
+    pub fn set_drives(&mut self, n: u8) {
+        self.bus.dma.fdc.floppy = crate::drive::Drives::new(n);
     }
 
     /// One service event at ACIA `port`'s next due action; any older one is now stale.

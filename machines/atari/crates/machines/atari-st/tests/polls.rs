@@ -2,7 +2,7 @@
 //! else still shows.
 
 mod common;
-use common::{collapse_polls, comparable};
+use common::{collapse_polls, comparable, streams};
 
 fn v(lines: &[&str]) -> Vec<String> {
     lines.iter().map(|s| s.to_string()).collect()
@@ -97,4 +97,24 @@ fn timer_data_reads_are_masked() {
         comparable(&d),
         "other registers keep their value"
     );
+}
+
+/// The documented `$FF8604` conflict: the upper byte of a read is masked, the FDC's byte compared.
+#[test]
+fn ff8604_upper_byte_is_masked() {
+    let a = v(&["IO read.w $ffff8604 = $ffe4 pc=fc38b6"]);
+    let b = v(&["IO read.w $ffff8604 = $00e4 pc=fc38b6"]);
+    let c = v(&["IO read.w $ffff8604 = $00c4 pc=fc38b6"]);
+    assert_eq!(comparable(&a), comparable(&b));
+    assert_ne!(comparable(&b), comparable(&c));
+}
+
+/// An interrupt handler's access between two polls of the main program does not change either stream.
+#[test]
+fn streams_ignore_interleaving_but_not_order_within_a_pc() {
+    let a = v(&["A pc=1", "I pc=9", "B pc=1"]);
+    let b = v(&["A pc=1", "B pc=1", "I pc=9"]);
+    assert_eq!(streams(&a), streams(&b));
+    let c = v(&["B pc=1", "A pc=1", "I pc=9"]);
+    assert_ne!(streams(&a), streams(&c));
 }
