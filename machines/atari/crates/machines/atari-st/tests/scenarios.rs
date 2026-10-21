@@ -22,7 +22,7 @@ fn media(name: &str) -> Option<Vec<u8>> {
     }
 }
 
-/// `tone.bin` at `$10000`: tone A of the YM2149 at period 284, so `fT = (CPU clock / 4) / (16 × 284)` (YM2149 catalog,
+/// `tone.bin` at `$8000` (the manifest's `--org`): tone A of the YM2149 at period 284, so `fT = (CPU clock / 4) / (16 × 284)` (YM2149 catalog,
 /// section (1)); the DC-free output crosses zero twice per period.
 #[test]
 fn tone_bin_plays_the_formula_pitch() {
@@ -30,8 +30,8 @@ fn tone_bin_plays_the_formula_pitch() {
         return;
     };
     let mut m = AtariSt::new(config(rom(&[BRA_SELF], &[]), RamSize::M1)).unwrap();
-    m.load(0x1_0000, &code);
-    m.set_pc(0x1_0000);
+    m.load(0x8000, &code);
+    m.set_pc(0x8000);
     let mut audio = Vec::new();
     while m.vbl_count() < 50 {
         m.step();

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Writes the 68000 code of the Atari ST scenarios (README.md explains each instruction): tone.bin (for --program at
-$10000) and keys-boot.bin (the boot program of keys.st). No 68000 assembler exists in this project yet, so the code
+$8000) and keys-boot.bin (the boot program of keys.st). No 68000 assembler exists in this project yet, so the code
 is written here as words, one instruction per line.
 
     make_scenarios.py OUT_DIR

@@ -7,7 +7,7 @@ program and checks what it does.
 
 ## `tone.bin` (S4)
 
-Loaded with `--program tone.bin --org 0x10000`. It writes the YM2149 registers through `$FF8800` (select) and
+Loaded with `--program tone.bin --org 0x8000`. It writes the YM2149 registers through `$FF8800` (select) and
 `$FF8802` (data) (*Atari ST Internals* pp.59-60):
 - R0/R1 = 284, the tone A period;
 - R7 = `$3E`, tone A only;

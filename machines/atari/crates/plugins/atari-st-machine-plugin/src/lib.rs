@@ -830,7 +830,7 @@ fn handle_machine_command(
         MachineCommand::DrainAudio => Ok(MachineResponse::AudioPcm {
             channels: 1,
             sample_rate: AUDIO_SAMPLE_RATE,
-            samples: Vec::new(),
+            samples: record.machine.drain_audio(),
         }),
         MachineCommand::Debug(command) => Ok(MachineResponse::Debug(handle_debug_command(
             record, command,
@@ -1274,6 +1274,26 @@ mod tests {
         let id = create(&[0x60FE], vec![one]);
         let err = attach(id, 1, vec![0; 737_280]).unwrap_err();
         assert!(err.contains("no drive B"), "{err}");
+        state().lock().unwrap().instances.remove(&id);
+    }
+
+    /// The YM2149's samples reach the host: 44 100 per second of machine time, mono.
+    #[test]
+    fn drain_audio_returns_the_psg_samples() {
+        let id = create(&[0x60FE], Vec::new());
+        for _ in 0..20_000 {
+            command(id, MachineCommand::Step).unwrap();
+        }
+        let Ok(MachineResponse::AudioPcm {
+            channels,
+            sample_rate,
+            samples,
+        }) = command(id, MachineCommand::DrainAudio)
+        else {
+            panic!("no audio response");
+        };
+        assert_eq!((channels, sample_rate), (1, AUDIO_SAMPLE_RATE));
+        assert!(!samples.is_empty(), "samples for the time run");
         state().lock().unwrap().instances.remove(&id);
     }
 

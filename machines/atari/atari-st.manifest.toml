@@ -1,0 +1,90 @@
+machine = "atari-st"
+# EmuTOS 1.4 (192 KB UK) from `--firmware auto`: the on-disk cache, else the download by hash in firmware.toml. Nothing
+# proprietary. The scenario media come from scenarios/build.sh (software/scenarios/, not committed).
+args = ["--firmware", "auto"]
+
+# S5 (state) is not here: save states are Phase 2. S7 (hardware test programs): none is shipped for the ST. S8 has no
+# kind yet. Hatari runs headless as a black box but cannot be given keys, mouse or joystick input there, so the input
+# scenarios (S2, S2J, S2M, S3) have `exact` goldens made by retroclawd. Each was made three times, came out
+# byte-identical, and was looked at; its comment says what it shows.
+
+[reference]
+emulator = "hatari"
+version = "2.6.1"
+command = "retroclawd-tools/scripts/capture_hatari_screen.py etos192uk.img VBLS OUT.png   (hatari --machine st --memsize 1 --borders off --statusbar off; a debugger breakpoint at the VBL takes the screenshot)"
+
+# S1: the EmuTOS desktop after 1500 frames. Hatari 2.6.1 draws the same 640x400 picture (capture_hatari_screen.py 1500).
+[[scenario]]
+id = "S1"
+kind = "screen"
+frames = 1500
+golden = "atari-st/S1-desktop.png"
+golden_sha256 = "73765474b9c26d5113947d4fd20a61def826fd42ef109b48795752cb8e6126ae"
+compare = { mode = "similarity", max_mad = 2.0, normalize = true, crop = [0.0, 0.0, 0.45, 1.0], reason = "another emulator's picture, and its palette (normalize: Hatari's green is a different shade); the crop is the left part (menu bar, both drive icons, the trash) and leaves out the mouse pointer, which Hatari draws at its own start position" }
+
+# S2: keys.st's boot program echoes typed keys through BIOS Bconin/Bconout (scenarios/README.md); H and I typed show "hi"
+# at the top left of the console.
+[[scenario]]
+id = "S2"
+kind = "screen"
+frames = 600
+files = { disk = "atari/software/scenarios/keys.st" }
+actions = ["450:key_down=KeyH", "455:key_up=KeyH", "460:key_down=KeyI", "465:key_up=KeyI"]
+golden = "atari-st/S2-keys.png"
+golden_sha256 = "c1ba46e89bec835dc131035f29a396ee9b15a77206b86c3ee219d83ec3864d2c"
+compare = { mode = "exact" }
+
+# S2J: joystick 1's fire button reaches keys.st's joyvec routine, which turns palette 0 green ($040): the whole screen.
+[[scenario]]
+id = "S2J"
+kind = "screen"
+frames = 520
+files = { disk = "atari/software/scenarios/keys.st" }
+actions = ["450:key_down=Joy1Fire1"]
+golden = "atari-st/S2J-joystick.png"
+golden_sha256 = "8158ff4f26d0b25c4e0c618cd9735043871a0e3bc4a8f79659aaa10ae6fc4596"
+compare = { mode = "exact" }
+
+# S2M: the desktop with the mouse pushed into the top-left corner and moved back by (100, 60): the pointer away from
+# its start in the middle.
+[[scenario]]
+id = "S2M"
+kind = "screen"
+frames = 1330
+actions = ["1300:mouse_move=-1000,-1000", "1310:mouse_move=100,60"]
+golden = "atari-st/S2M-mouse.png"
+golden_sha256 = "9b06188f11acc45b7ddd7e054f9a1071a525253dd009d6fd6ed2393564e4a422"
+compare = { mode = "exact" }
+
+# S3: files.st, made by rcdisk with HELLO.TXT (20 bytes) and README.TXT (56 bytes), in drive A; the pointer goes to the
+# drive A icon and double-clicks it; the window "A:\*.*" lists both files and "76 bytes used in 2 items".
+[[scenario]]
+id = "S3"
+kind = "screen"
+frames = 1420
+files = { disk = "atari/software/scenarios/files.st" }
+actions = ["1300:mouse_move=-1000,-1000", "1310:mouse_move=30,20", "1320:mouse_down=left", "1321:mouse_up=left", "1323:mouse_down=left", "1324:mouse_up=left"]
+golden = "atari-st/S3-floppy.png"
+golden_sha256 = "15a7d1a15e50fa85f5d5fc6e704a70182b98d9a2233addd1bc1f0371d92bb8de"
+compare = { mode = "exact" }
+
+# S4: tone.bin (--program at $8000) plays YM2149 tone A at period 284. Yamaha's YM2149 catalog, section (1):
+# fT = fMaster / (16 TP), with the master clock the CPU clock / 4 (machines/atari/docs/hardware-facts.md, PSG) and the PAL
+# CPU clock 32 084 988 / 4 = 8 021 247 Hz: 8 021 247 / 4 / (16 x 284) = 441.31 Hz.
+[[scenario]]
+id = "S4"
+kind = "audio"
+frames = 300
+args = ["--org", "0x8000"]
+files = { program = "atari/software/scenarios/tone.bin" }
+audio = { from_s = 1.0, to_s = 5.0, tone_hz = 441.31, tone_tolerance_pct = 1.0, min_amplitude = 0.05 }
+
+# S6: a PAL colour frame is 512 x 313 = 160 256 CPU clocks (hardware-facts.md, timing). The machine runs whole instructions, so
+# a frame ends up to one instruction late: at most 170 clocks, the longest 68000 instruction (MC68000 User's Manual Table 8-7:
+# DIVS, worst case 158; Table 8-1: an absolute long word operand, 12 more). Measured: 160 263.
+[[scenario]]
+id = "S6"
+kind = "timing"
+frames = 100
+cycles_per_frame = 160256
+cycles_tolerance = 170
