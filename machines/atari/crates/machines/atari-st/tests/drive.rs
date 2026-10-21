@@ -129,3 +129,24 @@ fn a_disk_reads_not_write_protected() {
     assert!(!d.write_protect());
     assert!(StDrive::new().write_protect());
 }
+
+/// A disk going in or out while the machine runs blocks the write-protect sensor for a moment, which is how TOS
+/// notices a swap ([H?] 0.5 s, `atari_st::MEDIA_CHANGE_BYTES`); a disk there from power-on shows nothing.
+#[test]
+fn a_swap_shows_write_protect_for_a_while() {
+    let hold = atari_st::MEDIA_CHANGE_BYTES;
+    let mut f = Drives::new(2);
+    f.insert(0, image()).unwrap();
+    f.set_port_a(0x05);
+    assert!(!f.write_protect(), "in from power-on");
+    f.rotate(10);
+    f.eject(0);
+    f.insert(0, image()).unwrap();
+    assert!(f.write_protect(), "swapped in one go");
+    f.rotate(hold - 1);
+    assert!(f.write_protect());
+    f.rotate(1);
+    assert!(!f.write_protect());
+    f.eject(0);
+    assert!(f.write_protect(), "no disk");
+}

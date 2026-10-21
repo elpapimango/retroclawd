@@ -317,6 +317,17 @@ pub fn assert_same_streams(ours: &[String], reference: &[String], what: &str) {
             }
         }
     }
+    for pc in mine_all.keys() {
+        if !theirs_all.contains_key(pc) && first.is_none() {
+            first = Some((
+                usize::MAX,
+                format!(
+                    "pc={pc} runs here but not in Hatari: {:?}",
+                    mine_all[pc][0].1
+                ),
+            ));
+        }
+    }
     if let Some((_, msg)) = first {
         panic!("{what}: {msg}");
     }
@@ -398,6 +409,72 @@ pub fn assert_same_sets(ours: &[String], reference: &[String], what: &str) {
 all: {all:#?}",
             problems.len()
         );
+    }
+}
+
+/// The accesses whose line starts with one of `prefixes`, in order, exactly as logged.
+pub fn ordered(log: &[String], prefixes: &[&str]) -> Vec<String> {
+    log.iter()
+        .filter(|l| prefixes.iter().any(|p| l.starts_with(p)))
+        .cloned()
+        .collect()
+}
+
+/// Sequences that do not depend on timing, compared exactly and in order per code location over a whole run (in
+/// number too, within 5% for a long periodic one): the bytes the IKBD sent
+/// and the commands it got, and every DMA/FDC register write (the floppy commands and their set-up).
+pub fn assert_same_ordered_sequences(ours: &[String], reference: &[String], what: &str) {
+    for (name, prefixes) in [
+        ("IKBD bytes read", &["IO read.b $fffffc02"][..]),
+        ("IKBD commands", &["IO write.b $fffffc02"][..]),
+        (
+            "DMA/FDC writes",
+            &["IO write.w $ffff8604", "IO write.w $ffff8606"][..],
+        ),
+    ] {
+        // Per code location: an interrupt handler's writes (EmuTOS's VBL media check) fall between the main
+        // routine's at timing-dependent points; each location's own sequence, its order and its count, do not.
+        let by_pc = |log: Vec<String>| {
+            let mut m: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+            for l in log {
+                m.entry(l.rsplit_once("pc=").map_or("", |p| p.1).to_string())
+                    .or_default()
+                    .push(l);
+            }
+            m
+        };
+        let (mine_all, theirs_all) = (
+            by_pc(ordered(ours, prefixes)),
+            by_pc(ordered(reference, prefixes)),
+        );
+        let pcs: std::collections::BTreeSet<&String> =
+            mine_all.keys().chain(theirs_all.keys()).collect();
+        for pc in pcs {
+            let (mine, theirs) = (
+                mine_all.get(pc).cloned().unwrap_or_default(),
+                theirs_all.get(pc).cloned().unwrap_or_default(),
+            );
+            // A periodic task's count depends on the frame it starts in: up to 5% (rounded down) more or fewer
+            // entries pass, so a short sequence must match in number exactly.
+            let common = mine.len().min(theirs.len());
+            let slack = mine.len().max(theirs.len()) / 20;
+            let limit = if mine.len().abs_diff(theirs.len()) <= slack {
+                common
+            } else {
+                common + 1
+            };
+            if let Some(i) = (0..limit).find(|&i| mine.get(i) != theirs.get(i)) {
+                panic!(
+                    "{what}: {name} at pc={pc}: entry {i} differs ({} here, {} in Hatari):
+  ours:   {:?}
+  hatari: {:?}",
+                    mine.len(),
+                    theirs.len(),
+                    &mine[i.min(mine.len())..(i + 3).min(mine.len())],
+                    &theirs[i.min(theirs.len())..(i + 3).min(theirs.len())]
+                );
+            }
+        }
     }
 }
 

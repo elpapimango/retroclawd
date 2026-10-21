@@ -279,7 +279,7 @@ impl AtariSt {
     /// Takes the disk out of drive `drive`.
     pub fn eject_disk(&mut self, drive: u8) -> Option<st_floppy::Image> {
         self.bus.catch_up_fdc(self.now);
-        self.bus.dma.fdc.floppy.drive_mut(drive as usize).eject()
+        self.bus.dma.fdc.floppy.eject(drive as usize)
     }
 
     /// The disk in drive `drive`, if any.

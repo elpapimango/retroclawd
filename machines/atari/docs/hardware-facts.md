@@ -149,6 +149,7 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Commands, reports, defaults | §3-§9 (relative mouse default, threshold 1, Y=0 at top, joystick 1 events, port 0 a joystick after any joystick command) | `[H]` | *IKBD* |
 | Relative mouse record | `%111110LR` (bit 1 left, bit 0 right), dx, dy; split beyond -128..127 | `[H]` | *IKBD* §4.1 (page image) |
 | Joystick event | `$FE`/`$FF` (joystick 0/1), then `%x000yyyy` (x trigger) | `[H]` | *IKBD* §5.1 |
+| Mouse buttons in joystick mode | fire buttons, no mouse records: right = joystick 1, left = joystick 0 | `[H]` §8 for joystick mode, `[H?]` for which button | *Internals* p.69 (the buttons share the fire lines) |
 | Stick bits | bit 0 up, 1 down, 2 left, 3 right | `[H?]` | the document and *Internals* p.77 say only "a bit for each direction" |
 | Scan codes | Appendix A, 95 keys | `[H]` | *IKBD* Appendix A (page images) |
 | Version code | `$F1` | `[O]` | *Hatari io* line 148; *IKBD* §8 allows `$F0` (first release) or `$F1` (second) |
@@ -210,6 +211,7 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Index pulse | the first 64 byte times of a revolution, only with a disk | `[H?]` | — |
 | No disk | no index pulses, no data, write-protected | `[O]` | status `$E4` |
 | A disk | not write-protected | `[O]` | Hatari statuses `$24`, `$A4`, `$A6` with a disk |
+| Disk swap | write-protect reads set for 0.5 s (15 625 byte times) after a disk goes in or out while running; nothing for a disk there from power-on | `[H?]` | the sensor is blocked by the moving disk; TOS detects a change by it |
 | Motor | the motor line reaches both drives | `[H?]` | — |
 | Head range | cylinders 0-85 | `[H?]` | — |
 | Drives fitted | 2 by default, 1 with `drives = 1`; drive B absent then | `[H?]` | — |

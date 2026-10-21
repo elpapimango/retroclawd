@@ -213,3 +213,20 @@ fn scancodes_are_unique_and_match_appendix_a() {
     assert_eq!(codes.len(), SCANCODES.len());
     assert_eq!(SCANCODES.len(), 95);
 }
+
+/// §8: after a joystick command port 0 is a joystick, so the buttons are fire buttons, not a mouse: no mouse records.
+/// [H?] the right button is joystick 1's fire, the left joystick 0's (the mouse's two buttons share the joystick
+/// fire lines, *Internals* p.69; §8 assigns "the button" to joystick 1 when the mouse is off).
+#[test]
+fn buttons_are_fire_buttons_in_joystick_mode() {
+    let mut k = ready();
+    send(&mut k, &[0x14], T);
+    k.mouse_button(false, true, T);
+    assert_eq!(drain(&mut k, T), vec![0xFF, 0x80]);
+    k.mouse_button(true, true, T);
+    assert_eq!(drain(&mut k, T), vec![0xFE, 0x80]);
+    k.mouse_button(true, false, T);
+    assert_eq!(drain(&mut k, T), vec![0xFE, 0x00]);
+    k.mouse_move(10, 10, T);
+    assert_eq!(drain(&mut k, T), vec![], "no mouse records");
+}

@@ -180,6 +180,7 @@ fn emutos_1500_frames_without_a_disk_match_hatari() {
     let (m, ours) = common::run_frames_logged(rom, RamSize::M1, 1500, None);
     assert!(m.io_stop().is_none(), "{:?}", m.io_stop());
     if let Some(reference) = common::golden("emutos14-uk-io-1m-1500.txt") {
+        common::assert_same_ordered_sequences(&ours, &reference, "1500 frames");
         common::assert_same_sets(&ours, &reference, "1500 frames");
         eprintln!(
             "1500 frames: {} accesses, every code location's accesses the same as Hatari's",
@@ -203,6 +204,7 @@ fn emutos_boots_our_floppy() {
     );
     assert_eq!(m.bus().shifter().palette()[0], 0x0123);
     if let Some(reference) = common::golden("emutos14-uk-io-1m-boot.txt") {
+        common::assert_same_ordered_sequences(&ours, &reference, "boot");
         common::assert_same_sets(&ours, &reference, "boot");
         eprintln!("booting: accesses agree with Hatari's code location by code location");
     }

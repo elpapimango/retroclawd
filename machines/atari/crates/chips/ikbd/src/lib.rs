@@ -487,7 +487,14 @@ impl Ikbd {
         } else {
             self.right = down;
         }
-        if !self.mouse_enabled && !self.port0_joystick {
+        if self.port0_joystick {
+            // §8: both ports are joysticks; [H?] the right button is joystick 1's fire, the left joystick 0's.
+            let port = if left { 0 } else { 1 };
+            let bits = (self.joy[port] & 0x0F) | if down { 0x80 } else { 0 };
+            self.joystick(port as u8, bits, at);
+            return;
+        }
+        if !self.mouse_enabled {
             return;
         }
         // §9.2: "100 = mouse buttons act like keys"; key code mode presumes it.

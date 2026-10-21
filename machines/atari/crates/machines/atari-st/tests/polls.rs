@@ -2,7 +2,9 @@
 //! else still shows.
 
 mod common;
-use common::{assert_same_sets, collapse_polls, comparable, streams};
+use common::{
+    assert_same_ordered_sequences, assert_same_sets, collapse_polls, comparable, streams,
+};
 
 fn v(lines: &[&str]) -> Vec<String> {
     lines.iter().map(|s| s.to_string()).collect()
@@ -158,4 +160,35 @@ fn sets_mask_the_transient_bits() {
     let a = v(&["IO read.b $fffffa01 = $b1 pc=fc69be"]);
     let b = v(&["IO read.b $fffffa01 = $a1 pc=fc69be"]);
     assert!(std::panic::catch_unwind(|| assert_same_sets(&a, &b, "I4")).is_err());
+}
+
+/// The ordered sequences see what a set cannot: the order of the IKBD's bytes and a missing FDC command.
+#[test]
+fn ordered_sequences_see_order_and_count() {
+    let a = v(&[
+        "IO read.b $fffffc02 = $00 pc=fc07a6",
+        "IO read.b $fffffc02 = $01 pc=fc07a6",
+    ]);
+    let b = v(&[
+        "IO read.b $fffffc02 = $01 pc=fc07a6",
+        "IO read.b $fffffc02 = $00 pc=fc07a6",
+    ]);
+    assert_same_sets(&a, &b, "sets miss it");
+    assert!(std::panic::catch_unwind(|| assert_same_ordered_sequences(&a, &b, "order")).is_err());
+    let c = v(&[
+        "IO write.w $ffff8604 = $0080 pc=fc3744",
+        "IO write.w $ffff8604 = $0080 pc=fc3744",
+    ]);
+    let d = v(&["IO write.w $ffff8604 = $0080 pc=fc3744"]);
+    assert!(std::panic::catch_unwind(|| assert_same_ordered_sequences(&c, &d, "count")).is_err());
+    assert_same_ordered_sequences(&a, &a, "same");
+    // A long periodic sequence may be a few entries longer on one side.
+    let long: Vec<String> = (0..100)
+        .map(|_| "IO write.w $ffff8606 = $0080 pc=fc38a6".to_string())
+        .collect();
+    assert_same_ordered_sequences(&long, &long[..97], "periodic");
+    assert!(
+        std::panic::catch_unwind(|| assert_same_ordered_sequences(&long, &long[..90], "too many"))
+            .is_err()
+    );
 }

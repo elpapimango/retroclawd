@@ -14,6 +14,9 @@ use wd1770::Floppy;
 
 /// [H?] how long the index sensor sees the hole, in byte times.
 pub const INDEX_BYTES: usize = 64;
+/// [H?] how long the write-protect sensor stays blocked while a disk goes in or out, in byte times (0.5 s). TOS
+/// notices a disk change by this transition.
+pub const MEDIA_CHANGE_BYTES: u64 = 15_625;
 /// [H?] the last cylinder the head can reach.
 const MAX_CYLINDER: u8 = 85;
 
@@ -29,6 +32,8 @@ pub struct StDrive {
     track: Option<(u8, u8, Vec<u16>)>,
     /// The controller wrote to the disk (Phase 2 work).
     write_attempted: bool,
+    /// Byte times the write-protect sensor stays blocked by a disk going in or out.
+    swap_hold: u64,
 }
 
 impl StDrive {
@@ -111,7 +116,7 @@ impl Floppy for StDrive {
     }
 
     fn write_protect(&self) -> bool {
-        self.image.is_none()
+        self.image.is_none() || self.swap_hold > 0
     }
 
     fn seek_pulse(&mut self, inward: bool) {
@@ -142,6 +147,8 @@ pub struct Drives {
     fitted: u8,
     selected: Option<usize>,
     side: u8,
+    /// Byte times since power-on (the controller's clock as the drives see it).
+    elapsed: u64,
 }
 
 impl Drives {
@@ -151,6 +158,7 @@ impl Drives {
             fitted: fitted.clamp(1, 2),
             selected: None,
             side: 0,
+            elapsed: 0,
         }
     }
 
@@ -176,7 +184,24 @@ impl Drives {
             ));
         }
         self.drives[n].insert(image);
+        self.hold_sensor(n);
         Ok(())
+    }
+
+    /// Takes the disk out of drive `n`.
+    pub fn eject(&mut self, n: usize) -> Option<Image> {
+        let image = self.drives[n & 1].eject();
+        if image.is_some() {
+            self.hold_sensor(n & 1);
+        }
+        image
+    }
+
+    /// A disk going in or out while the machine runs blocks the write-protect sensor; at power-on it is simply there.
+    fn hold_sensor(&mut self, n: usize) {
+        if self.elapsed > 0 {
+            self.drives[n].swap_hold = MEDIA_CHANGE_BYTES;
+        }
     }
 
     /// PSG port A's output: drive selects (active low) and side.
@@ -220,7 +245,9 @@ impl Floppy for Drives {
     }
 
     fn rotate(&mut self, bytes: u64) {
+        self.elapsed += bytes;
         for d in &mut self.drives {
+            d.swap_hold = d.swap_hold.saturating_sub(bytes);
             d.rotate(bytes);
         }
     }
