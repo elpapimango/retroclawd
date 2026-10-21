@@ -157,4 +157,5 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Output queue | 256 bytes; a packet that does not fit is dropped | `[H?]` | *IKBD* §9.14 "<tbd>"; the 6301 has 128 bytes of RAM (*Internals* p.69) |
 | Memory load/read/execute (`$20-$22`) | consumed; reads answer zeros; nothing executes | `[H?]` | the 6301's memory is not modelled |
 | Joystick monitoring, fire monitoring, joystick key code (`$17-$19`) | parameters consumed, no reports | `[H?]` | Phase 2 |
+| Keyboard line | 7812.5 baud, 8N1, 10 bits a character (1024 CPU cycles a bit) | `[H]` *Internals* p.47; the IKBD's own bit clock equal to the ACIA's `[H?]` | — |
 | Key names | the host's key names for the same position (`KeyA`, `Digit1`, `Escape`, `NumpadEnter`, `IntlBackslash` for the ISO key, `Undo`, `Help`) | — | a naming choice, not a hardware fact |

@@ -100,16 +100,46 @@ pub fn io_lines(m: &AtariSt) -> Vec<String> {
     m.io_log().iter().map(|a| a.hatari_line()).collect()
 }
 
-/// The polling rule: every run of consecutive identical accesses (address, size, direction, value and PC: the whole
-/// line) becomes one entry. How often a loop polls depends on emulator timing, not on a hardware fact.
+/// Lines a repeat is looked for in (see `collapse_polls`).
+pub const POLL_WINDOW: usize = 4;
+
+/// The polling rule: a line identical (address, size, direction, value and PC: the whole line) to one of the last
+/// `POLL_WINDOW` lines kept is dropped. How often a loop polls a status register, and how many timer interrupts fall
+/// between its polls, depends on emulator timing, not on a hardware fact; a changed value, a new address or PC, or a
+/// different order still shows. Applied the same way to both logs.
 pub fn collapse_polls(log: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(log.len());
     for line in log {
-        if out.last() != Some(line) {
+        let recent = &out[out.len().saturating_sub(POLL_WINDOW)..];
+        if !recent.contains(line) {
             out.push(line.clone());
         }
     }
     out
+}
+
+/// Reads whose value depends on the exact cycle of the read rather than on a hardware fact: the MFP timer data
+/// registers (`$FFFA1F-$FFFA25`) count down while their timer runs, so a few cycles of timing difference change the
+/// value. Their value is masked; the access itself still counts.
+const TIMING_DEPENDENT_READS: [&str; 4] = [
+    "IO read.b $fffffa1f",
+    "IO read.b $fffffa21",
+    "IO read.b $fffffa23",
+    "IO read.b $fffffa25",
+];
+
+/// A log ready for comparison: timing-dependent values masked, then the polling rule.
+pub fn comparable(log: &[String]) -> Vec<String> {
+    let masked: Vec<String> = log
+        .iter()
+        .map(|line| match line.split_once(" = $") {
+            Some((head, tail)) if TIMING_DEPENDENT_READS.contains(&head) => {
+                format!("{head} = $?? {}", tail.split_once(' ').map_or("", |t| t.1))
+            }
+            _ => line.clone(),
+        })
+        .collect();
+    collapse_polls(&masked)
 }
 
 /// Asserts `ours` equals the first `ours.len()` lines of `reference`, showing the first difference.

@@ -62,6 +62,13 @@ impl AtariSt {
             CLASS_VIDEO,
             Event::LineEnd,
         );
+        // The IKBD powers up with the machine: its version code goes out after the self-test.
+        let cps = self.clock_hz();
+        if let Some(k) = self.bus.acias.ikbd() {
+            k.tick_clock(0, cps);
+        }
+        self.bus.acias.ports[0].pull_rx(0);
+        self.schedule_acia(0);
         let clocks = self.cpu.reset(&mut self.bus);
         self.advance(clocks);
     }
@@ -204,6 +211,10 @@ impl AtariSt {
             self.bus.raise_vbl();
             self.bus.catch_up_mfp(at);
             self.bus.psg.catch_up(at);
+            let cps = self.clock_hz();
+            if let Some(k) = self.bus.acias.ikbd() {
+                k.tick_clock(at, cps);
+            }
             self.render();
             // A mono monitor is refused at creation, so this cannot fail later.
             if let Ok(g) = scheduler::geometry(self.bus.shifter.sync_50hz(), self.bus.monitor) {
@@ -250,9 +261,43 @@ impl AtariSt {
     pub fn attach_serial_peer(&mut self, port: usize, peer: Box<dyn SerialPeer + Send>) {
         let now = self.now;
         let p = &mut self.bus.acias.ports[port];
-        p.peer = peer;
+        p.peer = crate::acia::Peer::Other(peer);
+        p.drop_rx();
         p.pull_rx(now);
         self.schedule_acia(port);
+    }
+
+    /// Runs `f` on the IKBD at the current time, then lets the keyboard ACIA collect what it queued.
+    fn with_ikbd(&mut self, f: impl FnOnce(&mut ikbd::Ikbd, u64)) {
+        let now = self.now;
+        if let Some(k) = self.bus.acias.ikbd() {
+            f(k, now);
+        }
+        self.bus.acias.ports[0].pull_rx(now);
+        self.schedule_acia(0);
+    }
+
+    /// A key of the ST keyboard went down or up; `name` is one of `ikbd::SCANCODES`.
+    pub fn key_event(&mut self, name: &str, down: bool) -> Result<(), String> {
+        let code = ikbd::scancode(name)
+            .ok_or_else(|| format!("the Atari ST has no key named {name:?}"))?;
+        self.with_ikbd(|k, now| k.key(code, down, now));
+        Ok(())
+    }
+
+    /// Mouse motion in mouse clicks (X right, Y down positive).
+    pub fn mouse_motion(&mut self, dx: i32, dy: i32) {
+        self.with_ikbd(|k, now| k.mouse_move(dx, dy, now));
+    }
+
+    /// A mouse button (`left` false = right) went down or up.
+    pub fn mouse_button(&mut self, left: bool, down: bool) {
+        self.with_ikbd(|k, now| k.mouse_button(left, down, now));
+    }
+
+    /// Joystick `port` (0 or 1) now reads `bits` (bit 7 fire, bits 0-3 the stick; see `ikbd::Ikbd::joystick`).
+    pub fn joystick(&mut self, port: u8, bits: u8) {
+        self.with_ikbd(|k, now| k.joystick(port, bits, now));
     }
 
     /// When ACIA `port`'s transmitter last took a character into its shift register.

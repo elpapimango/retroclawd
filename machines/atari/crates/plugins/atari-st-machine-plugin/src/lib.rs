@@ -14,10 +14,10 @@ use atari_st::{Accuracy, AtariSt, Config, Monitor, RamSize, Region};
 use machine::{AUDIO_SAMPLE_RATE, Machine};
 use plugin_api::{
     ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, BinaryBlob, ChipSnapshot, CodecError, CpuFamily,
-    CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine,
+    CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine, HostMouseButton,
     MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest,
     MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse,
-    MachineInstanceHandle, MachineMetadata, MachineOptionInfo, MachineOptionKind,
+    MachineInstanceHandle, MachineKeyInfo, MachineMetadata, MachineOptionInfo, MachineOptionKind,
     MachinePluginVTableV1, MachineProfile, MachineResponse, MediaSnapshot, NamedValue,
     PluginDescriptorV1, PluginKind, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RcBuffer, RcCallResult,
     RcSlice, RcStatus, RegisterField, RegisterSnapshot, StatusCode,
@@ -82,6 +82,8 @@ struct InstanceRecord {
     io_trace_file: Option<PathBuf>,
     io_trace_written: bool,
     diag_file: Option<PathBuf>,
+    /// The host's joystick switches per ST port (bit 7 fire, bits 0-3 the stick).
+    joy: [u8; 2],
 }
 
 impl InstanceRecord {
@@ -292,7 +294,7 @@ fn machine_profile() -> MachineProfile {
                 "Write the diagnostic report of a stop at an unemulated device here (default: stderr)",
             ),
         ],
-        key_names: Vec::new(),
+        key_names: key_names(),
         cpus: vec![CpuInfo {
             id: "main".to_string(),
             name: "MC68000".to_string(),
@@ -301,6 +303,53 @@ fn machine_profile() -> MachineProfile {
         }],
         axis_names: Vec::new(),
     }
+}
+
+/// Host joystick names: `Joy1*` is the ST's joystick port (port 1), `Joy2*` the mouse port (port 0); the bit is the
+/// IKBD's (`ikbd::Ikbd::joystick`).
+const JOYSTICK_KEYS: [(&str, u8, u8); 10] = [
+    ("Joy1Up", 1, 0x01),
+    ("Joy1Down", 1, 0x02),
+    ("Joy1Left", 1, 0x04),
+    ("Joy1Right", 1, 0x08),
+    ("Joy1Fire1", 1, 0x80),
+    ("Joy2Up", 0, 0x01),
+    ("Joy2Down", 0, 0x02),
+    ("Joy2Left", 0, 0x04),
+    ("Joy2Right", 0, 0x08),
+    ("Joy2Fire1", 0, 0x80),
+];
+
+/// The characters the unshifted keys type, from the keytops in the IKBD document's Appendix A (letters and digits
+/// need none).
+const KEY_CHARS: &[(&str, &str)] = &[
+    ("Minus", "-"),
+    ("Equal", "="),
+    ("BracketLeft", "["),
+    ("BracketRight", "]"),
+    ("Semicolon", ";"),
+    ("Quote", "'"),
+    ("Backquote", "`"),
+    ("Backslash", "\\"),
+    ("Comma", ","),
+    ("Period", "."),
+    ("Slash", "/"),
+    ("Space", " "),
+];
+
+fn key_names() -> Vec<MachineKeyInfo> {
+    let mut keys: Vec<MachineKeyInfo> = atari_st::ikbd::SCANCODES
+        .iter()
+        .map(|(name, _)| MachineKeyInfo::new(name))
+        .chain(
+            JOYSTICK_KEYS
+                .iter()
+                .map(|(name, ..)| MachineKeyInfo::new(name)),
+        )
+        .collect();
+    let missing = plugin_api::set_key_chars(&mut keys, KEY_CHARS);
+    debug_assert!(missing.is_empty(), "{missing:?}");
+    keys
 }
 
 fn blob<'a>(roms: &'a [BinaryBlob], key: &str) -> Option<&'a [u8]> {
@@ -417,6 +466,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             io_trace_file,
             io_trace_written: false,
             diag_file,
+            joy: [0; 2],
         },
     );
     Ok(MachineCreateResponse { instance, metadata })
@@ -662,11 +712,39 @@ fn handle_machine_command(
             disks: Vec::new(),
             cartridge: None,
         })),
-        MachineCommand::SetBorder { .. }
-        | MachineCommand::KeyEvent { .. }
-        | MachineCommand::MouseMotion { .. }
-        | MachineCommand::MouseButton { .. }
-        | MachineCommand::MouseWheel { .. } => Ok(MachineResponse::Ack),
+        MachineCommand::KeyEvent { key, pressed } => {
+            if let Some(&(_, port, bit)) = JOYSTICK_KEYS
+                .iter()
+                .find(|(n, ..)| n.eq_ignore_ascii_case(&key))
+            {
+                let p = port as usize;
+                record.joy[p] = if pressed {
+                    record.joy[p] | bit
+                } else {
+                    record.joy[p] & !bit
+                };
+                record.machine.joystick(port, record.joy[p]);
+            } else {
+                record.machine.key_event(&key, pressed)?;
+            }
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::MouseMotion { dx, dy } => {
+            record.machine.mouse_motion(dx as i32, dy as i32);
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::MouseButton { button, pressed } => {
+            match button {
+                HostMouseButton::Left => record.machine.mouse_button(true, pressed),
+                HostMouseButton::Right => record.machine.mouse_button(false, pressed),
+                // The ST mouse has two buttons.
+                HostMouseButton::Middle | HostMouseButton::Other(_) => {}
+            }
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::SetBorder { .. } | MachineCommand::MouseWheel { .. } => {
+            Ok(MachineResponse::Ack)
+        }
         MachineCommand::AxisEvent { .. } => Err("this machine has no analogue axes".to_string()),
         MachineCommand::WriteIo { .. } | MachineCommand::SetPortWatches { .. } => Err(
             "unsupported: the 68000 has no I/O port space (devices are memory-mapped)".to_string(),
@@ -978,6 +1056,73 @@ mod tests {
 "
         );
         let _ = std::fs::remove_file(&io);
+    }
+
+    fn command(
+        id: MachineInstanceHandle,
+        command: MachineCommand,
+    ) -> Result<MachineResponse, String> {
+        let mut state = state().lock().unwrap();
+        let record = state.instances.get_mut(&id).unwrap();
+        handle_machine_command(record, command)
+    }
+
+    #[test]
+    fn profile_lists_atari_key_names() {
+        let p = machine_profile();
+        let names: Vec<&str> = p.key_names.iter().map(|k| k.name.as_str()).collect();
+        for n in [
+            "KeyA",
+            "Space",
+            "Help",
+            "Undo",
+            "NumpadEnter",
+            "IntlBackslash",
+            "Joy1Up",
+            "Joy1Fire1",
+            "Joy2Left",
+        ] {
+            assert!(names.contains(&n), "{n}");
+        }
+        assert_eq!(names.len(), atari_st::ikbd::SCANCODES.len() + 10);
+        let chars = |n: &str| {
+            p.key_names
+                .iter()
+                .find(|k| k.name == n)
+                .unwrap()
+                .chars
+                .clone()
+        };
+        assert_eq!(chars("Semicolon"), ";");
+        assert_eq!(chars("Space"), " ");
+    }
+
+    #[test]
+    fn unknown_key_name_is_an_error() {
+        let id = create(&[0x60FE], Vec::new());
+        let r = command(
+            id,
+            MachineCommand::KeyEvent {
+                key: "NoSuchKey".to_string(),
+                pressed: true,
+            },
+        );
+        assert!(r.unwrap_err().contains("NoSuchKey"));
+        for key in ["KeyA", "Joy1Fire1"] {
+            let r = command(
+                id,
+                MachineCommand::KeyEvent {
+                    key: key.to_string(),
+                    pressed: true,
+                },
+            );
+            assert!(matches!(r, Ok(MachineResponse::Ack)), "{key}");
+        }
+        assert!(matches!(
+            command(id, MachineCommand::MouseMotion { dx: 3, dy: -1 }),
+            Ok(MachineResponse::Ack)
+        ));
+        state().lock().unwrap().instances.remove(&id);
     }
 
     #[test]

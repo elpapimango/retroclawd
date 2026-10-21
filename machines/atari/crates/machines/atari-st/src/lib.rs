@@ -17,6 +17,7 @@ mod scheduler;
 pub use acia::{NullPeer, SerialPeer};
 pub use bus::{HBL_LEVEL, IoStop, MFP_LEVEL, ROM_BASE, ROM_SIZE, StBus, StopReason, VBL_LEVEL};
 pub use config::{Accuracy, Config, RamSize, Region};
+pub use ikbd;
 pub use io::{Decode, Device, decode};
 pub use iolog::IoAccess;
 pub use machine::AtariSt;

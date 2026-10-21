@@ -95,23 +95,49 @@ fn emutos_trace_matches_hatari_up_to_our_stop() {
     eprintln!("the first {n} PCs agree with Hatari");
 }
 
-/// How far our I/O log agrees with Hatari's under the polling rule: the keyboard ACIA reset until the IKBD exists.
-const AGREES_UP_TO: usize = 110;
-
-/// Every I/O access we make agrees with Hatari's, in order, under the polling rule (`common::collapse_polls`).
+/// Every I/O access we make agrees with Hatari's, in order, as `common::comparable` compares them.
 #[test]
 fn emutos_io_log_matches_hatari() {
     let (Some(rom), Some(reference)) = (emutos(), hatari_io("1m")) else {
         return;
     };
     let ours = common::io_lines(&run(rom));
-    let n = ours.len().min(AGREES_UP_TO);
     common::assert_prefix(
-        &common::collapse_polls(&ours[..n]),
-        &common::collapse_polls(&reference),
+        &common::comparable(&ours),
+        &common::comparable(&reference),
         "1m",
     );
-    eprintln!("the first {n} I/O accesses agree with Hatari");
+    eprintln!("the first {} I/O accesses agree with Hatari", ours.len());
+}
+
+/// Slice 4's end: with the ACIAs and the IKBD, EmuTOS runs to its first DMA access, every access before it equal to
+/// Hatari's under the polling rule, for every RAM size.
+#[test]
+fn emutos_runs_to_the_dma_chip() {
+    let Some(rom) = emutos() else { return };
+    for (name, ram) in common::RAM_SIZES {
+        let a = run_with(rom.clone(), ram);
+        let stop = a.io_stop().expect("stopped");
+        assert_eq!(
+            stop.reason,
+            atari_st::StopReason::NotEmulated(atari_st::Device::Dma),
+            "--ram {name}"
+        );
+        let ours = common::io_lines(&a);
+        assert_eq!(
+            ours.last().unwrap(),
+            "IO write.w $ffff8606 = $0080 pc=fc3734",
+            "--ram {name}"
+        );
+        if let Some(reference) = hatari_io(name) {
+            let (ours, reference) = (common::comparable(&ours), common::comparable(&reference));
+            common::assert_prefix(&ours, &reference, name);
+            eprintln!(
+                "--ram {name}: {} collapsed I/O accesses compared with Hatari",
+                ours.len()
+            );
+        }
+    }
 }
 
 /// EmuTOS's RAM sizing writes the same `$FF8001` values as in Hatari, for every `--ram`.

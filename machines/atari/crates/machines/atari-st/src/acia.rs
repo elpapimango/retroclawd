@@ -13,6 +13,7 @@
 //!
 //! Each port has one scheduled service event; a generation number tells a stale one apart.
 
+use ikbd::Ikbd;
 use mc6850::Acia;
 
 /// The other end of a serial line.
@@ -39,12 +40,47 @@ impl SerialPeer for NullPeer {
     }
 }
 
+/// [H] *Internals* p.47: the keyboard line runs at 7812.5 baud, 8N1; [H?] the IKBD's own clock gives the same bit
+/// time as the ACIA's ÷64 (1024 CPU cycles), 10 bits a character.
+pub const IKBD_FRAME_CYCLES: u64 = 10 * 64 * ACIA_DIVIDER;
+
+impl SerialPeer for Ikbd {
+    fn receive(&mut self, byte: u8, at: u64) {
+        self.command_byte(byte, at);
+    }
+
+    fn next_byte(&mut self, now: u64) -> Option<(u64, u8)> {
+        let at = self.next_output_at()?;
+        let byte = self.pop_output(at)?;
+        Some((at.max(now), byte))
+    }
+
+    fn frame_cycles(&self) -> u64 {
+        IKBD_FRAME_CYCLES
+    }
+}
+
+/// What a port's line is connected to: the IKBD (the keyboard port), or something else (tests, the MIDI port).
+pub enum Peer {
+    Ikbd(Box<Ikbd>),
+    Other(Box<dyn SerialPeer + Send>),
+}
+
+impl Peer {
+    fn get(&mut self) -> &mut dyn SerialPeer {
+        match self {
+            Peer::Ikbd(k) => k.as_mut(),
+            Peer::Other(p) => p.as_mut(),
+        }
+    }
+}
+
 /// CPU clocks per ACIA clock.
 pub const ACIA_DIVIDER: u64 = 16;
 
 pub struct Port {
     pub(crate) chip: Acia,
-    pub(crate) peer: Box<dyn SerialPeer + Send>,
+    pub(crate) peer: Peer,
     /// The cycle of the last control-register write: the bit clock's phase.
     phase: u64,
     /// The transmitter takes the TDR at this cycle.
@@ -61,7 +97,7 @@ pub struct Port {
 }
 
 impl Port {
-    fn new(peer: Box<dyn SerialPeer + Send>) -> Self {
+    fn new(peer: Peer) -> Self {
         Self {
             chip: Acia::new(),
             peer,
@@ -117,12 +153,17 @@ impl Port {
         self.tx_start = Some(self.phase + since.div_ceil(bit) * bit);
     }
 
+    /// Forgets a character on its way from the old peer (a new cable).
+    pub(crate) fn drop_rx(&mut self) {
+        self.rx = None;
+    }
+
     /// Asks the peer for its next character when the receive line is free.
     pub(crate) fn pull_rx(&mut self, now: u64) {
         if self.rx.is_none()
-            && let Some((start, byte)) = self.peer.next_byte(now)
+            && let Some((start, byte)) = self.peer.get().next_byte(now)
         {
-            self.rx = Some((start.max(now) + self.peer.frame_cycles(), byte));
+            self.rx = Some((start.max(now) + self.peer.get().frame_cycles(), byte));
         }
     }
 
@@ -140,7 +181,9 @@ impl Port {
             if self.tx_end == Some(t) {
                 self.tx_end = None;
                 if let Some(byte) = self.chip.take_tx() {
-                    self.peer.receive(byte, t);
+                    self.peer.get().receive(byte, t);
+                    // A command may have a reply.
+                    self.pull_rx(t);
                 }
                 // A character already waiting in the TDR follows back to back.
                 if self.chip.start_tx() {
@@ -169,13 +212,24 @@ pub struct Acias {
 impl Acias {
     pub fn new() -> Self {
         Self {
-            ports: [Port::new(Box::new(NullPeer)), Port::new(Box::new(NullPeer))],
+            ports: [
+                Port::new(Peer::Ikbd(Box::new(Ikbd::new()))),
+                Port::new(Peer::Other(Box::new(NullPeer))),
+            ],
         }
     }
 
     /// GPIP I4: high unless either ACIA asserts its IRQ.
     pub(crate) fn gpip_level(&self) -> bool {
         !self.ports.iter().any(Port::irq_line)
+    }
+
+    /// The IKBD, when it is connected to the keyboard port.
+    pub(crate) fn ikbd(&mut self) -> Option<&mut Ikbd> {
+        match &mut self.ports[0].peer {
+            Peer::Ikbd(k) => Some(k),
+            Peer::Other(_) => None,
+        }
     }
 
     pub(crate) fn tx_started_at(&self, port: usize) -> Option<u64> {
