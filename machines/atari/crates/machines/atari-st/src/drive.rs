@@ -4,8 +4,9 @@
 //!   selects are active low (the `$07` TOS writes deselects both, [O]) and bit 0 clear chooses side 1.
 //! - [H?] one revolution is `st_floppy::TRACK_BYTES` byte times (300 rpm at 250 kbit/s); the index pulse is the
 //!   first [`INDEX_BYTES`] bytes of the revolution, and only a disk turning in a drive makes one.
-//! - [O] a drive without a disk reads write-protected (status `$E4` in Hatari); [H?] in Phase 1 every disk reads
-//!   write-protected too, since writing arrives in Phase 2.
+//! - [O] a drive without a disk reads write-protected (status `$E4` in Hatari), one with a disk does not (`$24`,
+//!   `$A4`). Writing arrives in Phase 2: a byte the controller writes to a disk is recorded as an attempt, and the
+//!   machine stops there as "not emulated" rather than lose it.
 //! - [H?] the motor line reaches both drives, so every drive with a disk turns.
 
 use st_floppy::{Image, TRACK_BYTES};
@@ -26,6 +27,8 @@ pub struct StDrive {
     index_count: u32,
     /// The track under the head, synthesized from the image (cylinder, side, bytes).
     track: Option<(u8, u8, Vec<u16>)>,
+    /// The controller wrote to the disk (Phase 2 work).
+    write_attempted: bool,
 }
 
 impl StDrive {
@@ -108,7 +111,7 @@ impl Floppy for StDrive {
     }
 
     fn write_protect(&self) -> bool {
-        true
+        self.image.is_none()
     }
 
     fn seek_pulse(&mut self, inward: bool) {
@@ -124,7 +127,9 @@ impl Floppy for StDrive {
     }
 
     fn write(&mut self, _: u16) {
-        // Write-protected in Phase 1: the controller never writes.
+        if self.image.is_some() {
+            self.write_attempted = true;
+        }
         self.rotate(1);
     }
 }
@@ -183,6 +188,15 @@ impl Drives {
             _ => None,
         };
         self.side = if value & 0x01 == 0 { 1 } else { 0 };
+    }
+
+    /// Whether the controller has written to a disk since the last call.
+    pub fn take_write_attempt(&mut self) -> bool {
+        let mut any = false;
+        for d in &mut self.drives {
+            any |= std::mem::take(&mut d.write_attempted);
+        }
+        any
     }
 
     fn sel(&self) -> Option<&StDrive> {
@@ -244,8 +258,9 @@ impl Floppy for Drives {
     }
 
     fn write(&mut self, byte: u16) {
-        for d in &mut self.drives {
-            d.write(byte);
+        match self.selected {
+            Some(n) => self.drives[n].write(byte),
+            None => self.drives.iter_mut().for_each(|d| d.rotate(1)),
         }
     }
 }

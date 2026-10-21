@@ -137,6 +137,11 @@ impl AtariSt {
         self.bus.io_log()
     }
 
+    /// The I/O accesses logged since the last call, removed: a long run can be logged in pieces.
+    pub fn take_io_log(&mut self) -> Vec<crate::iolog::IoAccess> {
+        self.bus.take_io_log()
+    }
+
     pub fn trace_full(&self) -> bool {
         self.diag.trace_full()
     }

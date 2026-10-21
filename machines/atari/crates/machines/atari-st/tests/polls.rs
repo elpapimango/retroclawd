@@ -2,7 +2,7 @@
 //! else still shows.
 
 mod common;
-use common::{collapse_polls, comparable, streams};
+use common::{assert_same_sets, collapse_polls, comparable, streams};
 
 fn v(lines: &[&str]) -> Vec<String> {
     lines.iter().map(|s| s.to_string()).collect()
@@ -117,4 +117,45 @@ fn streams_ignore_interleaving_but_not_order_within_a_pc() {
     assert_eq!(streams(&a), streams(&b));
     let c = v(&["B pc=1", "A pc=1", "I pc=9"]);
     assert_ne!(streams(&a), streams(&c));
+}
+
+/// Hatari prints the CPU's effective address; the bus has 24 bits, so `$00ff8240` and `$ffff8240` are one register.
+#[test]
+fn the_top_address_byte_is_not_compared() {
+    let a = v(&["IO write.w $00ff8240 = $0123 pc=1022"]);
+    let b = v(&["IO write.w $ffff8240 = $0123 pc=1022"]);
+    assert_eq!(comparable(&a), comparable(&b));
+    assert_eq!(streams(&a), streams(&b));
+}
+
+/// The same accesses at each location in another order pass; a different value, or a location only one log has,
+/// does not.
+#[test]
+fn sets_ignore_order_at_a_location_but_not_values() {
+    let a = v(&["W $25 pc=1", "W $23 pc=1", "R pc=2"]);
+    let b = v(&["W $23 pc=1", "W $25 pc=1", "R pc=2"]);
+    assert_same_sets(&a, &b, "order");
+    let c = v(&["W $23 pc=1", "W $27 pc=1", "R pc=2"]);
+    assert!(std::panic::catch_unwind(|| assert_same_sets(&a, &c, "value")).is_err());
+    let d = v(&["W $25 pc=1", "W $23 pc=1"]);
+    assert!(std::panic::catch_unwind(|| assert_same_sets(&a, &d, "missing")).is_err());
+}
+
+/// The long-run set comparison does not compare GPIP I5 or the FDC's index bit; other bits still count.
+#[test]
+fn sets_mask_the_transient_bits() {
+    assert_same_sets(
+        &v(&[
+            "IO read.b $fffffa01 = $91 pc=fc69be",
+            "IO read.w $ffff8604 = $ff26 pc=fc38b6",
+        ]),
+        &v(&[
+            "IO read.b $fffffa01 = $b1 pc=fc69be",
+            "IO read.w $ffff8604 = $0024 pc=fc38b6",
+        ]),
+        "transients",
+    );
+    let a = v(&["IO read.b $fffffa01 = $b1 pc=fc69be"]);
+    let b = v(&["IO read.b $fffffa01 = $a1 pc=fc69be"]);
+    assert!(std::panic::catch_unwind(|| assert_same_sets(&a, &b, "I4")).is_err());
 }

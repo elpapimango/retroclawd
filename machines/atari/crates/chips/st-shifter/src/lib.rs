@@ -58,7 +58,8 @@ impl Shifter {
             (0xFF_8201, false) => self.base_high as u16,
             (0xFF_8203, false) => self.base_mid as u16,
             (0xFF_820A, false) => self.sync as u16,
-            (0xFF_8260, false) => self.resolution as u16,
+            // [O] bits 7-2 read as 1: Hatari reads $FC with resolution 0 (EmuTOS at $FC69C2).
+            (0xFF_8260, false) => 0xFC | self.resolution as u16,
             (a @ 0xFF_8240..=0xFF_825F, w) => {
                 let colour = self.palette[((a - 0xFF_8240) / 2) as usize];
                 match (w, a & 1) {

@@ -64,7 +64,8 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Counter timing | unknown: an access stops | — | — |
 | Sync mode | `$FF820A` bit 1: 0 = 60 Hz, 1 = 50 Hz; bit 0: external sync | `[H]` | *Internals* p.57 |
 | Palette | 16 words `$FF8240-$FF825E`, `$0RGB` with 3 bits per gun (`$700`, `$070`, `$007`); medium resolution uses 0-3; read/write | `[H]` | *Internals* p.57 |
-| Unused bits read back | palette `$F888` bits, `$FF820A` bits 7-2 and `$FF8260` bits 7-2 read as 0 | `[H?]` | not documented in *Internals* |
+| Unused bits read back | palette `$F888` bits and `$FF820A` bits 7-2 read as 0 | `[H?]` | not documented in *Internals* |
+| `$FF8260` bits 7-2 | read as 1 | `[O]` | Hatari reads `$FC` in low resolution (EmuTOS at `$FC69C2`) |
 | Resolution | `$FF8260` bits 1-0: 0 = 320×200 4 planes, 1 = 640×200 2 planes, 2 = 640×400 1 plane | `[H]` | *Internals* p.58 |
 | Resolution 3 | treated as a black picture | `[H?]` | reserved |
 | High resolution colour | palette 0 bit 0: clear = black on white, set = inverted | `[H]` | *Internals* p.58 |
@@ -184,7 +185,7 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | `$FF8604` read, upper byte | reads as 1s | `[H]` | *Internals* p.59 ("consistently read 1"); Hatari shows `$00` — a known oracle difference, masked in the comparisons |
 | `$FF8606` write (mode) | bit 1 A0, bit 2 A1, bit 3 HDC, bit 4 sector count, bit 6 DMA off, bit 8 write | `[H]` | *Internals* p.59 (with `pdftotext -raw`) |
 | Mode bit 7 | described as FDC/HDC as well; not decoded | `[H?]` | *Internals* lists bits 3 and 7 both as FDC/HDC |
-| `$FF8606` read (status) | bit 0 error (0 = none), bit 1 sector count not zero, bit 2 FDC DRQ; other bits 0 | `[H]` for bits 0-2, `[H?]` for the rest | *Internals* p.59 |
+| `$FF8606` read (status) | bit 0 set = no error, bit 1 sector count not zero, bit 2 FDC DRQ; other bits 0 | bits 1-2 `[H]`, bit 0 `[O]`, the rest `[H?]` | *Internals* p.58 prints bit 0 "0=no error"; Hatari reads `$..b1` after a good transfer and EmuTOS retries a read when bit 0 is clear, so the book is taken to be wrong here. Hatari's upper bits are leftovers (`$79b1`), masked in the comparisons |
 | DMA address | `$FF8609` high, `$FF860B` mid, `$FF860D` low; read and write; written low first | `[H]` | *Internals* p.59 |
 | FIFO | 16 bytes, written to memory a burst at a time; no bus stall in Phase 1 | `[H?]` | design §8 |
 | Sector count | 8 bits, counts 512-byte sectors; the DMA stops taking bytes at 0 | `[H?]` | — |
@@ -193,6 +194,8 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | DMA into I/O or nonexistent memory | no fact: the machine stops | — | — |
 | FDC | WD1772, clocked by the CPU clock (8 MHz), so its times are the data sheet's | `[D]` *WD177X*; the clock `[H?]` | — |
 | Type I status S5 | set once the spin-up phase is over (also when skipped with h = 1) | `[D]` | *WD177X* status register description; `[O]` `$E4` after RESTORE `$0B` |
+| Force Interrupt | during a command only Busy resets; when idle the status becomes Type I; MO (the motor output) is kept either way | `[D]` | *WD177X* status register description and "MO signal goes back to a logic 0" after idle revolutions |
+| Writing (WRITE SECTOR, WRITE TRACK) | not emulated yet: the machine stops at the command | — | Phase 2 |
 | INTRQ | GPIP I5, active low | `[H]` | *Internals* p.61 |
 | HDC (ACSI) with nothing connected | writes vanish, I5 stays high | `[O]` | EmuTOS's probe in Hatari |
 | HDC read | no fact: the machine stops | — | — |
@@ -206,7 +209,7 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Revolution | 6250 byte times | `[H?]` | 300 rpm, 250 kbit/s |
 | Index pulse | the first 64 byte times of a revolution, only with a disk | `[H?]` | — |
 | No disk | no index pulses, no data, write-protected | `[O]` | status `$E4` |
-| Write protect | every disk in Phase 1 | `[H?]` | writes arrive in Phase 2 |
+| A disk | not write-protected | `[O]` | Hatari statuses `$24`, `$A4`, `$A6` with a disk |
 | Motor | the motor line reaches both drives | `[H?]` | — |
 | Head range | cylinders 0-85 | `[H?]` | — |
 | Drives fitted | 2 by default, 1 with `drives = 1`; drive B absent then | `[H?]` | — |

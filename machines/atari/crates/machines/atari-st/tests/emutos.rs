@@ -156,3 +156,77 @@ fn emutos_sizes_ram_like_hatari() {
         assert_eq!(ours, mmu(reference), "--ram {name}");
     }
 }
+
+/// The boot floppy is executable by the rule in *Internals* p.179; with `RC_DUMP_BOOT_FLOPPY` set it is written
+/// there (for the Hatari golden: `capture_hatari_trace.py --disk-a`).
+#[test]
+fn boot_floppy_is_executable() {
+    let img = common::boot_floppy();
+    let boot = img.sector(0, 0, 1).unwrap();
+    let sum = boot.chunks(2).fold(0u16, |s, w| {
+        s.wrapping_add(u16::from_be_bytes([w[0], w[1]]))
+    });
+    assert_eq!(sum, 0x1234);
+    if let Some(path) = std::env::var_os("RC_DUMP_BOOT_FLOPPY") {
+        std::fs::write(path, img.to_bytes()).unwrap();
+    }
+}
+
+/// Slice 5's end, part 1: 1500 frames with no disk, no stop, every code location's accesses the same as Hatari's
+/// (`common::assert_same_sets`).
+#[test]
+fn emutos_1500_frames_without_a_disk_match_hatari() {
+    let Some(rom) = emutos() else { return };
+    let (m, ours) = common::run_frames_logged(rom, RamSize::M1, 1500, None);
+    assert!(m.io_stop().is_none(), "{:?}", m.io_stop());
+    if let Some(reference) = common::golden("emutos14-uk-io-1m-1500.txt") {
+        common::assert_same_sets(&ours, &reference, "1500 frames");
+        eprintln!(
+            "1500 frames: {} accesses, every code location's accesses the same as Hatari's",
+            ours.len()
+        );
+    }
+}
+
+/// Slice 5's end, part 2: EmuTOS boots the floppy built here; the boot program runs (palette 0 `$0123`, `$CAFE` at
+/// `$600`), and the accesses on the way agree with Hatari's booting the same image.
+#[test]
+fn emutos_boots_our_floppy() {
+    let Some(rom) = emutos() else { return };
+    // As long as Hatari's golden (1500 frames); the boot program loops once it has run.
+    let (m, ours) = common::run_frames_logged(rom, RamSize::M1, 1500, Some(common::boot_floppy()));
+    assert!(m.io_stop().is_none(), "{:?}", m.io_stop());
+    assert_eq!(
+        (m.read_memory(0x600), m.read_memory(0x601)),
+        (0xCA, 0xFE),
+        "the boot program ran"
+    );
+    assert_eq!(m.bus().shifter().palette()[0], 0x0123);
+    if let Some(reference) = common::golden("emutos14-uk-io-1m-boot.txt") {
+        common::assert_same_sets(&ours, &reference, "boot");
+        eprintln!("booting: accesses agree with Hatari's code location by code location");
+    }
+}
+
+/// Slice 5's end, part 3: three runs of 1500 frames end on the same picture (the desktop). With `RC_SCREENSHOT_DIR`
+/// set, the picture is written there as `emutos-1500.ppm`.
+#[test]
+fn emutos_desktop_frame_is_deterministic() {
+    let Some(rom) = emutos() else { return };
+    let frames: Vec<_> = (0..3)
+        .map(|_| {
+            common::run_frames(rom.clone(), RamSize::M1, 1500, None)
+                .render_frame()
+                .expect("a picture")
+        })
+        .collect();
+    assert_eq!(frames[0], frames[1]);
+    assert_eq!(frames[1], frames[2]);
+    let (w, h, rgb) = &frames[0];
+    assert!(rgb.iter().any(|&b| b != rgb[0]), "the picture is not blank");
+    if let Some(dir) = std::env::var_os("RC_SCREENSHOT_DIR") {
+        let mut ppm = format!("P6\n{w} {h}\n255\n").into_bytes();
+        ppm.extend_from_slice(rgb);
+        std::fs::write(std::path::Path::new(&dir).join("emutos-1500.ppm"), ppm).unwrap();
+    }
+}

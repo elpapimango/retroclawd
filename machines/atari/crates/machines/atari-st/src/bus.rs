@@ -246,6 +246,18 @@ impl StBus {
             if let Some(burst) = self.dma.service_drq() {
                 self.dma_store(&burst, self.dma.fdc_at);
             }
+            if self.dma.fdc.floppy.take_write_attempt() && self.stop.is_none() {
+                // Writing to a disk arrives in Phase 2.
+                self.stop = Some(IoStop {
+                    reason: StopReason::NotEmulated(Device::Dma),
+                    addr: 0xFF_8604,
+                    size: Size::Word,
+                    write: true,
+                    value: self.dma.fdc_register_value(0) as u32,
+                    fc: FunctionCode::SUPERVISOR_DATA,
+                    at_cycle: self.dma.fdc_at,
+                });
+            }
         }
         self.update_fdc_irq(target);
     }
@@ -321,6 +333,11 @@ impl StBus {
     /// The completed I/O accesses so far (at most `io_log_limit`).
     pub fn io_log(&self) -> &[IoAccess] {
         &self.io_log
+    }
+
+    /// The logged accesses, removed (the limit then applies to the next ones).
+    pub fn take_io_log(&mut self) -> Vec<IoAccess> {
+        std::mem::take(&mut self.io_log)
     }
 
     fn log_io(&mut self, addr: u32, size: Size, write: bool, value: u32) {
@@ -437,6 +454,12 @@ impl StBus {
                 };
                 self.log_io(addr, size, write, v);
                 return Ok(v);
+            }
+            // Writing to a disk arrives in Phase 2.
+            Decode::Device(Device::Dma)
+                if addr == 0xFF_8604 && write && self.dma.starts_a_write(value as u16) =>
+            {
+                StopReason::NotEmulated(Device::Dma)
             }
             Decode::Device(Device::Dma)
                 if !(addr == 0xFF_8604 && !write && self.dma.hdc_selected()) =>

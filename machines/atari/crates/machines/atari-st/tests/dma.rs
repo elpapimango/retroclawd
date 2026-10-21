@@ -134,6 +134,7 @@ fn read_sector_1_into_ram() {
     let got: Vec<u8> = (0..512).map(|i| m.read_memory(0x1_0000 + i)).collect();
     assert_eq!(got, img.sector(0, 0, 1).unwrap());
     assert_eq!(m.bus().dma_address(), 0x1_0200);
+    assert_eq!(m.bus().dma().status() & 1, 1, "[O] bit 0 set: no DMA error");
     let status = m.read_memory(0x1001);
     assert_eq!(status & 0x1C, 0, "no RNF, CRC or lost data: {status:02X}");
     assert_eq!(
@@ -215,4 +216,25 @@ fn eject_during_read_sector_never_panics() {
     run(&mut m, 8_000_000);
     assert!(m.io_stop().is_none());
     assert_eq!(m.bus().dma_address(), at);
+}
+
+/// Writing arrives in Phase 2: a WRITE SECTOR command stops the machine as "not emulated" instead of losing the
+/// data.
+#[test]
+fn a_floppy_write_stops_as_not_emulated() {
+    let mut p = select_a();
+    p.extend(move_w(0x084, 0x8606));
+    p.extend(move_w(1, 0x8604));
+    p.extend(move_w(0x190, 0x8606));
+    p.extend(move_w(1, 0x8604)); // sector count 1, write direction
+    p.extend(move_w(0x180, 0x8606));
+    p.extend(move_w(0xA8, 0x8604)); // WRITE SECTOR, motor on
+    p.push(BRA_SELF);
+    let mut m = AtariSt::new(config(rom(&p, &[]), RamSize::M1)).unwrap();
+    m.insert_disk(0, image()).unwrap();
+    run(&mut m, 8_000_000);
+    assert_eq!(
+        m.io_stop().map(|s| s.reason),
+        Some(StopReason::NotEmulated(atari_st::Device::Dma))
+    );
 }

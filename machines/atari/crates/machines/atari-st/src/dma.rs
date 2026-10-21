@@ -3,7 +3,8 @@
 //! - [H] *Internals* p.59: `$FF8604` reaches the FDC (A1/A0 from the mode register) or the sector count, read and
 //!   write; its upper 8 bits read as 1. `$FF8606` written is the mode register (bit 1 A0, bit 2 A1, bit 3 HDC, bit 4
 //!   sector count, bit 6 DMA off, bit 8 write); read, its low three bits are the status (bit 0 error, bit 1 sector
-//!   count not zero, bit 2 FDC DRQ). [H?] its other bits read 0; bit 7 is not decoded.
+//!   count not zero, bit 2 FDC DRQ). [O] bit 0 is set when there was no error (the book prints the opposite; see
+//!   `status`). [H?] its other bits read 0; bit 7 is not decoded.
 //! - [H] `$FF8609/0B/0D` are the DMA address high, mid, low, read and write.
 //! - [H?] the DMA moves FDC bytes through a 16-byte FIFO into memory a burst at a time, with no bus stall in Phase 1;
 //!   the sector count is 8 bits and counts 512-byte sectors; changing the mode register's write bit clears the FIFO
@@ -71,6 +72,15 @@ impl Dma {
         self.fdc.peek(reg)
     }
 
+    /// A write to `$FF8604` that would start a WD1772 write command (WRITE SECTOR `$A0-$BF`, WRITE TRACK
+    /// `$F0-$FF`): writing to a disk arrives in Phase 2.
+    pub(crate) fn starts_a_write(&self, value: u16) -> bool {
+        let command = value as u8;
+        self.mode & 0x18 == 0
+            && self.fdc_register() == 0
+            && (command & 0xE0 == 0xA0 || command & 0xF0 == 0xF0)
+    }
+
     pub(crate) fn hdc_selected(&self) -> bool {
         self.mode & 0x08 != 0
     }
@@ -79,9 +89,11 @@ impl Dma {
         ((self.mode >> 1) & 3) as u8
     }
 
-    /// The status the CPU reads at `$FF8606`.
+    /// The status the CPU reads at `$FF8606`. [O] bit 0 is set when there was no DMA error: Hatari reads `$..b1`
+    /// after a good transfer and EmuTOS retries a read that leaves it clear; *Internals* p.58 prints the opposite
+    /// ("0=no error"), a conflict recorded in `docs/hardware-facts.md`.
     pub fn status(&self) -> u16 {
-        (self.error as u16) | ((self.sector_count != 0) as u16) << 1 | (self.fdc.drq() as u16) << 2
+        (!self.error as u16) | ((self.sector_count != 0) as u16) << 1 | (self.fdc.drq() as u16) << 2
     }
 
     /// `$FF8604` read, with the FDC up to date.

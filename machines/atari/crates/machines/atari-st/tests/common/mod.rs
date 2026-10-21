@@ -112,6 +112,73 @@ pub fn run_frames(
     m
 }
 
+/// A 720K floppy built here, with an executable boot sector (*Atari ST Internals* pp.178-179: the BPB of an 80-track
+/// double-sided disk, little-endian; the big-endian word sum of the sector is `$1234`; the program starts at 30).
+/// The program sets palette 0 to `$0123`, writes `$CAFE` to `$600` and loops.
+pub fn boot_floppy() -> st_floppy::Image {
+    let mut disk = vec![0u8; 737_280];
+    let boot = &mut disk[..512];
+    boot[0..2].copy_from_slice(&0x601Cu16.to_be_bytes()); // BRA.S to offset 30
+    let le = |b: &mut [u8], at: usize, v: u16| b[at..at + 2].copy_from_slice(&v.to_le_bytes());
+    le(boot, 11, 512); // bytes per sector
+    boot[13] = 2; // sectors per cluster
+    le(boot, 14, 1); // reserved sectors
+    boot[16] = 2; // FATs
+    le(boot, 17, 112); // directory entries
+    le(boot, 19, 1440); // sectors
+    boot[21] = 0xF9; // media
+    le(boot, 22, 5); // sectors per FAT
+    le(boot, 24, 9); // sectors per track
+    le(boot, 26, 2); // sides
+    let program: [u16; 9] = [
+        0x33FC, 0x0123, 0x00FF, 0x8240, // MOVE.W #$0123,$FF8240
+        0x31FC, 0xCAFE, 0x0600, // MOVE.W #$CAFE,$600.W
+        0x60FE, // BRA.S *
+        0,
+    ];
+    for (i, w) in program.iter().enumerate() {
+        boot[30 + 2 * i..32 + 2 * i].copy_from_slice(&w.to_be_bytes());
+    }
+    let sum = boot[..510].chunks(2).fold(0u16, |s, w| {
+        s.wrapping_add(u16::from_be_bytes([w[0], w[1]]))
+    });
+    boot[510..512].copy_from_slice(&0x1234u16.wrapping_sub(sum).to_be_bytes());
+    st_floppy::Image::parse(&disk).unwrap()
+}
+
+/// Runs `frames` frames (or to a stop) with `disk` in drive A and returns the machine and its whole I/O log, taken in
+/// pieces with consecutive repeats dropped (the polling rule would drop them anyway) so a long run fits in memory.
+pub fn run_frames_logged(
+    rom: Vec<u8>,
+    ram: RamSize,
+    frames: u64,
+    disk: Option<st_floppy::Image>,
+) -> (AtariSt, Vec<String>) {
+    let mut m = AtariSt::new(config(rom, ram)).unwrap();
+    if let Some(d) = disk {
+        m.insert_disk(0, d).unwrap();
+    }
+    let mut log: Vec<String> = Vec::new();
+    let take = |m: &mut AtariSt, log: &mut Vec<String>| {
+        for a in m.take_io_log() {
+            let line = a.hatari_line();
+            if log.last() != Some(&line) {
+                log.push(line);
+            }
+        }
+    };
+    let mut steps = 0u64;
+    while m.io_stop().is_none() && m.vbl_count() < frames {
+        machine::Machine::step(&mut m);
+        steps += 1;
+        if steps.is_multiple_of(100_000) {
+            take(&mut m, &mut log);
+        }
+    }
+    take(&mut m, &mut log);
+    (m, log)
+}
+
 /// Our I/O log in Hatari's format.
 pub fn io_lines(m: &AtariSt) -> Vec<String> {
     m.io_log().iter().map(|a| a.hatari_line()).collect()
@@ -148,14 +215,33 @@ const TIMING_DEPENDENT_READS: [&str; 4] = [
 /// The documented conflict on `$FF8604` reads: *Internals* p.59 says the upper byte reads as 1s, Hatari shows `$00`
 /// (`docs/hardware-facts.md`). The upper byte is masked; the FDC's low byte is compared.
 const FF8604_READ: &str = "IO read.w $ffff8604";
+const FF8606_READ: &str = "IO read.w $ffff8606";
+
+/// Hatari prints the CPU's effective address (`$00ff8240` for an absolute long `$00FF8240`, `$ffff8240` for a
+/// sign-extended short one); the 68000 puts only 24 bits on the bus, so the top byte is not compared.
+fn bus_address(line: &str) -> String {
+    match line.find(" $") {
+        Some(i) if line.len() > i + 4 && line[i + 2..].starts_with("00ff") => {
+            format!("{} $ffff{}", &line[..i], &line[i + 6..])
+        }
+        _ => line.to_string(),
+    }
+}
 
 fn mask(line: &str) -> String {
+    let line = &bus_address(line);
     match line.split_once(" = $") {
         Some((head, tail)) if TIMING_DEPENDENT_READS.contains(&head) => {
             format!("{head} = $?? {}", tail.split_once(' ').map_or("", |t| t.1))
         }
         Some((head, tail)) if head == FF8604_READ && tail.len() > 2 => {
             format!("{head} = $??{}", &tail[2..])
+        }
+        // `$FF8606` reads: only the three status bits are a fact; Hatari returns leftover bits above them.
+        Some((head, tail)) if head == FF8606_READ => {
+            let (value, rest) = tail.split_once(' ').unwrap_or((tail, ""));
+            let bits = u16::from_str_radix(value, 16).map_or(0xFF, |v| v & 7);
+            format!("{head} = $...{bits} {rest}")
         }
         _ => line.to_string(),
     }
@@ -167,41 +253,151 @@ pub fn comparable(log: &[String]) -> Vec<String> {
     collapse_polls(&masked)
 }
 
-/// The accesses of each instruction address (the line's `pc=`), each stream masked and under the polling rule. An
-/// interrupt handler's accesses fall between the main program's at points that depend on timing; each code
-/// location's own accesses, in their order, do not.
-pub fn streams(log: &[String]) -> std::collections::BTreeMap<String, Vec<String>> {
-    let mut by_pc: std::collections::BTreeMap<String, Vec<String>> = Default::default();
-    for line in log {
+/// The accesses of each instruction address (the line's `pc=`), each stream masked and under the polling rule, with
+/// each kept access's position in the log. An interrupt handler's accesses fall between the main program's at
+/// points that depend on timing; each code location's own accesses, in their order, do not.
+fn positioned_streams(log: &[String]) -> std::collections::BTreeMap<String, Vec<(usize, String)>> {
+    let mut by_pc: std::collections::BTreeMap<String, Vec<(usize, String)>> = Default::default();
+    for (n, line) in log.iter().enumerate() {
         let pc = line.rsplit_once("pc=").map_or("", |p| p.1).to_string();
-        by_pc.entry(pc).or_default().push(mask(line));
+        let stream = by_pc.entry(pc).or_default();
+        let line = mask(line);
+        let recent = &stream[stream.len().saturating_sub(POLL_WINDOW)..];
+        if !recent.iter().any(|(_, l)| *l == line) {
+            stream.push((n, line));
+        }
     }
     by_pc
+}
+
+/// `positioned_streams` without the positions.
+pub fn streams(log: &[String]) -> std::collections::BTreeMap<String, Vec<String>> {
+    positioned_streams(log)
         .into_iter()
-        .map(|(pc, s)| (pc, collapse_polls(&s)))
+        .map(|(pc, s)| (pc, s.into_iter().map(|(_, l)| l).collect()))
         .collect()
 }
 
 /// Every code location in `reference` also runs in `ours`, and their streams (`streams`) agree as far as both go.
+/// A failure names the difference that comes first in Hatari's log.
 pub fn assert_same_streams(ours: &[String], reference: &[String], what: &str) {
-    let (ours, reference) = (streams(ours), streams(reference));
-    for (pc, theirs) in &reference {
-        let mine = ours.get(pc).unwrap_or_else(|| {
-            panic!(
-                "{what}: pc={pc} runs in Hatari but not here: {:?}",
-                &theirs[..theirs.len().min(3)]
-            )
-        });
+    let (mine_all, theirs_all) = (positioned_streams(ours), positioned_streams(reference));
+    let mut first: Option<(usize, String)> = None;
+    for (pc, theirs) in &theirs_all {
+        let Some(mine) = mine_all.get(pc) else {
+            let at = theirs[0].0;
+            let msg = format!(
+                "pc={pc} runs in Hatari (its access {at}) but not here: {:?}",
+                theirs[0].1
+            );
+            if first.as_ref().is_none_or(|(n, _)| at < *n) {
+                first = Some((at, msg));
+            }
+            continue;
+        };
         let n = mine.len().min(theirs.len());
-        if let Some(i) = (0..n).find(|&i| mine[i] != theirs[i]) {
-            panic!(
-                "{what}: pc={pc} access {i} differs:
+        if let Some(i) = (0..n).find(|&i| mine[i].1 != theirs[i].1) {
+            let at = theirs[i].0;
+            let show = |s: &[(usize, String)]| {
+                s[i..(i + 3).min(s.len())]
+                    .iter()
+                    .map(|e| e.1.clone())
+                    .collect::<Vec<_>>()
+            };
+            let msg = format!(
+                "pc={pc} access {i} differs (our access {at}, Hatari's {}):
   ours:   {:?}
   hatari: {:?}",
-                &mine[i..(i + 3).min(mine.len())],
-                &theirs[i..(i + 3).min(theirs.len())]
+                theirs[i].0,
+                show(mine),
+                show(theirs)
             );
+            if first.as_ref().is_none_or(|(n, _)| at < *n) {
+                first = Some((at, msg));
+            }
         }
+    }
+    if let Some((_, msg)) = first {
+        panic!("{what}: {msg}");
+    }
+}
+
+/// Levels of asynchronous signals that a long run samples at timing-dependent moments: GPIP I5 (the FDC's
+/// interrupt, low from a command's end until its status is read) and the FDC status's index bit (set for the
+/// index pulse's few byte times per revolution). Their behaviour is tested in `dma.rs` and `drive.rs`; the long-run
+/// set comparison masks them.
+fn transient(line: &str) -> String {
+    let bits = |line: &str, head: &str, clear: u16, width: usize| -> Option<String> {
+        let rest = line.strip_prefix(head)?.strip_prefix(" = $")?;
+        let (value, tail) = rest.split_once(' ')?;
+        let v = u16::from_str_radix(value.trim_start_matches('?'), 16).ok()? & !clear;
+        let keep = value.len() - value.trim_start_matches('?').len();
+        let hex = format!("{v:0width$x}");
+        Some(format!(
+            "{head} = ${}{} {tail}",
+            &value[..keep],
+            &hex[hex.len() - (width - keep)..]
+        ))
+    };
+    bits(line, "IO read.b $fffffa01", 0x20, 2)
+        .or_else(|| bits(line, "IO read.w $ffff8604", 0x02, 4))
+        .unwrap_or_else(|| line.to_string())
+}
+
+/// Every code location produces the same distinct accesses (masked) in both logs, whatever their order and count.
+/// For long runs, where background tasks driven by the VBL (EmuTOS's floppy media check alternates drive A and B
+/// each frame) start on a frame that depends on timing: their phase changes the order at one location, not the
+/// values. A failure names the first location in Hatari's log.
+pub fn assert_same_sets(ours: &[String], reference: &[String], what: &str) {
+    use std::collections::BTreeSet;
+    let sets = |log: &[String]| {
+        let mut by_pc: std::collections::BTreeMap<String, (usize, BTreeSet<String>)> =
+            Default::default();
+        for (n, line) in log.iter().enumerate() {
+            let pc = line.rsplit_once("pc=").map_or("", |p| p.1).to_string();
+            by_pc
+                .entry(pc)
+                .or_insert((n, BTreeSet::new()))
+                .1
+                .insert(transient(&mask(line)));
+        }
+        by_pc
+    };
+    let (mine, theirs) = (sets(ours), sets(reference));
+    let mut problems: Vec<(usize, String)> = Vec::new();
+    for (pc, (at, t)) in &theirs {
+        match mine.get(pc) {
+            None => problems.push((
+                *at,
+                format!("pc={pc} runs in Hatari but not here: {:?}", t.first()),
+            )),
+            Some((_, m)) if m != t => problems.push((
+                *at,
+                format!(
+                    "pc={pc}: only here {:?}; only in Hatari {:?}",
+                    m.difference(t).take(3).collect::<Vec<_>>(),
+                    t.difference(m).take(3).collect::<Vec<_>>()
+                ),
+            )),
+            Some(_) => {}
+        }
+    }
+    for (pc, (_, m)) in &mine {
+        if !theirs.contains_key(pc) {
+            problems.push((
+                usize::MAX,
+                format!("pc={pc} runs here but not in Hatari: {:?}", m.first()),
+            ));
+        }
+    }
+    problems.sort();
+    if let Some((_, first)) = problems.first() {
+        let all: Vec<&str> = problems.iter().take(12).map(|p| p.1.as_str()).collect();
+        panic!(
+            "{what}: {} differences; first: {first}
+all: {all:#?}",
+            problems.len()
+        );
     }
 }
 

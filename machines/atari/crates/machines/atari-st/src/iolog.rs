@@ -16,14 +16,15 @@ pub struct IoAccess {
 }
 
 impl IoAccess {
-    /// The access as Hatari prints it: lower-case hex, the address sign-extended to 32 bits.
+    /// The access as Hatari prints it: lower-case hex, the address sign-extended to 32 bits, the PC without leading
+    /// zeros.
     pub fn hatari_line(&self) -> String {
         let (kind, value) = match self.size {
             Size::Byte => ("b", format!("{:02x}", self.value & 0xFF)),
             Size::Word => ("w", format!("{:04x}", self.value & 0xFFFF)),
         };
         format!(
-            "IO {}.{kind} $ff{:06x} = ${value} pc={:06x}",
+            "IO {}.{kind} $ff{:06x} = ${value} pc={:x}",
             if self.write { "write" } else { "read" },
             self.addr & 0xFF_FFFF,
             self.pc & 0xFF_FFFF
@@ -53,5 +54,14 @@ mod tests {
             value: 0x0777,
         };
         assert_eq!(b.hatari_line(), "IO write.w $ffff8240 = $0777 pc=fc66c6");
+        // A program in RAM: Hatari prints the PC without leading zeros.
+        let c = IoAccess {
+            pc: 0x1022,
+            addr: 0xFF8240,
+            size: Size::Word,
+            write: true,
+            value: 0x0123,
+        };
+        assert_eq!(c.hatari_line(), "IO write.w $ffff8240 = $0123 pc=1022");
     }
 }

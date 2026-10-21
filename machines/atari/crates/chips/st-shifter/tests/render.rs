@@ -54,6 +54,11 @@ fn sync_and_resolution_registers() {
     assert_eq!(s.read(0xFF820A, false), Some(0x02), "bits 7-2 read 0 [H?]");
     byte(&mut s, 0xFF8260, 0x01);
     assert_eq!(s.resolution(), Resolution::Medium);
+    assert_eq!(
+        s.read(0xFF8260, false),
+        Some(0xFD),
+        "[O] bits 7-2 read as 1 (Hatari: $FC in low resolution)"
+    );
     assert!(!Shifter::new(false).sync_50hz(), "NTSC power-on");
 }
 

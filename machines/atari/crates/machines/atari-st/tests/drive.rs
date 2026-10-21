@@ -121,3 +121,11 @@ fn drive_b_with_drives_1_is_empty() {
     assert_eq!(f.index_count(), 0);
     assert!(first_id(&revolution(&mut f)).is_none());
 }
+
+/// [O] Hatari's status with a disk in has no write-protect bit (`$24`, `$A4`); without one it has (`$E4`).
+#[test]
+fn a_disk_reads_not_write_protected() {
+    let d = drive_with_disk();
+    assert!(!d.write_protect());
+    assert!(StDrive::new().write_protect());
+}
