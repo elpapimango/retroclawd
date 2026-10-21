@@ -741,25 +741,30 @@ The Atari Family builds `atari_8bit_machine_plugin` alongside its existing ST
 Plugin. Required `--rom-os` is 10240 bytes; optional `--rom-basic` is 8192 bytes.
 `--region pal|ntsc` and `--execution-mode fast|accurate` select real raster and
 instruction-batched/per-bus-cycle Chip clocks. The Machine reuses the shared NMOS
-6502 Core and MOS 6520 PIA, with initial ANTIC, GTIA and POKEY.
+6502 Core and MOS 6520 PIA, with ANTIC, GTIA and POKEY.
 
 Explicit Altirra replacement ROMs boot to BASIC and execute `PRINT 12*34` as
 `408` in both Regions/modes. Thirty-six manifest variants pass for reference
 boot content/memory, tools-built raw/XEX Programs and ATR boot, documented tone
 pitch, State (including attached disks) and frame timing. Eight known-gap variants
 cover uncaptured reference keyboard output and executed Acid800 mismatches.
-Acid800 completes with 24/33/1 passed/failed/skipped in fast mode and 25/32/1
-in accurate mode, versus 25/32/1 in Atari800 7.2.1;
-none is a conformance pass.
+Acid800 completes at 46/11/1 passed/failed/skipped in accurate mode and 36/21/1
+in fast mode, identically in PAL and NTSC, versus reference Atari800 7.2.1's
+25/32/1. No prior passing case regresses. Diagnostic totals are not conformance
+passes.
 The shared SHY/SHX/SHA/TAS address-mask fix makes the illegal-instruction test
 pass. Instruction-boundary CLI/SEI/PLP polling and both CPU timing tests pass.
 Accurate DMA HALT now stops writes, unlike WSYNC RDY; serial-port timing also
 passes. Accurate mode now lets NMI hijack BRK/IRQ before vector reads, with
 ANTIC's nominal edge corrected to cycle 8; BRK passes in both Regions.
-Fast mode remains instruction-batched. Full Chip timing and the interrupt
-pipeline remain incomplete. No new State field or ABI change accompanies
-the BRK fix. Versioned States persist
-the new IRQ-mask sample while retaining old-file readers across all 6502 Machines.
+The fidelity increment adds NMIST/NMIRES and NMIEN phases, VCOUNT/WSYNC/DLI
+timing, blocked NMI handling, normal DMA/refresh and scrolling, POKEY noise and
+timer pipelines, and live GTIA players/missiles, priorities and collisions.
+Fast mode remains instruction-batched. Abnormal DMA, special graphics modes
+and some pipeline edge cases remain incomplete.
+Atari State version 4 explicitly persists the new Chip, bus and interrupt
+phases, while retaining readers for versions 1-3. The Core's serialized layout
+and Plugin ABI are unchanged.
 Preserve original State files for rollback to older Plugins.
 Original Atari ROMs, reference RMS,
 games and full hardware fidelity are not verified.
@@ -767,8 +772,8 @@ games and full hardware fidelity are not verified.
 Raw/XEX `--program`, read-only ATR on D1:, keyboard, four digital joysticks and
 the debug contract are wired. XEX uses segment INITAD/RUNAD; ATR boot runs through
 PIA/POKEY serial pins without ROM traps. OS-dependent XEX applications are not
-proven. CAS/CART loading, P/M graphics, scrolling, GTIA special modes and
-several timing details remain unimplemented. XL/XE profiles do not exist yet.
+proven. CAS/CART loading, GTIA special modes and several timing details remain
+unimplemented. XL/XE profiles do not exist yet.
 See `machines/atari/docs/atari800-gaps.md` and the Family manifest for exact proof
 and limits. Existing build/staging discovers the new Plugin without Host machine code.
 

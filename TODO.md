@@ -1066,11 +1066,14 @@ the debug contract are wired. This is a working slice, not the complete baseline
 `machines/atari/atari-800.manifest.toml`: **36 passed, 0 failed, 8 known gaps**.
 Raw/XEX Programs and read-only ATR boot have independently captured Atari800
 7.2.1 reference memory. XEX executes ordered INITAD/RUNAD; D1: status/read uses
-actual PIA/POKEY serial pins, not ROM traps. Version 3 State preserves in-flight
-SIO, pending XEX and the IRQ-mask sample; versions 1/2 remain readable
+actual PIA/POKEY serial pins, not ROM traps. Version 4 State preserves in-flight
+SIO, pending XEX, the IRQ-mask sample and explicit Chip/bus/interrupt pipelines;
+versions 1-3 remain readable
 (eject attached disks before loading version 1).
-S2 reference printable-input automation remains blocked. S7 now executes:
-fast 24/33/1, accurate 25/32/1 passed/failed/skipped versus reference 25/32/1.
+S2 reference printable-input automation remains blocked. S7 executes all tests:
+fast 36/21/1, accurate 46/11/1 passed/failed/skipped in both Regions, versus
+reference 25/32/1. No earlier passing case regresses; case-level evidence is
+in the Family gap document.
 POKEY async receive timer hold and shared SHY/SHX/SHA/TAS high-byte stores are
 fixed; the illegal-instruction test now passes. CLI/SEI/PLP mask sampling also
 passes, with explicit State migrations across all affected Machines and Drives.
@@ -1081,12 +1084,16 @@ bug. Both CPU timing tests and serial-port timing pass in both Regions/modes.
 Accurate BRK now passes: the Core permits mid-sequence NMI vector hijacking,
 and ANTIC raises its nominal edge at cycle 8 rather than 12. Stack frames,
 seven bus cycles, CPU serde, State layouts and the ABI are unchanged.
-Fast-mode BRK and full IRQ/NMI detector/blocked/consecutive timing remain
-incomplete, as do Chip DMA/video/pipeline behavior. Equal reference totals
-are not acceptance passes.
+The ten-area fidelity increment adds NMIST/NMIRES/NMIEN phases, VCOUNT,
+WSYNC, DLI and blocked-NMI timing, normal DMA/refresh and scrolling, shared
+POKEY polynomial/divider/borrow/two-tone pipelines, and live GTIA PMG,
+priorities and collisions. Accurate-mode IRQ delivery uses the preceding
+clock's pin sample. Fast-mode BRK, abnormal DMA, special graphics modes and
+remaining pipeline edge cases are not closed. Diagnostic totals are not
+acceptance passes.
 S4 checks documented pitch only, not reference RMS calibration.
-Original Atari firmware, general Media, games, P/M, scrolling, GTIA special modes
-and exact timing remain unverified/unimplemented. Evidence and reproduction:
+Original Atari firmware, general Media, games, GTIA special modes and exact
+timing remain unverified/unimplemented. Evidence and reproduction:
 `machines/atari/docs/atari800-gaps.md`. No XL/XE profile exists yet.
 
 ### BACKLOG: external parity execution sequence (PARKED; gap vs Atari800/Altirra/libretro)
