@@ -1367,6 +1367,7 @@ impl HostedBackend {
             || lower == "x64"
             || lower == "nib"
             || lower == "st"
+            || lower == "msa"
         {
             self.apply_disk(instance, 0, &lower, bytes)
         } else if lower == "cpr" || lower == "crt" {
@@ -2643,6 +2644,23 @@ mod tests {
         })
         .expect("the bundled stub machine");
         let error = machine.apply_media("st", b"anything", 1).unwrap_err();
+        assert!(
+            error.contains("not a disk image"),
+            "went to the disk slot: {error}"
+        );
+    }
+
+    #[test]
+    fn msa_extension_is_a_disk() {
+        use plugin_api::MachineCreateRequest;
+        let mut machine = super::create_hosted_machine(MachineCreateRequest {
+            machine_id: "stub-machine".to_string(),
+            region: Some("pal".to_string()),
+            roms: Vec::new(),
+            options: Vec::new(),
+        })
+        .expect("the bundled stub machine");
+        let error = machine.apply_media("msa", b"anything", 1).unwrap_err();
         assert!(
             error.contains("not a disk image"),
             "went to the disk slot: {error}"
