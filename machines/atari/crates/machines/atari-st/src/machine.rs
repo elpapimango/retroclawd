@@ -190,10 +190,31 @@ impl AtariSt {
         // The instruction that touched the device, not the one after it.
         let pc = self.diag.last_pc().unwrap_or(self.cpu.pc);
         let bytes: Vec<u8> = (0..10).map(|i| self.bus.peek(pc.wrapping_add(i))).collect();
-        let text = format!(
+        let mut text = format!(
             "${pc:06X} {}",
             mc68000::disassemble::disassemble(&bytes, pc).0
         );
+        let mut sync: Vec<String> = self
+            .bus
+            .shifter
+            .sync_log()
+            .map(|w| {
+                let register = match w.register {
+                    st_shifter::SyncRegister::Sync => "sync",
+                    st_shifter::SyncRegister::Resolution => "resolution",
+                };
+                format!("line {} cycle {}: {register}={}", w.line, w.cycle, w.value)
+            })
+            .collect();
+        if !sync.is_empty() {
+            let skipped = sync.len().saturating_sub(8);
+            sync.drain(..skipped);
+            text.push_str(&format!(
+                "\nvideo: sync and resolution writes this frame, last {}: {}",
+                sync.len(),
+                sync.join("; ")
+            ));
+        }
         self.diag.take_report(&self.cpu, &headline, &text)
     }
 
@@ -267,7 +288,10 @@ impl AtariSt {
             if let Ok(g) = scheduler::geometry(self.bus.shifter.sync_50hz(), self.bus.monitor) {
                 self.geometry = g;
             }
+            self.bus.shifter.begin_frame();
         }
+        self.bus.shifter.set_line(self.line as u16);
+        self.bus.shifter.set_line_start(at);
         self.sched.schedule(
             at + self.geometry.clocks_per_line as u64,
             CLASS_VIDEO,
@@ -588,8 +612,12 @@ impl AtariSt {
 
     fn render(&mut self) {
         let bus = &self.bus;
-        bus.shifter
-            .render(bus.monitor, &|a| bus.peek(a), &mut self.frame);
+        bus.shifter.render_raster(
+            bus.monitor,
+            scheduler::first_display_line(self.geometry.lines),
+            &|a| bus.peek(a),
+            &mut self.frame,
+        );
     }
 }
 

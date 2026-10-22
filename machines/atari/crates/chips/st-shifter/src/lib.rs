@@ -1,9 +1,14 @@
 //! The Atari ST Shifter's registers and a frame render. Facts and their sources: `docs/hardware-facts.md` of
 //! retroclawd-atari, "Shifter"; pages are those of *Atari ST Internals* (Abacus 1985).
 //!
-//! The picture is drawn once per frame from the registers as they are then (design Phase 1: no mid-frame effects)
-//! onto a fixed 640 × 400 canvas: low resolution pixel-doubled, medium resolution line-doubled.
+//! The picture is drawn once per frame onto a fixed 640 × 400 canvas: low resolution pixel-doubled, medium
+//! resolution line-doubled. The palette is followed line by line: every palette write is logged with the raster line
+//! it happened on, and [`Shifter::render_raster`] applies each change from its line down (one line is the
+//! granularity; a change inside a line is Phase 3). Everything else is taken as the registers are at the end of the
+//! frame.
 #![forbid(unsafe_code)]
+
+use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +34,42 @@ pub enum Monitor {
     Mono,
 }
 
+/// The most palette changes a frame's log keeps: a program that writes more (a raster routine changing all sixteen
+/// colours on every line needs 3 200) loses the picture's later changes, not the palette itself.
+pub const MAX_PALETTE_CHANGES: usize = 16_384;
+
+/// The most sync-mode and resolution writes a frame's log keeps; the oldest are dropped first.
+pub const MAX_SYNC_LOG: usize = 256;
+
+/// Which of the two registers a [`SyncWrite`] is a write to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SyncRegister {
+    /// `$FF820A`, the sync mode (50/60 Hz, external sync).
+    Sync,
+    /// `$FF8260`, the resolution.
+    Resolution,
+}
+
+/// One write to the sync mode or the resolution register, with where in the frame it happened: the raster line and
+/// the CPU cycles since that line began. This is a log only. The picture does not use it and no border is opened by
+/// it: a program that switches the sync mode or the resolution at the right cycle of a line to open the overscan
+/// borders shows up here and nowhere else (that is Phase 3, spec section 5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncWrite {
+    pub line: u16,
+    pub cycle: u32,
+    pub register: SyncRegister,
+    pub value: u8,
+}
+
+/// One palette write, on raster line `line` of the frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PaletteChange {
+    pub line: u16,
+    pub index: u8,
+    pub value: u16,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Shifter {
     base_high: u8,
@@ -36,6 +77,14 @@ pub struct Shifter {
     sync: u8,
     palette: [u16; 16],
     resolution: u8,
+    /// The raster line the machine is on (set by it at each line end).
+    line: u16,
+    /// The palette at the start of the frame, and the writes since, in time order.
+    frame_palette: [u16; 16],
+    changes: Vec<PaletteChange>,
+    /// The CPU cycle the current raster line began on, and the sync-mode and resolution writes of the frame.
+    line_start: u64,
+    sync_log: VecDeque<SyncWrite>,
 }
 
 impl Shifter {
@@ -48,7 +97,61 @@ impl Shifter {
             sync: if pal { 0x02 } else { 0x00 },
             palette: [0; 16],
             resolution: 0,
+            line: 0,
+            frame_palette: [0; 16],
+            changes: Vec::new(),
+            line_start: 0,
+            sync_log: VecDeque::new(),
         }
+    }
+
+    /// The CPU cycle the current raster line began on (the machine sets it with [`Shifter::set_line`]).
+    pub fn set_line_start(&mut self, cycle: u64) {
+        self.line_start = cycle;
+    }
+
+    /// A register write at CPU cycle `now`: like [`Shifter::write`], and a write to the sync mode or the resolution
+    /// goes into the log with its line and cycle.
+    pub fn write_at(&mut self, addr: u32, word: bool, value: u16, now: u64) {
+        let register = match (addr & 0xFF_FFFF, word) {
+            (0xFF_820A, false) => Some(SyncRegister::Sync),
+            (0xFF_8260, false) => Some(SyncRegister::Resolution),
+            _ => None,
+        };
+        if let Some(register) = register {
+            if self.sync_log.len() == MAX_SYNC_LOG {
+                self.sync_log.pop_front();
+            }
+            self.sync_log.push_back(SyncWrite {
+                line: self.line,
+                cycle: now.saturating_sub(self.line_start).min(u32::MAX as u64) as u32,
+                register,
+                value: value as u8 & 0x03,
+            });
+        }
+        self.write(addr, word, value);
+    }
+
+    /// The sync-mode and resolution writes of the frame so far, oldest first.
+    pub fn sync_log(&self) -> impl Iterator<Item = &SyncWrite> {
+        self.sync_log.iter()
+    }
+
+    /// The raster line the next writes belong to.
+    pub fn set_line(&mut self, line: u16) {
+        self.line = line;
+    }
+
+    /// A new frame starts: the palette as it now is becomes the frame's first, and the change log empties.
+    pub fn begin_frame(&mut self) {
+        self.frame_palette = self.palette;
+        self.changes.clear();
+        self.sync_log.clear();
+    }
+
+    /// The palette writes of the frame so far, in time order.
+    pub fn palette_changes(&self) -> &[PaletteChange] {
+        &self.changes
     }
 
     /// A register read; `None` when `addr` is not one of the Shifter's. `word` is a 16-bit access (palette only);
@@ -90,7 +193,17 @@ impl Shifter {
                     (false, 0) => (*slot & 0x00FF) | (value << 8),
                     (false, _) => (*slot & 0xFF00) | (value & 0xFF),
                 };
-                *slot = merged & 0x0777;
+                let value = merged & 0x0777;
+                if *slot != value {
+                    *slot = value;
+                    if self.changes.len() < MAX_PALETTE_CHANGES {
+                        self.changes.push(PaletteChange {
+                            line: self.line,
+                            index: ((a - 0xFF_8240) / 2) as u8,
+                            value,
+                        });
+                    }
+                }
             }
             _ => {}
         }
@@ -119,7 +232,8 @@ impl Shifter {
         self.palette
     }
 
-    /// The whole frame from video RAM (`ram` reads one byte at a CPU address) as 640 × 400 RGB into `out`.
+    /// The whole frame from video RAM (`ram` reads one byte at a CPU address) as 640 × 400 RGB into `out`, with the
+    /// palette as it is now on every line.
     ///
     /// Screen layout (pp.207-209): 16-pixel groups of N consecutive big-endian words, one per plane, the most
     /// significant bit the leftmost pixel; plane 0 (the first word) is bit 0 of the colour index ([H?] the book
@@ -127,6 +241,40 @@ impl Shifter {
     /// bit 0 is set (p.58). A colour monitor shows nothing in high resolution, a mono monitor nothing in low or
     /// medium ([H?] they cannot sync to it, p.57).
     pub fn render(&self, monitor: Monitor, ram: &dyn Fn(u32) -> u8, out: &mut Vec<u8>) {
+        let palette = self.palette;
+        self.draw(monitor, ram, out, &mut |_| palette);
+    }
+
+    /// The frame with the palette followed down the screen: picture line `y` (0 at the top, 0-199 in low and medium
+    /// resolution) is raster line `first_line + y`, and shows the frame's first palette with every change logged on
+    /// that line or an earlier one applied (the last write to a colour on a line wins).
+    pub fn render_raster(
+        &self,
+        monitor: Monitor,
+        first_line: u32,
+        ram: &dyn Fn(u32) -> u8,
+        out: &mut Vec<u8>,
+    ) {
+        let mut palette = self.frame_palette;
+        let mut next = 0;
+        self.draw(monitor, ram, out, &mut |y| {
+            while let Some(c) = self.changes.get(next)
+                && c.line as u32 <= first_line + y
+            {
+                palette[(c.index & 15) as usize] = c.value;
+                next += 1;
+            }
+            palette
+        });
+    }
+
+    fn draw(
+        &self,
+        monitor: Monitor,
+        ram: &dyn Fn(u32) -> u8,
+        out: &mut Vec<u8>,
+        palette_at: &mut dyn FnMut(u32) -> [u16; 16],
+    ) {
         out.clear();
         out.resize((WIDTH * HEIGHT * 3) as usize, 0);
         let (planes, width, lines) = match (self.resolution(), monitor) {
@@ -135,22 +283,23 @@ impl Shifter {
             (Resolution::High, Monitor::Mono) => (1, 640, 400),
             _ => return,
         };
-        let rgb: Vec<[u8; 3]> = if planes == 1 {
-            let (dark, light) = ([0, 0, 0], [255, 255, 255]);
-            if self.palette[0] & 1 == 0 {
-                vec![light, dark]
-            } else {
-                vec![dark, light]
-            }
-        } else {
-            self.palette.iter().map(|&c| to_rgb(c)).collect()
-        };
         let x_scale = WIDTH / width;
         let y_scale = HEIGHT / lines;
         let bytes_per_line = width * planes / 8;
         let base = self.video_base();
         let mut words = [0u16; 4];
         for line in 0..lines {
+            let palette = palette_at(line);
+            let rgb: Vec<[u8; 3]> = if planes == 1 {
+                let (dark, light) = ([0, 0, 0], [255, 255, 255]);
+                if palette[0] & 1 == 0 {
+                    vec![light, dark]
+                } else {
+                    vec![dark, light]
+                }
+            } else {
+                palette.iter().map(|&c| to_rgb(c)).collect()
+            };
             let row = base + line * bytes_per_line;
             for group in 0..width / 16 {
                 let at = row + group * planes * 2;

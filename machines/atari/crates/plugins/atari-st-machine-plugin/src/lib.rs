@@ -705,6 +705,10 @@ fn chip_snapshots(machine: &AtariSt) -> Vec<ChipSnapshot> {
         ("video_base".to_string(), shifter.video_base() as u64),
         ("resolution".to_string(), shifter.resolution() as u64),
         ("sync_50hz".to_string(), shifter.sync_50hz() as u64),
+        (
+            "sync_log_len".to_string(),
+            shifter.sync_log().count() as u64,
+        ),
     ];
     video.extend(
         shifter

@@ -646,7 +646,7 @@ impl StBus {
             Decode::Device(Device::Shifter) => {
                 let word = size == Size::Word;
                 let v = if write {
-                    self.shifter.write(addr, word, value as u16);
+                    self.shifter.write_at(addr, word, value as u16, self.now);
                     value
                 } else {
                     self.shifter.read(addr, word).unwrap_or(0xFFFF) as u32

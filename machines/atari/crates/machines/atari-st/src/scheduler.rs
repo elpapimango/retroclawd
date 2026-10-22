@@ -90,6 +90,13 @@ pub fn geometry(sync_50hz: bool, monitor: st_shifter::Monitor) -> Result<FrameGe
     }
 }
 
+/// The raster line of a frame of `lines` lines on which the picture's first line is drawn. [H?] 63 in the 313-line
+/// 50 Hz frame and 34 in the 263-line 60 Hz frame: provisional, to be measured against the reference emulator's
+/// picture (`docs/hardware-facts.md`, "Raster palette").
+pub fn first_display_line(lines: u32) -> u32 {
+    if lines >= 313 { 63 } else { 34 }
+}
+
 #[derive(Debug, Default)]
 pub struct Scheduler {
     heap: BinaryHeap<Reverse<(u64, u8, u64, Event)>>,
