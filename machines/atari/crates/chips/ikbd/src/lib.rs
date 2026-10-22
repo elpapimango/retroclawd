@@ -5,13 +5,14 @@
 //! Facts not in the document are labelled as in `docs/hardware-facts.md`: [O] observed in Hatari 2.6.1 (black box),
 //! [H?] a documented choice.
 //!
-//! Time is the host's CPU cycle count; the crate holds no clock of its own beyond the time-of-day counter, which the
-//! host advances with [`Ikbd::tick_clock`].
+//! Time is the host's CPU cycle count; the crate holds no clock of its own beyond the time-of-day counter and the
+//! sample timers, which the host advances (`tick_clock`, or the `at` of any call). The host tells the crate its CPU
+//! clock once with [`Ikbd::set_cycles_per_second`].
 #![forbid(unsafe_code)]
 
 mod scancodes;
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
@@ -25,6 +26,9 @@ pub const VERSION: u8 = 0xF1;
 /// [H?] bytes the controller can hold for the host. The 6301 has 128 bytes of RAM (*Internals* p.69); the document
 /// leaves the queue size `<tbd>` (§9.14). A packet that does not fit whole is dropped; older bytes are kept.
 pub const QUEUE_BYTES: usize = 256;
+/// CPU cycles one character takes on the keyboard line (7812.5 baud, 8N1: 1024 cycles a bit at 8 MHz). [H?] the
+/// IKBD's own bit clock equals the ACIA's (see `docs/hardware-facts.md`). §5.4 paces fire button monitoring by it.
+pub const BYTE_CYCLES: u64 = 10_240;
 /// §4.3 and §5.5: the pseudo key codes of the mouse buttons (and joystick fire buttons) in key modes.
 const LEFT_BUTTON_KEY: u8 = 0x74;
 const RIGHT_BUTTON_KEY: u8 = 0x75;
@@ -33,6 +37,11 @@ const KEY_UP: u8 = 0x48;
 const KEY_DOWN: u8 = 0x50;
 const KEY_LEFT: u8 = 0x4B;
 const KEY_RIGHT: u8 = 0x4D;
+/// Samples a catch-up generates at most: more than the queue could hold anyway (a host that did not run the
+/// controller for a long time must not make it loop).
+const MAX_CATCH_UP: u64 = 512;
+/// [H?] §9.24 allows 0-128 bytes per load; the controller memory model keeps at most this many addresses.
+const MEMORY_MODEL_BYTES: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum MouseMode {
@@ -44,14 +53,39 @@ enum MouseMode {
     Keycode { dx: u8, dy: u8 },
 }
 
+/// §9.20: tenths of a second.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+struct KeyTimes {
+    rx: u8,
+    ry: u8,
+    tx: u8,
+    ty: u8,
+    vx: u8,
+    vy: u8,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum JoyMode {
     /// §9.15 (`$14`).
     Event,
     /// §9.16 (`$15`).
     Interrogation,
-    /// [H?] `$17`, `$18`, `$19`: monitoring and key code modes are Phase 2; reports stop.
-    Unsupported(u8),
+    /// §9.18 (`$17`): samples every `rate` hundredths of a second.
+    Monitoring { rate: u8 },
+    /// §9.19 (`$18`).
+    FireButton,
+    /// §9.20 (`$19`).
+    Keycode(KeyTimes),
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+struct Axis {
+    /// -1 (up/left), 0, +1 (down/right).
+    dir: i8,
+    /// The cycle the direction was taken.
+    since: u64,
+    /// The next repeat of the key, if it repeats.
+    next: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,10 +122,20 @@ pub struct Ikbd {
     /// §8: after a joystick command port 0 is a joystick too.
     port0_joystick: bool,
     joy: [u8; 2],
+    /// §5.3, §5.4: the next sample of the monitoring modes, and the fire button samples packed so far.
+    sample_at: u64,
+    fire_bits: u8,
+    fire_count: u8,
+    /// §5.5: the cursor key repeat of the two axes (x, y) of joystick 0.
+    axes: [Axis; 2],
     /// yy MM DD hh mm ss, packed BCD; the cycle of the last whole second.
     clock: [u8; 6],
     clock_at: u64,
     cycles_per_second: u64,
+    /// [H?] §9.24-9.26: a model of the controller memory the host loaded; nothing else is there.
+    memory: BTreeMap<u16, u8>,
+    /// [H?] the addresses of §9.26 controller-execute commands received (the program is not run), newest last.
+    executed: Vec<u16>,
 }
 
 impl Default for Ikbd {
@@ -124,15 +168,27 @@ impl Ikbd {
             joy_enabled: true,
             port0_joystick: false,
             joy: [0; 2],
+            sample_at: 0,
+            fire_bits: 0,
+            fire_count: 0,
+            axes: [Axis::default(); 2],
             clock: [0; 6],
             clock_at: 0,
             cycles_per_second: 0,
+            memory: BTreeMap::new(),
+            executed: Vec::new(),
         };
         k.push(RESET_REPLY_DELAY, &[VERSION]);
         k
     }
 
-    /// §9.1: back to the power-up modes; the clock is kept.
+    /// The host's CPU clock, which converts the document's hundredths and tenths of a second to cycles.
+    pub fn set_cycles_per_second(&mut self, cps: u64) {
+        self.cycles_per_second = cps;
+    }
+
+    /// §9.1: back to the power-up modes; the clock is kept. [H?] a packet being sent when the reset arrives is cut
+    /// off, the output queue is emptied, and the loaded controller memory is gone (the self-test runs again).
     fn reset(&mut self, at: u64) {
         let (clock, clock_at, cps) = (self.clock, self.clock_at, self.cycles_per_second);
         *self = Self::new();
@@ -159,6 +215,18 @@ impl Ikbd {
     /// The next byte for the host, if one is ready at `now` (§9.14: a paused controller finishes the packet it has
     /// begun).
     pub fn pop_output(&mut self, now: u64) -> Option<u8> {
+        self.advance(now);
+        self.pop_queued(now)
+    }
+
+    /// Lets everything that happens by itself happen up to `now` (the host does this before it asks what is queued).
+    pub fn advance_to(&mut self, now: u64) {
+        self.advance(now);
+    }
+
+    /// Like [`Ikbd::pop_output`] but without running the controller to `now`: for a byte stamped in the future (the
+    /// reset reply), which must not move the clock ahead.
+    pub fn pop_queued(&mut self, now: u64) -> Option<u8> {
         let front = self.queue.front()?;
         if front.at > now || (self.paused && self.sent == 0) {
             return None;
@@ -172,7 +240,7 @@ impl Ikbd {
         Some(byte)
     }
 
-    /// When the next byte will be ready, if any (`None` while paused between packets).
+    /// When the next queued byte will be ready, if any (`None` while paused between packets).
     pub fn next_output_at(&self) -> Option<u64> {
         let front = self.queue.front()?;
         if self.paused && self.sent == 0 {
@@ -181,64 +249,147 @@ impl Ikbd {
         Some(front.at)
     }
 
+    /// The cycle at which the controller will produce output by itself (a monitoring sample or a key repeat), if it
+    /// is going to; the host calls [`Ikbd::pop_output`] then.
+    pub fn next_wake(&self) -> Option<u64> {
+        let sampling = match self.joy_mode {
+            JoyMode::Monitoring { .. } | JoyMode::FireButton
+                if self.joy_enabled && !self.paused && self.period().is_some() =>
+            {
+                Some(self.sample_at)
+            }
+            _ => None,
+        };
+        let repeat = self.axes.iter().filter_map(|a| a.next).min();
+        [sampling, repeat].into_iter().flatten().min()
+    }
+
     /// Advances the time-of-day clock to `now` (`cycles_per_second` CPU cycles per second).
     pub fn tick_clock(&mut self, now: u64, cycles_per_second: u64) {
         self.cycles_per_second = cycles_per_second;
+        self.advance(now);
+    }
+
+    /// Everything that happens by itself up to `now`: the clock, the monitoring samples, the key repeats. Every
+    /// input calls it first, so a sample sees the state as it was at its own time.
+    fn advance(&mut self, now: u64) {
         self.advance_clock(now);
+        let Some(period) = self.period() else {
+            self.advance_repeats(now);
+            return;
+        };
+        if self.sample_at <= now {
+            let n = (now - self.sample_at) / period + 1;
+            let skip = n.saturating_sub(MAX_CATCH_UP);
+            self.sample_at += skip * period;
+            if self.paused || !self.joy_enabled {
+                // §9.14: while paused the monitoring modes do not queue samples.
+                self.sample_at += (n - skip) * period;
+            } else {
+                while self.sample_at <= now {
+                    let at = self.sample_at;
+                    self.sample(at);
+                    self.sample_at += period;
+                }
+            }
+        }
+        self.advance_repeats(now);
+    }
+
+    /// The cycles between samples in the monitoring modes.
+    fn period(&self) -> Option<u64> {
+        let cps = self.cycles_per_second;
+        match self.joy_mode {
+            // §9.18: hundredths of a second. [H?] a rate of 0 samples as fast as 1.
+            JoyMode::Monitoring { rate } if cps != 0 => {
+                Some((cps / 100 * rate.max(1) as u64).max(1))
+            }
+            // §9.19: eight samples in the time a character takes.
+            JoyMode::FireButton => Some(BYTE_CYCLES / 8),
+            _ => None,
+        }
+    }
+
+    /// One sample of a monitoring mode at `at`.
+    fn sample(&mut self, at: u64) {
+        match self.joy_mode {
+            JoyMode::Monitoring { .. } => {
+                // §9.18: `%000000ab` fire buttons of joystick 1 (a) and 0 (b), then `%nnnnmmmm` the sticks.
+                let fire = (self.joy[1] >> 7) << 1 | (self.joy[0] >> 7);
+                let sticks = (self.joy[1] & 0x0F) << 4 | (self.joy[0] & 0x0F);
+                self.push(at, &[fire, sticks]);
+            }
+            JoyMode::FireButton => {
+                // §9.19: joystick 1's fire button, the first sample the most significant bit.
+                self.fire_bits = self.fire_bits << 1 | (self.joy[1] >> 7);
+                self.fire_count += 1;
+                if self.fire_count == 8 {
+                    let byte = self.fire_bits;
+                    self.fire_bits = 0;
+                    self.fire_count = 0;
+                    self.push(at, &[byte]);
+                }
+            }
+            _ => {}
+        }
     }
 
     fn advance_clock(&mut self, now: u64) {
         let cps = self.cycles_per_second;
-        if cps == 0 {
+        if cps == 0 || now < self.clock_at + cps {
             return;
         }
-        while now >= self.clock_at + cps {
-            self.clock_at += cps;
-            self.add_second();
+        let seconds = (now - self.clock_at) / cps;
+        self.clock_at += seconds * cps;
+        self.add_seconds(seconds);
+    }
+
+    /// `n` seconds on the packed-BCD clock, with the calendar's carries ([H?] two-digit years, leap when divisible
+    /// by 4). The calendar repeats every 36 525 days (100 years of this rule), so the work is bounded however long
+    /// the host did not look.
+    fn add_seconds(&mut self, n: u64) {
+        let bcd = |v: u8| (v >> 4) as u64 * 10 + (v & 0x0F) as u64;
+        let to = |v: u64| ((v / 10) << 4 | (v % 10)) as u8;
+        let of_day = bcd(self.clock[3]) * 3600 + bcd(self.clock[4]) * 60 + bcd(self.clock[5]);
+        let total = of_day + n % 86_400;
+        let days = (n / 86_400 + total / 86_400) % 36_525;
+        let of_day = total % 86_400;
+        self.clock[3] = to(of_day / 3600);
+        self.clock[4] = to(of_day % 3600 / 60);
+        self.clock[5] = to(of_day % 60);
+        for _ in 0..days {
+            self.add_day();
         }
     }
 
-    /// One second on the packed-BCD clock, with the calendar's carries ([H?] two-digit years, leap when divisible
-    /// by 4).
-    fn add_second(&mut self) {
+    fn add_day(&mut self) {
         let bcd = |v: u8| (v >> 4) * 10 + (v & 0x0F);
         let to = |v: u8| ((v / 10) << 4) | (v % 10);
-        let mut f: Vec<u8> = self.clock.iter().map(|&v| bcd(v)).collect();
-        f[5] += 1;
-        if f[5] == 60 {
-            f[5] = 0;
-            f[4] += 1;
-        }
-        if f[4] == 60 {
-            f[4] = 0;
-            f[3] += 1;
-        }
-        if f[3] == 24 {
-            f[3] = 0;
-            f[2] += 1;
-        }
-        let month_len = match f[1] {
-            2 if f[0].is_multiple_of(4) => 29,
+        let (mut year, mut month, mut day) =
+            (bcd(self.clock[0]), bcd(self.clock[1]), bcd(self.clock[2]));
+        day += 1;
+        let month_len = match month {
+            2 if year.is_multiple_of(4) => 29,
             2 => 28,
             4 | 6 | 9 | 11 => 30,
             _ => 31,
         };
-        if f[2] > month_len {
-            f[2] = 1;
-            f[1] += 1;
+        if day > month_len {
+            day = 1;
+            month += 1;
         }
-        if f[1] > 12 {
-            f[1] = 1;
-            f[0] = (f[0] + 1) % 100;
+        if month > 12 {
+            month = 1;
+            year = (year + 1) % 100;
         }
-        for (dst, v) in self.clock.iter_mut().zip(f) {
-            *dst = to(v);
-        }
+        self.clock[0] = to(year);
+        self.clock[1] = to(month);
+        self.clock[2] = to(day);
     }
 
     /// A byte from the ST, received at `at`.
     pub fn command_byte(&mut self, byte: u8, at: u64) {
-        self.advance_clock(at);
+        self.advance(at);
         self.cmd.push(byte);
         let first = self.cmd[0];
         if first == 0x80 {
@@ -271,8 +422,11 @@ impl Ikbd {
             return;
         }
         let cmd = std::mem::take(&mut self.cmd);
-        // §9.12: any command received while paused resumes output.
-        self.paused = false;
+        // §9.12: any command received while paused resumes output; §9.14: motion piled up meanwhile goes out as
+        // the fewest packets.
+        if std::mem::take(&mut self.paused) {
+            self.flush_motion(at);
+        }
         self.execute(&cmd, at);
     }
 
@@ -293,13 +447,19 @@ impl Ikbd {
                 self.mouse_command();
             }
             0x0A => {
+                // [H?] a distance of 0 clicks is read as 1.
                 self.mouse = MouseMode::Keycode {
                     dx: cmd[1].max(1),
                     dy: cmd[2].max(1),
                 };
                 self.mouse_command();
             }
-            0x0B => self.threshold = (cmd[1].max(1), cmd[2].max(1)),
+            // §9.6: "valid only in RELATIVE MOUSE POSITIONING mode"; [H?] a threshold of 0 is read as 1.
+            0x0B if self.mouse == MouseMode::Relative => {
+                self.threshold = (cmd[1].max(1), cmd[2].max(1));
+            }
+            0x0B => {}
+            // §9.7; [H?] a scale of 0 is read as 1.
             0x0C => self.scale = (cmd[1].max(1), cmd[2].max(1)),
             0x0D => {
                 let [xh, xl] = (self.abs.0 as u16).to_be_bytes();
@@ -319,14 +479,29 @@ impl Ikbd {
             0x11 => {}
             0x12 => self.mouse_enabled = false,
             0x13 => self.paused = true,
-            0x14 => self.joystick_command(JoyMode::Event),
-            0x15 => self.joystick_command(JoyMode::Interrogation),
+            0x14 => self.joystick_command(JoyMode::Event, at),
+            0x15 => self.joystick_command(JoyMode::Interrogation, at),
             0x16 => {
                 let j0 = if self.port0_joystick { self.joy[0] } else { 0 };
                 self.push(at, &[0xFD, j0, self.joy[1]]);
             }
-            0x17..=0x19 => self.joystick_command(JoyMode::Unsupported(cmd[0])),
-            0x1A => self.joy_enabled = false,
+            0x17 => self.joystick_command(JoyMode::Monitoring { rate: cmd[1] }, at),
+            0x18 => self.joystick_command(JoyMode::FireButton, at),
+            0x19 => self.joystick_command(
+                JoyMode::Keycode(KeyTimes {
+                    rx: cmd[1],
+                    ry: cmd[2],
+                    tx: cmd[3],
+                    ty: cmd[4],
+                    vx: cmd[5],
+                    vy: cmd[6],
+                }),
+                at,
+            ),
+            0x1A => {
+                self.joy_enabled = false;
+                self.axes = [Axis::default(); 2];
+            }
             0x1B => {
                 for (field, &v) in self.clock.iter_mut().zip(&cmd[1..7]) {
                     // §9.22: a field with a digit that is not BCD is left alone.
@@ -334,18 +509,58 @@ impl Ikbd {
                         *field = v;
                     }
                 }
+                // [H?] setting the time restarts the second: the next one is a whole second after the command.
+                self.clock_at = at;
             }
             0x1C => {
                 let c = self.clock;
                 self.push(at, &[0xFC, c[0], c[1], c[2], c[3], c[4], c[5]]);
             }
-            // [H?] §9.24-9.26 address the 6301's own memory, which is not modelled: loads are consumed and dropped,
-            // reads answer zeros, execute does nothing.
-            0x20 | 0x22 => {}
-            0x21 => self.push(at, &[0xF6, 0x20, 0, 0, 0, 0, 0, 0]),
+            0x20 => self.memory_load(cmd),
+            // §9.25: `$F6 $20` and six bytes from the address. [H?] only what a load put there is known; the rest
+            // reads as zero.
+            0x21 => {
+                let addr = u16::from_be_bytes([cmd[1], cmd[2]]);
+                let mut p = [0u8; 8];
+                p[0] = 0xF6;
+                p[1] = 0x20;
+                for (i, b) in p[2..].iter_mut().enumerate() {
+                    *b = self
+                        .memory
+                        .get(&addr.wrapping_add(i as u16))
+                        .copied()
+                        .unwrap_or(0);
+                }
+                self.push(at, &p);
+            }
+            // [H?] §9.26: the controller's firmware is not emulated, so nothing runs; the address is kept for tests
+            // and diagnostics.
+            0x22 => {
+                if self.executed.len() == 16 {
+                    self.executed.remove(0);
+                }
+                self.executed.push(u16::from_be_bytes([cmd[1], cmd[2]]));
+            }
             0x87..=0x9A => self.status(cmd[0], at),
             _ => {}
         }
+    }
+
+    /// §9.24: `$20`, address, count (0-128), data. [H?] a count over 128 loads its first 128 bytes.
+    fn memory_load(&mut self, cmd: &[u8]) {
+        let addr = u16::from_be_bytes([cmd[1], cmd[2]]);
+        let n = (cmd[3] as usize).min(128);
+        for (i, &b) in cmd[4..4 + n].iter().enumerate() {
+            let a = addr.wrapping_add(i as u16);
+            if self.memory.len() < MEMORY_MODEL_BYTES || self.memory.contains_key(&a) {
+                self.memory.insert(a, b);
+            }
+        }
+    }
+
+    /// The addresses of the controller-execute commands received, oldest first (the code is not run).
+    pub fn executed(&self) -> &[u16] {
+        &self.executed
     }
 
     fn mouse_command(&mut self) {
@@ -354,17 +569,30 @@ impl Ikbd {
         self.acc = (0, 0);
     }
 
-    fn joystick_command(&mut self, mode: JoyMode) {
+    fn joystick_command(&mut self, mode: JoyMode, at: u64) {
         self.joy_mode = mode;
         self.joy_enabled = true;
         self.port0_joystick = true;
+        self.axes = [Axis::default(); 2];
+        self.fire_bits = 0;
+        self.fire_count = 0;
+        if let Some(period) = self.period() {
+            self.sample_at = at + period;
+        }
     }
 
-    /// §9.27: `$F6`, the answer, padded to 8 bytes.
+    /// §9.27: `$F6`, the answer (laid out like the command that sets it, so the host can send it back), padded to
+    /// 8 bytes. "Not valid if the ikbd is in JOYSTICK MONITORING mode or FIRE BUTTON MONITORING mode": ignored.
     fn status(&mut self, code: u8, at: u64) {
+        if matches!(
+            self.joy_mode,
+            JoyMode::Monitoring { .. } | JoyMode::FireButton
+        ) {
+            return;
+        }
         let mut r = [0u8; 7];
         match code {
-            0x87 => r[0] = self.button_action,
+            0x87 => r[..2].copy_from_slice(&[0x07, self.button_action]),
             0x88..=0x8A => match self.mouse {
                 MouseMode::Relative => r[0] = 0x08,
                 MouseMode::Absolute { x_max, y_max } => {
@@ -378,13 +606,15 @@ impl Ikbd {
             0x8C => r[..3].copy_from_slice(&[0x0C, self.scale.0, self.scale.1]),
             0x8F | 0x90 => r[0] = if self.y_at_bottom { 0x0F } else { 0x10 },
             0x92 => r[0] = if self.mouse_enabled { 0x00 } else { 0x12 },
-            0x94 | 0x95 | 0x99 => {
-                r[0] = match self.joy_mode {
-                    JoyMode::Event => 0x14,
-                    JoyMode::Interrogation => 0x15,
-                    JoyMode::Unsupported(c) => c,
+            0x94 | 0x95 | 0x99 => match self.joy_mode {
+                JoyMode::Event => r[0] = 0x14,
+                JoyMode::Interrogation => r[0] = 0x15,
+                JoyMode::Keycode(t) => {
+                    r[..7].copy_from_slice(&[0x19, t.rx, t.ry, t.tx, t.ty, t.vx, t.vy])
                 }
-            }
+                // Unreachable: the monitoring modes returned above.
+                JoyMode::Monitoring { .. } | JoyMode::FireButton => return,
+            },
             0x9A => r[0] = if self.joy_enabled { 0x00 } else { 0x1A },
             _ => return,
         }
@@ -393,8 +623,21 @@ impl Ikbd {
         self.push(at, &packet);
     }
 
+    /// Whether a monitoring mode has the controller to itself (§9.18, §9.19: "nothing but monitor the serial command
+    /// line, maintain the clock and monitor the joystick").
+    fn monitoring(&self) -> bool {
+        matches!(
+            self.joy_mode,
+            JoyMode::Monitoring { .. } | JoyMode::FireButton
+        ) && self.joy_enabled
+    }
+
     /// A key went down or up (`scan` is its make code).
     pub fn key(&mut self, scan: u8, down: bool, at: u64) {
+        self.advance(at);
+        if self.monitoring() {
+            return;
+        }
         self.push(at, &[if down { scan } else { scan | 0x80 }]);
     }
 
@@ -404,21 +647,25 @@ impl Ikbd {
 
     /// Mouse motion in mouse clicks (X right, Y toward the user positive), at `at`.
     pub fn mouse_move(&mut self, dx: i32, dy: i32, at: u64) {
+        self.advance(at);
         if !self.mouse_enabled || self.port0_joystick {
             return;
         }
-        let dy = if self.y_at_bottom { -dy } else { dy };
         match self.mouse {
             MouseMode::Relative => {
+                let dy = if self.y_at_bottom { -dy } else { dy };
                 self.acc.0 += dx;
                 self.acc.1 += dy;
-                if self.acc.0.unsigned_abs() >= self.threshold.0 as u32
-                    || self.acc.1.unsigned_abs() >= self.threshold.1 as u32
+                // §9.14: while paused the motion piles up and goes out when output resumes.
+                if !self.paused
+                    && (self.acc.0.unsigned_abs() >= self.threshold.0 as u32
+                        || self.acc.1.unsigned_abs() >= self.threshold.1 as u32)
                 {
                     self.relative_report(at);
                 }
             }
             MouseMode::Absolute { x_max, y_max } => {
+                let dy = if self.y_at_bottom { -dy } else { dy };
                 let step = |pos: &mut i32, sub: &mut i32, d: i32, scale: u8, max: u16| {
                     *sub += d;
                     let units = *sub / scale as i32;
@@ -441,6 +688,7 @@ impl Ikbd {
                     y_max,
                 );
             }
+            // §9.5: "this command is not affected by the mouse motion origin".
             MouseMode::Keycode { dx: kx, dy: ky } => {
                 self.acc.0 += dx;
                 self.acc.1 += dy;
@@ -480,8 +728,20 @@ impl Ikbd {
         }
     }
 
+    /// Motion held back while output was paused goes out now.
+    fn flush_motion(&mut self, at: u64) {
+        if self.mouse == MouseMode::Relative
+            && self.mouse_enabled
+            && !self.port0_joystick
+            && self.acc != (0, 0)
+        {
+            self.relative_report(at);
+        }
+    }
+
     /// A mouse button changed (`left` false = right button).
     pub fn mouse_button(&mut self, left: bool, down: bool, at: u64) {
+        self.advance(at);
         if left {
             self.left = down;
         } else {
@@ -508,6 +768,7 @@ impl Ikbd {
             return;
         }
         match self.mouse {
+            // §9.14: a button press or release sends the motion piled up so far at once.
             MouseMode::Relative => self.relative_report(at),
             MouseMode::Absolute { .. } => {
                 // §9.8: down/up since the last interrogation; §9.2 bits 0/1 ask for a report on press/release.
@@ -531,18 +792,115 @@ impl Ikbd {
     /// Joystick `port` (0 or 1) now reads `bits`: bit 7 the trigger, bits 3-0 the stick ([H?] bit 0 up, 1 down,
     /// 2 left, 3 right; the document says only "stick position").
     pub fn joystick(&mut self, port: u8, bits: u8, at: u64) {
+        self.advance(at);
         let port = (port & 1) as usize;
         let bits = bits & 0x8F;
-        if self.joy[port] == bits {
+        let old = self.joy[port];
+        if old == bits {
             return;
         }
         self.joy[port] = bits;
-        if !self.joy_enabled
-            || self.joy_mode != JoyMode::Event
-            || (port == 0 && !self.port0_joystick)
-        {
+        if !self.joy_enabled || (port == 0 && !self.port0_joystick) {
             return;
         }
-        self.push(at, &[0xFE | port as u8, bits]);
+        match self.joy_mode {
+            JoyMode::Event => self.push(at, &[0xFE | port as u8, bits]),
+            JoyMode::Keycode(times) => self.joystick_keys(times, port, old, bits, at),
+            JoyMode::Interrogation | JoyMode::Monitoring { .. } | JoyMode::FireButton => {}
+        }
+    }
+
+    /// §5.5: the fire buttons are the pseudo keys `$74` (joystick 0) and `$75` (joystick 1); [H?] only joystick 0's
+    /// stick makes cursor keys (§9.20: "joystick 0 is scanned in a way that simulates cursor keystrokes", where §5.5
+    /// says "either joystick").
+    fn joystick_keys(&mut self, t: KeyTimes, port: usize, old: u8, bits: u8, at: u64) {
+        if (old ^ bits) & 0x80 != 0 {
+            let code = if port == 0 {
+                LEFT_BUTTON_KEY
+            } else {
+                RIGHT_BUTTON_KEY
+            };
+            self.push(at, &[if bits & 0x80 != 0 { code } else { code | 0x80 }]);
+        }
+        if port != 0 {
+            return;
+        }
+        let dir = |minus: u8, plus: u8| -> i8 {
+            match (bits & minus != 0, bits & plus != 0) {
+                (true, false) => -1,
+                (false, true) => 1,
+                _ => 0,
+            }
+        };
+        // Up is bit 0, down bit 1, left bit 2, right bit 3.
+        let new = [dir(0x04, 0x08), dir(0x01, 0x02)];
+        for (axis, dir) in new.into_iter().enumerate() {
+            if dir == self.axes[axis].dir {
+                continue;
+            }
+            self.axes[axis] = Axis {
+                dir,
+                since: at,
+                next: None,
+            };
+            if dir != 0 {
+                self.push_cursor(axis, dir, at);
+                self.axes[axis].next = self.repeat_after(t, axis, at);
+            }
+        }
+    }
+
+    fn push_cursor(&mut self, axis: usize, dir: i8, at: u64) {
+        let key = match (axis, dir < 0) {
+            (0, true) => KEY_LEFT,
+            (0, false) => KEY_RIGHT,
+            (_, true) => KEY_UP,
+            (_, false) => KEY_DOWN,
+        };
+        self.push(at, &[key, key | 0x80]);
+    }
+
+    /// §9.20: pairs every T tenths until R tenths have passed since the closure, then every V tenths; with R = 0 the
+    /// velocity part is the only one. [H?] a repeat of 0 tenths does not repeat.
+    fn repeat_after(&self, t: KeyTimes, axis: usize, from: u64) -> Option<u64> {
+        let (r, tn, v) = if axis == 0 {
+            (t.rx, t.tx, t.vx)
+        } else {
+            (t.ry, t.ty, t.vy)
+        };
+        let tenth = self.cycles_per_second / 10;
+        let since = self.axes[axis].since;
+        let breakpoint = since + r as u64 * tenth;
+        let gap = if r == 0 || from + tn as u64 * tenth >= breakpoint {
+            v as u64 * tenth
+        } else {
+            tn as u64 * tenth
+        };
+        (gap != 0).then_some(from + gap)
+    }
+
+    /// The cursor key repeats due by `now`, in time order.
+    fn advance_repeats(&mut self, now: u64) {
+        let JoyMode::Keycode(times) = self.joy_mode else {
+            return;
+        };
+        for _ in 0..MAX_CATCH_UP {
+            let Some((axis, at)) = (0..2)
+                .filter_map(|a| self.axes[a].next.map(|t| (a, t)))
+                .filter(|&(_, t)| t <= now)
+                .min_by_key(|&(_, t)| t)
+            else {
+                return;
+            };
+            let dir = self.axes[axis].dir;
+            self.push_cursor(axis, dir, at);
+            self.axes[axis].next = self.repeat_after(times, axis, at);
+        }
+        // A host that did not run the controller for ages: drop the backlog rather than loop.
+        for a in &mut self.axes {
+            if a.next.is_some_and(|t| t <= now) {
+                a.next = Some(now + 1);
+            }
+        }
     }
 }

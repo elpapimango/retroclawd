@@ -158,8 +158,19 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Clock at power-up | 00-00-00 00:00:00, BCD, one-second steps | `[O]` | Hatari: `$1C` at 1.2 s answers `00 00 00 00 00 01` |
 | Calendar carries | two-digit year, leap when divisible by 4 | `[H?]` | not documented |
 | Output queue | 256 bytes; a packet that does not fit is dropped | `[H?]` | *IKBD* §9.14 "<tbd>"; the 6301 has 128 bytes of RAM (*Internals* p.69) |
-| Memory load/read/execute (`$20-$22`) | consumed; reads answer zeros; nothing executes | `[H?]` | the 6301's memory is not modelled |
-| Joystick monitoring, fire monitoring, joystick key code (`$17-$19`) | parameters consumed, no reports | `[H?]` | Phase 2 |
+| Memory load/read/execute (`$20-$22`) | a load (count 0-128; a larger count keeps its first 128 bytes) is kept in a model of the controller memory, a read answers `$F6 $20` and six bytes from the address (zero where nothing was loaded), an execute is recorded and not run | `[H?]` | *IKBD* §9.24-9.26 give the formats only; the 6301's own ROM and RAM are not modelled |
+| Joystick monitoring (`$17`) | every `rate` hundredths of a second `%000000ab` (a joystick 1 fire, b joystick 0 fire) then `%nnnnmmmm` (joystick 1 stick high, joystick 0 low); keys, mouse and events are not reported; PAUSE stops the samples; a rate of 0 samples as fast as 1 | `[H]` / `[H?]` | *IKBD* §5.3, §9.18 (the layout is in a garbled page: joystick 1 first is the document's order of the two fire bits and nibbles) |
+| Fire button monitoring (`$18`) | joystick 1's fire button, eight samples a byte, the first the most significant bit, eight samples in the time a character takes (1280 cycles each) | `[H]` | *IKBD* §5.4, §9.19 |
+| Joystick key code mode (`$19`) | make/break cursor keys on closure, repeated every T tenths until R tenths, then every V tenths; R = 0 uses V only; fire buttons are `$74` (joystick 0) and `$75` (joystick 1) | `[H]` | *IKBD* §5.5, §9.20 |
+| Key code repeat spacing | T spacing holds while the next pair still falls before the breakpoint; V counts from the last pair; a spacing of 0 does not repeat | `[H?]` | the document does not say what happens at the breakpoint itself |
+| Key code mode sticks | only joystick 0's stick makes cursor keys | `[H?]` | §9.20 says "joystick 0", §5.5 "either joystick" |
+| Status inquiries | answered as the setting command (so the host can send them back), padded to 8 bytes after `$F6`; ignored in the monitoring modes; `$87` is `$07, action` | `[H]` | *IKBD* §9.27 |
+| Threshold, scale, key code distance of 0 | read as 1 | `[H?]` | the document says "positive integers" |
+| Threshold outside relative mode | ignored | `[H]` | *IKBD* §9.6 "valid only in RELATIVE MOUSE POSITIONING mode" |
+| Key code mode and the Y origin | not affected | `[H]` | *IKBD* §9.5 |
+| Motion while paused | accumulates and goes out as the fewest packets on resume; a button press sends it at once | `[H]` | *IKBD* §9.14 |
+| Setting the clock | restarts the second: the next one is a whole second after the command | `[H?]` | the document gives no phase |
+| Reset | a packet being sent is cut off, the queue is emptied, loaded controller memory is gone, the clock is kept | `[H?]` / `[H]` | *IKBD* §9.1 keeps the clock; the rest is not documented |
 | Keyboard line | 7812.5 baud, 8N1, 10 bits a character (1024 CPU cycles a bit) | `[H]` *Internals* p.47; the IKBD's own bit clock equal to the ACIA's `[H?]` | — |
 | Key names | the host's key names for the same position (`KeyA`, `Digit1`, `Escape`, `NumpadEnter`, `IntlBackslash` for the ISO key, `Undo`, `Help`) | — | a naming choice, not a hardware fact |
 

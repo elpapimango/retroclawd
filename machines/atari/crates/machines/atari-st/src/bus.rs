@@ -183,6 +183,11 @@ impl StBus {
         }
         check_reset_pc(&cfg.rom)?;
         let mmu = Mmu::new(cfg.ram);
+        let cpu_hz = (scheduler::crystal_hz(cfg.region) / scheduler::CPU_DIVIDER) as u64;
+        let mut acias = Acias::new();
+        if let Some(k) = acias.ikbd() {
+            k.set_cycles_per_second(cpu_hz);
+        }
         let mut mfp = Mfp::new();
         for (line, level) in gpip_inputs(cfg.monitor) {
             mfp.set_input(line, level);
@@ -197,14 +202,14 @@ impl StBus {
             vbl_pending: false,
             mfp,
             shifter: Shifter::new(cfg.region == crate::config::Region::Pal),
-            acias: Acias::new(),
+            acias,
             rs232: Rs232(Box::new(NullPeer)),
             printer: None,
             dma: Dma::new(2),
             fdc_dirty: false,
             fdc_irq: false,
             acia_dirty: false,
-            psg: Psg::new((scheduler::crystal_hz(cfg.region) / scheduler::CPU_DIVIDER) as u64),
+            psg: Psg::new(cpu_hz),
             monitor: cfg.monitor,
             clock: MfpClock::new(scheduler::crystal_hz(cfg.region)),
             mfp_ticks: 0,

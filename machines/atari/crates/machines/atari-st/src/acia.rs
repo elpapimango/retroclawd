@@ -26,6 +26,11 @@ pub trait SerialPeer {
     fn next_byte(&mut self, now: u64) -> Option<(u64, u8)>;
     /// CPU cycles one character takes on the line, from the peer's side.
     fn frame_cycles(&self) -> u64;
+    /// The cycle at which the peer will have something to send without being asked, if it will (the IKBD's
+    /// joystick monitoring); the port asks for it then.
+    fn next_wake(&self) -> Option<u64> {
+        None
+    }
 }
 
 /// Nothing connected (the MIDI port in Phase 1).
@@ -43,7 +48,7 @@ impl SerialPeer for NullPeer {
 
 /// [H] *Internals* p.47: the keyboard line runs at 7812.5 baud, 8N1; [H?] the IKBD's own clock gives the same bit
 /// time as the ACIA's ÷64 (1024 CPU cycles), 10 bits a character.
-pub const IKBD_FRAME_CYCLES: u64 = 10 * 64 * ACIA_DIVIDER;
+pub const IKBD_FRAME_CYCLES: u64 = ikbd::BYTE_CYCLES;
 
 impl SerialPeer for Ikbd {
     fn receive(&mut self, byte: u8, at: u64) {
@@ -51,13 +56,18 @@ impl SerialPeer for Ikbd {
     }
 
     fn next_byte(&mut self, now: u64) -> Option<(u64, u8)> {
+        self.advance_to(now);
         let at = self.next_output_at()?;
-        let byte = self.pop_output(at)?;
+        let byte = self.pop_queued(at)?;
         Some((at.max(now), byte))
     }
 
     fn frame_cycles(&self) -> u64 {
         IKBD_FRAME_CYCLES
+    }
+
+    fn next_wake(&self) -> Option<u64> {
+        Ikbd::next_wake(self)
     }
 }
 
@@ -72,6 +82,13 @@ impl Peer {
         match self {
             Peer::Ikbd(k) => k.as_mut(),
             Peer::Other(p) => p.as_mut(),
+        }
+    }
+
+    fn next_wake(&self) -> Option<u64> {
+        match self {
+            Peer::Ikbd(k) => SerialPeer::next_wake(k.as_ref()),
+            Peer::Other(p) => p.next_wake(),
         }
     }
 }
@@ -219,7 +236,9 @@ impl Port {
 
     /// The earliest pending action.
     pub(crate) fn next_due(&self) -> Option<u64> {
-        [self.tx_start, self.tx_end, self.rx.map(|(t, _)| t)]
+        // The peer's own wake-up counts only while the receive line is free: a busy line asks again when it frees.
+        let wake = self.peer.next_wake().filter(|_| self.rx.is_none());
+        [self.tx_start, self.tx_end, self.rx.map(|(t, _)| t), wake]
             .into_iter()
             .flatten()
             .min()
@@ -250,6 +269,9 @@ impl Port {
                 self.rx = None;
                 self.chip.rx_byte(byte);
                 self.pull_rx(rt);
+            } else {
+                // The peer's wake-up: it has something to say.
+                self.pull_rx(t);
             }
         }
     }
