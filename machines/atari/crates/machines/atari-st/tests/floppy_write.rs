@@ -55,7 +55,7 @@ fn write_sector_program(record: u8) -> Vec<u16> {
     p.extend(move_w(0x184, 0x8606));
     p.extend(move_w(record as u16, 0x8604)); // sector register
     p.extend(move_w(0x180, 0x8606));
-    p.extend(move_w(0xA8, 0x8604)); // WRITE SECTOR, motor on
+    p.extend(move_w(0xA0, 0x8604)); // WRITE SECTOR, spin-up wait (h = 0)
     p.extend(WAIT_FDC);
     p.extend(move_w(0x180, 0x8606));
     p.extend([0x31F8, 0x8604, 0x1000]); // MOVE.W $FF8604.W,$1000.W

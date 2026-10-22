@@ -68,6 +68,18 @@ golden = "atari-st/S3-floppy.png"
 golden_sha256 = "15a7d1a15e50fa85f5d5fc6e704a70182b98d9a2233addd1bc1f0371d92bb8de"
 compare = { mode = "exact" }
 
+# S3W: write.st's boot program writes logical sector 30 through BIOS Rwabs, reads it back, compares and prints WRITE OK
+# (scenarios/README.md). The same run with --disk-save leaves exactly one changed sector in the saved image, with the
+# pattern in it (checked once by hand, and by tests/scenarios.rs).
+[[scenario]]
+id = "S3W"
+kind = "screen"
+frames = 400
+files = { disk = "atari/software/scenarios/write.st" }
+golden = "atari-st/S3W-write.png"
+golden_sha256 = "bb9dbcce4e814124187770c4dfefc39c4f9f5091aee91c194fda1d2294048f87"
+compare = { mode = "exact" }
+
 # S4: tone.bin (--program at $8000) plays YM2149 tone A at period 284. Yamaha's YM2149 catalog, section (1):
 # fT = fMaster / (16 TP), with the master clock the CPU clock / 4 (machines/atari/docs/hardware-facts.md, PSG) and the PAL
 # CPU clock 32 084 988 / 4 = 8 021 247 Hz: 8 021 247 / 4 / (16 x 284) = 441.31 Hz.

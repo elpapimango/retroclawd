@@ -54,3 +54,6 @@ writes to `RC_DUMP_BOOT_FLOPPY`). Without them they print where they looked and 
 masks for timing-dependent and documented-conflict values, per-location streams, sets and ordered sequences) are
 documented and unit-tested in `tests/common/mod.rs` and `tests/polls.rs`. `RC_SCREENSHOT_DIR` makes the desktop test
 write its 1500-frame picture.
+`tests/romm_games.rs` needs `RC_ROMM_GAMES`, a folder of the unzipped `.st` disk games from the owner's RomM (platform
+`atari-st`; `retroclawd romm games atari-st`): each boots without a stop, gives the same frame on two runs, and is not
+modified by being read. Never committed; without the variable the tests pass and say so.

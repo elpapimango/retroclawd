@@ -13,6 +13,11 @@ python "$here/make_scenarios.py" "$out"
 "$tools/rcdisk" create "$out/keys.st" --force
 "$tools/rcdisk" boot "$out/keys.st" "$out/keys-boot.bin"
 
+# write.st: a blank disk whose boot program writes logical sector 30 through the BIOS, reads it back and says
+# whether the two agree (S3W).
+"$tools/rcdisk" create "$out/write.st" --force
+"$tools/rcdisk" boot "$out/write.st" "$out/write-boot.bin"
+
 # files.st: two text files to list on the desktop.
 "$tools/rcdisk" create "$out/files.st" --force
 printf 'Hello from rcdisk.\r\n' > "$out/HELLO.TXT"

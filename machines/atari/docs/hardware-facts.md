@@ -202,6 +202,7 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | WRITE SECTOR end status | the shared `wd1770` leaves the DRQ status bit set after the last byte (status `$82`); the error bits are clear | `[H?]` | unchecked against the data sheet or Hatari; the machine treats a command as finished by BUSY alone |
 | Write protect | the user's write-protect tab makes the controller see the write-protect line (WRITE commands end with status bit 6) and the drive takes nothing | `[D]` | *WD177X* status register, write protect |
 | INTRQ | GPIP I5, active low | `[H]` | *Internals* p.61 |
+| INTRQ reset | by reading the status register or by loading the command register with a new command (any command but Force Interrupt) | `[D]` | a WD177X data sheet transcription, <https://www.worldofsam.org/node/1097>, "INTRQ"; EmuTOS writes a write command without reading the previous status and then looks at GPIP I5 |
 | HDC (ACSI) with nothing connected | writes vanish, I5 stays high | `[O]` | EmuTOS's probe in Hatari |
 | HDC read | no fact: the machine stops | — | — |
 | RESET instruction | FDC and DMA not reset | `[H?]` | — |

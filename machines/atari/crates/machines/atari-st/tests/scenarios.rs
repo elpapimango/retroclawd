@@ -93,3 +93,29 @@ fn keys_st_joystick_sets_palette_0() {
     run_frames(&mut m, 5);
     assert_eq!(m.bus().shifter().palette()[0], 0x040);
 }
+
+/// `write.st`: the boot program writes logical sector 30 (cylinder 1, side 1, sector 4 of a 720K disk) through BIOS
+/// Rwabs, reads it back and prints WRITE OK. The image then holds the pattern there and nowhere near it, and the
+/// disk is marked modified.
+#[test]
+fn write_st_writes_a_sector_through_the_bios() {
+    let Some(rom) = common::emutos() else { return };
+    let Some(bytes) = media("write.st") else {
+        return;
+    };
+    let before = st_floppy::Image::parse(&bytes).unwrap();
+    let mut m = AtariSt::new(common::config(rom, RamSize::M1)).unwrap();
+    m.insert_disk(0, before.clone()).unwrap();
+    run_frames(&mut m, 400);
+    assert!(m.io_stop().is_none(), "{:?}", m.io_stop());
+    m.commit_disks();
+    let after = m.disk(0).unwrap();
+    let sector = after.sector(1, 1, 4).unwrap();
+    assert!(
+        sector.chunks(4).all(|c| c == b"WRIT"),
+        "sector 30 holds the pattern"
+    );
+    assert_eq!(after.sector(1, 1, 3), before.sector(1, 1, 3));
+    assert_eq!(after.sector(1, 1, 5), before.sector(1, 1, 5));
+    assert!(m.disk_modified(0));
+}

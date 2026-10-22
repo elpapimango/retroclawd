@@ -36,3 +36,18 @@ A blank 720K disk (`rcdisk create`) with an executable boot sector (`rcdisk boot
 
 A 720K disk with `HELLO.TXT` and `README.TXT`, made with `rcdisk create` and `rcdisk add`. It is not bootable;
 the desktop lists both files when drive A is opened.
+
+## `write.st` (S3W)
+
+A blank 720K disk with an executable boot sector (`rcdisk boot`) holding `write-boot.bin`. The program:
+
+1. calls BIOS 7 `Getbpb(0)` (`trap #13`) so TOS has the disk's parameters;
+2. fills `$30000` with the four bytes "WRIT" 128 times (512 bytes);
+3. calls BIOS 4 `Rwabs` (`trap #13`, *Internals* p.143) to write that buffer to logical sector 30 of drive A, and keeps
+   the result (D0) at `$32000`;
+4. reads sector 30 back into `$31000` the same way (result at `$32004`);
+5. compares the two buffers with `CMPM.L` and prints `WRITE OK` or `WRITE FAILED` on the console (BIOS 3 `Bconout`).
+
+Logical sector 30 of the 720K disk is cylinder 1, side 1, sector 4. `tests/scenarios.rs` checks that the image holds
+the pattern there and nowhere near it, and that the disk is marked modified; the manifest's S3W checks the picture.
+The branch displacements are worked out from labels by `assemble` in `make_scenarios.py`.
