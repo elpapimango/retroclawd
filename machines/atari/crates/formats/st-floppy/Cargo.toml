@@ -7,5 +7,5 @@ description = "Atari ST .st floppy images: geometry, sectors, MFM tracks for a W
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-wd1770 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "c240a7aee11208ceefc3ba66cc4caf6c8c914793" }
+wd1770 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "39dfdcc276719bffd9da53ead351e0d3da14b1bb" }
 
