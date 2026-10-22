@@ -85,6 +85,20 @@ S4 YM2149 tone; S6 frame length), media from `machines/atari/scenarios/build.sh`
 steps of at most 127) and `--at mouse_down|mouse_up=left|right|middle` drive the mouse in batch runs (`scripted.rs`).
 `rc-scenarios` reports a scenario as `SKIP` when `--firmware auto` finds no EmuTOS (no cache, RomM or network).
 
+**Phase 2 (2026-10-22, slices 7-12; plan `docs/superpowers/plans/2026-10-22-atari-st-phase2.md`, spec Status 2026-10-22).**
+Floppies can be written (WD1772 write sector / write track decode into the image; `.msa` images; `write_protect`; dirty
+export and `--disk-save` through the plugin), the machine has save states (`RCST` envelope: id, schema, TOS and accuracy
+checks, CRC, 64 MiB cap, bincode payload; clean disks stay the user's file), the MFP USART (timer D) with RS-232 peers,
+MIDI and Centronics ports (options `serial_out/in/loopback`, `midi_*`, `centronics_out`, `overwrite_outputs`: a sink never
+replaces a file unasked), the full IKBD command set, a read-only cartridge at `$FA0000` (`--cartridge x.stc`, a write is a
+bus error), a raster palette by line and a log of sync/resolution writes, and ACSI hard disks (`--acsi0 ... --acsi7` raw
+images, AHDI/FAT16 made by `rcdisk hd`, EmuTOS shows drive C). A `.prg` given to `--program` goes to the plugin as
+`MediaKind::Program` when the machine declares it (`program_goes_to_plugin`): the plugin builds a 720K floppy holding
+`AUTO\NAME.PRG` (`st_floppy::boot`) and EmuTOS runs it. `retroclawd-tools` gained the 68000 toolchain: `rcasm --cpu 68000`
+(`-f gemdos` for a relocatable `.PRG`), `rcdis --cpu 68000`, `rcld` with `machine = "atari-st"`, `rc_common::prg` (the GEMDOS
+executable format) and `rcdisk hd`. The manifest now has S3W, S5, S8P, S9S, S10 and S11 as well. Scenario media build: `machines/atari/scenarios/build.sh`.
+Unfinished and unsourced items are the `[H?]` rows of `machines/atari/docs/hardware-facts.md` and TODO.md "Atari ST: Phase 2 done, Phase 3 next".
+
 ## What this is
 
 Zilog Z80 CPU emulator/core in Rust, prioritizing accuracy (correct

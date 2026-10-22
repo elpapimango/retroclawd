@@ -977,3 +977,30 @@ Plan `docs/superpowers/plans/2026-10-21-atari-st-slice6.md`. The section 24 exit
 
 Not in the manifest: S5 (save states, Phase 2), S7 (no ST test program shipped), S8 (no kind yet). Next: Phase 2,
 TODO.md "Atari ST: Phase 2 next".
+
+## Status (2026-10-22): Phase 2 done (slices 7-12)
+
+Plan `docs/superpowers/plans/2026-10-22-atari-st-phase2.md`. The decisions taken: no memory watchpoints; `.stx` and `.dim`
+get a provenance note only (`machines/atari/docs/stx-and-dim-provenance.md`, recommendation no-go); a `.PRG` runs from a floppy
+the plugin builds around it (`AUTO\PROG.PRG`).
+
+| Exit criterion | Where |
+|---|---|
+| A guest write is visible in `rcdisk st list` | S3W (`write.st`: BIOS Rwabs writes a sector); `--disk-save` leaves exactly one sector changed; the shared `wd1770` needed a fix (a new command resets INTRQ at once, `retroclawd-crates` `fc671b3`) |
+| A state saved at frame N and loaded into a fresh machine matches a straight run | S5 (`kind = "state"`), `tests/state_roundtrip.rs`, `tests/state_envelope.rs` (hostile states: CRC, length bomb, mutated payloads, drive and image fields validated) |
+| IKBD full command set | `crates/chips/ikbd/tests/{protocol,mouse,commands}.rs`, one test per command, plus joystick monitoring, fire button monitoring and key code repeats woken through `SerialPeer::next_wake` |
+| A `.PRG` made by `rcasm` + `rcld` runs from a generated floppy | S8P (`hello.s`); `rcasm --cpu 68000` round-trips all 65 536 opcode words against the CPU crate's disassembler, `rcdis` reassembles the whole EmuTOS image byte for byte |
+| EmuTOS sees an AHDI hard disk as drive C: | S11 (`rcdisk hd new/add`, ACSI target 0 through the DMA chip) |
+| `check_all` includes the new scenarios and passes | the manifest has S1-S4, S5, S6, S2J/S2M, S3, S3W, S8P, S9S, S10, S11 |
+
+Also done: MFP USART with RS-232 peers (files, loopback), MIDI and Centronics ports (S9S), cartridge window at `$FA0000`
+(read only, a write is a bus error), a raster palette by line and a sync/resolution write log (S10 against Hatari: band
+edges within one line), `.msa` images, floppy write protection, dirty-disk export through the plugin.
+
+Limits that remain (all recorded as `[H?]` rows in `machines/atari/docs/hardware-facts.md`): Atari's hardware specification
+was still unreachable, so no further I/O region moved from "stop" to "bus error"; the INQUIRY / REQUEST SENSE / MODE SENSE
+/ READ CAPACITY answers are SCSI-2 layouts (the 1985 ACSI notes list only TEST UNIT READY, READ, WRITE, SEEK and MODE
+SENSE); an ACSI command finishes at its last byte with no timing; hard disk contents are not in a save state; the libFuzzer
+targets (`msa`, `state_decode`, `prg`, `ahdi_fat16`, `rcasm68k`, `rcdis68k`) are written but were not run (no nightly
+toolchain here), the same inputs were swept as mutation loops (`RC_SWEEP=40`). Phase 3 (cycle-exact video, overscan,
+Blitter, STE) is untouched.

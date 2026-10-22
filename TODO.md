@@ -106,19 +106,18 @@ No real hardware is available, so these stay parked until someone has it; everyt
   entities; gilrs itself was never exercised. To check: a physical pad, bind `reset = ["f12", "pad:select+start"]`, hold Select then
   press Start, and confirm Select alone does not reach the machine as a joystick button once it is part of a chord.
 
-## Atari ST: Phase 2 next (after Phase 1, 2026-10-21)
+## Atari ST: Phase 2 done, Phase 3 next (2026-10-22)
 
-Phase 1 is done (slices 1-6; spec section 24, Status 2026-10-21). Next: Phase 2 (spec section 5, column "Phase 2";
-backlog section 23 item 11): disk writing and formatting, `.msa`/`.stx`, save states (spec section 19; S5 in the
-manifest), raster palette and sync/resolution border foundations, the MFP USART, the full IKBD command set (absolute
-mouse, joystick modes), cartridges, bus errors from the GLUE, ACSI, printer/RS-232/MIDI, and rcasm/rcdis for the
-68000 (item 10, can run in parallel). The scenario manifest has no S5 (states), S7 (no ST test program shipped) or S8
-(no kind yet); its input goldens are retroclawd's own because headless Hatari takes no input.
-Deferred from the slices 3-5 review (plan ledger): serde on the PSG/ACIA/DMA/drive state,
-a DMA transfer across the top of RAM test, drive numbers >= 2 refused by the plugin, the DMA HDC/sector-count bit
-order, index interrupts while the FDC is idle, IKBD reset cancelling a byte in flight and its queue size, word/long
-accesses to the PSG (`MOVE.L`/`MOVEP` in games; no fact yet), a looser `.st` geometry rule for images with stale BPBs,
-the AY envelope hold bug (shapes 1101/1111) in `ay-3-8910`, the joystick bit order (`[H?]`), a GUI check of disk swaps.
+Phases 1 and 2 are done (spec section 24, Status 2026-10-21 and 2026-10-22). Next: Phase 3 (spec section 5): cycle-exact
+video and the sync/resolution borders (the log of those writes is in place), Blitter and STE, memory watchpoints (decision
+1 of Phase 2: wait for a need and the trace file), `.stx` once a specification with a usable licence exists
+(`machines/atari/docs/stx-and-dim-provenance.md`).
+Deferred from Phase 2 (plan ledger, `Deferred minors`): the host has no `--disk-save` for ACSI hard disks (the plugin exports
+them as drive 8 + target; wire a flag), the libFuzzer targets were never run (install nightly + cargo-fuzz and run each
+for 60 s: `msa`, `state_decode`, `prg`, `ahdi_fat16`, `rcasm68k`, `rcdis68k`), a download of Atari's hardware
+specification and the ACSI/SCSI references to settle the `[H?]` rows (bus errors per region, INQUIRY/REQUEST SENSE/MODE
+SENSE/READ CAPACITY data, the command acknowledge), IKBD joystick key code mode for joystick 1's stick, the break and
+parity features of the USART peers.
 Open hardware facts (`machines/atari/docs/hardware-facts.md`, `[H?]` and `[O]` rows; Atari's hardware specification
 is behind Cloudflare from here, download it by hand): the MMU's address multiplexing (modelled as DRAM row/column,
 checked only through EmuTOS's sizing), RAM above the configured top, unused register bits, the mono frame's line
