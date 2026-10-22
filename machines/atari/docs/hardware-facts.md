@@ -245,6 +245,19 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Palette log | every palette write that changes a colour, with its line, in time order, at most 16 384 a frame; the palette register itself always takes the write | `[H?]` | a bound for memory, not hardware |
 | Sync mode and resolution writes | logged with the raster line and the cycles since the line began, at most 256 a frame (the oldest dropped), shown in the stop report; the picture does not use them and no border opens | `[H?]` | overscan is Phase 3 (spec section 5) |
 
+## GEMDOS programs (`st-floppy` `boot.rs`; `retroclawd-tools` `rc-common` `prg.rs`)
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| Executable header | 28 bytes: `$601A`, text, data, bss and symbol table sizes (longs at `$02 $06 $0A $0E`), a reserved long, `PRGFLAGS` at `$16`, `ABSFLAG` word at `$1A` | `[H]` | *Atari Compendium* chapter 2 (http://bus-error.nokturnal.pl/atari_compendium/html/chap2.htm, page SHA-256 `6941f8b1af4f32561703335fc5644944c929febf569c34724cc09a79b62a6fd9`) |
+| Fixups | after the symbol table a long, the offset of the first longword to fix up (0: none), then bytes: 0 ends, 1 advances 254, an even 2-254 advances and fixes up; a fixup adds the load address | `[H]` | same |
+| Offset origin | the first fixup offset counts from the start of the text segment (the text and data share one offset space) | `[H?]` | the document says "from the beginning" of the executable |
+| Start | a program starts at byte 0 of its text with the base page at 4(sp) | `[H]` | same |
+| Symbol table | not written; the document leaves its layout to the toolchain | `[H]` | same |
+| AUTO folder | TOS runs `AUTO\*.PRG` of the boot drive before the desktop; a floppy with no executable boot sector but a FAT12 file system and an `AUTO` folder is enough | `[O]` | EmuTOS 1.4, scenario S8P and `tests/prg.rs` |
+| User mode | a program from AUTO runs in user mode: it may not touch `$0-$7FF` (a bus error, EmuTOS's crash screen) | `[H]` | *Internals* p.55 (the bus error rule) and observed |
+| Generated floppy | 720K, 512-byte sectors, 2 per cluster, 1 reserved, 2 FATs of 3 sectors, 112 root entries, media `$F9`, time stamp 2026-01-01 | `[H]` | *Internals* pp.178-179 (the BPB fields) |
+
 ## USART, RS-232, MIDI and printer (`mc68901` `usart.rs`, `serial.rs`)
 
 | Fact | Value | Label | Source |

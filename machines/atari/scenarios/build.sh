@@ -28,4 +28,7 @@ printf 'Hello from rcdisk.\r\n' > "$out/HELLO.TXT"
 printf 'A floppy made by retroclawd-tools for the S3 scenario.\r\n' > "$out/README.TXT"
 "$tools/rcdisk" add "$out/files.st" "$out/HELLO.TXT" "$out/README.TXT"
 rm "$out/HELLO.TXT" "$out/README.TXT"
+# hello.prg: a GEMDOS program made by rcasm's 68000 back end and rcld (S8P).
+"$tools/rcld" build "$here/hello.layout.toml" -o "$out/hello.prg" --force
+
 echo "built $out"

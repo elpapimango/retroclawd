@@ -283,7 +283,7 @@ fn machine_profile() -> MachineProfile {
             MachineCapability::SaveState,
             MachineCapability::Debug,
         ],
-        media_kinds: vec![MediaKind::Disk, MediaKind::Cartridge],
+        media_kinds: vec![MediaKind::Disk, MediaKind::Cartridge, MediaKind::Program],
         options: vec![
             MachineOptionInfo {
                 required: true,
@@ -563,6 +563,29 @@ impl LineOptions {
         }
         Ok(())
     }
+}
+
+/// The 8.3 name a program gets on its floppy: the file's stem upper-cased with the characters a name may not hold left
+/// out and at most eight of them (`PROG` when nothing is left), and `.PRG` (or the file's own `.TOS` / `.TTP`).
+fn program_name(name: Option<&str>) -> String {
+    let file = name
+        .map(|n| n.rsplit(['/', '\\']).next().unwrap_or(n))
+        .unwrap_or("PROG.PRG");
+    let (stem, ext) = file.rsplit_once('.').unwrap_or((file, "PRG"));
+    let clean = |s: &str, max: usize| -> String {
+        s.chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .take(max)
+            .collect::<String>()
+            .to_ascii_uppercase()
+    };
+    let stem = clean(stem, 8);
+    let ext = match clean(ext, 3).as_str() {
+        "TOS" => "TOS",
+        "TTP" => "TTP",
+        _ => "PRG",
+    };
+    format!("{}.{ext}", if stem.is_empty() { "PROG" } else { &stem })
 }
 
 fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, String> {
@@ -983,6 +1006,22 @@ fn handle_machine_command(
                 return Err(format!("drive {drive} does not exist"));
             }
             record.machine.mark_disk_saved(drive);
+            Ok(MachineResponse::Ack)
+        }
+        // A GEMDOS program: the machine gets a floppy built around it (AUTO\NAME.PRG) in drive A, which TOS runs at boot.
+        MachineCommand::AttachMedia {
+            kind: MediaKind::Program,
+            bytes,
+            name,
+            ..
+        } => {
+            let file = program_name(name.as_deref());
+            let image =
+                atari_st::st_floppy::boot::with_auto_program(&file, &bytes).map_err(|e| e.to_string())?;
+            record.machine.insert_disk(0, image)?;
+            if let Some(f) = record.disk_formats.get_mut(0) {
+                *f = DiskFormat::St;
+            }
             Ok(MachineResponse::Ack)
         }
         MachineCommand::AttachMedia {
@@ -1558,6 +1597,49 @@ mod tests {
             panic!("an unreadable input was accepted");
         };
         assert!(err.contains("no-such-input"), "{err}");
+    }
+
+    #[test]
+    fn a_program_attached_as_program_media_becomes_the_floppy_in_drive_a() {
+        let id = create(&[0x60FE], Vec::new());
+        let mut prg = vec![0u8; 28];
+        prg[0] = 0x60;
+        prg[1] = 0x1A;
+        prg.extend([0x4E, 0x75, 0, 0, 0, 0]);
+        let attach = |name: Option<&str>, bytes: Vec<u8>| {
+            command(
+                id,
+                MachineCommand::AttachMedia {
+                    slot: MediaSlot::Other("program".to_string()),
+                    kind: MediaKind::Program,
+                    name: name.map(str::to_string),
+                    bytes,
+                    options: Vec::new(),
+                },
+            )
+        };
+        assert!(matches!(
+            attach(Some(r"C:\games\My Tool!.prg"), prg.clone()),
+            Ok(MachineResponse::Ack)
+        ));
+        let Ok(MachineResponse::DiskImage(Some(image))) = command(
+            id,
+            MachineCommand::ExportDisk {
+                drive: 0,
+                only_if_modified: false,
+            },
+        ) else {
+            panic!("no disk in drive A");
+        };
+        // The name is made an 8.3 name: letters and digits, upper case, at most 8: `MYTOOL.PRG`.
+        assert!(
+            image.windows(11).any(|w| w == b"MYTOOL  PRG"),
+            "the program's directory entry"
+        );
+        // Not a GEMDOS program, and nothing at all, are refused with the reason.
+        assert!(attach(None, vec![1, 2, 3]).unwrap_err().contains("$601A"));
+        assert!(attach(None, Vec::new()).is_err());
+        state().lock().unwrap().instances.remove(&id);
     }
 
     #[test]

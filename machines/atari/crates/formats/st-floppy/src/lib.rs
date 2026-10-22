@@ -17,6 +17,7 @@
 //! Every input is untrusted: sizes are capped, arithmetic is checked, nothing indexes past the data.
 #![forbid(unsafe_code)]
 
+pub mod boot;
 pub mod decode;
 pub mod msa;
 

@@ -16,6 +16,14 @@ Loaded with `--program tone.bin --org 0x8000`. It writes the YM2149 registers th
 Then it loops (`BRA.S *`). The pitch is `fT = fMaster / (16 TP)` (Yamaha YM2149 catalog, section (1)), with the
 master clock the CPU clock / 4 (`docs/hardware-facts.md`, PSG): 8 021 247 / 4 / (16 × 284) = 441.3 Hz.
 
+## `hello.s` (S8P)
+
+A GEMDOS program written in 68000 assembly: `pea msg(pc)`, `move.w #9,-(sp)` (Cconws), `trap #1`, `addq.l #6,sp`, then a loop.
+`build.sh` assembles it with `rcasm`'s 68000 back end through `rcld` (`hello.layout.toml`, `machine = "atari-st"`) into
+`hello.prg`, a relocatable GEMDOS executable with a `.text` section of code and a `.data` section holding the string. The
+host hands `--program hello.prg` to the plugin as program media; the plugin builds a 720K floppy with `AUTO\HELLO.PRG`
+(`st_floppy::boot`) and EmuTOS runs it before the desktop, writing `HELLO FROM RCASM` at the top left of the console.
+
 ## `raster.st` (S10)
 
 A blank disk with a boot program (`rcdisk boot`) that takes the machine over: it installs its own HBL handler at `$68`

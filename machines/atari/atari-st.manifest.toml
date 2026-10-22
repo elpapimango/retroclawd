@@ -91,6 +91,18 @@ args = ["--org", "0x8000"]
 files = { program = "atari/software/scenarios/tone.bin" }
 audio = { from_s = 1.0, to_s = 5.0, tone_hz = 441.31, tone_tolerance_pct = 1.0, min_amplitude = 0.05 }
 
+# S8P: hello.prg, made by rcasm's 68000 back end and rcld from scenarios/hello.s, is the AUTO program of a floppy the machine
+# builds around it (the host hands a .prg to the plugin as program media); EmuTOS runs it before the desktop and GEMDOS
+# Cconws writes "HELLO FROM RCASM" at the top left of the console. Made three times, identical, looked at.
+[[scenario]]
+id = "S8P"
+kind = "screen"
+frames = 1200
+files = { program = "atari/software/scenarios/hello.prg" }
+golden = "atari-st/S8P-hello.png"
+golden_sha256 = "4d7538b8d3fb45efdece06febad3b1b77e8f5d508a3b1aa09b8ff8a9fe4fd790"
+compare = { mode = "exact" }
+
 # S9S: serial.bin sends SERIAL through the MFP USART (timer D) and MIDI through the MIDI ACIA, each looped back by the
 # host (`--serial-loopback`, `--midi-loopback`), and stores what it reads at $0600 and $0610 (scenarios/README.md). The
 # golden is the 32 bytes made by retroclawd, checked by hand against the program's characters; three runs identical.
