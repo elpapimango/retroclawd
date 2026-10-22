@@ -1020,7 +1020,7 @@ and non-MSX blueMSX targets (SVI/Coleco/SG-1000) as separate roadmap sections.
 Keep an explicit feature-delta checklist against blueMSX/libretro and hardware references. If source
 sets disagree, require executable tests or primary hardware documentation before selecting behavior.
 
-## Atari 400/800 roadmap — Atari 800 experimental slice active
+## Atari 400/800 roadmap — 800/XL/XE accepted with recorded gaps
 
 Resumed in the dependency-first additional-Machine request. C16/Plus4 are parked
 by the owner; start with Atari 800, then 800XL/65XE/130XE. Reuse the established
@@ -1055,7 +1055,7 @@ disks, `.xex` executables, `.car` / `.rom` cartridges, `.cas` tapes (`rctape`, `
 for the test suite), `.atari800` state is not needed.
 
 
-### DONE: baseline
+### DONE: original baseline (historical)
 
 Experimental `atari-800` now boots explicit Altirra replacement OS/BASIC ROMs
 through a dynamic Plugin in PAL/NTSC and fast/accurate modes. Initial ANTIC,
@@ -1095,6 +1095,28 @@ S4 checks documented pitch only, not reference RMS calibration.
 Original Atari firmware, general Media, games, GTIA special modes and exact
 timing remain unverified/unimplemented. Evidence and reproduction:
 `machines/atari/docs/atari800-gaps.md`. No XL/XE profile exists yet.
+
+### DONE: XL/XE and Media close-out
+
+The Plugin now exposes 800/800XL/65XE/130XE with profile-specific RAM/OS,
+PORTB/self-test/independent 130XE CPU/ANTIC banks, Help and correct joystick
+counts. Native OS tests cover all profiles, Regions and execution modes for
+BASIC/input/reset/ATR/State; added tests prove D2 writes through SIOV, five CAR
+mappers through OS boot and CAS load/execution through CIO.
+Writable ATR/XFD D1:/D2:, standard CAS playback and supported CAR/raw dumps are
+wired through Plugin and Host Media routing.
+
+Accurate Acid800 scores 56/1/1 on 800 (only XL banking fails) and 57/0/1 on
+XL/XE; fast scores 43/14/1 and 44/13/1. PAL/NTSC agree. State v5 retains
+readers for v1-v4 on 800 and preserves their Core/Chip field layouts.
+Per-profile manifests pin real reference boot and raw/XEX/ATR/XFD/CAR captures.
+Final release acceptance: 44 passed / 0 failed / 10 known gaps per profile
+(176 passes, 40 repeated gap variants total). Tools reproduces CAR and XFD
+fixtures byte for byte; CAS creation remains a tooling gap.
+Reference input/CAS/RMS, diagnostic-screen mismatch, original Atari firmware,
+games, cassette boot and remaining abnormal/analogue hardware remain explicit
+limits. See `machines/atari/docs/atari800-gaps.md#xlxe-and-media-close-out`.
+The playbook permits these recorded gaps; this is not full hardware parity.
 
 ### BACKLOG: external parity execution sequence (PARKED; gap vs Atari800/Altirra/libretro)
 

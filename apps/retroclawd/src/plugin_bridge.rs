@@ -1375,7 +1375,11 @@ impl HostedBackend {
         tape_speed: u32,
     ) -> Result<(), String> {
         let lower = extension.to_ascii_lowercase();
-        if ["tap", "tzx", "cdt", "pzx", "csw", "voc", "wav", "t64"].contains(&lower.as_str()) {
+        if [
+            "tap", "tzx", "cdt", "pzx", "csw", "voc", "wav", "t64", "cas",
+        ]
+        .contains(&lower.as_str())
+        {
             self.apply_tape(instance, &lower, bytes, tape_speed)
         } else if lower == "dsk"
             || lower == "edsk"
@@ -1386,6 +1390,7 @@ impl HostedBackend {
             || lower == "x64"
             || lower == "nib"
             || lower == "atr"
+            || lower == "xfd"
         {
             self.apply_disk(instance, 0, &lower, bytes)
         } else if lower == "xex" {
@@ -1400,8 +1405,10 @@ impl HostedBackend {
                 },
                 "formatted program attach",
             )
-        } else if ["cpr", "crt", "20", "40", "60", "a0", "b0", "bin", "rom"]
-            .contains(&lower.as_str())
+        } else if [
+            "cpr", "crt", "car", "20", "40", "60", "a0", "b0", "bin", "rom",
+        ]
+        .contains(&lower.as_str())
         {
             self.apply_cartridge(instance, &lower, bytes)
         } else {
@@ -2668,7 +2675,9 @@ mod tests {
                 "{error}"
             );
         }
-        for extension in ["20", "40", "60", "A0", "b0", "bin", "rom", "crt", "cpr"] {
+        for extension in [
+            "20", "40", "60", "A0", "b0", "bin", "rom", "crt", "cpr", "CAR",
+        ] {
             let error = machine.apply_media(extension, &[0; 16], 1).unwrap_err();
             assert!(
                 error.contains(&format!("Cartridge .{}", extension.to_ascii_lowercase())),
@@ -2683,7 +2692,7 @@ mod tests {
     }
 
     #[test]
-    fn atari_media_routes_to_disk_and_program_not_snapshot() {
+    fn atari_media_routes_to_disk_tape_and_program_not_snapshot() {
         let mut machine = super::create_hosted_machine(plugin_api::MachineCreateRequest {
             machine_id: "stub-machine".to_string(),
             region: Some("pal".to_string()),
@@ -2691,8 +2700,17 @@ mod tests {
             options: Vec::new(),
         })
         .unwrap();
-        let error = machine.apply_media("ATR", b"not a disk", 1).unwrap_err();
-        assert!(error.contains("not a disk image"), "{error}");
+        for extension in ["ATR", "XFD"] {
+            let error = machine
+                .apply_media(extension, b"not a disk", 1)
+                .unwrap_err();
+            assert!(error.contains("not a disk image"), "{error}");
+        }
+        let error = machine.apply_media("CAS", b"not a tape", 1).unwrap_err();
+        assert!(
+            error.contains("unsupported tape format \".cas\""),
+            "{error}"
+        );
         let error = machine
             .apply_media("XEX", &[0xff, 0xff, 0, 0x20, 0, 0x20, 0xea], 1)
             .unwrap_err();

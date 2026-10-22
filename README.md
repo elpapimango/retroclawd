@@ -22,7 +22,7 @@ Machines (each family has its own repository, see Building):
 | Sinclair | ZX81; ZX Spectrum 48K, 128K, +2, +2A, +3 | Z80 |
 | Amstrad | CPC464, CPC664, CPC6128, CPC464+/6128+, GX4000 | Z80 |
 | Commodore | Experimental VIC-20; C64, C128 (8502 and Z80, 40/80 columns), 1541/1570/1571/1581 drives | 6502, 6510/8502, Z80 |
-| Atari | Experimental Atari 800; ST first-device bring-up (not a complete ST) | 6502, 68000 |
+| Atari | Experimental 800/800XL/65XE/130XE; ST first-device bring-up (not a complete ST) | 6502, 68000 |
 
 The CPU cores (Z80, validated with ZEXALL/ZEXDOC; NMOS 6502 with the illegal opcodes, validated with Klaus
 Dormann's and Tom Seddon's suites) and the chips several families share (AY-3-8910, uPD765A) live in
@@ -67,7 +67,7 @@ How the repositories relate (all public, same account):
 | [`retroclawd-sinclair`](https://github.com/elpapimango/retroclawd-sinclair) (`machines/sinclair`) | ZX81, ZX Spectrum 48K/128K/+2/+2A/+3 |
 | [`retroclawd-amstrad`](https://github.com/elpapimango/retroclawd-amstrad) (`machines/amstrad`) | Amstrad CPC464/664/6128, CPC+ and GX4000 |
 | [`retroclawd-commodore`](https://github.com/elpapimango/retroclawd-commodore) (`machines/commodore`) | Experimental VIC-20, C64, C128 and the 1541/1570/1571/1581 drives |
-| [`retroclawd-atari`](https://github.com/elpapimango/retroclawd-atari) (`machines/atari`) | Experimental Atari 800 with ANTIC/GTIA/POKEY; existing bounded ST bring-up |
+| [`retroclawd-atari`](https://github.com/elpapimango/retroclawd-atari) (`machines/atari`) | Experimental 800/800XL/65XE/130XE with ANTIC/GTIA/POKEY; existing bounded ST bring-up |
 
 - The application uses the shared crates **by path** through the `shared/` submodule and contains no machine
   code; it loads the machine libraries (`*_machine_plugin`) at run time. Removing a machine is deleting its library.
@@ -735,47 +735,40 @@ retroclawd cpc6128 --rom machines/amstrad/roms/cpc/cpc6128.rom --ram-banks 3 --r
 ```
 
 
-**Atari 800 (`atari-800`, experimental)**
+**Atari 8-bit (`atari-800`, `atari-800xl`, `atari-65xe`, `atari-130xe`, experimental)**
 
 The Atari Family builds `atari_8bit_machine_plugin` alongside its existing ST
-Plugin. Required `--rom-os` is 10240 bytes; optional `--rom-basic` is 8192 bytes.
+Plugin. Required `--rom-os` is 10240 bytes on 800, 16384 on XL/XE;
+optional `--rom-basic` is 8192 bytes.
 `--region pal|ntsc` and `--execution-mode fast|accurate` select real raster and
 instruction-batched/per-bus-cycle Chip clocks. The Machine reuses the shared NMOS
 6502 Core and MOS 6520 PIA, with ANTIC, GTIA and POKEY.
 
 Explicit Altirra replacement ROMs boot to BASIC and execute `PRINT 12*34` as
-`408` in both Regions/modes. Thirty-six manifest variants pass for reference
-boot content/memory, tools-built raw/XEX Programs and ATR boot, documented tone
-pitch, State (including attached disks) and frame timing. Eight known-gap variants
-cover uncaptured reference keyboard output and executed Acid800 mismatches.
-Acid800 completes at 46/11/1 passed/failed/skipped in accurate mode and 36/21/1
-in fast mode, identically in PAL and NTSC, versus reference Atari800 7.2.1's
-25/32/1. No prior passing case regresses. Diagnostic totals are not conformance
-passes.
-The shared SHY/SHX/SHA/TAS address-mask fix makes the illegal-instruction test
-pass. Instruction-boundary CLI/SEI/PLP polling and both CPU timing tests pass.
-Accurate DMA HALT now stops writes, unlike WSYNC RDY; serial-port timing also
-passes. Accurate mode now lets NMI hijack BRK/IRQ before vector reads, with
-ANTIC's nominal edge corrected to cycle 8; BRK passes in both Regions.
-The fidelity increment adds NMIST/NMIRES and NMIEN phases, VCOUNT/WSYNC/DLI
-timing, blocked NMI handling, normal DMA/refresh and scrolling, POKEY noise and
-timer pipelines, and live GTIA players/missiles, priorities and collisions.
-Fast mode remains instruction-batched. Abnormal DMA, special graphics modes
-and some pipeline edge cases remain incomplete.
-Atari State version 4 explicitly persists the new Chip, bus and interrupt
-phases, while retaining readers for versions 1-3. The Core's serialized layout
-and Plugin ABI are unchanged.
-Preserve original State files for rollback to older Plugins.
-Original Atari ROMs, reference RMS,
-games and full hardware fidelity are not verified.
+`408` on every profile in both Regions/modes. XL/XE adds stock PORTB ROM/self-test
+selection and independent 130XE CPU/ANTIC bank routing. Keyboard, digital
+joysticks (four on 800, two on XL/XE), debugger and State are wired.
+Raw/XEX Programs, writable ATR/XFD D1:/D2:, standard CAS playback and CAR
+types 1/2/12/13/14 are supported. Real OS tests prove D2 writes/reads,
+cartridge boot and cassette load/execution through CIO. Media uses PIA/POKEY
+serial pins, not CPU loader traps. Game-config Media inference recognizes
+CAS/XFD/CAR; Atari tape/disk dialogs filter CAS and ATR/XFD.
 
-Raw/XEX `--program`, read-only ATR on D1:, keyboard, four digital joysticks and
-the debug contract are wired. XEX uses segment INITAD/RUNAD; ATR boot runs through
-PIA/POKEY serial pins without ROM traps. OS-dependent XEX applications are not
-proven. CAS/CART loading, GTIA special modes and several timing details remain
-unimplemented. XL/XE profiles do not exist yet.
-See `machines/atari/docs/atari800-gaps.md` and the Family manifest for exact proof
-and limits. Existing build/staging discovers the new Plugin without Host machine code.
+Accurate Acid800 scores 56/1/1 on 800 (only XL-only banking fails) and 57/0/1
+on XL/XE. Fast mode scores 43/14/1 and 44/13/1. PAL/NTSC agree.
+HSCROL feedback, phantom PM DMA, GTIA modes 9/10/11/pseudo-E and PIA control
+history are implemented. Fast mode remains instruction-batched; passing the
+diagnostics is not full hardware or game compatibility.
+State v5 adds explicit profile/MMU/Media/control history and reads v1-v4 on
+800 without changing their serialized layouts or the Plugin ABI.
+Preserve old files for rollback.
+
+Per-Machine manifests pin actual Atari800 7.2.1 reference captures without
+changing existing tolerances: each reports 44 passed, 0 failed and 10 known
+gaps. Reference keyboard/CAS/RMS capture and the
+reference's failing diagnostic screen remain known gaps. Original Atari
+firmware, general games, cassette boot, analogue output and all abnormal DMA
+overlaps remain unverified. See `machines/atari/docs/atari800-gaps.md`.
 
 **Commodore VIC-20 (`vic20`, experimental)**
 

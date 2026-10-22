@@ -94,25 +94,26 @@ fast loader now returns through the KERNAL's own SEARCHING/LOADING routines, and
 frame through `Machine::frame_rate` / `MachineMetadata::frame_rate` (ZX81 312 x 207 T-states, its line corrected from 208 to 207; CPC
 79872; C64/C128 one raster frame, 19656 PAL), and the host paces and budgets by it. Details and the compare options are in `retroclawd-tools/CLAUDE.md`.
 
-## Atari 800 experimental slice
+## Atari 8-bit experimental support
 
-`machines/atari` also builds `atari_8bit_machine_plugin`, exposing `atari-800`
-with `rom_os` (10240 bytes), optional `rom_basic` (8192 bytes), PAL/NTSC and
+`machines/atari` also builds `atari_8bit_machine_plugin`, exposing
+`atari-800`/`atari-800xl`/`atari-65xe`/`atari-130xe`.
+`rom_os` is 10240 bytes on 800 or 16384 on XL/XE; optional `rom_basic` is
+8192 bytes. All profiles have PAL/NTSC and
 fast/accurate execution. Shared NMOS 6502 and `pia-6520` are reused; ANTIC,
 GTIA and POKEY live in the Atari Family. No Host machine-specific code or ABI
 change is needed. Explicit Altirra replacements boot and execute BASIC;
 original Atari firmware has not been verified.
 
-The Family manifest has 36 passing variants and eight known gaps: reference
-printable-key capture and executed Acid800 mismatches. Raw/XEX Programs,
-read-only ATR D1: boot through PIA/POKEY serial pins, documented tone pitch,
-State and raster counts pass. XEX uses ordered INITAD/RUNAD, not raw --org.
-Version 2 State preserves disk/serial/pending XEX, reads version 1, and requires
-ejecting an attached disk before legacy restore. Acid800 completes: fast
-23/34/1, accurate 21/36/1 versus reference 25/32/1 passed/failed/skipped.
-Shared high-byte stores are fixed; IRQ polling remains a separate State migration.
-Reference RMS, OS-dependent XEX, games and full hardware fidelity are not proven.
-No CAS/CART loader or XL/XE profile exists yet. Read the Family intake and
+Per-profile manifests cover reference boot, raw/XEX/ATR/XFD/CAR execution,
+tone pitch, State and raster timing. Native OS tests also prove D2 writes
+and CAS load/execution through CIO. The sector peripherals use actual
+PIA/POKEY pins. State v5 preserves profile/MMU/Media/control phases and reads
+v1-v4 only on 800; preserve original files for rollback.
+Accurate Acid800 reaches 56/1/1 on 800 (XL-only banking fails) and 57/0/1
+on XL/XE. Reference keyboard/CAS/RMS capture and diagnostic screen parity
+remain explicit gaps; original Atari firmware and general games are not proven.
+Read the Family intakes and
 `machines/atari/docs/atari800-gaps.md` before extending it. C16/Plus4 stay parked.
 
 ## Atari ST (slice 1, 2026-10-20)

@@ -64,6 +64,10 @@ Do not invent a filename/hash to satisfy validation. Once captured, record
 the real hash and comparison settings; ordinary validation and unexpected-pass
 rules then apply unchanged.
 
+An uncaptured `audio` reference likewise requires `status = "known-gap"` and
+nonempty reason/evidence, omitting the `audio` expectation table. The runner
+reports it as not run; passing audio scenarios require measured expectations.
+
 ## Goldens
 
 Captured once by a script that runs the reference emulator headless on the scenarios (`scripts/capture_zesarux_screen.py`, `capture_zesarux_audio.py` and `capture_vice_screen.py` in `retroclawd-tools`), stored in RomM keyed by hash (they derive from copyrighted software, so they stay out of git like ROMs), and pinned by the manifest (reference name and version, exact command, hash). CI compares our output to the golden and never runs the reference emulator. A diff image is written when they differ. One script regenerates goldens when the reference version changes.
