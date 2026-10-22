@@ -105,7 +105,12 @@ fn the_file_ending_inside_a_track_is_an_error() {
 #[test]
 fn parse_of_random_bytes_never_panics() {
     let mut x = 0x1234_5678u32;
-    for n in 0..1000 {
+    for n in 0..1000
+        * std::env::var("RC_SWEEP")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(1)
+    {
         let len = (n * 13) % 300;
         let mut b: Vec<u8> = (0..len)
             .map(|_| {
