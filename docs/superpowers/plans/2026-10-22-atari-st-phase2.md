@@ -65,7 +65,7 @@ Added for Phase 2:
   6. `tools/check_all.sh` includes every new scenario (S3W, S5, S9, S10) and passes; every new parser has a fuzz
      target and hostile-input tests.
 
-## Decisions for the owner
+## Decisions for the owner (all four recommendations approved 2026-10-22; execution native)
 
 These change what gets built. Each has a recommendation; the plan follows it unless you say otherwise.
 
@@ -194,6 +194,26 @@ exports the disk; a check reads sector 8 of `OUT` with `rcdisk` and compares the
   same exported image hash. Record it as an `exact` golden hash; note: the hash is of the exported file, never the file
   itself committed.
 - [ ] **Step 3: Commit** (atari): "S3W: floppy write scenario". Merge slice 7.
+
+
+### Task 4b: RomM games as tests (retroclawd-atari)
+
+**Files:** Create `crates/machines/atari-st/tests/romm_games.rs`; Modify `CLAUDE.md` (tests that need files)
+
+The owner's RomM (platform `atari-st`, id 21) holds EmuTOS 1.4 (all six images; only the two 192K ones fit this
+machine: the 256K/512K images target STE/TT/Falcon, Phase 4) and three disk games: 1943 (`romm:4925`), Alien
+Syndrome (`romm:4923`), Defender of the Crown (`romm:4924`), 10-sector `.st` images of 1620-1660 sectors zipped.
+`firmware.toml` already lists the 192K images (`romm match atari-st` finds both), so nothing is added there.
+Observed 2026-10-22: all three attach and EmuTOS runs 1500 frames without a stop; 4923 and 4924 have an executable
+boot sector (checksum `$1234`; 4923 prints "Kein Virus im Bootsektor", then the desktop returns), 4925 has not.
+
+- Tests read the games through `RC_ROMM_GAMES` (a folder of the unzipped images) or the `--firmware auto` RomM
+  cache; without either they print where they looked and pass, like the EmuTOS tests. Never committed, no bytes in logs.
+- `games_boot_without_a_stop` (each image, 1500 frames, no stop report, identical frame hash on 2 runs);
+  `executable_boot_sector_is_run` (4923: the screen differs from the plain desktop at frame 400);
+  from Slice 7 on `games_are_not_modified_by_reading` (the exported image hash is unchanged and not dirty).
+- Each image's geometry (10 sectors per track, 81-83 tracks) must be accepted; a game that fails to load is a finding
+  against `st-floppy`'s geometry rule (the deferred "looser .st geometry" item), with its own test.
 
 ---
 
