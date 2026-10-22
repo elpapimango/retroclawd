@@ -15,7 +15,8 @@
 //! - [O] an HDC (ACSI) access with nothing connected: writes vanish and I5 stays high (EmuTOS's probe in Hatari).
 //!   [H?] an HDC read has no fact and stops the machine.
 
-use wd1770::Wd1770;
+use serde::{Deserialize, Serialize};
+use wd1770::{Wd1770, Wd1770State};
 
 use crate::drive::Drives;
 
@@ -48,7 +49,56 @@ impl std::fmt::Debug for Dma {
     }
 }
 
+/// The DMA chip, the controller and the drives as data.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DmaState {
+    fdc: Wd1770State,
+    drives: Drives,
+    fdc_at: u64,
+    mode: u16,
+    sector_count: u16,
+    address: u32,
+    fifo: Vec<u8>,
+    bytes_in_sector: u16,
+    error: bool,
+    generation: u64,
+}
+
 impl Dma {
+    pub(crate) fn snapshot(&self) -> DmaState {
+        DmaState {
+            fdc: self.fdc.dump_state(),
+            drives: self.fdc.floppy.stripped_for_state(),
+            fdc_at: self.fdc_at,
+            mode: self.mode,
+            sector_count: self.sector_count,
+            address: self.address,
+            fifo: self.fifo.clone(),
+            bytes_in_sector: self.bytes_in_sector,
+            error: self.error,
+            generation: self.generation,
+        }
+    }
+
+    /// The state's FIFO never holds more than the chip's 16 bytes and its sector byte count stays inside a sector.
+    pub(crate) fn restore(&mut self, s: DmaState) -> Result<(), String> {
+        if s.fifo.len() > FIFO_BYTES || s.bytes_in_sector >= SECTOR_BYTES {
+            return Err("the DMA state is not one this machine can be in".into());
+        }
+        let drives = self.fdc.floppy.merged_with_state(s.drives)?;
+        self.fdc.restore_state(s.fdc);
+        self.fdc.floppy = drives;
+        self.fdc_at = s.fdc_at;
+        self.mode = s.mode;
+        self.sector_count = s.sector_count;
+        self.address = s.address & 0xFF_FFFF;
+        self.fifo = s.fifo;
+        self.bytes_in_sector = s.bytes_in_sector;
+        self.error = s.error;
+        self.generation = s.generation;
+        Ok(())
+    }
+
     pub fn new(drives: u8) -> Self {
         Self {
             fdc: Wd1770::new(Drives::new(drives), 8, true),

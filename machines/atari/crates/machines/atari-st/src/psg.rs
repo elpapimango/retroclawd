@@ -14,6 +14,7 @@
 use std::collections::VecDeque;
 
 use ay_3_8910::{Ay3_8910, Variant};
+use serde::{Deserialize, Serialize};
 
 /// CPU clocks per YM clock.
 const YM_DIVIDER: u64 = 4;
@@ -31,7 +32,32 @@ pub struct Psg {
     samples: VecDeque<f32>,
 }
 
+/// The chip's state as data (the clock is the machine's, not the state's).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PsgState {
+    ym: Ay3_8910,
+    at: u64,
+    sample_index: u64,
+    samples: Vec<f32>,
+}
+
 impl Psg {
+    pub(crate) fn snapshot(&self) -> PsgState {
+        PsgState {
+            ym: self.ym.clone(),
+            at: self.at,
+            sample_index: self.sample_index,
+            samples: self.samples.iter().copied().collect(),
+        }
+    }
+
+    pub(crate) fn restore(&mut self, s: PsgState) {
+        self.ym = s.ym;
+        self.at = s.at;
+        self.sample_index = s.sample_index;
+        self.samples = s.samples.into_iter().take(MAX_SAMPLES).collect();
+    }
+
     pub fn new(clock_hz: u64) -> Self {
         Self {
             ym: Ay3_8910::with_variant(Variant::Ym2149),

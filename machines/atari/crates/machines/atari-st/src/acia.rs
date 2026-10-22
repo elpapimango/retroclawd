@@ -15,6 +15,7 @@
 
 use ikbd::Ikbd;
 use mc6850::Acia;
+use serde::{Deserialize, Serialize};
 
 /// The other end of a serial line.
 pub trait SerialPeer {
@@ -78,6 +79,21 @@ impl Peer {
 /// CPU clocks per ACIA clock.
 pub const ACIA_DIVIDER: u64 = 16;
 
+/// One port's state as data. The keyboard port's peer is the IKBD and is saved with it; any other peer (the MIDI
+/// port's, a test's) belongs to the host and is left as it is.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PortState {
+    chip: Acia,
+    ikbd: Option<Ikbd>,
+    phase: u64,
+    tx_start: Option<u64>,
+    tx_end: Option<u64>,
+    tx_started_at: Option<u64>,
+    rx: Option<(u64, u8)>,
+    never_reset: bool,
+    generation: u64,
+}
+
 pub struct Port {
     pub(crate) chip: Acia,
     pub(crate) peer: Peer,
@@ -109,6 +125,37 @@ impl Port {
             never_reset: true,
             generation: 0,
         }
+    }
+
+    pub(crate) fn snapshot(&self) -> PortState {
+        PortState {
+            chip: self.chip.clone(),
+            ikbd: match &self.peer {
+                Peer::Ikbd(k) => Some((**k).clone()),
+                Peer::Other(_) => None,
+            },
+            phase: self.phase,
+            tx_start: self.tx_start,
+            tx_end: self.tx_end,
+            tx_started_at: self.tx_started_at,
+            rx: self.rx,
+            never_reset: self.never_reset,
+            generation: self.generation,
+        }
+    }
+
+    pub(crate) fn restore(&mut self, s: PortState) {
+        self.chip = s.chip;
+        if let Some(k) = s.ikbd {
+            self.peer = Peer::Ikbd(Box::new(k));
+        }
+        self.phase = s.phase;
+        self.tx_start = s.tx_start;
+        self.tx_end = s.tx_end;
+        self.tx_started_at = s.tx_started_at;
+        self.rx = s.rx;
+        self.never_reset = s.never_reset;
+        self.generation = s.generation;
     }
 
     fn bit(&self) -> u64 {

@@ -13,6 +13,7 @@
 //!   takes nothing; the controller sees the write-protect line and stops the command itself.
 //! - [H?] the motor line reaches both drives, so every drive with a disk turns.
 
+use serde::{Deserialize, Serialize};
 use st_floppy::{Image, TRACK_BYTES};
 use wd1770::Floppy;
 
@@ -25,7 +26,7 @@ pub const MEDIA_CHANGE_BYTES: u64 = 15_625;
 const MAX_CYLINDER: u8 = 85;
 
 /// One drive: a head, a spindle and maybe a disk.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StDrive {
     image: Option<Image>,
     cylinder: u8,
@@ -207,7 +208,7 @@ impl StDrive {
 }
 
 /// Both drive connectors as the controller sees them: the selected drive and side from PSG port A.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Drives {
     drives: [StDrive; 2],
     /// Drives fitted (1 or 2).
@@ -280,6 +281,42 @@ impl Drives {
             _ => None,
         };
         self.side = if value & 0x01 == 0 { 1 } else { 0 };
+    }
+
+    /// The drives as a save state holds them: a disk the guest has not written to stays the user's file, so its image
+    /// (and the track cached from it) is left out; a modified disk keeps its content.
+    pub(crate) fn stripped_for_state(&self) -> Drives {
+        let mut s = self.clone();
+        for d in &mut s.drives {
+            if !d.is_modified() {
+                d.image = None;
+                d.track = None;
+                d.track_dirty = false;
+                d.modified = false;
+            }
+        }
+        s
+    }
+
+    /// The state's drives merged onto the current ones: where the state holds no image, the disk in the drive now
+    /// stays (the track cache is rebuilt from it); the write-protect tabs and the drive count are the machine's.
+    pub(crate) fn merged_with_state(&mut self, mut state: Drives) -> Result<Drives, String> {
+        if state.fitted != self.fitted {
+            return Err(format!(
+                "the state was made with {} floppy drive{}, this machine has {}",
+                state.fitted,
+                if state.fitted == 1 { "" } else { "s" },
+                self.fitted
+            ));
+        }
+        for (new, cur) in state.drives.iter_mut().zip(self.drives.iter_mut()) {
+            if new.image.is_none() {
+                new.image = cur.image.take();
+                new.track = None;
+            }
+            new.write_protected = cur.write_protected;
+        }
+        Ok(state)
     }
 
     /// Takes every written track into its image (see [`StDrive::commit_track`]).

@@ -6,15 +6,35 @@
 
 use machine::{Addr, FrameRate, Machine, RunStats};
 use mc68000::{Cpu, RunState};
+use serde::{Deserialize, Serialize};
 
 use crate::acia::SerialPeer;
 use crate::bus::{IoStop, StBus};
-use crate::config::{Config, Region};
+use crate::config::{Accuracy, Config, Region};
 use crate::diag::Diag;
 use crate::dma::FDC_BYTE_CYCLES;
 use crate::scheduler::{
     self, CLASS_ACIA, CLASS_FDC, CLASS_MFP, CLASS_VIDEO, Event, FrameGeometry, Scheduler,
+    SchedulerState,
 };
+use crate::state::{self, DriveMeta, Header, StateError};
+
+/// The machine as data (the payload of a save state; see `state.rs` for the envelope around it).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StatePayload {
+    cpu: Cpu,
+    now: u64,
+    vbl_count: u64,
+    last_vbl_at: u64,
+    hbl_count: u64,
+    clocks_per_line: u32,
+    lines: u32,
+    line: u32,
+    mfp_event: u64,
+    sched: SchedulerState,
+    frame: Vec<u8>,
+    bus: crate::bus::BusState,
+}
 
 pub struct AtariSt {
     cpu: Cpu,
@@ -33,6 +53,10 @@ pub struct AtariSt {
     /// The picture drawn at the last VBL (640 x 400 RGB).
     frame: Vec<u8>,
     diag: Diag,
+    accuracy: Accuracy,
+    /// The plugin's version tag, recorded in the states this machine saves.
+    version_tag: String,
+    state_warnings: Vec<String>,
 }
 
 impl AtariSt {
@@ -53,6 +77,9 @@ impl AtariSt {
             mfp_event: 0,
             frame: vec![0; (st_shifter::WIDTH * st_shifter::HEIGHT * 3) as usize],
             diag: Diag::new(cfg.trace_limit),
+            accuracy: cfg.accuracy,
+            version_tag: "dev".to_string(),
+            state_warnings: Vec::new(),
         };
         m.power_on();
         Ok(m)
@@ -327,6 +354,144 @@ impl AtariSt {
             .set_write_protected(on);
     }
 
+    /// Names the build in the states this machine saves (the plugin passes its version tag).
+    pub fn set_version_tag(&mut self, tag: &str) {
+        self.version_tag = tag.to_string();
+    }
+
+    /// Notes made by the last loaded state (a different disk in a drive than the state was saved with), once.
+    pub fn take_state_warnings(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.state_warnings)
+    }
+
+    fn accuracy_code(&self) -> u8 {
+        match self.accuracy {
+            Accuracy::Fast => 0,
+            Accuracy::Accurate => 1,
+        }
+    }
+
+    /// What the machine is as data, or `Stopped` when it has stopped at an unemulated device.
+    pub fn snapshot(&self) -> Result<StatePayload, StateError> {
+        Ok(StatePayload {
+            cpu: self.cpu.clone(),
+            now: self.now,
+            vbl_count: self.vbl_count,
+            last_vbl_at: self.last_vbl_at,
+            hbl_count: self.hbl_count,
+            clocks_per_line: self.geometry.clocks_per_line,
+            lines: self.geometry.lines,
+            line: self.line,
+            mfp_event: self.mfp_event,
+            sched: self.sched.snapshot(),
+            frame: self.frame.clone(),
+            bus: self.bus.snapshot().ok_or(StateError::Stopped)?,
+        })
+    }
+
+    /// Becomes the machine `p` describes. The payload is untrusted: it is checked against this machine first, and a
+    /// refused payload changes nothing.
+    pub fn restore(&mut self, p: StatePayload) -> Result<(), StateError> {
+        let bad = |why: &str| StateError::Payload(why.to_string());
+        let frames = [
+            scheduler::geometry(true, self.bus.monitor),
+            scheduler::geometry(false, self.bus.monitor),
+        ];
+        let geometry = frames
+            .into_iter()
+            .flatten()
+            .find(|g| g.clocks_per_line == p.clocks_per_line && g.lines == p.lines)
+            .ok_or_else(|| bad("the frame shape is not one this machine draws"))?;
+        if p.line >= geometry.lines {
+            return Err(bad("the raster line is outside the frame"));
+        }
+        if p.frame.len() != self.frame.len() {
+            return Err(bad("the picture is not the size this machine draws"));
+        }
+        if p.sched.has_bad_port() {
+            return Err(bad(
+                "the event queue names an ACIA this machine does not have",
+            ));
+        }
+        self.bus.restore(p.bus).map_err(StateError::Payload)?;
+        self.cpu = p.cpu;
+        self.now = p.now;
+        self.vbl_count = p.vbl_count;
+        self.last_vbl_at = p.last_vbl_at;
+        self.hbl_count = p.hbl_count;
+        self.geometry = geometry;
+        self.line = p.line;
+        self.mfp_event = p.mfp_event;
+        self.sched = Scheduler::restore(p.sched);
+        self.frame = p.frame;
+        self.bus.now = self.now;
+        Ok(())
+    }
+
+    fn drive_meta(&self) -> [DriveMeta; 2] {
+        let mut out = [DriveMeta::default(); 2];
+        for (n, slot) in out.iter_mut().enumerate().take(self.drives() as usize) {
+            if let Some(image) = self.disk(n as u8) {
+                *slot = DriveMeta {
+                    present: true,
+                    sha1: state::sha1_of(&image.to_bytes()),
+                    dirty: self.disk_modified(n as u8),
+                };
+            }
+        }
+        out
+    }
+
+    /// The state in the `RCST` envelope.
+    pub fn save_state_checked(&self) -> Result<Vec<u8>, StateError> {
+        let payload = state::encode_payload(&self.snapshot()?);
+        let header = Header {
+            version_tag: self.version_tag.clone(),
+            accuracy: self.accuracy_code(),
+            firmware_sha1: self.bus.firmware_sha1(),
+            drives: self.drive_meta(),
+        };
+        Ok(state::encode(&header, &payload))
+    }
+
+    /// Loads a state saved by `save_state_checked`; see `state.rs` for what is refused. A state loaded with a
+    /// different disk in a drive than it was saved with succeeds and leaves a note for `take_state_warnings`.
+    pub fn load_state_checked(&mut self, bytes: &[u8]) -> Result<(), StateError> {
+        let (header, payload) =
+            state::decode(bytes, self.accuracy_code(), &self.bus.firmware_sha1())?;
+        let p: StatePayload = state::decode_payload(payload)?;
+        self.restore(p)?;
+        self.state_warnings = self.media_notes(&header);
+        Ok(())
+    }
+
+    /// What differs between the disks the state was saved with and the ones in the drives now.
+    fn media_notes(&self, header: &Header) -> Vec<String> {
+        let now = self.drive_meta();
+        let mut notes = Vec::new();
+        for (n, (saved, current)) in header.drives.iter().zip(&now).enumerate() {
+            let name = ["drive A", "drive B"][n];
+            if saved.dirty {
+                continue; // the state carries its content
+            }
+            match (saved.present, current.present) {
+                (true, false) => notes.push(format!(
+                    "{name} held a disk when the state was saved; no disk is inserted now"
+                )),
+                (false, true) => notes.push(format!(
+                    "{name} was empty when the state was saved; the disk inserted now stays"
+                )),
+                (true, true) if saved.sha1 != current.sha1 => notes.push(format!(
+                    "the disk in {name} is not the one the state was saved with ({} then, {} now)",
+                    &state::hex(&saved.sha1)[..8],
+                    &state::hex(&current.sha1)[..8]
+                )),
+                _ => {}
+            }
+        }
+        notes
+    }
+
     /// The number of floppy drives (1 or 2, default 2), before the machine runs; any disks are removed.
     pub fn set_drives(&mut self, n: u8) {
         self.bus.dma.fdc.floppy = crate::drive::Drives::new(n);
@@ -505,12 +670,13 @@ impl Machine for AtariSt {
         self.cpu.set_prefetch([word(pc), word(pc + 2)]);
     }
 
+    /// The state in the `RCST` envelope; empty when the machine has stopped (`save_state_checked` says why).
     fn save_state(&self) -> Vec<u8> {
-        Vec::new()
+        self.save_state_checked().unwrap_or_default()
     }
 
-    fn load_state(&mut self, _bytes: &[u8]) -> Result<(), String> {
-        Err("Atari ST save states arrive in Phase 2".into())
+    fn load_state(&mut self, bytes: &[u8]) -> Result<(), String> {
+        self.load_state_checked(bytes).map_err(|e| e.to_string())
     }
 
     /// The reset button: the RESET line resets the CPU and the MFP ([D] MC68901 §2.2.3); RAM kept (spec section 9).

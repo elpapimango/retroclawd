@@ -15,6 +15,7 @@ mod mfp_clock;
 mod mmu;
 mod psg;
 mod scheduler;
+pub mod state;
 
 pub use acia::{NullPeer, SerialPeer};
 pub use bus::{HBL_LEVEL, IoStop, MFP_LEVEL, ROM_BASE, ROM_SIZE, StBus, StopReason, VBL_LEVEL};
@@ -24,7 +25,7 @@ pub use drive::{Drives, MEDIA_CHANGE_BYTES, StDrive};
 pub use ikbd;
 pub use io::{Decode, Device, decode};
 pub use iolog::IoAccess;
-pub use machine::AtariSt;
+pub use machine::{AtariSt, StatePayload};
 pub use mc68000;
 pub use mc68901;
 pub use mfp_clock::{MFP_HZ, MfpClock};
@@ -35,3 +36,4 @@ pub use scheduler::{
 };
 pub use st_floppy;
 pub use st_shifter::{self, Monitor, Resolution};
+pub use state::StateError;

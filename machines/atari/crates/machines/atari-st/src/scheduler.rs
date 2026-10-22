@@ -15,6 +15,8 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::config::Region;
 
 pub const PAL_CRYSTAL_HZ: u32 = 32_084_988;
@@ -43,7 +45,7 @@ pub const CLASS_MFP: u8 = 1;
 pub const CLASS_ACIA: u8 = 2;
 pub const CLASS_FDC: u8 = 3;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Event {
     /// The end of a line: the GLUE requests the HBL; after the frame's last line also the VBL.
     LineEnd,
@@ -94,9 +96,42 @@ pub struct Scheduler {
     seq: u64,
 }
 
+/// The queue as data: every pending event with its time, class and insertion number.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SchedulerState {
+    events: Vec<(u64, u8, u64, Event)>,
+    seq: u64,
+}
+
+impl SchedulerState {
+    /// Whether an ACIA event names a port that does not exist (a state from elsewhere).
+    pub fn has_bad_port(&self) -> bool {
+        self.events
+            .iter()
+            .any(|(_, _, _, e)| matches!(e, Event::AciaService { port, .. } if *port >= 2))
+    }
+}
+
 impl Scheduler {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The pending events, in time order, so equal queues give equal bytes.
+    pub fn snapshot(&self) -> SchedulerState {
+        let mut events: Vec<_> = self.heap.iter().map(|Reverse(e)| *e).collect();
+        events.sort_unstable();
+        SchedulerState {
+            events,
+            seq: self.seq,
+        }
+    }
+
+    pub fn restore(state: SchedulerState) -> Self {
+        Self {
+            heap: state.events.into_iter().map(Reverse).collect(),
+            seq: state.seq,
+        }
     }
 
     pub fn schedule(&mut self, at: u64, class: u8, event: Event) {

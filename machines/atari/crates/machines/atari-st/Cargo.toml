@@ -9,6 +9,9 @@ description = "Atari ST/STF/STFM: memory map, event scheduler and the Machine im
 machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "39dfdcc276719bffd9da53ead351e0d3da14b1bb" }
 mc68000 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "39dfdcc276719bffd9da53ead351e0d3da14b1bb" }
 serde = { version = "1", features = ["derive"] }
+bincode = { version = "2", features = ["serde"] }
+crc32fast = "1"
+sha1 = "0.10"
 mc68901 = { path = "../../chips/mc68901" }
 st-shifter = { path = "../../chips/st-shifter" }
 ay-3-8910 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "39dfdcc276719bffd9da53ead351e0d3da14b1bb" }

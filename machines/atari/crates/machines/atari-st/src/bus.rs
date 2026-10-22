@@ -98,6 +98,28 @@ pub struct StBus {
     io_log_limit: u32,
 }
 
+/// The bus and every device behind it as data: what a save state holds of the machine's hardware (not the TOS image,
+/// the I/O log, the stop record or the configuration).
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct BusState {
+    ram: Vec<u8>,
+    mmu: Mmu,
+    hbl_pending: bool,
+    vbl_pending: bool,
+    mfp: Mfp,
+    shifter: Shifter,
+    psg: crate::psg::PsgState,
+    acias: [crate::acia::PortState; 2],
+    dma: crate::dma::DmaState,
+    fdc_dirty: bool,
+    fdc_irq: bool,
+    acia_dirty: bool,
+    clock: MfpClock,
+    mfp_ticks: u64,
+    mfp_dirty: bool,
+    pc: u32,
+}
+
 /// Where an address falls.
 #[derive(Debug)]
 enum Region {
@@ -173,6 +195,76 @@ impl StBus {
             io_log: Vec::new(),
             io_log_limit: cfg.io_log_limit,
         })
+    }
+
+    /// The SHA-1 of the TOS image: what a save state records, so it is only loaded on the same firmware.
+    pub fn firmware_sha1(&self) -> [u8; 20] {
+        crate::state::sha1_of(&self.rom)
+    }
+
+    /// The hardware as data; `None` while the machine is stopped (a stopped machine has nothing to resume).
+    pub(crate) fn snapshot(&self) -> Option<BusState> {
+        if self.stop.is_some() {
+            return None;
+        }
+        Some(BusState {
+            ram: self.ram.clone(),
+            mmu: self.mmu.clone(),
+            hbl_pending: self.hbl_pending,
+            vbl_pending: self.vbl_pending,
+            mfp: self.mfp.clone(),
+            shifter: self.shifter.clone(),
+            psg: self.psg.snapshot(),
+            acias: [
+                self.acias.ports[0].snapshot(),
+                self.acias.ports[1].snapshot(),
+            ],
+            dma: self.dma.snapshot(),
+            fdc_dirty: self.fdc_dirty,
+            fdc_irq: self.fdc_irq,
+            acia_dirty: self.acia_dirty,
+            clock: self.clock,
+            mfp_ticks: self.mfp_ticks,
+            mfp_dirty: self.mfp_dirty,
+            pc: self.pc,
+        })
+    }
+
+    /// Takes the state in, after checking it fits this machine (the same RAM, the same memory configuration shape).
+    /// On an error nothing has changed.
+    pub(crate) fn restore(&mut self, s: BusState) -> Result<(), String> {
+        if s.ram.len() != self.ram.len() {
+            return Err(format!(
+                "the state was made with {} bytes of RAM, this machine has {}",
+                s.ram.len(),
+                self.ram.len()
+            ));
+        }
+        if s.mmu.ram_bytes() != self.mmu.ram_bytes() {
+            return Err("the state's memory configuration does not fit this machine's RAM".into());
+        }
+        // Everything that can fail goes first: the DMA state is the one with a check (and it merges with the disks
+        // now in the drives, so it works on this bus's own DMA chip).
+        self.dma.restore(s.dma)?;
+        self.ram = s.ram;
+        self.mmu = s.mmu;
+        self.hbl_pending = s.hbl_pending;
+        self.vbl_pending = s.vbl_pending;
+        self.mfp = s.mfp;
+        self.shifter = s.shifter;
+        self.psg.restore(s.psg);
+        let [kbd, midi] = s.acias;
+        self.acias.ports[0].restore(kbd);
+        self.acias.ports[1].restore(midi);
+        self.fdc_dirty = s.fdc_dirty;
+        self.fdc_irq = s.fdc_irq;
+        self.acia_dirty = s.acia_dirty;
+        self.clock = s.clock;
+        self.mfp_ticks = s.mfp_ticks;
+        self.mfp_dirty = s.mfp_dirty;
+        self.pc = s.pc;
+        self.stop = None;
+        Ok(())
     }
 
     /// The interrupt level the GLUE and the MFP ask for: the highest one pending.
