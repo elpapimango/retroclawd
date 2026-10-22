@@ -26,7 +26,7 @@ fn le16(b: &[u8], at: usize) -> usize {
 fn fat(disk: &[u8], cluster: usize) -> usize {
     let at = 512 + cluster * 3 / 2;
     let pair = le16(disk, at);
-    if cluster % 2 == 0 {
+    if cluster.is_multiple_of(2) {
         pair & 0xFFF
     } else {
         pair >> 4
