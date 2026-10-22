@@ -84,6 +84,45 @@ struct InstanceRecord {
     diag_file: Option<PathBuf>,
     /// The host's joystick switches per ST port (bit 7 fire, bits 0-3 the stick).
     joy: [u8; 2],
+    /// What each drive's image was loaded as, so it is exported in the same format.
+    disk_formats: [DiskFormat; 2],
+}
+
+/// The file format an image came in (`.st` raw sectors, `.msa` run-length encoded tracks).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum DiskFormat {
+    #[default]
+    St,
+    Msa,
+}
+
+impl DiskFormat {
+    /// By the effective file name's extension; with no name, by the `.msa` ID word.
+    fn detect(name: Option<&str>, bytes: &[u8]) -> DiskFormat {
+        let by_name = name
+            .and_then(|n| n.rsplit_once('.'))
+            .map(|(_, e)| e.to_ascii_lowercase());
+        match by_name.as_deref() {
+            Some("msa") => DiskFormat::Msa,
+            Some(_) => DiskFormat::St,
+            None if bytes.starts_with(&[0x0E, 0x0F]) => DiskFormat::Msa,
+            None => DiskFormat::St,
+        }
+    }
+
+    fn parse(self, bytes: &[u8]) -> Result<atari_st::st_floppy::Image, String> {
+        match self {
+            DiskFormat::St => atari_st::st_floppy::Image::parse(bytes).map_err(|e| e.to_string()),
+            DiskFormat::Msa => atari_st::st_floppy::msa::parse(bytes).map_err(|e| e.to_string()),
+        }
+    }
+
+    fn encode(self, image: &atari_st::st_floppy::Image) -> Vec<u8> {
+        match self {
+            DiskFormat::St => image.to_bytes(),
+            DiskFormat::Msa => atari_st::st_floppy::msa::write(image),
+        }
+    }
 }
 
 impl InstanceRecord {
@@ -287,6 +326,12 @@ fn machine_profile() -> MachineProfile {
                 "Floppy drives fitted (A, and B with 2)",
             ),
             option(
+                "write_protect",
+                MachineOptionKind::Bool,
+                Some(DebugValue::Bool(false)),
+                "Write-protect the floppy disks: the guest cannot change them (the controller sees the write-protect line)",
+            ),
+            option(
                 "trace_limit",
                 MachineOptionKind::Int {
                     min: Some(1),
@@ -404,6 +449,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let mut diag_file = None;
     let mut io_trace_file = None;
     let mut drives = 2u8;
+    let mut write_protect = false;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
             ("ram", DebugValue::Text(v)) => {
@@ -428,6 +474,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             ("trace_file", DebugValue::Text(v)) => trace_file = Some(PathBuf::from(v)),
             ("trace_limit", DebugValue::U64(v)) => trace_limit = *v,
             ("drives", DebugValue::U64(v @ 1..=2)) => drives = *v as u8,
+            ("write_protect", DebugValue::Bool(v)) => write_protect = *v,
             ("drives", other) => return Err(format!("option \"drives\": 1 or 2, not {other:?}")),
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(PathBuf::from(v)),
             ("io_trace_file", DebugValue::Text(v)) => io_trace_file = Some(PathBuf::from(v)),
@@ -468,6 +515,9 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     })?;
     let mut machine = machine;
     machine.set_drives(drives);
+    for drive in 0..drives {
+        machine.set_write_protect(drive, write_protect);
+    }
     let metadata = metadata(&machine, region_name, &model);
     let mut state = state()
         .lock()
@@ -486,6 +536,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             io_trace_written: false,
             diag_file,
             joy: [0; 2],
+            disk_formats: [DiskFormat::St; 2],
         },
     );
     Ok(MachineCreateResponse { instance, metadata })
@@ -735,10 +786,15 @@ fn handle_machine_command(
         MachineCommand::AttachMedia {
             slot: MediaSlot::Disk { drive },
             bytes,
+            name,
             ..
         } => {
-            let image = atari_st::st_floppy::Image::parse(&bytes).map_err(|e| e.to_string())?;
+            let format = DiskFormat::detect(name.as_deref(), &bytes);
+            let image = format.parse(&bytes)?;
             record.machine.insert_disk(drive, image)?;
+            if let Some(f) = record.disk_formats.get_mut(drive as usize) {
+                *f = format;
+            }
             Ok(MachineResponse::Ack)
         }
         MachineCommand::DetachMedia {
@@ -750,22 +806,34 @@ fn handle_machine_command(
         MachineCommand::ExportDisk {
             drive,
             only_if_modified,
-        } => Ok(MachineResponse::DiskImage(if only_if_modified {
-            None
-        } else {
-            record
-                .machine
-                .disk(drive)
-                .map(atari_st::st_floppy::Image::to_bytes)
-        })),
-        MachineCommand::MarkDiskSaved { .. } => Ok(MachineResponse::Ack),
+        } => {
+            if drive >= record.machine.drives() {
+                return Err(format!("drive {drive} does not exist"));
+            }
+            record.machine.commit_disks();
+            let format = record.disk_formats[drive as usize];
+            Ok(MachineResponse::DiskImage(
+                if only_if_modified && !record.machine.disk_modified(drive) {
+                    None
+                } else {
+                    record.machine.disk(drive).map(|image| format.encode(image))
+                },
+            ))
+        }
+        MachineCommand::MarkDiskSaved { drive } => {
+            if drive >= record.machine.drives() {
+                return Err(format!("drive {drive} does not exist"));
+            }
+            record.machine.mark_disk_saved(drive);
+            Ok(MachineResponse::Ack)
+        }
         MachineCommand::AttachMedia { .. }
         | MachineCommand::DetachMedia { .. }
         | MachineCommand::ExportTape { .. }
         | MachineCommand::Freeze
         | MachineCommand::ExportCartridge
         | MachineCommand::ExportPrinter => {
-            Err("unsupported: the atari-st takes floppy disks (.st) only".to_string())
+            Err("unsupported: the atari-st takes floppy disks (.st, .msa) only".to_string())
         }
         MachineCommand::GetMediaSnapshot => Ok(MachineResponse::MediaSnapshot(MediaSnapshot {
             tape: None,
@@ -1135,6 +1203,160 @@ mod tests {
         let mut state = state().lock().unwrap();
         let record = state.instances.get_mut(&id).unwrap();
         handle_machine_command(record, command)
+    }
+
+    fn mb(value: u8, addr: u16) -> [u16; 3] {
+        [0x11FC, value as u16, addr]
+    }
+
+    fn mw(value: u16, addr: u16) -> [u16; 3] {
+        [0x31FC, value, addr]
+    }
+
+    /// Writes zeros from `$10000` to sector 3 of cylinder 0, side 0 by DMA, then loops.
+    fn write_sector_3_program() -> Vec<u16> {
+        let mut p = Vec::new();
+        for (v, a) in [(7, 0x8800), (0xC0, 0x8802), (14, 0x8800), (0x05, 0x8802)] {
+            p.extend(mb(v, a));
+        }
+        p.extend(mb(0, 0x860D));
+        p.extend(mb(0, 0x860B));
+        p.extend(mb(1, 0x8609));
+        p.extend(mw(0x090, 0x8606));
+        p.extend(mw(0x190, 0x8606));
+        p.extend(mw(1, 0x8604));
+        p.extend(mw(0x184, 0x8606));
+        p.extend(mw(3, 0x8604));
+        p.extend(mw(0x180, 0x8606));
+        p.extend(mw(0xA8, 0x8604));
+        p.push(0x60FE);
+        p
+    }
+
+    /// 720K, every byte `$AA`, with the BPB of a 720K disk.
+    fn aa_disk() -> Vec<u8> {
+        let mut b = vec![0xAAu8; 737_280];
+        b[11..13].copy_from_slice(&512u16.to_le_bytes());
+        b[19..21].copy_from_slice(&1440u16.to_le_bytes());
+        b[24..26].copy_from_slice(&9u16.to_le_bytes());
+        b[26..28].copy_from_slice(&2u16.to_le_bytes());
+        b
+    }
+
+    fn attach_named(id: MachineInstanceHandle, drive: u8, name: &str, bytes: Vec<u8>) {
+        command(
+            id,
+            MachineCommand::AttachMedia {
+                slot: MediaSlot::Disk { drive },
+                kind: MediaKind::Disk,
+                name: Some(name.to_string()),
+                bytes,
+                options: Vec::new(),
+            },
+        )
+        .unwrap();
+    }
+
+    fn run_steps(id: MachineInstanceHandle, steps: usize) {
+        for _ in 0..steps {
+            command(id, MachineCommand::Step).unwrap();
+        }
+    }
+
+    fn export(id: MachineInstanceHandle, drive: u8, only_if_modified: bool) -> Option<Vec<u8>> {
+        match command(
+            id,
+            MachineCommand::ExportDisk {
+                drive,
+                only_if_modified,
+            },
+        ) {
+            Ok(MachineResponse::DiskImage(i)) => i,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn export_returns_the_written_sector_and_dirty() {
+        let id = create(&write_sector_3_program(), Vec::new());
+        attach_named(id, 0, "disk.st", aa_disk());
+        run_steps(id, 400_000);
+        let bytes = export(id, 0, true).expect("modified");
+        assert_eq!(bytes.len(), 737_280);
+        let sector = 2 * 512;
+        assert!(
+            bytes[sector..sector + 512].iter().all(|&b| b == 0),
+            "sector 3 was written"
+        );
+        assert_eq!(bytes[sector - 1], 0xAA, "sector 2 untouched");
+        assert_eq!(bytes[sector + 512], 0xAA, "sector 4 untouched");
+        state().lock().unwrap().instances.remove(&id);
+    }
+
+    #[test]
+    fn mark_saved_clears_dirty() {
+        let id = create(&write_sector_3_program(), Vec::new());
+        attach_named(id, 0, "disk.st", aa_disk());
+        run_steps(id, 400_000);
+        assert!(export(id, 0, true).is_some());
+        assert!(matches!(
+            command(id, MachineCommand::MarkDiskSaved { drive: 0 }),
+            Ok(MachineResponse::Ack)
+        ));
+        assert!(export(id, 0, true).is_none());
+        assert!(export(id, 0, false).is_some(), "the image is still there");
+        state().lock().unwrap().instances.remove(&id);
+    }
+
+    #[test]
+    fn an_msa_disk_exports_as_msa() {
+        let id = create(&[0x60FE], Vec::new());
+        let st = atari_st::st_floppy::Image::parse(&aa_disk()).unwrap();
+        attach_named(id, 0, "game.MSA", atari_st::st_floppy::msa::write(&st));
+        let out = export(id, 0, false).unwrap();
+        assert_eq!(&out[..2], &[0x0E, 0x0F]);
+        assert_eq!(atari_st::st_floppy::msa::parse(&out).unwrap(), st);
+        state().lock().unwrap().instances.remove(&id);
+    }
+
+    #[test]
+    fn write_protect_option_refuses_writes() {
+        let id = create(
+            &write_sector_3_program(),
+            vec![NamedValue {
+                key: "write_protect".to_string(),
+                value: DebugValue::Bool(true),
+            }],
+        );
+        attach_named(id, 0, "disk.st", aa_disk());
+        run_steps(id, 400_000);
+        assert!(export(id, 0, true).is_none(), "nothing was written");
+        assert_eq!(export(id, 0, false).unwrap(), aa_disk());
+        state().lock().unwrap().instances.remove(&id);
+    }
+
+    #[test]
+    fn drive_b_export_is_independent_of_drive_a() {
+        let id = create(&write_sector_3_program(), Vec::new());
+        attach_named(id, 0, "disk.st", aa_disk());
+        attach_named(id, 1, "other.st", aa_disk());
+        run_steps(id, 400_000);
+        assert!(export(id, 0, true).is_some());
+        assert!(
+            export(id, 1, true).is_none(),
+            "the program writes drive A only"
+        );
+        assert!(
+            command(
+                id,
+                MachineCommand::ExportDisk {
+                    drive: 2,
+                    only_if_modified: false
+                }
+            )
+            .is_err()
+        );
+        state().lock().unwrap().instances.remove(&id);
     }
 
     #[test]
