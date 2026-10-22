@@ -21,7 +21,10 @@ fn floppy(name: &str) -> Option<st_floppy::Image> {
     match std::fs::read(&path) {
         Ok(bytes) => st_floppy::Image::parse(&bytes).ok(),
         Err(_) => {
-            eprintln!("probe floppy {} missing: run timing/build.sh", path.display());
+            eprintln!(
+                "probe floppy {} missing: run timing/build.sh",
+                path.display()
+            );
             None
         }
     }
@@ -34,7 +37,10 @@ fn golden_bytes(name: &str) -> Option<Vec<u8>> {
     match std::fs::read(&path) {
         Ok(b) => Some(b),
         Err(_) => {
-            eprintln!("golden {} missing: run capture_hatari_mem.py", path.display());
+            eprintln!(
+                "golden {} missing: run capture_hatari_mem.py",
+                path.display()
+            );
             None
         }
     }
@@ -57,12 +63,17 @@ pub fn run_probe(name: &str, vbls: u64, len: usize, accuracy: Accuracy) -> Optio
 
 /// The probe's result equals Hatari's dump.
 pub fn assert_matches_hatari(name: &str, vbls: u64, len: usize, accuracy: Accuracy) {
-    let (Some(ours), Some(theirs)) = (run_probe(name, vbls, len, accuracy), golden_bytes(name)) else {
+    let (Some(ours), Some(theirs)) = (run_probe(name, vbls, len, accuracy), golden_bytes(name))
+    else {
         return;
     };
     assert_eq!(theirs.len(), len, "{name}: the golden has another length");
     if ours != theirs {
-        let first = ours.iter().zip(&theirs).position(|(a, b)| a != b).unwrap_or(0);
+        let first = ours
+            .iter()
+            .zip(&theirs)
+            .position(|(a, b)| a != b)
+            .unwrap_or(0);
         panic!(
             "{name} differs from Hatari at byte {first} (of {len}): ours {:02X?} theirs {:02X?}",
             &ours[first..(first + 16).min(len)],
@@ -74,6 +85,11 @@ pub fn assert_matches_hatari(name: &str, vbls: u64, len: usize, accuracy: Accura
 #[test]
 fn p01_smoke_matches_hatari() {
     assert_matches_hatari("p01", 600, 16, Accuracy::Fast);
+}
+
+#[test]
+fn p01_smoke_matches_hatari_in_accurate_mode() {
+    assert_matches_hatari("p01", 600, 16, Accuracy::Accurate);
 }
 
 #[test]

@@ -85,8 +85,22 @@ pub struct StBus {
     mmu: Mmu,
     rom: Vec<u8>,
     stop: Option<IoStop>,
-    /// Emulated time, kept up to date by the machine, for the stop record.
+    /// Emulated time in CPU clocks. `fast`: the start of the running instruction; `accurate`: the cycle being run.
     pub(crate) now: u64,
+    pub(crate) sched: scheduler::Scheduler,
+    pub(crate) region: crate::config::Region,
+    pub(crate) vbl_count: u64,
+    pub(crate) last_vbl_at: u64,
+    pub(crate) hbl_count: u64,
+    /// This frame's shape (chosen at its start) and the lines done in it.
+    pub(crate) geometry: scheduler::FrameGeometry,
+    pub(crate) line: u32,
+    /// The number of the one MFP timeout event that is current.
+    pub(crate) mfp_event: u64,
+    /// The picture drawn at the last VBL (640 x 400 RGB).
+    pub(crate) frame: Vec<u8>,
+    /// `--accuracy accurate`: time passes with every bus cycle.
+    pub(crate) accurate: bool,
     /// The GLUE's interrupt latches, cleared by their acknowledge cycles.
     hbl_pending: bool,
     vbl_pending: bool,
@@ -197,16 +211,28 @@ impl StBus {
         for (line, level) in gpip_inputs(cfg.monitor) {
             mfp.set_input(line, level);
         }
-        Ok(Self {
+        let shifter = Shifter::new(cfg.region == crate::config::Region::Pal);
+        let geometry = scheduler::geometry(shifter.sync_50hz(), cfg.monitor)?;
+        let mut bus = Self {
             ram: vec![0; mmu.ram_bytes()],
             mmu,
             rom: cfg.rom.clone(),
             stop: None,
             now: 0,
+            sched: scheduler::Scheduler::new(),
+            region: cfg.region,
+            vbl_count: 0,
+            last_vbl_at: 0,
+            hbl_count: 0,
+            geometry,
+            line: 0,
+            mfp_event: 0,
+            frame: vec![0; (st_shifter::WIDTH * st_shifter::HEIGHT * 3) as usize],
+            accurate: cfg.accuracy == crate::config::Accuracy::Accurate,
             hbl_pending: false,
             vbl_pending: false,
             mfp,
-            shifter: Shifter::new(cfg.region == crate::config::Region::Pal),
+            shifter,
             acias,
             rs232: Rs232(Box::new(NullPeer)),
             printer: None,
@@ -223,7 +249,14 @@ impl StBus {
             pc: 0,
             io_log: Vec::new(),
             io_log_limit: cfg.io_log_limit,
-        })
+        };
+        // The first line ends one line time after power-on.
+        bus.sched.schedule(
+            bus.geometry.clocks_per_line as u64,
+            scheduler::CLASS_VIDEO,
+            scheduler::Event::LineEnd,
+        );
+        Ok(bus)
     }
 
     /// The SHA-1 of the TOS image: what a save state records, so it is only loaded on the same firmware.
@@ -843,6 +876,57 @@ impl StBus {
 
 impl M68kBus for StBus {
     fn read(&mut self, addr: u32, size: Size, fc: FunctionCode) -> Result<u32, BusFault> {
+        if !self.accurate {
+            return self.read_cycle(addr, size, fc);
+        }
+        let start = self.begin_cycle();
+        let result = self.read_cycle(addr, size, fc);
+        self.end_cycle(start, 0);
+        result
+    }
+
+    fn write(
+        &mut self,
+        addr: u32,
+        size: Size,
+        value: u32,
+        fc: FunctionCode,
+    ) -> Result<(), BusFault> {
+        if !self.accurate {
+            return self.write_cycle(addr, size, value, fc);
+        }
+        let start = self.begin_cycle();
+        let result = self.write_cycle(addr, size, value, fc);
+        self.end_cycle(start, 0);
+        result
+    }
+
+    fn sync(&mut self, internal_clocks: u32) {
+        if self.accurate {
+            self.pass(internal_clocks);
+        }
+    }
+
+    /// HBL and VBL are autovectored (VPA); the MFP puts its vector on the bus, and with nothing to give the cycle
+    /// ends as spurious.
+    fn iack(&mut self, level: u8) -> IackResponse {
+        if self.accurate {
+            self.run_events(self.now);
+        }
+        self.iack_cycle(level)
+    }
+
+    /// The RESET instruction: [D] the MFP's RESET input (MC68901 §2.2.3). Other devices keep their state until a
+    /// source says the line reaches them.
+    fn reset_devices(&mut self) {
+        self.catch_up_mfp(self.now);
+        self.mfp.reset();
+        self.mfp_dirty = true;
+    }
+}
+
+impl StBus {
+    fn read_cycle(&mut self, addr: u32, size: Size, fc: FunctionCode) -> Result<u32, BusFault> {
         if Self::user_refused(addr, fc) {
             return Err(BusFault);
         }
@@ -860,7 +944,7 @@ impl M68kBus for StBus {
         })
     }
 
-    fn write(
+    fn write_cycle(
         &mut self,
         addr: u32,
         size: Size,
@@ -894,9 +978,7 @@ impl M68kBus for StBus {
         Ok(())
     }
 
-    /// HBL and VBL are autovectored (VPA); the MFP puts its vector on the bus, and with nothing to give the cycle
-    /// ends as spurious.
-    fn iack(&mut self, level: u8) -> IackResponse {
+    fn iack_cycle(&mut self, level: u8) -> IackResponse {
         match level {
             MFP_LEVEL => {
                 self.catch_up_mfp(self.now);
@@ -915,14 +997,6 @@ impl M68kBus for StBus {
             }
             _ => IackResponse::Spurious,
         }
-    }
-
-    /// The RESET instruction: [D] the MFP's RESET input (MC68901 §2.2.3). Other devices keep their state until a
-    /// source says the line reaches them.
-    fn reset_devices(&mut self) {
-        self.catch_up_mfp(self.now);
-        self.mfp.reset();
-        self.mfp_dirty = true;
     }
 }
 

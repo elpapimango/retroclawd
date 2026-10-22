@@ -39,6 +39,10 @@ pub fn crystal_hz(region: Region) -> u32 {
     }
 }
 
+/// `accurate` mode: the clock of a 4-clock bus cycle at which a device sees the access (0 = at its start). Fitted from
+/// the timing probes (Task 31); until then the start of the cycle.
+pub const ACCESS_POINT: u64 = 0;
+
 /// Classes order events on the same clock: video, then the MFP, ACIA, FDC, DMA, then CPU interrupt sampling.
 pub const CLASS_VIDEO: u8 = 0;
 pub const CLASS_MFP: u8 = 1;

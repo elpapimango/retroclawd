@@ -9,6 +9,7 @@ mod config;
 mod diag;
 mod dma;
 mod drive;
+mod events;
 mod io;
 mod iolog;
 mod machine;
