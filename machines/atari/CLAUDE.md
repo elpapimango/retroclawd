@@ -29,13 +29,15 @@ Rules from the design that apply to every change:
 ## Layout
 
 ```
-crates/chips/mc68901/                MC68901 MFP: GPIP, interrupt controller, timers (USART registers only)
+crates/chips/mc68901/                MC68901 MFP: GPIP, interrupt controller, timers, USART (timer D clocked)
 crates/chips/st-shifter/             Shifter registers and the frame render
 crates/chips/ikbd/                   the keyboard controller, behavioural, from Atari's ikbd protocol document
-crates/formats/st-floppy/            .st images: geometry, sectors, MFM tracks for the WD1772
+crates/formats/st-floppy/            .st and .msa images: geometry, sectors, MFM tracks for the WD1772, written-track decode, boot.rs
+                                     (a 720K floppy around a GEMDOS program)
 crates/machines/atari-st/            the machine: config, bus, I/O decode (io.rs), MMU, MFP clock, scheduler, PSG
                                      (psg.rs), ACIAs + serial peers (acia.rs), DMA + FDC (dma.rs), drives (drive.rs),
-                                     I/O log (Hatari format), diagnostics, Machine impl
+                                     I/O log (Hatari format), diagnostics, Machine impl, state.rs (RCST save states), serial.rs
+                                     (file/echo peers for RS-232 and MIDI), acsi.rs (hard disks behind the DMA chip)
 crates/plugins/atari-st-machine-plugin/  profile, options, commands (lib `atari_st_machine_plugin_impl`)
 crates/plugin-dlls/atari-st/         the cdylib (`atari_st_machine_plugin`), only `export_plugin!`
 firmware.toml                        EmuTOS by URL and hash
@@ -57,3 +59,13 @@ write its 1500-frame picture.
 `tests/romm_games.rs` needs `RC_ROMM_GAMES`, a folder of the unzipped `.st` disk games from the owner's RomM (platform
 `atari-st`; `retroclawd romm games atari-st`): each boots without a stop, gives the same frame on two runs, and is not
 modified by being read. Never committed; without the variable the tests pass and say so.
+
+## Phase 2 notes
+
+- Hardware facts of Phase 2 (USART, ACSI, cartridge, raster, GEMDOS programs) are in `docs/hardware-facts.md` with their
+  sources; the ACSI application notes (1985) and the Atari Compendium chapters 2 and 4 are the primary ones, by SHA-256.
+- Scenarios: `scenarios/build.sh` needs `retroclawd-tools` built (`rcdisk`, `rcld`); `hello.s` and `hello.layout.toml` make
+  `hello.prg`, `rcdisk hd` makes `hd.img`. `RC_SWEEP=<n>` multiplies the hostile-input loops of the tests (`msa`).
+- `tests/prg.rs` runs a hand-made GEMDOS program from `AUTO\PROG.PRG` (EmuTOS needed; `RC_DUMP_AUTO_FLOPPY=<file>` writes the
+  floppy it builds). A program from AUTO runs in user mode: it must not write below `$800`.
+- The fuzz targets (`crates/machines/atari-st/fuzz`, `crates/formats/st-floppy/fuzz`) need `cargo +nightly fuzz`; not run here.
