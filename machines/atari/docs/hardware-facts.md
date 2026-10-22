@@ -196,7 +196,11 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | FDC | WD1772, clocked by the CPU clock (8 MHz), so its times are the data sheet's | `[D]` *WD177X*; the clock `[H?]` | — |
 | Type I status S5 | set once the spin-up phase is over (also when skipped with h = 1) | `[D]` | *WD177X* status register description; `[O]` `$E4` after RESTORE `$0B` |
 | Force Interrupt | during a command only Busy resets; when idle the status becomes Type I; MO (the motor output) is kept either way | `[D]` | *WD177X* status register description and "MO signal goes back to a logic 0" after idle revolutions |
-| Writing (WRITE SECTOR, WRITE TRACK) | not emulated yet: the machine stops at the command | — | Phase 2 |
+| Writing, DMA side | with the mode register's write bit set the DMA fills the 16-byte FIFO from memory at the DMA address and hands the controller one byte per data request; the sector count falls by one for every 512 bytes handed over | `[H?]` | mirrors the read direction above; the FIFO refill burst size is not documented |
+| Writing, drive side | the byte the controller writes lands under the head at the revolution position; WRITE SECTOR and WRITE TRACK (format) both work this way; `F5` writes `A1` with a missing clock, `F6` writes `C2`, `F7` the CRC | `[D]` | *WD177X* write sector / write track command descriptions (the chip crate does the byte expansion) |
+| Track back to sectors | the written track is decoded as the controller would read it (ID and data fields, CRC-CCITT) and the image takes the sectors; a sector the image's geometry lacks is ignored | `[D]` format, `[H?]` ignoring | *WD177X* p.1-18; a `.st` cannot change geometry |
+| WRITE SECTOR end status | the shared `wd1770` leaves the DRQ status bit set after the last byte (status `$82`); the error bits are clear | `[H?]` | unchecked against the data sheet or Hatari; the machine treats a command as finished by BUSY alone |
+| Write protect | the user's write-protect tab makes the controller see the write-protect line (WRITE commands end with status bit 6) and the drive takes nothing | `[D]` | *WD177X* status register, write protect |
 | INTRQ | GPIP I5, active low | `[H]` | *Internals* p.61 |
 | HDC (ACSI) with nothing connected | writes vanish, I5 stays high | `[O]` | EmuTOS's probe in Hatari |
 | HDC read | no fact: the machine stops | — | — |

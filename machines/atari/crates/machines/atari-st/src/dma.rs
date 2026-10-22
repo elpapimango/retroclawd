@@ -6,7 +6,8 @@
 //!   count not zero, bit 2 FDC DRQ). [O] bit 0 is set when there was no error (the book prints the opposite; see
 //!   `status`). [H?] its other bits read 0; bit 7 is not decoded.
 //! - [H] `$FF8609/0B/0D` are the DMA address high, mid, low, read and write.
-//! - [H?] the DMA moves FDC bytes through a 16-byte FIFO into memory a burst at a time, with no bus stall in Phase 1;
+//! - [H?] the DMA moves FDC bytes through a 16-byte FIFO into memory a burst at a time (and, writing, takes the
+//!   FDC's bytes from the FIFO, refilled from memory 16 bytes at a time as it empties), with no bus stall;
 //!   the sector count is 8 bits and counts 512-byte sectors; changing the mode register's write bit clears the FIFO
 //!   and the error bit.
 //! - [H] the FDC's INTRQ drives GPIP I5 (*Internals* p.61), active low.
@@ -72,15 +73,6 @@ impl Dma {
         self.fdc.peek(reg)
     }
 
-    /// A write to `$FF8604` that would start a WD1772 write command (WRITE SECTOR `$A0-$BF`, WRITE TRACK
-    /// `$F0-$FF`): writing to a disk arrives in Phase 2.
-    pub(crate) fn starts_a_write(&self, value: u16) -> bool {
-        let command = value as u8;
-        self.mode & 0x18 == 0
-            && self.fdc_register() == 0
-            && (command & 0xE0 == 0xA0 || command & 0xF0 == 0xF0)
-    }
-
     pub(crate) fn hdc_selected(&self) -> bool {
         self.mode & 0x08 != 0
     }
@@ -136,10 +128,44 @@ impl Dma {
         self.address = (self.address & !(0xFF << shift)) | (value as u32) << shift;
     }
 
+    /// Whether a command is running (the controller's BUSY bit), whatever the data request line says.
+    pub(crate) fn command_running(&self) -> bool {
+        self.fdc.peek(0) & 0x01 != 0
+    }
+
     /// Whether the controller has anything to do (a command running or a byte waiting).
     pub(crate) fn busy(&self) -> bool {
         self.fdc.peek(0) & 0x01 != 0 || self.fdc.drq()
     }
+
+    fn writing(&self) -> bool {
+        self.mode & 0x100 != 0 && self.mode & 0x40 == 0 && !self.hdc_selected()
+    }
+
+    /// Whether the controller wants a byte to write and the FIFO is empty: the DMA reads the next burst from memory.
+    pub(crate) fn needs_burst(&self) -> bool {
+        self.writing() && self.fdc.drq() && self.fifo.is_empty() && self.sector_count != 0
+    }
+
+    pub(crate) fn load_burst(&mut self, bytes: Vec<u8>) {
+        self.fifo = bytes;
+    }
+
+    /// Hands the controller its next byte from the FIFO when it asks for one and the DMA is writing.
+    pub(crate) fn service_write_drq(&mut self) {
+        if !self.writing() || !self.fdc.drq() || self.fifo.is_empty() {
+            return;
+        }
+        let byte = self.fifo.remove(0);
+        self.fdc.write(3, byte);
+        self.bytes_in_sector += 1;
+        if self.bytes_in_sector == SECTOR_BYTES {
+            self.bytes_in_sector = 0;
+            self.sector_count -= 1;
+        }
+    }
+
+    pub(crate) const BURST_BYTES: usize = FIFO_BYTES;
 
     /// Takes the controller's byte into the FIFO when the DMA is reading and has sectors left; returns a full FIFO
     /// to be written to memory.

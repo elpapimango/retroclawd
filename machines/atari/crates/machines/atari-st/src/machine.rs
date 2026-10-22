@@ -283,8 +283,17 @@ impl AtariSt {
     }
 
     /// The disk in drive `drive`, if any.
+    ///
+    /// A track the controller is still writing is not in the image until it is committed (the controller goes idle,
+    /// the head moves, the disk is ejected or [`AtariSt::mark_disk_saved`]); `commit_disks` takes it in now.
     pub fn disk(&self, drive: u8) -> Option<&st_floppy::Image> {
         self.bus.dma.fdc.floppy.drive(drive as usize).image()
+    }
+
+    /// Takes any track the controller has written into the images.
+    pub fn commit_disks(&mut self) {
+        self.bus.catch_up_fdc(self.now);
+        self.bus.dma.fdc.floppy.commit_pending();
     }
 
     /// Floppy drives fitted.
@@ -292,9 +301,30 @@ impl AtariSt {
         self.bus.dma.fdc.floppy.fitted()
     }
 
-    /// Phase 1 never writes to a disk.
-    pub fn disk_modified(&self, _drive: u8) -> bool {
-        false
+    /// Whether the controller has written to the disk in `drive` since it was inserted or last marked saved.
+    pub fn disk_modified(&self, drive: u8) -> bool {
+        self.bus.dma.fdc.floppy.drive(drive as usize).is_modified()
+    }
+
+    /// The disk in `drive` has been saved: it is no longer modified.
+    pub fn mark_disk_saved(&mut self, drive: u8) {
+        self.bus.catch_up_fdc(self.now);
+        self.bus
+            .dma
+            .fdc
+            .floppy
+            .drive_mut(drive as usize)
+            .mark_saved();
+    }
+
+    /// Sets the write-protect tab of the disk in `drive`.
+    pub fn set_write_protect(&mut self, drive: u8, on: bool) {
+        self.bus
+            .dma
+            .fdc
+            .floppy
+            .drive_mut(drive as usize)
+            .set_write_protected(on);
     }
 
     /// The number of floppy drives (1 or 2, default 2), before the machine runs; any disks are removed.

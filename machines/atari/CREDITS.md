@@ -21,6 +21,9 @@
   - Motorola *MC68901 Multi-Function Peripheral*, Advance Information, January 1984,
     https://bitsavers.mirrorservice.org/components/motorola/68000/MC68901_Multi-Function_Peripheral_Jan84.pdf
     (SHA-256 `5441a092562cc5b55bb167298030647622132e0061c0be8d976e25fb60ba959c`).
+  - DrCoolZic, *Atari Image File Formats* 1.0 (2014), "MSA file format" (Damien Burke's description, 1997),
+    http://info-coach.fr/atari/documents/_mydoc/FD_Image_File_Format.pdf
+    (SHA-256 `35335051c6c86c5cd59d9032af65d8d305da8dda8c04bba37d68596872bbffd3`; used for `st-floppy`'s `.msa`).
   - TOS documentation, "The system vectors", https://freemint.github.io/tos.hyp/en/the_system_vectors.html.
   - "A millisecond timer", ST-Log 34 (July 1989), https://www.atarimagazines.com/st-log/issue34/60_1_A_MILLISECOND_TIMER.php
     (the MFP timer clock).

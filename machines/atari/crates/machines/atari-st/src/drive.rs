@@ -5,8 +5,12 @@
 //! - [H?] one revolution is `st_floppy::TRACK_BYTES` byte times (300 rpm at 250 kbit/s); the index pulse is the
 //!   first [`INDEX_BYTES`] bytes of the revolution, and only a disk turning in a drive makes one.
 //! - [O] a drive without a disk reads write-protected (status `$E4` in Hatari), one with a disk does not (`$24`,
-//!   `$A4`). Writing arrives in Phase 2: a byte the controller writes to a disk is recorded as an attempt, and the
-//!   machine stops there as "not emulated" rather than lose it.
+//!   `$A4`).
+//! - Writing: a byte the controller writes goes into the track under the head (the bytes the drive keeps for the
+//!   current cylinder and side); when the head leaves the track, the disk is ejected or the controller is idle, the
+//!   track is decoded back into sectors (`st_floppy::decode`) and the image takes them. The disk counts as modified
+//!   from the first byte written until it is marked saved. A write-protected disk (the sensor, set by the user)
+//!   takes nothing; the controller sees the write-protect line and stops the command itself.
 //! - [H?] the motor line reaches both drives, so every drive with a disk turns.
 
 use st_floppy::{Image, TRACK_BYTES};
@@ -30,8 +34,12 @@ pub struct StDrive {
     index_count: u32,
     /// The track under the head, synthesized from the image (cylinder, side, bytes).
     track: Option<(u8, u8, Vec<u16>)>,
-    /// The controller wrote to the disk (Phase 2 work).
-    write_attempted: bool,
+    /// The write-protect tab, set by the user.
+    write_protected: bool,
+    /// The track under the head holds bytes the controller wrote that the image has not taken yet.
+    track_dirty: bool,
+    /// The image holds sectors the controller wrote since it was inserted or last marked saved.
+    modified: bool,
     /// Byte times the write-protect sensor stays blocked by a disk going in or out.
     swap_hold: u64,
 }
@@ -42,13 +50,57 @@ impl StDrive {
     }
 
     pub fn insert(&mut self, image: Image) {
+        self.commit_track();
         self.image = Some(image);
         self.track = None;
+        self.track_dirty = false;
+        self.modified = false;
     }
 
     pub fn eject(&mut self) -> Option<Image> {
+        self.commit_track();
         self.track = None;
+        self.modified = false;
         self.image.take()
+    }
+
+    /// Sets the write-protect tab.
+    pub fn set_write_protected(&mut self, on: bool) {
+        self.write_protected = on;
+    }
+
+    /// Whether the controller has written to the disk since it was inserted or last marked saved.
+    pub fn is_modified(&self) -> bool {
+        self.modified || self.track_dirty
+    }
+
+    /// The image has been saved: it is no longer modified.
+    pub fn mark_saved(&mut self) {
+        self.commit_track();
+        self.modified = false;
+    }
+
+    /// Decodes the written track back into the image's sectors. A track that does not decode (the controller wrote
+    /// garbage, or a half-formatted track) changes nothing and is dropped, so the next read sees the image's own.
+    pub fn commit_track(&mut self) {
+        if !std::mem::take(&mut self.track_dirty) {
+            return;
+        }
+        let Some((cyl, side, bytes)) = self.track.take() else {
+            return;
+        };
+        let Some(image) = self.image.as_mut() else {
+            return;
+        };
+        if let Ok(n) = image.apply_track(cyl, side, &bytes) {
+            self.modified |= n > 0;
+            self.track = Some((cyl, side, bytes));
+        }
+    }
+
+    /// Whether there is a written track waiting to be taken into the image.
+    pub fn has_pending_track(&self) -> bool {
+        self.track_dirty
     }
 
     pub fn image(&self) -> Option<&Image> {
@@ -67,6 +119,7 @@ impl StDrive {
         let cyl = self.cylinder;
         let stale = !matches!(&self.track, Some((c, s, _)) if *c == cyl && *s == side);
         if stale {
+            self.commit_track();
             let bytes = match &self.image {
                 Some(img) => img.track(cyl, side),
                 None => vec![0; TRACK_BYTES],
@@ -116,7 +169,7 @@ impl Floppy for StDrive {
     }
 
     fn write_protect(&self) -> bool {
-        self.image.is_none() || self.swap_hold > 0
+        self.image.is_none() || self.swap_hold > 0 || self.write_protected
     }
 
     fn seek_pulse(&mut self, inward: bool) {
@@ -131,9 +184,23 @@ impl Floppy for StDrive {
         self.read_side(0)
     }
 
-    fn write(&mut self, _: u16) {
-        if self.image.is_some() {
-            self.write_attempted = true;
+    fn write(&mut self, byte: u16) {
+        self.write_side(0, byte);
+    }
+}
+
+impl StDrive {
+    /// The controller writes `byte` (bit 8 = sync mark) under the head on `side`; the disk turns by one byte.
+    fn write_side(&mut self, side: u8, byte: u16) {
+        if self.image.is_some() && !self.write_protected {
+            let pos = self.pos;
+            self.track_bytes(side);
+            if let Some((_, _, t)) = self.track.as_mut()
+                && let Some(slot) = t.get_mut(pos)
+            {
+                *slot = byte;
+                self.track_dirty = true;
+            }
         }
         self.rotate(1);
     }
@@ -215,13 +282,16 @@ impl Drives {
         self.side = if value & 0x01 == 0 { 1 } else { 0 };
     }
 
-    /// Whether the controller has written to a disk since the last call.
-    pub fn take_write_attempt(&mut self) -> bool {
-        let mut any = false;
+    /// Takes every written track into its image (see [`StDrive::commit_track`]).
+    pub fn commit_pending(&mut self) {
         for d in &mut self.drives {
-            any |= std::mem::take(&mut d.write_attempted);
+            d.commit_track();
         }
-        any
+    }
+
+    /// Whether any drive holds a written track not yet in its image.
+    pub fn has_pending_track(&self) -> bool {
+        self.drives.iter().any(StDrive::has_pending_track)
     }
 
     fn sel(&self) -> Option<&StDrive> {
@@ -285,9 +355,15 @@ impl Floppy for Drives {
     }
 
     fn write(&mut self, byte: u16) {
-        match self.selected {
-            Some(n) => self.drives[n].write(byte),
-            None => self.drives.iter_mut().for_each(|d| d.rotate(1)),
+        let side = self.side;
+        if let Some(n) = self.selected {
+            self.drives[n].write_side(side, byte);
+        }
+        // The other drives' spindles turn with the shared motor line.
+        for (i, d) in self.drives.iter_mut().enumerate() {
+            if Some(i) != self.selected {
+                d.rotate(1);
+            }
         }
     }
 }

@@ -18,6 +18,7 @@
 #![forbid(unsafe_code)]
 
 pub mod decode;
+pub mod msa;
 
 use serde::{Deserialize, Serialize};
 
@@ -40,7 +41,7 @@ pub struct Geometry {
 }
 
 impl Geometry {
-    fn bytes(&self) -> usize {
+    pub(crate) fn bytes(&self) -> usize {
         self.cylinders as usize * self.sides as usize * self.sectors as usize * SECTOR
     }
 }
@@ -189,6 +190,17 @@ impl Image {
             geometry,
             data: bytes.to_vec(),
         })
+    }
+
+    /// An image of `geometry` holding `data`; the geometry is trusted (the format said so), the size is checked.
+    pub(crate) fn from_geometry(geometry: Geometry, data: Vec<u8>) -> Result<Image, Error> {
+        if data.len() != geometry.bytes() || data.is_empty() || data.len() > MAX_IMAGE_BYTES {
+            return Err(Error::Size(data.len()));
+        }
+        if layout(geometry.sectors).is_none() {
+            return Err(Error::TrackTooLong(geometry.sectors));
+        }
+        Ok(Image { geometry, data })
     }
 
     fn offset(&self, cyl: u8, side: u8, sector: u8) -> Option<usize> {

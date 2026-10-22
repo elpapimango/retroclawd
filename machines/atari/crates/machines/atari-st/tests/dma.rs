@@ -217,24 +217,3 @@ fn eject_during_read_sector_never_panics() {
     assert!(m.io_stop().is_none());
     assert_eq!(m.bus().dma_address(), at);
 }
-
-/// Writing arrives in Phase 2: a WRITE SECTOR command stops the machine as "not emulated" instead of losing the
-/// data.
-#[test]
-fn a_floppy_write_stops_as_not_emulated() {
-    let mut p = select_a();
-    p.extend(move_w(0x084, 0x8606));
-    p.extend(move_w(1, 0x8604));
-    p.extend(move_w(0x190, 0x8606));
-    p.extend(move_w(1, 0x8604)); // sector count 1, write direction
-    p.extend(move_w(0x180, 0x8606));
-    p.extend(move_w(0xA8, 0x8604)); // WRITE SECTOR, motor on
-    p.push(BRA_SELF);
-    let mut m = AtariSt::new(config(rom(&p, &[]), RamSize::M1)).unwrap();
-    m.insert_disk(0, image()).unwrap();
-    run(&mut m, 8_000_000);
-    assert_eq!(
-        m.io_stop().map(|s| s.reason),
-        Some(StopReason::NotEmulated(atari_st::Device::Dma))
-    );
-}

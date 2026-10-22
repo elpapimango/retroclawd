@@ -246,20 +246,44 @@ impl StBus {
             if let Some(burst) = self.dma.service_drq() {
                 self.dma_store(&burst, self.dma.fdc_at);
             }
-            if self.dma.fdc.floppy.take_write_attempt() && self.stop.is_none() {
-                // Writing to a disk arrives in Phase 2.
-                self.stop = Some(IoStop {
-                    reason: StopReason::NotEmulated(Device::Dma),
-                    addr: 0xFF_8604,
-                    size: Size::Word,
-                    write: true,
-                    value: self.dma.fdc_register_value(0) as u32,
-                    fc: FunctionCode::SUPERVISOR_DATA,
-                    at_cycle: self.dma.fdc_at,
-                });
+            if self.dma.needs_burst() {
+                let burst = self.dma_fetch(Dma::BURST_BYTES, self.dma.fdc_at);
+                self.dma.load_burst(burst);
             }
+            self.dma.service_write_drq();
+        }
+        if !self.dma.command_running() && self.dma.fdc.floppy.has_pending_track() {
+            self.dma.fdc.floppy.commit_pending();
         }
         self.update_fdc_irq(target);
+    }
+
+    /// `n` bytes from memory at the DMA address for the FIFO (a write to disk): RAM, ROM and the cartridge are read, the
+    /// I/O area or nonexistent memory has no fact and stops the machine.
+    fn dma_fetch(&mut self, n: usize, at: u64) -> Vec<u8> {
+        let mut out = Vec::with_capacity(n);
+        for _ in 0..n {
+            let addr = self.dma.address & 0xFF_FFFF;
+            match self.region(addr) {
+                Region::Io | Region::None => {
+                    if self.stop.is_none() {
+                        self.stop = Some(IoStop {
+                            reason: StopReason::NoFact,
+                            addr,
+                            size: Size::Byte,
+                            write: false,
+                            value: 0,
+                            fc: FunctionCode::SUPERVISOR_DATA,
+                            at_cycle: at,
+                        });
+                    }
+                    out.push(0);
+                }
+                _ => out.push(self.peek(addr)),
+            }
+            self.dma.address = (self.dma.address + 1) & 0xFF_FFFF;
+        }
+        out
     }
 
     /// A FIFO burst to memory at the DMA address: RAM takes it, ROM and the cartridge ignore it ([H?] as CPU writes),
@@ -454,12 +478,6 @@ impl StBus {
                 };
                 self.log_io(addr, size, write, v);
                 return Ok(v);
-            }
-            // Writing to a disk arrives in Phase 2.
-            Decode::Device(Device::Dma)
-                if addr == 0xFF_8604 && write && self.dma.starts_a_write(value as u16) =>
-            {
-                StopReason::NotEmulated(Device::Dma)
             }
             Decode::Device(Device::Dma)
                 if !(addr == 0xFF_8604 && !write && self.dma.hdc_selected()) =>
