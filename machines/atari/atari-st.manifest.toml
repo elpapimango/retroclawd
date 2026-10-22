@@ -91,6 +91,20 @@ args = ["--org", "0x8000"]
 files = { program = "atari/software/scenarios/tone.bin" }
 audio = { from_s = 1.0, to_s = 5.0, tone_hz = 441.31, tone_tolerance_pct = 1.0, min_amplitude = 0.05 }
 
+# S9S: serial.bin sends SERIAL through the MFP USART (timer D) and MIDI through the MIDI ACIA, each looped back by the
+# host (`--serial-loopback`, `--midi-loopback`), and stores what it reads at $0600 and $0610 (scenarios/README.md). The
+# golden is the 32 bytes made by retroclawd, checked by hand against the program's characters; three runs identical.
+[[scenario]]
+id = "S9S"
+kind = "memory"
+frames = 30
+args = ["--org", "0x8000", "--serial-loopback", "--midi-loopback"]
+files = { program = "atari/software/scenarios/serial.bin" }
+start = 1536
+len = 32
+golden = "atari-st/S9S-serial.bin"
+golden_sha256 = "b0c5faa1d0f430113cf62160a35fe13c412f188fe8cc21205a6c2aa2b9c1d81f"
+
 # S5: the EmuTOS desktop after 1400 frames: two fresh runs save the same state, and a run that loads that state and
 # goes on for 100 frames ends in the same state as a fresh run of 1500 frames (every device, RAM and the CPU are in it).
 [[scenario]]

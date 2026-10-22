@@ -16,6 +16,16 @@ Loaded with `--program tone.bin --org 0x8000`. It writes the YM2149 registers th
 Then it loops (`BRA.S *`). The pitch is `fT = fMaster / (16 TP)` (Yamaha YM2149 catalog, section (1)), with the
 master clock the CPU clock / 4 (`docs/hardware-facts.md`, PSG): 8 021 247 / 4 / (16 × 284) = 441.3 Hz.
 
+## `serial.bin` (S9S)
+
+Loaded with `--program serial.bin --org 0x8000 --serial-loopback --midi-loopback`. It programs the MFP USART
+(*MC68901* section 6): timer D in delay mode with prescaler 4 and data 1 (`TDDR` `$FFFA25`, `TCDCR` `$FFFA1D`),
+`UCR` `$88` (divide by 16, 8N1), `RSR` 1 and `TSR` 1. For each character of `SERIAL` it waits for `TSR` bit 7 (buffer
+empty), writes `UDR` (`$FFFA2F`), waits for `RSR` bit 7 (buffer full) and copies `UDR` to `$0600`+i. The host's serial
+loopback sends each character back, so the characters come in at the rate timer D sets. Then it resets the MIDI ACIA
+(`$FFFC04` = 3), sets divide by 16 and 8N1 (`$15`) and does the same with `MIDI` (transmit empty is status bit 1, receive
+full bit 0) into `$0610`+i, and loops. After the run memory `$0600-$061F` holds `SERIAL`, zeros, `MIDI`, zeros.
+
 ## `keys.st` (S2)
 
 A blank 720K disk (`rcdisk create`) with an executable boot sector (`rcdisk boot`: checksum `$1234`, code at offset

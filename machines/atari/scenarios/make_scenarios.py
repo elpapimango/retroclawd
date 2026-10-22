@@ -24,6 +24,41 @@ TONE = (
     + [0x60FE]  # BRA.S *
 )
 
+def move_b_abs(src, dst):
+    """MOVE.B (src).W,(dst).W"""
+    return [0x11F8, src, dst]
+
+
+def wait_bit(bit, addr):
+    """BTST #bit,(addr).W ; BEQ.S back to the BTST: waits until the bit is set."""
+    return [0x0838, bit, addr, 0x67F8]
+
+
+def serial_program():
+    """serial.bin (S9S): the MFP USART at timer D's rate sends SERIAL and reads it back (the host's `--serial-loopback`
+    sends each character back), then the MIDI ACIA does the same with MIDI; the characters land at $0600 and $0610."""
+    p = []
+    p += move_b(1, 0xFA25)  # TDDR = 1
+    p += move_b(0x01, 0xFA1D)  # TCDCR: timer D delay mode, divide by 4
+    p += move_b(0x88, 0xFA29)  # UCR: divide by 16, 8 bits, 1 start, 1 stop, no parity
+    p += move_b(0x01, 0xFA2B)  # RSR: receiver on
+    p += move_b(0x01, 0xFA2D)  # TSR: transmitter on
+    for i, c in enumerate(b"SERIAL"):
+        p += wait_bit(7, 0xFA2D)  # TSR buffer empty
+        p += move_b(c, 0xFA2F)  # UDR
+        p += wait_bit(7, 0xFA2B)  # RSR buffer full
+        p += move_b_abs(0xFA2F, 0x0600 + i)
+    p += move_b(0x03, 0xFC04)  # MIDI ACIA master reset
+    p += move_b(0x15, 0xFC04)  # divide by 16, 8N1
+    for i, c in enumerate(b"MIDI"):
+        p += wait_bit(1, 0xFC04)  # transmit data register empty
+        p += move_b(c, 0xFC06)
+        p += wait_bit(0, 0xFC04)  # receive data register full
+        p += move_b_abs(0xFC06, 0x0610 + i)
+    p += [0x60FE]  # BRA.S *
+    return p
+
+
 # keys-boot.bin, position independent (TOS runs a boot sector from wherever it loaded it).
 KEYS = [
     0x3F3C, 0x0022,  # 0:  MOVE.W #34,-(SP)       XBIOS Kbdvbase
@@ -151,7 +186,7 @@ def words(ws):
 def main() -> int:
     out = sys.argv[1]
     os.makedirs(out, exist_ok=True)
-    for name, code in [("tone.bin", TONE), ("keys-boot.bin", KEYS)]:
+    for name, code in [("tone.bin", TONE), ("keys-boot.bin", KEYS), ("serial.bin", serial_program())]:
         with open(os.path.join(out, name), "wb") as f:
             f.write(words(code))
     write = assemble(WRITE_ITEMS, [("okmsg", text("WRITE OK")), ("failmsg", text("WRITE FAILED"))])
