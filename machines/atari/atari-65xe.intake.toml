@@ -1,0 +1,79 @@
+machine = "atari-65xe"
+display_name = "Atari 65XE"
+family = "atari"
+default_region = "pal"
+
+[implementation]
+status = "accepted-with-gaps"
+boot_verified = true
+note = "Integrated native ROM and independent reference scenarios are complete. Same stock 64K mapping as XL; remaining acceptance gaps are in docs/atari800-gaps.md."
+
+[core]
+reuse = "mos6502"
+variant = "NMOS 6502 with Atari HALT wiring; not a 65C02"
+tests = ["Klaus Dormann functional tests", "Tom Seddon single-instruction tests"]
+
+[chips]
+reuse = ["ANTIC", "GTIA", "POKEY", "MOS 6520 PIA"]
+new = ["Stock XL/XE memory routing in atari-8bit::mmu"]
+note = "PIA owns output and direction state; consume effective pins. Do not duplicate CPU or Chips."
+
+[reference]
+emulator = "Atari800"
+version = "7.2.1 Win64"
+source_revision = "63a381884175e3cbfc745ff00dfb3d70d928eb50"
+source_url = "https://github.com/atari800/atari800"
+license = "GPL-2.0-or-later"
+archive_sha256 = "82eb30836613a03b3a82d594da71b47667f2eef844d9cd808e3a367f250613ab"
+note = "Select XL/XE with 64K, identical explicit replacement ROMs and Region, and -nopatchall. There is no 130XE banking on a stock 65XE."
+
+[memory]
+ram_bytes = 65536
+os_bytes = 16384
+basic_bytes = 8192
+ram = "0000-ffff physical main RAM; d000-d7ff permanently reserved for hardware"
+os = "PORTB bit 0 = 1: c000-cfff and d800-ffff, image offsets 0000-0fff and 1800-3fff"
+basic = "PORTB bit 1 = 0: a000-bfff"
+self_test = "PORTB bit 7 = 0 AND bit 0 = 1: 5000-57ff, image offsets 1000-17ff"
+portb = "Memory-connected input pins pull high: ORB | !DDRB. Bits 2-6 are unused for memory control (Altirra 2.5)."
+write_policy = "Visible ROM blocks writes into underlying RAM; hardware at d000-d7ff cannot be banked out."
+reset = "XL/XE Reset resets PIA to all inputs, selecting OS and disabling BASIC/self-test through pull-ups."
+state = "Profile identity remains distinct from the equally sized 800XL. Validate the separate MMU extension and memory lengths before any restore mutation."
+
+[firmware_policy]
+stock_roms_available = false
+note = "Permissive Altirra replacements only; no original Atari firmware or committed ROM bytes."
+
+[[firmware]]
+option = "rom_os"
+label = "AltirraOS XL/XE 3.11 replacement, not original Atari firmware"
+size = 16384
+sha1 = "738b9590a29f424ad2c9d3f9cb1d170de79241f7"
+sha256 = "9de5a313fe3946f04fe236a8d3ceacb471fbed4ec5fc5db009732e1169946ccf"
+source = "https://github.com/atari800/atari800/blob/63a381884175e3cbfc745ff00dfb3d70d928eb50/src/roms/altirraos_xl.c"
+license = "Copyright 2008-2018 Avery Lee. Copying/distribution permitted without royalty with copyright and notice preserved; no warranty."
+
+[[firmware]]
+option = "rom_basic"
+label = "Altirra BASIC 1.59 replacement, not original Atari BASIC"
+size = 8192
+sha1 = "95778af5688ec180baa9db364577d113bfc189ea"
+source = "https://github.com/atari800/atari800/blob/63a381884175e3cbfc745ff00dfb3d70d928eb50/src/roms/altirra_basic.c"
+license = "Avery Lee permissive copyright/notice-preserving distribution permission; see atari-800.intake.toml."
+
+[scenarios]
+required = ["S1 boot", "S2 input", "S3 each supported medium", "S4 audio", "S5 state and reset", "S6 timing", "S7 hardware diagnostics"]
+optional = ["S8 instruction trace"]
+removed = []
+hardware_diagnostics = "Shares the XL 64K decoder; no separate full-suite transcript is claimed. Its reference Acid800 screen is captured independently. XL PAL/NTSC accurate scores 57/0/1."
+note = "Native OS boot/input/reset/ATR/State is tested in both Regions/modes, with separate D2/CAR/CAS firmware proof and a profile-specific manifest. Reference 65XE uses the equivalent 64K XL configuration."
+
+[[source]]
+title = "Altirra Hardware Reference Manual, 2026-01-02"
+url = "https://www.virtualdub.org/downloads/Altirra%20Hardware%20Reference%20Manual.pdf"
+sections = ["2.1 architecture", "2.5 PIA and stock unused bits", "2.6 ROM banking", "2.7 130XE-only stock expanded memory", "14 PORTB, p.454"]
+
+[[source]]
+title = "Altirra Acid800 1.2"
+files = ["src/Acid800/source/mmu_xlbanking.s"]
+license = "Copyright 2010 Avery Lee, MIT-style permission notice in source."

@@ -28,6 +28,31 @@ pub struct AnticTimingState {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+pub struct AnticDmaState {
+    start: i16,
+    stop: i16,
+    initialized: bool,
+    pm_start: Option<u8>,
+    clock: u8,
+    cursor: u8,
+    display_origin: Option<u8>,
+}
+
+impl Default for AnticDmaState {
+    fn default() -> Self {
+        Self {
+            start: -1,
+            stop: -1,
+            initialized: false,
+            pm_start: None,
+            clock: 0,
+            cursor: 0,
+            display_origin: None,
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Antic {
     registers: [u8; 16],
     lines: u16,
@@ -52,6 +77,8 @@ pub struct Antic {
     timing: AnticTimingState,
     #[serde(skip)]
     pm_transfer: Option<(u8, u8)>,
+    #[serde(skip)]
+    dma: AnticDmaState,
 }
 
 impl Antic {
@@ -78,6 +105,7 @@ impl Antic {
             wsync_delay: 0,
             timing: AnticTimingState::default(),
             pm_transfer: None,
+            dma: AnticDmaState::default(),
         }
     }
 
@@ -89,6 +117,58 @@ impl Antic {
     }
     pub fn save_timing(&self) -> AnticTimingState {
         self.timing.clone()
+    }
+    pub fn save_dma(&self) -> AnticDmaState {
+        self.dma.clone()
+    }
+    pub fn restore_dma(&mut self, state: AnticDmaState) -> Result<(), String> {
+        if !(-1..=33).contains(&state.start)
+            || !(-1..=111).contains(&state.stop)
+            || (state.stop >= 0 && state.start < 0)
+            || state.pm_start.is_some_and(|clock| clock > 7)
+            || state.cursor >= 63
+            || state.display_origin.is_some_and(|cursor| cursor >= 63)
+        {
+            return Err("invalid ANTIC playfield deadline state".to_string());
+        }
+        self.dma = state;
+        Ok(())
+    }
+    pub fn restore_legacy_dma(&mut self) {
+        self.dma = AnticDmaState {
+            initialized: true,
+            ..AnticDmaState::default()
+        };
+        if let Some((start, stop)) = self.dma_deadlines()
+            && i16::from(self.x) > start
+        {
+            self.dma.start = start + 2;
+            if i16::from(self.x) > stop {
+                self.dma.stop = stop;
+            }
+        }
+        let period = if self.mode() >= 2 {
+            80 / BYTES[self.mode()]
+        } else {
+            2
+        };
+        if self.dma.start >= 0 {
+            for clock in 0..self.x {
+                if i16::from(clock) == self.dma.start - 2 {
+                    self.dma.clock |= 1;
+                }
+                if i16::from(clock) == self.dma.stop {
+                    self.dma.clock &= !1;
+                }
+                self.dma.clock = (self.dma.clock << 1) | ((self.dma.clock >> (period - 1)) & 1);
+            }
+            let offset = if self.mode() >= 8 { 2 } else { 0 };
+            self.dma.cursor = ((i16::from(self.x) - self.dma.start - offset).max(0)
+                + i16::from(period)
+                - 1) as u8
+                / period;
+            self.dma.display_origin = Some(0);
+        }
     }
     pub fn restore_timing(&mut self, state: AnticTimingState) -> Result<(), String> {
         if state.end_row > 15
@@ -181,6 +261,13 @@ impl Antic {
     pub fn line(&self) -> &[u8] {
         &self.line
     }
+    pub fn hires(&self) -> bool {
+        matches!(self.mode(), 2 | 3 | 15)
+    }
+    pub fn video_active(&self) -> bool {
+        // AHR 6.2: a hires IR overrides vertical blank while PF DMA is on.
+        self.active() || (self.hires() && self.registers[0] & 3 != 0)
+    }
 
     fn active(&self) -> bool {
         (8..248).contains(&self.y)
@@ -232,11 +319,95 @@ impl Antic {
             _ => 0,
         }
     }
+    fn dma_deadlines(&self) -> Option<(i16, i16)> {
+        let width = self.registers[0] & 3;
+        if width == 0 {
+            return None;
+        }
+        let scroll = self.instruction & 0x10 != 0;
+        let width = if scroll { (width + 1).min(3) } else { width };
+        let delay = if scroll {
+            i16::from((self.registers[4] & 15) / 2)
+        } else {
+            0
+        };
+        Some((
+            32 - i16::from(width) * 8 + delay,
+            80 + i16::from(width) * 8 + delay,
+        ))
+    }
+    fn clock_dma_deadlines(&mut self) {
+        // AHR 4.11: width changes select comparators, not a new fetch grid.
+        // Once a comparator fires, later writes cannot move that edge.
+        if self.x == 0 {
+            self.dma = AnticDmaState {
+                initialized: true,
+                clock: self.dma.clock,
+                ..AnticDmaState::default()
+            };
+        }
+        if !self.active() || self.wait_vblank || self.mode() < 2 {
+            self.dma.clock = 0;
+        }
+        if self.x == 7 {
+            // Altirra 4.40 ANTIC timing cross-check: line-buffer pointers
+            // reset with the high display-list address/NMIST clock.
+            self.dma.cursor = 0;
+            self.dma.display_origin = None;
+        }
+        if let Some((start, stop)) = self.dma_deadlines() {
+            if i16::from(self.x) == start {
+                self.dma.clock |= 1;
+                if self.dma.start < 0 {
+                    self.dma.start = start + 2;
+                }
+            }
+            if i16::from(self.x) == stop && self.dma.start >= 0 {
+                self.dma.clock &= !1;
+                if self.dma.stop < 0 {
+                    self.dma.stop = stop;
+                }
+            }
+        }
+    }
     fn fetch_slot(&self) -> Option<(usize, bool)> {
         if !self.active() || self.wait_vblank || self.mode() < 2 {
             return None;
         }
         let count = self.fetch_count();
+        if self.dma.initialized {
+            if self.mode() >= 8 {
+                return (self.dma.clock & 0x10 != 0)
+                    .then_some((usize::from(self.dma.cursor), false));
+            }
+            if self.dma.start < 0 {
+                return None;
+            }
+            let step = i16::from(80 / BYTES[self.mode()]);
+            let start = self.dma.start + if self.mode() <= 7 { 0 } else { 2 };
+            let end = if self.dma.stop < 0 {
+                113
+            } else {
+                self.dma.stop + if self.mode() <= 7 { 0 } else { 2 }
+            };
+            let position = i16::from(self.x) - start;
+            if position >= 0 && position % step == 0 && i16::from(self.x) <= end {
+                let index = usize::try_from(position / step).ok()?;
+                if index < 48 && (self.timing.first_line || self.mode() >= 8) {
+                    return Some((index, false));
+                }
+            }
+            if self.mode() <= 7 {
+                let position = position - 3;
+                if position >= 0 && position % step == 0 && i16::from(self.x) <= end + 3 {
+                    let index = usize::try_from(position / step).ok()?;
+                    if index < 48 {
+                        return Some((index, true));
+                    }
+                }
+            }
+            return None;
+        }
         if count == 0 {
             return None;
         }
@@ -302,7 +473,12 @@ impl Antic {
                             || (self.timing.first_line
                                 && self.mode() >= 2
                                 && self.instruction & 0x40 != 0)))))
-            || (self.x <= 105 && self.fetch_slot().is_some())
+            || (self.x > 0
+                && self.x <= 105
+                && self.registers[0] & 3 != 0
+                && self
+                    .fetch_slot()
+                    .is_some_and(|(_, font)| font || self.timing.first_line))
     }
 
     fn list_byte(&mut self, read: &mut impl FnMut(u16) -> u8) -> u8 {
@@ -332,6 +508,16 @@ impl Antic {
     }
 
     pub fn tick_with_bus(&mut self, mut read: impl FnMut(u16) -> u8, bus_value: u8) -> bool {
+        self.clock_dma_deadlines();
+        if self.x < 8 && self.other_dma() && self.dma.pm_start.is_none() {
+            self.dma.pm_start = Some(self.x);
+        }
+        let mut data_bus = bus_value;
+        let mut read = |address| {
+            let value = read(address);
+            data_bus = value;
+            value
+        };
         self.pm_transfer = None;
         self.timing.refresh_pending |= self.refresh_slot();
         if !self.other_dma() {
@@ -355,6 +541,9 @@ impl Antic {
         }
         if self.x == 0 {
             self.timing.vscroll_latch = self.registers[5] & 15;
+            if self.active() && self.remaining == 0 && !self.wait_vblank {
+                self.timing.first_line = true;
+            }
         }
         if self.x == 0 && self.y == 8 {
             self.wait_vblank = false;
@@ -406,8 +595,8 @@ impl Antic {
         }
         if let Some((i, font)) = self.fetch_slot() {
             if font {
-                let name = self.names[i];
-                let mut data = if self.x <= 105 {
+                let name = self.names.get(i).copied().unwrap_or(0xff);
+                let mut data = if self.x <= 105 && self.registers[0] & 3 != 0 {
                     read(self.char_address(name))
                 } else {
                     bus_value
@@ -425,15 +614,51 @@ impl Antic {
                         data ^= 0xff;
                     }
                 }
-                self.data[i] = data;
+                if let Some(slot) = self.data.get_mut(i) {
+                    *slot = data;
+                }
             } else {
-                self.names[i] = if self.x <= 105 {
-                    read(self.scan)
-                } else {
-                    bus_value
-                };
-                self.data[i] = self.names[i];
-                self.scan = (self.scan & 0xf000) | (self.scan.wrapping_add(1) & 0x0fff);
+                if self.timing.first_line {
+                    if self.registers[0] & 3 != 0 {
+                        let byte = if self.x > 0 && self.x <= 105 {
+                            read(self.scan)
+                        } else {
+                            bus_value
+                        };
+                        if let Some(slot) = self.names.get_mut(i) {
+                            *slot = byte;
+                        }
+                    }
+                    self.scan = (self.scan & 0xf000) | (self.scan.wrapping_add(1) & 0x0fff);
+                }
+                if let Some(slot) = self.data.get_mut(i) {
+                    *slot = self.names[i];
+                }
+                if self.mode() >= 8 && self.dma.initialized {
+                    if self.dma.display_origin.is_none()
+                        && self.dma.start >= 0
+                        && i16::from(self.x) >= self.dma.start + 2
+                    {
+                        self.dma.display_origin = Some(self.dma.cursor);
+                    }
+                    self.dma.cursor = (self.dma.cursor + 1) % 63;
+                }
+            }
+        }
+        // AHR 6.5: GTIA synchronizes its receive slots to the first HALT
+        // in horizontal blank, even when ANTIC has no P/M DMA enabled.
+        if self.pm_transfer.is_none()
+            && self.active()
+            && let Some(start) = self.dma.pm_start
+        {
+            let offset = self.x.saturating_sub(start);
+            let player = match offset {
+                0 => Some(4),
+                2..=5 => Some(offset - 2),
+                _ => None,
+            };
+            if let Some(player) = player {
+                self.pm_transfer = Some((player, data_bus));
             }
         }
         if self.x == 5 {
@@ -471,6 +696,13 @@ impl Antic {
             }
             self.timing.first_line = false;
         }
+        if self.active() && !self.wait_vblank && self.mode() >= 2 {
+            // AHR 4.12: eight physical bits, with a 2/4/8-cycle return tap.
+            let period = 80 / BYTES[self.mode()];
+            self.dma.clock = (self.dma.clock << 1) | ((self.dma.clock >> (period - 1)) & 1);
+        } else {
+            self.dma.clock = 0;
+        }
         self.timing.dma_control = [self.timing.dma_control[1], self.registers[0]];
         self.wsync_delay = self.wsync_delay.saturating_sub(1);
         self.cycles += 1;
@@ -485,6 +717,17 @@ impl Antic {
         line_done
     }
 
+    /// XL/XE reset pin, unlike the 400/800's separate RNMI button.
+    /// AHR 4.1: preserve raster, WSYNC, pointers and other register latches.
+    pub fn reset(&mut self) {
+        self.registers[0] = 0;
+        self.registers[14] = 0;
+        self.dma.clock = 0;
+        self.timing.dma_control = [0; 2];
+        self.timing.nmi_enable = 0;
+        self.timing.nmi_enable_late = 0;
+    }
+
     fn draw(&mut self) {
         for x in 0..WIDTH {
             self.line[x] = self.pixel_at(x);
@@ -495,7 +738,7 @@ impl Antic {
     pub fn pixel_at(&self, x: usize) -> u8 {
         let mode = self.mode();
         let count = usize::from(self.count());
-        if !self.active() || self.wait_vblank || mode < 2 || count == 0 {
+        if !self.video_active() || self.wait_vblank || mode < 2 || count == 0 {
             return 0;
         }
         let pixels_per_byte = match mode {
@@ -508,6 +751,9 @@ impl Antic {
         if x < start || x >= start + width {
             return 0;
         }
+        if !self.active() {
+            return 5;
+        }
         let fetch_width = usize::from(self.fetch_count()) * pixels_per_byte;
         let origin = (WIDTH - fetch_width) as isize / 2
             + if self.instruction & 0x10 != 0 {
@@ -519,9 +765,14 @@ impl Antic {
         if source < 0 || source >= fetch_width as isize {
             return 0;
         }
-        let i = source as usize / pixels_per_byte;
+        let mut i = source as usize / pixels_per_byte;
+        if mode >= 8
+            && let Some(origin) = self.dma.display_origin
+        {
+            i = (i + usize::from(origin)) % 63;
+        }
         let x = source as usize % pixels_per_byte;
-        let byte = self.data[i];
+        let byte = self.data.get(i).copied().unwrap_or(0xff);
         match mode {
             2 | 3 | 15 => 5 + ((byte >> (7 - x)) & 1),
             4 | 5 | 8 | 10 | 13 | 14 => {
@@ -566,6 +817,142 @@ impl Antic {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn width_writes_preserve_start_and_stop_comparator_history() {
+        for mode in [2, 14] {
+            for (initial, clock, value, expected) in [
+                (0x22, 16, 0x21, 32),
+                (0x22, 17, 0x21, 36),
+                (0x21, 88, 0x22, 36),
+                (0x21, 89, 0x22, 32),
+            ] {
+                let mut a = Antic::new(true);
+                a.y = 9;
+                a.cycles = 9 * 114;
+                a.instruction = mode;
+                a.remaining = 8;
+                a.timing.first_line = true;
+                a.registers[0] = initial;
+                a.scan = 0x3000;
+                for x in 0..114 {
+                    if x == clock {
+                        a.write(0, value);
+                    }
+                    a.tick(|_| 0);
+                }
+                assert_eq!(
+                    a.scan,
+                    0x3000 + expected,
+                    "mode={mode}, write={clock}, initial={initial:02x}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn disabled_middle_dma_preserves_buffer_but_advances_scan_address() {
+        let mut a = Antic::new(true);
+        a.y = 9;
+        a.cycles = 9 * 114;
+        a.instruction = 8;
+        a.remaining = 8;
+        a.timing.first_line = true;
+        a.registers[0] = 0x22;
+        a.scan = 0x3000;
+        a.names.fill(0x55);
+        for x in 0..114 {
+            if x == 38 {
+                a.write(0, 0x20);
+            }
+            if x == 70 {
+                a.write(0, 0x22);
+            }
+            a.tick(|_| 0xaa);
+        }
+        assert_eq!(a.scan, 0x300a);
+        assert_eq!(
+            &a.names[..10],
+            &[0xaa, 0xaa, 0xaa, 0x55, 0x55, 0x55, 0x55, 0xaa, 0xaa, 0xaa]
+        );
+    }
+
+    #[test]
+    fn phantom_pm_slots_follow_first_halt_without_stealing_cpu_cycles() {
+        let mut a = Antic::new(true);
+        a.y = 9;
+        a.cycles = 9 * 114;
+        a.registers[0] = 0x20;
+        let mut transfers = Vec::new();
+        for x in 0..8 {
+            if x >= 2 {
+                assert!(!a.cpu_dma_blocked());
+            }
+            a.tick_with_bus(|_| 0x0f, 0xa0 | x);
+            if let Some(transfer) = a.take_pm_transfer() {
+                transfers.push((x, transfer));
+            }
+        }
+        assert_eq!(
+            transfers,
+            vec![
+                (1, (4, 0x0f)),
+                (3, (0, 0xa3)),
+                (4, (1, 0xa4)),
+                (5, (2, 0xa5)),
+                (6, (3, 0xa6))
+            ]
+        );
+    }
+
+    #[test]
+    fn hires_ir_opens_vertical_border_only_with_playfield_enabled() {
+        let mut a = Antic::new(true);
+        a.y = 248;
+        a.instruction = 15;
+        assert!(!a.video_active());
+        a.registers[0] = 0x22;
+        assert!(a.video_active());
+        assert_eq!(a.pixel_at(32), 5);
+        a.instruction = 14;
+        assert!(!a.video_active());
+        assert_eq!(a.pixel_at(32), 0);
+    }
+
+    #[test]
+    fn shifted_stop_leaves_dma_ring_running_across_horizontal_blank() {
+        let mut a = Antic::new(true);
+        a.y = 9;
+        a.cycles = 9 * 114;
+        a.instruction = 0x1e;
+        a.remaining = 1;
+        a.timing.first_line = true;
+        a.registers[0] = 1;
+        a.scan = 0x3000;
+        let mut next_first_fetch = None;
+        for clock in 0..228 {
+            if clock == 78 {
+                a.write(4, 2);
+            }
+            if clock == 108 {
+                a.write(4, 0);
+            }
+            a.tick_with_bus(
+                |address| {
+                    if clock == 134 {
+                        next_first_fetch = Some(address);
+                    }
+                    if address == 0x304b { 0xff } else { 0 }
+                },
+                0,
+            );
+        }
+        // AHR 4.12 and Acid800's published HSCROL waveform: seven
+        // additional clocks on the first line, ten before the next fetch.
+        assert_eq!(next_first_fetch, Some(0x3039));
+        assert_eq!(a.line()[176], 3);
+        assert_eq!(a.scan, 0x3061);
+    }
+
     #[test]
     fn descender_blanking_does_not_erase_mode_two_or_extended_rows() {
         for (mode, row, name, expected) in [

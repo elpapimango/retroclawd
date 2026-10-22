@@ -2,6 +2,23 @@
 
 ## Atari 8-bit
 
+- **XL/XE and expanded Media facts**: Altirra Hardware Reference 2026-01-02,
+  sections 2.5-2.7 (PORTB and independent CPU/ANTIC bank enables), ANTIC reset,
+  dynamic DMA/bitmap feedback, phantom PM receive, GTIA special/pseudo-E modes
+  and HITCLR bus phase; chapter 9 and appendix C (motor, serial framing).
+  [A8CAS format specification](https://a8cas.sourceforge.net/format-cas.html)
+  defines FUJI/baud/data chunks. Atari800 revision
+  `63a381884175e3cbfc745ff00dfb3d70d928eb50`,
+  [`DOC/cart.txt`](https://github.com/atari800/atari800/blob/63a381884175e3cbfc745ff00dfb3d70d928eb50/DOC/cart.txt)
+  and `src/cartridge_info.c` define CAR headers, checksums and mapper types
+  1/2/12/13/14; `src/sio.c` defines SD/ED/DD XFD geometry.
+  Hardware/container facts are independently implemented, not translated code.
+- **AltirraOS XL/XE 3.11 replacement**, Avery Lee, `src/roms/altirraos_xl.c`
+  at that pinned Atari800 revision. Same notice-preserving permissive terms
+  as the 800 replacement below. SHA-1
+  `738b9590a29f424ad2c9d3f9cb1d170de79241f7`; no ROM bytes are committed.
+  Real-OS CIO/SIOV/cartridge tests exercise the replacement's own entry points,
+  not host loader traps.
 - **XEX and ATR format facts**, Atari800 7.2.1, revision
   `63a381884175e3cbfc745ff00dfb3d70d928eb50`:
   [`src/binload.c`](https://github.com/atari800/atari800/blob/63a381884175e3cbfc745ff00dfb3d70d928eb50/src/binload.c)
@@ -67,7 +84,7 @@
   mechanism tests are used; no diagnostic source or binary is committed.
   Current observations and remaining failures are in `docs/atari800-gaps.md`.
 - **NMOS 6502 and MOS 6520 PIA**: reused from `retroclawd-crates` revision
-  `b5375a3c5477ad4e485eaf78da6fbf19e7292a4b`; the shared repository's
+  `6aad1a0af5fb820b85bc085e8b6d9cc017316c38`; the shared repository's
   credits cover the Core conformance suites and PIA sources.
 
 ## Atari ST

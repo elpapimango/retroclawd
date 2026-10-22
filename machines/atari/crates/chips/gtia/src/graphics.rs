@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Save alongside `Gtia`, then restore before resuming any chip clocks.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GtiaGraphicsState {
-    effective: [u8; 32],
+    pub(super) effective: [u8; 32],
     pending: [[Option<u8>; 32]; 6],
     shifts: [u8; 8],
     stretch: [u8; 8],
@@ -76,6 +76,9 @@ impl Gtia {
     }
 
     pub(super) fn graphics_write(&mut self, index: usize, value: u8) {
+        if index == 27 {
+            self.video_write(value);
+        }
         if index == 30 {
             // §6.6: HITCLR clears latches, not the shifting graphics.
             self.graphics.collisions.fill(0);
@@ -127,12 +130,31 @@ impl Gtia {
     /// At cycle 65 HPOS is $80 (§6.10); cycle zero covers $E2/$E3, cycle one
     /// $00/$01. Thus the 384-pixel crop starting at HPOS $20 begins at call 34
     /// (raster cycle 17). Positions >= $E4 never trigger. `visible_line` is
-    /// ANTIC's actual vertical-blank gate (normally lines 8-247, §6.6).
+    /// ANTIC's actual blanking gate (normally lines 8-247, §6.6), not a
+    /// host line-range check. When the hires-last-line bug fails to hold
+    /// blanking, pass true even during nominal vertical blank (§6.2).
     ///
     /// Playfield codes match `color`: 0 background, 1-4 PF0-PF3, 5 hires
     /// zero and 6 hires one. Supply both half-pixels together: hires collision
     /// input is their OR, while priority always sees PF2 (§6.8).
     pub fn tick_color_clock(&mut self, playfield: [u8; 2], visible_line: bool) -> [u8; 2] {
+        self.tick_color_clock_with_next(playfield, playfield, visible_line)
+    }
+
+    /// The normal interface plus the following color clock's AN samples.
+    /// Samples are at the existing visible playfield coordinate, not fetched
+    /// bytes or future register state. Special-mode pixels need both pairs
+    /// at their leading edge. The old interface is exact for normal modes
+    /// and for uniform AN pairs only; Machines must supply lookahead here
+    /// for mixed-pair special modes without advancing the ANTIC clock.
+    pub fn tick_color_clock_with_next(
+        &mut self,
+        playfield: [u8; 2],
+        next: [u8; 2],
+        visible_line: bool,
+    ) -> [u8; 2] {
+        let hpos = ((self.graphics.clock + 226) % 228) as u8;
+        let (normal, pf) = self.clock_video(playfield, next, hpos);
         let s = &mut self.graphics;
         for (index, value) in s.pending[0].iter().enumerate() {
             if let Some(value) = value {
@@ -193,14 +215,6 @@ impl Gtia {
             players = 0;
             missiles = 0;
         } else {
-            let pf = if playfield.iter().any(|&c| c == 5 || c == 6) {
-                if playfield.contains(&6) { 4 } else { 0 }
-            } else {
-                match playfield[0] {
-                    1..=4 => 1 << (playfield[0] - 1),
-                    _ => 0,
-                }
-            };
             for index in 0..4 {
                 if missiles & (1 << index) != 0 {
                     s.collisions[index] |= pf;
@@ -212,10 +226,10 @@ impl Gtia {
                 }
             }
         }
-        playfield.map(|code| self.compose(code, players, missiles))
+        self.compose_video(normal, players, missiles)
     }
 
-    fn compose(&self, code: u8, mut players: u8, missiles: u8) -> u8 {
+    pub(super) fn compose(&self, code: u8, mut players: u8, missiles: u8) -> u8 {
         let r = &self.graphics.effective;
         let prior = r[27];
         let fifth = prior & 0x10 != 0 && missiles != 0;

@@ -4,7 +4,7 @@ family = "atari"
 default_region = "pal"
 
 [implementation]
-status = "in-progress"
+status = "accepted-with-gaps"
 boot_verified = true
 note = "C16/Plus4 are parked by the owner. Continue the original dependency order with Atari 800, then 800XL/65XE/130XE, inside the established Atari Family. Do not infer 8-bit hardware from the existing ST."
 
@@ -45,7 +45,7 @@ gtia = "d000-d0ff, low 5 register bits decoded"
 pokey = "d200-d2ff, low 4 register bits decoded"
 pia = "d300-d3ff, alternate PIA register ordering: PORTA/PORTB/PACTL/PBCTL"
 antic = "d400-d4ff, low 4 register bits decoded"
-note = "400/800 has four joystick ports; PIA B is not XL/XE ROM banking. No XL/XE profile until its distinct MMU and RAM behavior are implemented."
+note = "400/800 has four joystick ports; PIA B is not XL/XE ROM banking. XL/XE use separate profiles and a source-backed MMU."
 
 [firmware_policy]
 stock_roms_available = false
@@ -73,8 +73,8 @@ license = "Copyright 2008-2022 Avery Lee; copying/distribution permitted without
 required = ["S1 boot", "S2 input", "S3 each supported medium", "S4 audio", "S5 state and reset", "S6 timing", "S7 hardware diagnostics"]
 optional = ["S8 instruction trace"]
 removed = []
-hardware_diagnostics = "Acid800 1.2; licensing and execution must be verified before claiming a result."
-media = "Raw Program plus segmented XEX and standard ATR. D1: is a read-only SIO protocol peripheral wired through PIA COMMAND and POKEY serial data, not a CPU loader trap or a complete 810 CPU/FDC. CAS and CART remain unsupported."
+hardware_diagnostics = "Acid800 1.2 accurate 56/1/1 and fast 43/14/1 in PAL/NTSC. Only XL-only banking fails in accurate mode. See docs/atari800-gaps.md; diagnostic totals are not full hardware acceptance."
+media = "Raw/XEX Program, writable ATR/XFD D1:/D2:, standard CAS playback and CAR/raw cartridges (CAR types 1/2/12/13/14). Actual PIA/POKEY serial pins, not CPU loader traps or a full 810 CPU/FDC."
 assumptions = ["PAL default follows existing Host convention; NTSC remains a separate verified Region", "Start with 48 KiB Atari 800 and an explicit optional BASIC ROM", "Use permissive alternate ROMs only when explicitly named; no stock-ROM compatibility claim"]
 
 [[source]]

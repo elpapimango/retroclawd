@@ -5,6 +5,7 @@
 #![forbid(unsafe_code)]
 
 use antic::{Antic, HEIGHT, WIDTH};
+use atari_media::{Cartridge, Cas, CasPlayer, CasPosition, Mapper};
 use gtia::Gtia;
 use machine::{AUDIO_SAMPLE_RATE, Addr, Bus, Clock, FrameRate, Machine, RunStats};
 use pia_6520::{Pia, Side};
@@ -13,7 +14,10 @@ use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use std::collections::VecDeque;
 mod sio;
-use sio::{Sio, SioState};
+use sio::{Sio, SioMediaState, SioState};
+pub mod mmu;
+pub use mmu::Profile;
+use mmu::{Access, Mapping, Mmu};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Timing {
@@ -84,14 +88,14 @@ pub struct Roms {
 }
 
 impl Roms {
-    fn validate(&self) -> Result<(), String> {
-        if self.os.len() != 10240 || self.basic.as_ref().is_some_and(|b| b.len() != 8192) {
-            return Err(
-                "Atari 800 requires a 10240-byte OS ROM and an optional 8192-byte BASIC ROM"
-                    .to_string(),
-            );
-        }
-        Ok(())
+    fn validate(&self, profile: Profile) -> Result<(), String> {
+        Mmu::new(profile)
+            .validate_memory(
+                profile.ram_size(),
+                self.os.len(),
+                self.basic.as_ref().map(Vec::len),
+            )
+            .map_err(|error| format!("{}: {error}", profile.id()))
     }
     fn fingerprint(&self) -> [u8; 20] {
         let mut hash = Sha1::new();
@@ -136,16 +140,17 @@ struct AtariBus {
     palette: [[u8; 3]; 256],
     audio: Vec<f32>,
     sio: Sio,
+    mmu: Mmu,
+    cartridge: Option<Cartridge>,
+    tape: Option<CasPlayer>,
 }
 
-fn memory_read(ram: &[u8], roms: &Roms, address: u16) -> u8 {
-    match address {
-        0xa000..=0xbfff if roms.basic.is_some() => {
-            roms.basic.as_ref().expect("BASIC mapped")[usize::from(address - 0xa000)]
-        }
-        0..=0xbfff => ram[usize::from(address)],
-        0xd800..=0xffff => roms.os[usize::from(address - 0xd800)],
-        _ => 0xff,
+fn memory_read(ram: &[u8], roms: &Roms, mapping: Mapping) -> u8 {
+    match mapping {
+        Mapping::Ram(index) => ram[index],
+        Mapping::Os(index) => roms.os[index],
+        Mapping::Basic(index) => roms.basic.as_ref().map_or(0xff, |basic| basic[index]),
+        Mapping::Unmapped => 0xff,
     }
 }
 
@@ -165,11 +170,42 @@ impl AtariBus {
             0xd200 => self.hardware.pokey.read(address as u8),
             0xd300 => self.hardware.pia.peek_alt(address as u8),
             0xd400 => self.hardware.antic.read(address as u8),
-            _ => memory_read(&self.hardware.ram, &self.roms, address),
+            _ => self
+                .cartridge
+                .as_ref()
+                .and_then(|cart| cart.read(address))
+                .unwrap_or_else(|| {
+                    memory_read(
+                        &self.hardware.ram,
+                        &self.roms,
+                        self.mmu.map_read(
+                            address,
+                            Access::Cpu,
+                            self.hardware.pia.drive(Side::B),
+                            self.roms.basic.is_some(),
+                        ),
+                    )
+                }),
         }
     }
     fn writable(&self, address: u16) -> bool {
-        address < 0xc000 && !(address >= 0xa000 && self.roms.basic.is_some())
+        self.write_index(address).is_some()
+    }
+    fn write_index(&self, address: u16) -> Option<usize> {
+        if self
+            .cartridge
+            .as_ref()
+            .and_then(|cart| cart.read(address))
+            .is_some()
+        {
+            return None;
+        }
+        self.mmu.map_write(
+            address,
+            Access::Cpu,
+            self.hardware.pia.drive(Side::B),
+            self.roms.basic.is_some(),
+        )
     }
     fn tick(&mut self) {
         let h = &mut self.hardware;
@@ -181,7 +217,22 @@ impl AtariBus {
         let mut data_bus = h.bus_value;
         h.antic.tick_with_bus(
             |address| {
-                let value = memory_read(&h.ram, &self.roms, address);
+                let value = self
+                    .cartridge
+                    .as_ref()
+                    .and_then(|cart| cart.read(address))
+                    .unwrap_or_else(|| {
+                        memory_read(
+                            &h.ram,
+                            &self.roms,
+                            self.mmu.map_read(
+                                address,
+                                Access::Antic,
+                                h.pia.drive(Side::B),
+                                self.roms.basic.is_some(),
+                            ),
+                        )
+                    });
                 data_bus = value;
                 value
             },
@@ -199,13 +250,24 @@ impl AtariBus {
         }
         let visible = (8..248).contains(&y);
         for half in 0..2 {
+            // GTIA's visible interval begins at HPOS $22 (CPU clock 18).
+            if !(18..112).contains(&x) {
+                h.gtia.set_hires(h.antic.hires());
+            }
             let pixel = (17..113)
                 .contains(&x)
                 .then(|| usize::from(x - 17) * 4 + half * 2);
             let playfield = pixel.map_or([0; 2], |pixel| {
                 [h.antic.pixel_at(pixel), h.antic.pixel_at(pixel + 1)]
             });
-            let colors = h.gtia.tick_color_clock(playfield, visible);
+            let next = pixel
+                .filter(|&pixel| pixel + 3 < WIDTH)
+                .map_or([0; 2], |pixel| {
+                    [h.antic.pixel_at(pixel + 2), h.antic.pixel_at(pixel + 3)]
+                });
+            let colors = h
+                .gtia
+                .tick_color_clock_with_next(playfield, next, h.antic.video_active());
             if let Some(pixel) = pixel.filter(|_| visible) {
                 let start = usize::from(y - 8) * WIDTH + pixel;
                 h.screen[start..start + 2].copy_from_slice(&colors);
@@ -225,7 +287,11 @@ impl AtariBus {
             h.pia.c2_output(Side::B).unwrap_or(true),
             h.pokey.serial_output(),
         );
-        h.pokey.set_serial_input(input);
+        let tape_input = self
+            .tape
+            .as_mut()
+            .is_none_or(|tape| tape.tick(1, h.pia.c2_output(Side::A) == Some(false)));
+        h.pokey.set_serial_input(input && tape_input);
         self.hardware.sample_phase += u64::from(AUDIO_SAMPLE_RATE);
         if self.hardware.sample_phase >= self.clock_hz() {
             self.hardware.sample_phase -= self.clock_hz();
@@ -283,13 +349,28 @@ impl Bus for AtariBus {
     fn write(&mut self, address: u16, value: u8) {
         self.access(true);
         self.hardware.bus_value = value;
+        if address & 0xff1f == 0xd01e {
+            // HITCLR's CPU write strobe wins over collisions in this bus
+            // clock (AHR 6.6; Acid800 antic_virtdma.s at raster clock 111).
+            self.finish();
+            self.hardware.gtia.write(address as u8, value);
+            return;
+        }
         match address & 0xff00 {
             0xd000 => self.hardware.gtia.write(address as u8, value),
             0xd200 => self.hardware.pokey.write(address as u8, value),
             0xd300 => self.hardware.pia.write_alt(address as u8, value),
             0xd400 => self.hardware.antic.write(address as u8, value),
-            _ if self.writable(address) => self.hardware.ram[usize::from(address)] = value,
-            _ => {}
+            0xd500 => {
+                if let Some(cart) = &mut self.cartridge {
+                    cart.write_control(address, value);
+                }
+            }
+            _ => {
+                if let Some(index) = self.write_index(address) {
+                    self.hardware.ram[index] = value;
+                }
+            }
         }
         self.finish();
     }
@@ -354,9 +435,42 @@ struct TimingState {
     irq_sample: bool,
 }
 
+#[derive(Serialize, Deserialize)]
+struct VideoControlState {
+    antic: antic::AnticDmaState,
+    gtia: gtia::GtiaVideoState,
+    pia: pia_6520::PiaControlState,
+    mmu: mmu::MmuState,
+    sio: SioMediaState,
+    cartridge: Option<CartridgeState>,
+    tape: Option<TapeState>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct CartridgeState {
+    rom: Vec<u8>,
+    mapper: u32,
+    bank: u8,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TapeState {
+    bytes: Vec<u8>,
+    record: u32,
+    cycle: u64,
+}
+
 impl Atari800 {
     pub fn new(roms: Roms, pal: bool, timing: Timing) -> Result<Self, String> {
-        roms.validate()?;
+        Self::with_profile(Profile::Atari800, roms, pal, timing)
+    }
+    pub fn with_profile(
+        profile: Profile,
+        roms: Roms,
+        pal: bool,
+        timing: Timing,
+    ) -> Result<Self, String> {
+        roms.validate(profile)?;
         let mut machine = Self {
             cpu: mos6502::Cpu::new(),
             program: None,
@@ -367,8 +481,11 @@ impl Atari800 {
                 palette: Gtia::palette(),
                 audio: Vec::new(),
                 sio: Sio::new(if pal { 1_773_447 } else { 1_789_772 }),
+                mmu: Mmu::new(profile),
+                cartridge: None,
+                tape: None,
                 hardware: Hardware {
-                    ram: vec![0; 49152],
+                    ram: vec![0; profile.ram_size()],
                     antic: Antic::new(pal),
                     gtia: Gtia::new(pal),
                     pokey: Pokey::new(),
@@ -383,8 +500,17 @@ impl Atari800 {
                 },
             },
         };
+        if profile.is_xl_xe() {
+            machine.bus.hardware.gtia.set_trigger(3, true)?;
+        }
         machine.cpu.reset(&mut machine.bus);
         Ok(machine)
+    }
+    pub fn profile(&self) -> Profile {
+        self.bus.mmu.profile()
+    }
+    pub fn joystick_count(&self) -> usize {
+        if self.profile().is_xl_xe() { 2 } else { 4 }
     }
     pub fn pal(&self) -> bool {
         self.bus.hardware.antic.pal()
@@ -429,7 +555,7 @@ impl Atari800 {
         self.bus.hardware.gtia.set_console(bit, pressed)
     }
     pub fn set_joystick(&mut self, port: usize, directions: u8, fire: bool) -> Result<(), String> {
-        if port > 3 || directions > 15 {
+        if port >= self.joystick_count() || directions > 15 {
             return Err("invalid Atari 800 joystick port or directions".to_string());
         }
         let side = if port < 2 { Side::A } else { Side::B };
@@ -471,6 +597,75 @@ impl Atari800 {
     }
     pub fn disk_busy(&self) -> bool {
         self.bus.sio.busy()
+    }
+    pub fn attach_disk_in(
+        &mut self,
+        drive: u8,
+        extension: &str,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        self.bus.sio.attach_format(drive, extension, bytes)
+    }
+    pub fn eject_disk_in(&mut self, drive: u8) -> Result<(), String> {
+        self.bus.sio.detach_in(drive)
+    }
+    pub fn disk_attached_in(&self, drive: u8) -> bool {
+        self.bus.sio.attached_in(drive)
+    }
+    pub fn disk_dirty_in(&self, drive: u8) -> bool {
+        self.bus.sio.dirty_in(drive)
+    }
+    pub fn export_disk_in(&self, drive: u8) -> Option<Vec<u8>> {
+        self.bus.sio.export_in(drive)
+    }
+    pub fn disk_extension_in(&self, drive: u8) -> Option<&'static str> {
+        self.bus.sio.extension_in(drive)
+    }
+    pub fn mark_disk_saved_in(&mut self, drive: u8) -> Result<(), String> {
+        self.bus.sio.mark_saved_in(drive)
+    }
+    pub fn attach_cartridge(&mut self, extension: &str, bytes: &[u8]) -> Result<(), String> {
+        let cartridge = if extension.eq_ignore_ascii_case("car") {
+            Cartridge::parse_car(bytes)?
+        } else if extension.eq_ignore_ascii_case("rom") || extension.eq_ignore_ascii_case("bin") {
+            Cartridge::parse_raw(bytes, None)?
+        } else {
+            return Err(format!(
+                "unsupported Atari cartridge format {extension}; expected car, rom or bin"
+            ));
+        };
+        self.bus.cartridge = Some(cartridge);
+        self.update_cartridge_sense();
+        Ok(())
+    }
+    fn update_cartridge_sense(&mut self) {
+        if self.profile().is_xl_xe() {
+            self.bus
+                .hardware
+                .gtia
+                .set_trigger(3, self.bus.cartridge.is_none())
+                .expect("GTIA trigger 3");
+        }
+    }
+    pub fn eject_cartridge(&mut self) {
+        self.bus.cartridge = None;
+        self.update_cartridge_sense();
+    }
+    pub fn cartridge(&self) -> Option<&Cartridge> {
+        self.bus.cartridge.as_ref()
+    }
+    pub fn attach_tape(&mut self, bytes: &[u8]) -> Result<(), String> {
+        self.bus.tape = Some(CasPlayer::new(Cas::parse(bytes)?, self.clock_hz())?);
+        Ok(())
+    }
+    pub fn eject_tape(&mut self) {
+        self.bus.tape = None;
+    }
+    pub fn tape(&self) -> Option<&CasPlayer> {
+        self.bus.tape.as_ref()
+    }
+    pub fn tape_motor(&self) -> bool {
+        self.bus.hardware.pia.c2_output(Side::A) == Some(false)
     }
     pub fn load_xex(&mut self, bytes: &[u8]) -> Result<(), String> {
         let xex = atari_media::Xex::parse(bytes)?;
@@ -612,8 +807,8 @@ impl Machine for Atari800 {
         let mut count = 0;
         for (i, &value) in bytes.iter().enumerate() {
             let address = (address as u16).wrapping_add(i as u16);
-            if self.can_write(address) {
-                self.bus.hardware.ram[usize::from(address)] = value;
+            if let Some(index) = self.bus.write_index(address) {
+                self.bus.hardware.ram[index] = value;
                 count += 1;
             }
         }
@@ -629,8 +824,20 @@ impl Machine for Atari800 {
     }
     fn reset(&mut self) {
         self.program = None;
-        self.bus.hardware.antic.reset_button();
-        self.bus.hardware.nmi = true;
+        if self.profile().is_xl_xe() {
+            self.bus.hardware.antic.reset();
+            self.bus.hardware.pia = Pia::new();
+            self.bus
+                .hardware
+                .pia
+                .set_input(Side::A, self.bus.hardware.joystick_inputs[0]);
+            self.bus.hardware.nmi = false;
+            self.bus.hardware.irq_sample = false;
+            self.cpu.reset(&mut self.bus);
+        } else {
+            self.bus.hardware.antic.reset_button();
+            self.bus.hardware.nmi = true;
+        }
         self.bus.hardware.nmi_ready_at = 0;
         self.cpu.halted = false;
         self.bus.audio.clear();
@@ -641,7 +848,7 @@ impl Machine for Atari800 {
                 State {
                     base: StateV1 {
                         magic: *b"A800",
-                        version: 4,
+                        version: 5,
                         rom: self.bus.roms.fingerprint(),
                         timing: self.timing(),
                         cpu: self.cpu,
@@ -665,6 +872,23 @@ impl Machine for Atari800 {
                     bus_value: self.bus.hardware.bus_value,
                     irq_sample: self.bus.hardware.irq_sample,
                 },
+                VideoControlState {
+                    antic: self.bus.hardware.antic.save_dma(),
+                    gtia: self.bus.hardware.gtia.save_video(),
+                    pia: self.bus.hardware.pia.save_control(),
+                    mmu: self.bus.mmu.state(),
+                    sio: self.bus.sio.save_media(),
+                    cartridge: self.bus.cartridge.as_ref().map(|cart| CartridgeState {
+                        rom: cart.rom().to_vec(),
+                        mapper: cart.mapper().car_type(),
+                        bank: cart.bank(),
+                    }),
+                    tape: self.bus.tape.as_ref().map(|tape| TapeState {
+                        bytes: tape.to_bytes(),
+                        record: tape.position().record,
+                        cycle: tape.position().cycle,
+                    }),
+                },
             ),
             bincode::config::standard(),
         )
@@ -674,11 +898,16 @@ impl Machine for Atari800 {
         if bytes.len() > 67_108_864 {
             return Err("Atari 800 state exceeds 64 MiB".to_string());
         }
-        if bytes.get(..4) != Some(b"A800") || !matches!(bytes.get(4), Some(1..=4)) {
+        if bytes.get(..4) != Some(b"A800") || !matches!(bytes.get(4), Some(1..=5)) {
             return Err("invalid Atari 800 state header".to_string());
         }
-        let (mut state, serial, sio, program, used) = if bytes[4] == 1 {
-            if self.disk_attached() {
+        if bytes[4] < 5 && self.profile() != Profile::Atari800 {
+            return Err(
+                "legacy Atari state belongs to atari-800, not an XL/XE profile".to_string(),
+            );
+        }
+        let (mut state, serial, mut sio, program, used) = if bytes[4] == 1 {
+            if self.disk_attached_in(0) || self.disk_attached_in(1) {
                 return Err(
                     "legacy Atari 800 state has no disk; eject it before restoring".to_string(),
                 );
@@ -714,7 +943,7 @@ impl Machine for Atari800 {
             (None, 0)
         };
         let used = used + extra;
-        let extra = if bytes[4] == 4 {
+        let extra = if bytes[4] >= 4 {
             let (timing, extra): (TimingState, usize) = bincode::serde::decode_from_slice(
                 &bytes[used..],
                 bincode::config::standard().with_limit::<67_108_864>(),
@@ -739,6 +968,47 @@ impl Machine for Atari800 {
             state.hardware.irq_sample = state.hardware.irq();
             0
         };
+        let used = used + extra;
+        let mut cartridge = None;
+        let mut tape = None;
+        let extra = if bytes[4] == 5 {
+            let (control, extra): (VideoControlState, usize) = bincode::serde::decode_from_slice(
+                &bytes[used..],
+                bincode::config::standard().with_limit::<67_108_864>(),
+            )
+            .map_err(|e| format!("invalid Atari 800 video/control state: {e}"))?;
+            state.hardware.antic.restore_dma(control.antic)?;
+            state.hardware.gtia.restore_video(control.gtia)?;
+            state.hardware.pia.restore_control(&control.pia)?;
+            Mmu::from_state(
+                &control.mmu,
+                self.profile(),
+                state.hardware.ram.len(),
+                self.bus.roms.os.len(),
+                self.bus.roms.basic.as_ref().map(Vec::len),
+            )?;
+            sio.restore_media(control.sio)?;
+            if let Some(cart) = control.cartridge {
+                let mut restored =
+                    Cartridge::parse_raw(&cart.rom, Some(Mapper::from_car_type(cart.mapper)?))?;
+                restored.restore_bank(cart.bank)?;
+                cartridge = Some(restored);
+            }
+            if let Some(saved) = control.tape {
+                let mut restored = CasPlayer::new(Cas::parse(&saved.bytes)?, self.clock_hz())?;
+                restored.restore_position(CasPosition {
+                    record: saved.record,
+                    cycle: saved.cycle,
+                })?;
+                tape = Some(restored);
+            }
+            extra
+        } else {
+            state.hardware.antic.restore_legacy_dma();
+            state.hardware.gtia.initialize_legacy_video();
+            state.hardware.pia.initialize_legacy_control();
+            0
+        };
         if used + extra != bytes.len() {
             return Err("invalid Atari 800 state header or trailing bytes".to_string());
         }
@@ -749,7 +1019,7 @@ impl Machine for Atari800 {
         {
             return Err("Atari 800 state ROM, Region or execution mode differs".to_string());
         }
-        if state.hardware.ram.len() != 49152
+        if state.hardware.ram.len() != self.profile().ram_size()
             || state.hardware.screen.len() != WIDTH * HEIGHT
             || state.hardware.sample_phase >= self.clock_hz()
         {
@@ -766,10 +1036,23 @@ impl Machine for Atari800 {
                 length = length.saturating_add(bytes.len());
                 if bytes.is_empty()
                     || bytes.len() > 65536 - usize::from(*start)
-                    || bytes
-                        .iter()
-                        .enumerate()
-                        .any(|(i, _)| !self.can_write(start.wrapping_add(i as u16)))
+                    || bytes.iter().enumerate().any(|(i, _)| {
+                        let address = start.wrapping_add(i as u16);
+                        cartridge
+                            .as_ref()
+                            .and_then(|cart| cart.read(address))
+                            .is_some()
+                            || self
+                                .bus
+                                .mmu
+                                .map_write(
+                                    address,
+                                    Access::Cpu,
+                                    state.hardware.pia.drive(Side::B),
+                                    self.bus.roms.basic.is_some(),
+                                )
+                                .is_none()
+                    })
                 {
                     return Err("invalid pending Atari XEX segment in State".to_string());
                 }
@@ -781,6 +1064,8 @@ impl Machine for Atari800 {
         self.cpu = state.cpu;
         self.bus.hardware = state.hardware;
         self.bus.sio = sio;
+        self.bus.cartridge = cartridge;
+        self.bus.tape = tape;
         self.program = program;
         self.bus.audio.clear();
         Ok(())
@@ -790,6 +1075,165 @@ impl Machine for Atari800 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn xl_machine(profile: Profile) -> Atari800 {
+        let mut os = vec![0xea; profile.os_size()];
+        let vector = os.len() - 4;
+        os[vector..vector + 2].copy_from_slice(&[0, 0xe0]);
+        Atari800::with_profile(
+            profile,
+            Roms {
+                os,
+                basic: Some(vec![0x55; 8192]),
+            },
+            true,
+            Timing::Accurate,
+        )
+        .unwrap()
+    }
+
+    fn portb(m: &mut Atari800, value: u8) {
+        for (address, value) in [(0xd303, 0), (0xd301, 0xff), (0xd303, 4), (0xd301, value)] {
+            m.write_bus(address, value);
+        }
+    }
+
+    #[test]
+    fn xl_reset_restores_banking_without_erasing_ram_raster_or_gtia() {
+        for profile in [Profile::Atari800Xl, Profile::Atari65Xe, Profile::Atari130Xe] {
+            let mut m = xl_machine(profile);
+            portb(&mut m, 0xfe);
+            assert_eq!(m.load(0xc000, &[0x5a]), 1);
+            m.write_bus(0xd01a, 0x24);
+            m.write_bus(0xd404, 3);
+            m.write_bus(0xd40e, 0xc0);
+            let position = m.position();
+            m.reset();
+            assert_eq!(m.cpu.pc, 0xe000);
+            assert_eq!(m.read_memory(0xc000), 0xea);
+            assert_eq!(m.bus.hardware.ram[0xc000], 0x5a);
+            assert_eq!(m.position(), position);
+            assert_eq!(m.chip_registers("gtia")[0x1a], 0x24);
+            assert_eq!(m.chip_registers("antic")[4], 3);
+            assert_eq!(m.chip_registers("antic")[14], 0);
+            assert_eq!(m.read_memory(0xd013), 0, "XL cartridge absent pin");
+            assert!(m.set_joystick(2, 0, false).is_err());
+        }
+    }
+
+    #[test]
+    fn xe_cpu_and_antic_fetch_from_independently_selected_physical_ram() {
+        for pins in [0xe3, 0xd3] {
+            let mut m = xl_machine(Profile::Atari130Xe);
+            m.bus.hardware.ram[0x2000..0x2006].copy_from_slice(&[0x4e, 0, 0x40, 0x41, 0, 0x20]);
+            m.bus.hardware.ram[0x4000..0x4030].fill(0);
+            m.bus.hardware.ram[0x10000..0x10030].fill(0xff);
+            portb(&mut m, pins);
+            assert_eq!(m.read_memory(0x4000), if pins == 0xe3 { 0xff } else { 0 });
+            for (register, value) in [(0, 0x22), (2, 0), (3, 0x20)] {
+                m.bus.hardware.antic.write(register, value);
+            }
+            while m.position() != (40, 8) {
+                m.bus.tick();
+            }
+            assert_eq!(
+                m.bus.hardware.antic.pixel_at(64),
+                if pins == 0xd3 { 3 } else { 0 }
+            );
+            let saved = m.save_state();
+            portb(&mut m, 0xff);
+            m.load_state(&saved).unwrap();
+            assert_eq!(m.read_memory(0x4000), if pins == 0xe3 { 0xff } else { 0 });
+        }
+    }
+
+    #[test]
+    fn version5_restores_media_phase_and_rejects_bad_extensions_atomically() {
+        type Envelope = (State, Option<bool>, TimingState, VideoControlState);
+        let mut m = xl_machine(Profile::Atari130Xe);
+        let mut cartridge = vec![0x55; 32768];
+        cartridge[..8192].fill(0xaa);
+        m.bus.cartridge = Some(Cartridge::parse_raw(&cartridge, Some(Mapper::Xegs32K)).unwrap());
+        m.update_cartridge_sense();
+        assert_eq!(m.read_memory(0xd013), 1);
+        m.write_bus(0xd500, 1);
+        assert_eq!(m.load(0x8000, &[3]), 0);
+        let mut image = vec![0; 144];
+        image[..6].copy_from_slice(&[0x96, 0x02, 8, 0, 128, 0]);
+        m.attach_disk_in(1, "atr", &image).unwrap();
+        let tape = [b"FUJI".as_slice(), &[0; 4], b"data", &[1, 0, 0, 0, 0x55]].concat();
+        m.attach_tape(&tape).unwrap();
+        m.write_bus(0xd302, 0x34);
+        m.load_program(0x2000, &[0xea, 0x4c, 0, 0x20]).unwrap();
+        m.set_pc(0x2000);
+        for _ in 0..50 {
+            m.step();
+        }
+        let saved = m.save_state();
+        for _ in 0..100 {
+            m.step();
+        }
+        let future = m.save_state();
+        m.eject_cartridge();
+        m.eject_tape();
+        m.eject_disk_in(1).unwrap();
+        m.load_state(&saved).unwrap();
+        assert_eq!(m.export_disk_in(1).unwrap(), image);
+        assert!(m.tape().unwrap().position().cycle > 0);
+        assert_eq!(m.cartridge().unwrap().bank(), 1);
+        for _ in 0..100 {
+            m.step();
+        }
+        assert_eq!(m.save_state(), future);
+        for case in 0..3 {
+            let (state, mask, timing, mut control): Envelope =
+                bincode::serde::decode_from_slice(&saved, bincode::config::standard())
+                    .unwrap()
+                    .0;
+            match case {
+                0 => control.mmu.profile = Profile::Atari65Xe,
+                1 => control.cartridge.as_mut().unwrap().bank = 255,
+                _ => control.tape.as_mut().unwrap().cycle = u64::MAX,
+            }
+            let bad = bincode::serde::encode_to_vec(
+                (state, mask, timing, control),
+                bincode::config::standard(),
+            )
+            .unwrap();
+            assert!(m.load_state(&bad).is_err());
+            assert_eq!(m.save_state(), future);
+        }
+        for cut in [1, 7, 64] {
+            assert!(m.load_state(&saved[..saved.len() - cut]).is_err());
+            assert_eq!(m.save_state(), future);
+        }
+    }
+
+    #[test]
+    fn published_version4_envelope_migrates_but_cannot_become_an_xl_state() {
+        let mut m = machine(Timing::Accurate);
+        let saved = m.save_state();
+        let (mut state, mask, timing): (State, Option<bool>, TimingState) =
+            bincode::serde::decode_from_slice(&saved, bincode::config::standard())
+                .unwrap()
+                .0;
+        state.base.version = 4;
+        let old = bincode::serde::encode_to_vec((state, mask, timing), bincode::config::standard())
+            .unwrap();
+        m.load_state(&old).unwrap();
+        assert_eq!(m.save_state()[4], 5);
+        let migrated = m.save_state();
+        m.load_state(&old).unwrap();
+        assert_eq!(m.save_state(), migrated);
+        let mut xl = xl_machine(Profile::Atari800Xl);
+        let before = xl.save_state();
+        assert!(
+            xl.load_state(&old)
+                .unwrap_err()
+                .contains("legacy Atari state belongs")
+        );
+        assert_eq!(xl.save_state(), before);
+    }
+
     fn machine(timing: Timing) -> Atari800 {
         let mut os = vec![0xea; 10240];
         os[10236..10238].copy_from_slice(&[0, 0xe0]);
@@ -999,8 +1443,16 @@ mod tests {
             m.bus.tick();
         }
         assert_eq!(m.bus.hardware.gtia.read(0), 0);
+        let saved = m.save_state();
         m.bus.in_cpu = true;
         assert_eq!(m.bus.read(0xd000), 4);
+        m.load_state(&saved).unwrap();
+        m.bus.write(0xd0fe, 0);
+        assert_eq!(
+            m.bus.hardware.gtia.read(0),
+            0,
+            "HITCLR wins this clock's collision, including mirrored writes"
+        );
     }
 
     #[test]

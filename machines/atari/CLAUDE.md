@@ -33,40 +33,42 @@ crates/plugins/atari-st-machine-plugin/  profile, options, commands (lib `atari_
 crates/plugin-dlls/atari-st/         the cdylib (`atari_st_machine_plugin`), only `export_plugin!`
 firmware.toml                        EmuTOS by URL and hash
 crates/chips/{antic,gtia,pokey}/     initial Atari 8-bit Chips, no Host or Core dependency
-crates/machines/atari-8bit/          experimental Atari800, shared NMOS 6502 and pia-6520
-crates/plugins/atari-8bit-machine-plugin/  Atari 800 profile, input, debug contract, guarded ABI
+crates/machines/atari-8bit/          experimental 800/800XL/65XE/130XE, MMU, shared NMOS 6502 and pia-6520
+crates/plugins/atari-8bit-machine-plugin/  four profiles, input, Media, debug contract, guarded ABI
 crates/plugin-dlls/atari-8bit/       thin export only
 ```
 
-## Atari 800
+## Atari 8-bit
 
 Read `atari-800.intake.toml` and `docs/atari800-gaps.md` before changing the
 8-bit Machine; do not infer its hardware from the ST. Sources: Altirra Hardware
 Reference 2026-01-02 chapters 2/4/5/6/14 and pinned Atari800 7.2.1.
-`atari-800.manifest.toml` records 36 passing variants and eight known gaps.
-No XL/XE profile exists yet. `atari-media` parses standard ATR and segmented
-XEX without a Machine dependency; Tools pins that Format crate by git revision.
-The Machine owns ordered INITAD/RUNAD and a read-only D1: peripheral on actual
-PIA CB2/POKEY pins, never a CPU ROM/SIO loader trap.
+Each `atari-*.manifest.toml` records both Regions and modes; reference input,
+cassette, RMS and diagnostic mismatches remain evidence-backed gaps.
+`atari-media` owns strict ATR/XFD, CAS, CAR/raw cartridge and XEX formats without
+a Machine dependency. The Machine owns ordered INITAD/RUNAD, two writable sector
+peripherals and motor-gated cassette playback on actual PIA/POKEY pins.
 
-The OS starts at `$D800`, optional BASIC at `$A000`; RAM is 48 KiB. Accurate
+The 800 has 48 KiB RAM and a 10 KiB OS at `$D800`; XL/XE have 64/128 KiB RAM
+and a 16 KiB OS. `mmu` resolves CPU and ANTIC separately from driven PORTB
+pins; writes into mapped ROM do not reach underlying RAM. Accurate
 mode clocks every Core bus cycle and stalls only reads; fast mode batches.
 ANTIC owns VBI/DLI/reset NMI; the Host's frame interrupt request is a no-op.
-Atari 800 warm reset is an RNMI, not a CPU reset. Save state validates ROM,
+Atari 800 warm reset is RNMI; XL/XE reset CPU, PIA and ANTIC's resettable latches
+without erasing RAM, raster or GTIA/POKEY state. Save state validates ROM,
 Region, mode and Chip state before mutation. Joystick input levels are held
 separately from PIA output/readback so DDR writes cannot lose another port.
-Version 2 State persists disk bytes, serial bit/queue phase and pending XEX;
-version 1 still loads unless a disk is attached (eject first). Preserve old
-files for rollback: an older Plugin cannot read version 2.
+Version 5 adds explicit profile/MMU, D2/write transactions, cartridge banks,
+tape phase, DMA/GTIA video and PIA control extensions. Preserve original
+serialized Core/Chip and v1-v4 layouts. Legacy States load only on 800;
+v1 requires both disks ejected. Preserve old files for rollback.
 
 Private replacement-ROM test:
-`ATARI800_OS`, `ATARI800_BASIC`, `ATARI800_DISK` (Acid800 ATR), `ATARI800_OUTPUT` then
+`ATARI800_OS`, `ATARIXL_OS`, `ATARI800_BASIC`, `ATARI800_DISK` (Acid800 ATR), `ATARI800_OUTPUT` then
 `cargo test --release -p atari-8bit --test firmware -- --ignored`.
-It boots and types through POKEY in both Regions/modes, checks deterministic
-future State, warm reset and mid-transfer SIO State. It does not establish
-reference S2 or Acid800 acceptance. Actual Acid800 scores: fast 23/34/1,
-accurate 21/36/1, reference 25/32/1 passed/failed/skipped; see the gap document.
-The shared high-byte store fix makes illegal instructions pass without a
-CPU State change. IRQ polling remains a separate compatibility-safe migration.
+It boots/types/resets all profiles in both Regions/modes, checks future and
+in-flight State, D2 writes through OS SIOV, five CAR mappers through OS boot,
+and CAS load/execution through OS CIO. Refer to the gap document for current
+diagnostic results and limitations; fixture tests are not reference goldens.
 Build fixtures with existing `rcasm`, `rcld` and `rcdisk`; never commit ROMs,
 third-party diagnostics, generated Media, goldens or reference binaries.

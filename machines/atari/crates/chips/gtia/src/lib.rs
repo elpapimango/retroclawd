@@ -1,7 +1,7 @@
-//! GTIA normal playfield and player/missile graphics, collisions and input.
+//! GTIA playfield and player/missile graphics, collisions and input.
 //! Source: Altirra Hardware Reference (2026-01-02), chapter 6 and section 14.3:
 //! <https://www.virtualdub.org/downloads/Altirra%20Hardware%20Reference%20Manual.pdf>.
-//! No GTIA special modes or composite artifacting. RGB is an analytical YIQ
+//! No composite artifacting. RGB is an analytical YIQ
 //! approximation, not a measured palette.
 #![forbid(unsafe_code)]
 
@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 
 mod graphics;
 pub use graphics::GtiaGraphicsState;
+mod video;
+pub use video::GtiaVideoState;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Gtia {
@@ -21,6 +23,8 @@ pub struct Gtia {
     // persists this extension separately in its versioned state envelope.
     #[serde(skip)]
     graphics: GtiaGraphicsState,
+    #[serde(skip)]
+    video: GtiaVideoState,
 }
 
 impl Gtia {
@@ -32,6 +36,7 @@ impl Gtia {
             console: 7,
             pal,
             graphics: GtiaGraphicsState::default(),
+            video: GtiaVideoState::default(),
         }
     }
     pub fn read(&self, offset: u8) -> u8 {
@@ -119,6 +124,7 @@ impl Gtia {
             return Err("invalid GTIA state".to_string());
         }
         self.graphics.validate()?;
+        self.video.validate()?;
         Ok(())
     }
 }

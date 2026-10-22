@@ -266,7 +266,7 @@ len = 960
 golden = "atari-800/S7-pal.bin"
 golden_sha256 = "9c075145199268332e04a16509c16c72a89a9b7530fed04db5f650e5d444d0c2"
 status = "known-gap"
-gap = { reason = "Acid800 completes: fast 36 passed/21 failed/1 skipped versus Atari800 25/32/1. No prior passing case regresses. Instruction batching cannot reproduce all hardware-phase checks; abnormal DMA, special graphics, PIA and XL banking gaps remain. The reference also fails hardware tests; totals are not conformance.", evidence = "docs/atari800-gaps.md#ten-area-fidelity-increment" }
+gap = { reason = "Acid800 completes: fast 43 passed/14 failed/1 skipped versus Atari800 25/32/1. Instruction batching retains 13 phase failures; the 800 also fails the XL-only banking test. The reference itself fails hardware tests, so its screen is not a conformance target.", evidence = "docs/atari800-gaps.md#xlxe-and-media-close-out" }
 
 [[scenario]]
 id = "S7-accurate"
@@ -279,7 +279,7 @@ len = 960
 golden = "atari-800/S7-pal.bin"
 golden_sha256 = "9c075145199268332e04a16509c16c72a89a9b7530fed04db5f650e5d444d0c2"
 status = "known-gap"
-gap = { reason = "Acid800 completes: accurate 46 passed/11 failed/1 skipped versus reference 25/32/1. NMIST/VCOUNT/WSYNC/DLI, blocked NMI, normal/virtual DMA, scrolling, all POKEY cases and normal GTIA collision/retrigger/resize/overlap pass. Abnormal DMA, special graphics, PIA and XL banking remain. The full reference screen still differs; totals are not conformance.", evidence = "docs/atari800-gaps.md#ten-area-fidelity-increment" }
+gap = { reason = "Acid800 completes: accurate 56 passed/1 failed/1 skipped. The only failure is XL banking, unavailable on an original 800. Atari800 7.2.1 scores 25/32/1, so the preserved full reference screen differs. No golden or tolerance is changed.", evidence = "docs/atari800-gaps.md#xlxe-and-media-close-out" }
 
 [[scenario]]
 id = "S7-ntsc"
@@ -292,7 +292,7 @@ len = 960
 golden = "atari-800/S7-ntsc.bin"
 golden_sha256 = "9c075145199268332e04a16509c16c72a89a9b7530fed04db5f650e5d444d0c2"
 status = "known-gap"
-gap = { reason = "NTSC Acid800 completes: fast 36 passed/21 failed/1 skipped versus reference 25/32/1. No prior passing case regresses. Fast execution remains instruction-batched; exact phase checks and remaining hardware gaps are not acceptance passes.", evidence = "docs/atari800-gaps.md#ten-area-fidelity-increment" }
+gap = { reason = "NTSC Acid800 completes: fast 43 passed/14 failed/1 skipped, identical to PAL. Fast execution remains instruction-batched; the reference screen is not a hardware conformance target.", evidence = "docs/atari800-gaps.md#xlxe-and-media-close-out" }
 
 [[scenario]]
 id = "S7-ntsc-accurate"
@@ -305,7 +305,7 @@ len = 960
 golden = "atari-800/S7-ntsc.bin"
 golden_sha256 = "9c075145199268332e04a16509c16c72a89a9b7530fed04db5f650e5d444d0c2"
 status = "known-gap"
-gap = { reason = "NTSC Acid800 completes: accurate 46 passed/11 failed/1 skipped versus reference 25/32/1. All POKEY cases and the normal ANTIC/GTIA timing increment pass without regressing prior passes. Remaining abnormal DMA, special graphics, PIA and XL banking cases still differ from the full reference capture. No golden or tolerance is changed.", evidence = "docs/atari800-gaps.md#ten-area-fidelity-increment" }
+gap = { reason = "NTSC Acid800 completes: accurate 56 passed/1 failed/1 skipped, identical to PAL. Only the XL-only banking test fails. The independently captured reference still fails applicable hardware tests; preserve its original golden.", evidence = "docs/atari800-gaps.md#xlxe-and-media-close-out" }
 
 # Both reference Regions and both Media paths independently reproduce the same
 # complete 256-byte pattern as S3 raw Program; the pinned bytes are unchanged.
@@ -425,3 +425,105 @@ frames = 300
 more_frames = 50
 files = { disk = "atari/software/scenarios/atari800-boot.atr" }
 args = ["--region", "ntsc", "--execution-mode", "accurate"]
+
+[[scenario]]
+id = "S3-car"
+kind = "memory"
+frames = 300
+files = { cartridge = "atari/software/scenarios/atari800-program.car" }
+start = 16384
+len = 256
+golden = "atari-800/S3-car-pal.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-car-accurate"
+kind = "memory"
+frames = 300
+files = { cartridge = "atari/software/scenarios/atari800-program.car" }
+args = ["--execution-mode", "accurate"]
+start = 16384
+len = 256
+golden = "atari-800/S3-car-pal.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-car-ntsc"
+kind = "memory"
+frames = 300
+files = { cartridge = "atari/software/scenarios/atari800-program.car" }
+args = ["--region", "ntsc"]
+start = 16384
+len = 256
+golden = "atari-800/S3-car-ntsc.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-car-ntsc-accurate"
+kind = "memory"
+frames = 300
+files = { cartridge = "atari/software/scenarios/atari800-program.car" }
+args = ["--region", "ntsc", "--execution-mode", "accurate"]
+start = 16384
+len = 256
+golden = "atari-800/S3-car-ntsc.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-xfd"
+kind = "memory"
+frames = 300
+files = { disk = "atari/software/scenarios/atari800-boot.xfd" }
+start = 16384
+len = 256
+golden = "atari-800/S3-xfd-pal.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-xfd-accurate"
+kind = "memory"
+frames = 300
+files = { disk = "atari/software/scenarios/atari800-boot.xfd" }
+args = ["--execution-mode", "accurate"]
+start = 16384
+len = 256
+golden = "atari-800/S3-xfd-pal.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-xfd-ntsc"
+kind = "memory"
+frames = 300
+files = { disk = "atari/software/scenarios/atari800-boot.xfd" }
+args = ["--region", "ntsc"]
+start = 16384
+len = 256
+golden = "atari-800/S3-xfd-ntsc.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-xfd-ntsc-accurate"
+kind = "memory"
+frames = 300
+files = { disk = "atari/software/scenarios/atari800-boot.xfd" }
+args = ["--region", "ntsc", "--execution-mode", "accurate"]
+start = 16384
+len = 256
+golden = "atari-800/S3-xfd-ntsc.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-cas-reference"
+kind = "memory"
+frames = 1500
+start = 16384
+len = 256
+status = "known-gap"
+gap = { reason = "All four real replacement OS profiles load and execute a cassette Program through CIO and actual motor/serial pins. A matching reference CIO automation/golden is not captured; a separate boot-tape fixture did not execute. CAS boot and reference acceptance are not claimed.", evidence = "docs/atari800-gaps.md#xlxe-and-media-close-out" }
+
+[[scenario]]
+id = "S4-reference-rms"
+kind = "audio"
+frames = 150
+status = "known-gap"
+gap = { reason = "S4 checks documented pitch and an audible signal, not reference RMS. Reference recording and analogue mixer calibration remain unverified.", evidence = "docs/atari800-gaps.md#s4-audio-and-s6-timing-limits" }

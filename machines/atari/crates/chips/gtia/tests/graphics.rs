@@ -158,6 +158,24 @@ fn no_pmg_preserves_existing_playfield_colors() {
     }
 }
 
+#[test]
+fn special_modes_do_not_collide_with_raw_hires_bits() {
+    // AHR §§6.6, 6.9: modes 9/11 bypass PF collision; mode 10 decodes
+    // PF0-PF3 instead. Color equality and hidden-object priority do not matter.
+    for mode in [0x40, 0xc0] {
+        let mut g = setup();
+        g.write(0, 0x80);
+        g.write(4, 0x80);
+        g.write(13, 0x80);
+        g.write(17, 2);
+        g.write(27, mode);
+        line(&mut g, [6; 2], true);
+        assert_eq!(g.read(0), 0);
+        assert_eq!(g.read(4), 0);
+        assert_eq!(g.read(8), 1);
+    }
+}
+
 fn advance_to(g: &mut Gtia, clock: &mut usize, target: usize) {
     while *clock < hpos(target) {
         g.tick_color_clock([0; 2], true);

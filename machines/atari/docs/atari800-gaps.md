@@ -1,13 +1,16 @@
-# Atari 800 experimental acceptance
+# Atari 8-bit experimental acceptance
 
 ## Verified slice
 
 `atari-800` is a 48 KiB Atari 800 using the shared NMOS 6502 Core and MOS 6520
-PIA, plus ANTIC, GTIA and POKEY Chips. It is not an XL/XE profile.
+PIA, plus ANTIC, GTIA and POKEY Chips. The same implementation also exposes
+800XL/65XE (64 KiB) and 130XE (128 KiB), with their own MMU and reset behavior.
 PAL is the default; NTSC is separate. Fast mode batches instruction accesses;
 accurate mode advances Chips on every read/write/dummy cycle. ANTIC DMA HALT
 stops all accesses; WSYNC RDY stops only reads.
-Neither mode claims cycle-exact Atari compatibility.
+Neither mode claims complete Atari compatibility. The current close-out and
+remaining limits are in [XL/XE and Media close-out](#xlxe-and-media-close-out).
+Earlier diagnostic tables below are retained as historical evidence, not current scores.
 
 Private verification used explicitly identified, permissively licensed
 AltirraOS 800 3.11 and the replacement BASIC ROM that displays **1.59**.
@@ -24,11 +27,11 @@ reads `408` from the real BASIC screen, restores deterministic future State
 and returns to Ready after the Atari 800's warm-reset NMI.
 The Host's `--type` path independently executes the same expression.
 
-The manifest records S1, S3 Program, S4 pure tone, S5 State and S6 timing
+Each Machine's manifest records S1, S3 Program/Media, S4 pure tone, S5 State and S6 timing
 for both Regions and execution modes. S2 reference input and S7 diagnostics
 remain known gaps, not passes. S4 establishes the documented pitch and an
 audible signal, **not reference RMS or analogue mixer calibration**.
-The executed manifest result is **36 passed, 0 failed, 8 known gaps, 0 closed**.
+The pre-close-out manifest result was **36 passed, 0 failed, 8 known gaps, 0 closed**.
 The added twelve variants cover XEX, ATR boot and disk-bearing State in both
 Regions and modes. S7 now executes and differs from the independently captured
 reference; S2 still has no reference golden.
@@ -89,7 +92,8 @@ must use a working reference input path and capture the actual result.
 
 ## S3 Media and State
 
-Raw and segmented XEX Programs and read-only ATR disks are advertised.
+Raw and segmented XEX Programs, writable ATR/XFD disks, standard/XEGS
+cartridges and standard CAS playback are advertised.
 `scenarios/build.sh` uses existing
 `rcasm` to assemble `scenarios/atari800/program.asm` at `$2000`.
 The 46-byte fixture SHA-256 is
@@ -109,16 +113,15 @@ OS. OS-dependent XEX applications are not yet proven.
 
 `rcasm` builds a standard one-sector boot Program at `$0700`; `rcdisk create`
 and `rcdisk add --sector 1` put it in a 720-sector ATR. The replacement OS boots
-it through PIA CB2 COMMAND and POKEY serial input/output. The read-only D1:
-peripheral implements checksummed status/read commands, ACK/NAK/completion,
-128/256-byte sectors and explicit refusal of writes. There is no CPU/SIO ROM
-trap, disk CPU, FDC/rotation model, additional drive or cassette implementation.
+it through PIA CB2 COMMAND and POKEY serial input/output. The D1:/D2: sector peripherals implement checksummed status/read/PUT/WRITE,
+ACK/NAK/completion, 128/256-byte sectors, dirty/export/mark-saved and read-only
+protection. There is no CPU/SIO ROM trap or disk CPU/FDC/rotation model.
 The reference independently boots the ATR and loads the XEX in both Regions;
 each complete `$4000:256` capture has the unchanged S3 golden hash above.
 Capture adapter options are `--disk FILE` and `--xex FILE`; neither uses raw
 monitor injection.
 
-Machine State version 4 includes the disk, serial bit/queue phase, pending
+Machine State version 4 originally included the disk, serial bit/queue phase, pending
 XEX lifecycle, the Core's delayed IRQ-mask sample and explicit ANTIC, GTIA,
 POKEY and Machine timing extensions. It reads versions 1, 2 and 3;
 legacy States restore no poll history, matching their original live-I check.
@@ -145,11 +148,9 @@ silently repaired. Its exact development schema is unverified. A separate
 build of the old published Plugin for additional binary-to-binary proof was
 blocked by execution approval; do not treat that additional check as passed.
 
-CAS tapes, CART headers/banking and other external SIO devices
-are not implemented or advertised. The optional BASIC ROM is a fixed 8 KiB
-cartridge window, not a general cartridge loader. Unsupported Media requests
-return an explicit Plugin error. No silent loader trap or generic PRG parser
-is used as an Atari format implementation.
+State v5 and the supported CAS/CAR/XFD/D2 surfaces are described in the close-out
+below. Unsupported Media requests return an explicit Plugin error. No silent
+loader trap or generic PRG parser is used as an Atari format implementation.
 
 ## S4 audio and S6 timing limits
 
@@ -339,14 +340,113 @@ These changes do not implement abnormal DMA rings, every mid-line
 DMACTL/HSCROL transition, GTIA special modes or all hardware variants.
 Passing the normal mechanisms does not close every associated Acid800 test.
 
+## XL/XE and Media close-out
+
+Four profiles share the same Core and Chips: `atari-800` (48 KiB/10 KiB OS),
+`atari-800xl` and `atari-65xe` (64 KiB/16 KiB OS), and `atari-130xe`
+(128 KiB/16 KiB OS). Optional BASIC is 8 KiB. PORTB drives OS/BASIC/self-test
+selection and independent 130XE CPU/ANTIC banks. Cartridge mapping wins over
+BASIC. ROM writes do not reach hidden RAM. XL/XE have Help and two joysticks;
+800 retains four joysticks and RNMI reset. XL/XE reset CPU/PIA and ANTIC's
+resettable latches, preserving RAM, raster, GTIA and POKEY.
+
+Private firmware proof used the intake-pinned Altirra XL OS SHA-1
+`738b9590a29f424ad2c9d3f9cb1d170de79241f7`. The two original ROM-gated tests
+now run all four profiles in PAL/NTSC and fast/accurate mode. They prove BASIC
+input/result/reset, ATR boot, in-flight serial restore and deterministic future
+State. Additional real-OS tests prove:
+
+- SIOV writes D2 sector 1, reads it into another buffer, checks status/data,
+  exports the modified ATR and marks it saved; D1 remains unchanged.
+- OS cartridge entry runs a complete 256-byte memory pattern for CAR types
+  1/2/12/13/14 on every profile. Unused lower cartridge bytes are `$FF`, so a
+  16K/XEGS fixture does not accidentally advertise another 800 cartridge.
+- CIO opens `C:`, loads all 128 bytes through the PIA motor and POKEY serial
+  pins, and calls the loaded Program, which writes the same complete memory
+  pattern. The initial CAS leader is 20 seconds, not the 2-second between-record
+  gap: the shorter fixture was consumed during the OS startup delay.
+
+No PC/ROM loader trap supplies Media bytes. The firmware tests call documented
+OS vectors only after real cold boot. These tests are integration evidence,
+not reference goldens. A separate one-record cassette boot attempt remained
+in the OS cassette read loop and did not execute; cassette boot remains
+unverified, not silently equated with the working CIO load path.
+
+Writable ATR/XFD D1:/D2: preserve their export format and protection. D2,
+pending write/checksum/completion, dirty flags and partial serial phase are
+included in State. CAS supports FUJI/baud/data records and real 8N1 playback;
+motor-off freezes its position. Standard 8K/16K and XEGS 32K/64K/128K CARs are
+supported. Raw dumps have only the unambiguous 8K/16K default. Other mappers,
+protected/extended disk layouts, tape recording/turbo and speed other than 1
+fail explicitly.
+
+State v5 adds separate DMA/GTIA/PIA control, profile/MMU and Media extensions.
+The original serialized Chip/Core and v1-v4 field shapes remain unchanged.
+All extension candidates validate before live mutation. Profiles, firmware,
+Region and timing must match. Old States load only on 800; v1 requires both
+disks ejected. A published-v4-shaped regression proves migration and exact
+future continuation; existing v1-v3 regressions remain. The actual published
+v2, v3 and stamped-v4 private files also load through the release Host and
+produce byte-identical duplicate v5 continuations; their original hashes
+are unchanged. Earlier pre-stamped private v4 captures fail timing decoding
+with `InvalidBooleanValue(252)` and are not guessed or silently repaired.
+Older Plugins cannot read v5, so preserve original files for rollback.
+
+HSCROL now uses a bitmap shift-clock feedback ring, latched playfield
+start/stop deadlines and line-buffer continuity. GTIA implements modes 9/10/11,
+pseudo-E, delayed PRIOR and phantom PM data. Virtual-DMA collision bytes were
+already correct; the newly exposed failure was HITCLR being applied before
+its current bus clock. Completing that clock before the mirrored HITCLR
+strobe prevents a stale same-clock collision from relatching.
+
+Final actual Acid800 1.2 output, **passed/failed/skipped**:
+
+| Machine | PAL fast | PAL accurate | NTSC fast | NTSC accurate |
+|---|---|---|---|---|
+| 800 | 43/14/1 | 56/1/1 | 43/14/1 | 56/1/1 |
+| 800XL | 44/13/1 | 57/0/1 | 44/13/1 | 57/0/1 |
+| 130XE | not separately captured | not separately captured | not separately captured | 57/0/1 |
+
+The 800's sole accurate failure is the XL-only banking test. The 65XE uses
+the same 64K decoder as XL; no separate full-suite transcript is claimed.
+Fast mode's 13 phase-sensitive failures are CPU Bugs (NMI/BRK), WSYNC timing,
+DLI timing, DMA pattern, blocked NMI, virtual DMA, playfield stop timing,
+POKEY IRQ timing, POKEY init timing, phantom PM DMA, P/M retriggering,
+player resizing and pseudo-E. These were not converted into accurate-mode
+behavior or hidden by aggregate totals.
+
+The adapter independently captured every profile in both Regions: cold
+boot PNG/80-byte memory, raw/XEX/ATR/XFD/standard CAR execution and the XL/XE
+diagnostic screen. Every S3 complete 256-byte capture has SHA-256
+`7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd`.
+The same S1 crop/tolerance remains unchanged. Reference 65XE uses Atari800's
+equivalent 64K XL mapping, explicitly selected by `--machine atari-65xe`.
+Atari800 7.2.1 itself scores 25/32/1 on 800 and 26/31/1 on XL/XE.
+Its captured failing screen remains pinned; a better hardware result is still
+a reference mismatch, not a reason to rewrite a golden.
+
+Each manifest also records uncaptured S2 input, S3 CAS and reference RMS.
+The final release runs report **44 passed, 0 failed, 10 known gaps and
+0 newly closed gaps on each of 800, 800XL, 65XE and 130XE**: 176 passes and
+40 gap variants total. Per profile, the gaps are four input variants,
+four diagnostic-screen mismatches, one CAS reference and one reference RMS.
+These are repeated scenario variants, not forty distinct hardware bugs.
+
+Native cassette load/execution works locally, but matching reference CIO
+automation is not captured. `scenarios/build.sh` uses Tools to build
+raw/XEX/standard CAR Programs, an ATR boot disk and its raw-sector XFD
+equivalent. The CAR matches the native firmware test fixture byte for byte.
+The CAS fixture still comes from the ROM-gated firmware test; no CAS creation
+CLI exists yet. That output remains a P1 tooling limit, not a claimed pass.
+
 ## Remaining hardware limits
 
-- ANTIC: abnormal DMA and shift-clock rings, dynamic start/stop deadlines and
-  interrupted line buffering remain incomplete. The HSCROL corruption and
-  high-resolution bug cases are not closed.
-- GTIA: special modes 9/10/11, phantom DMA and composite artifacting remain
-  incomplete; the palette is an analytical approximation. The Acid800 PM DMA
-  readout uses GTIA mode 10 and is not closed by normal PM DMA proof.
+- ANTIC: overlapping abnormal character, playfield/PM/display-list address-AND
+  effects and all consecutive abnormal bitmap-read aliases are incomplete.
+  The implemented bitmap ring closes the actual HSCROL test; it is not every
+  possible abnormal DMA stream.
+- GTIA: composite artifacting and analogue color calibration are not implemented;
+  the palette remains an analytical approximation.
 - POKEY: external serial clocks, sub-cycle high-pass behavior, nonlinear
   analogue mixing and connected paddles are not implemented. Passing the
   diagnostic cases is not full analogue or temperature-variant validation.
@@ -354,9 +454,8 @@ Passing the normal mechanisms does not close every associated Acid800 test.
   pin/detection history; accurate BRK/IRQ vector selection can consume an NMI
   raised during the sequence. This is not a complete transistor-level Core
   interrupt pipeline.
-  Warm reset uses the
-  Atari 800's ANTIC RNMI and preserves RAM rather than resetting the CPU.
-- No XL/XE MMU, banked RAM, self-test ROM or additional Machine profiles yet.
+- Original Atari OS ROMs, game/demo compatibility, cassette boot and native
+  cassette reference automation remain unverified.
 
-C16/Plus4 remain parked. XL/XE work must not be presented as enabled by the
-Atari 800 boot alone.
+C16/Plus4 remain parked. Playbook completion with these recorded gaps is not
+a claim that every Atari hardware behavior has been modeled.

@@ -1,22 +1,27 @@
 //! Atari 8-bit Plugin. Only the C ABI boundary uses unsafe code.
-use atari_8bit::{Atari800, Roms, Timing};
+use atari_8bit::{Atari800, Profile, Roms, Timing};
 use machine::Machine;
 use plugin_api::{
     ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, BitmapExplorerDefaults, BitmapPaletteColor,
-    ChipSnapshot, CpuFamily, CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine,
-    DiskStatus, ExecutionMode, ListProfilesRequest, ListProfilesResponse,
+    CartridgeStatus, ChipSnapshot, CpuFamily, CpuInfo, DebugCommand, DebugResponse, DebugValue,
+    DisassemblyLine, DiskStatus, ExecutionMode, ListProfilesRequest, ListProfilesResponse,
     MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest,
     MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse, MachineKeyInfo,
     MachineMetadata, MachineOptionInfo, MachineOptionKind, MachinePluginVTableV1, MachineProfile,
     MachineResponse, MediaKind, MediaSlot, MediaSnapshot, NamedValue, PluginDescriptorV1,
     PluginKind, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RcBuffer, RcCallResult, RcSlice, RcStatus,
-    RegisterField, RegisterSnapshot, StatusCode, StepResult,
+    RegisterField, RegisterSnapshot, StatusCode, StepResult, TapeStatus,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, OnceLock};
 
-const ID: &str = "atari-800";
+const PROFILES: [Profile; 4] = [
+    Profile::Atari800,
+    Profile::Atari800Xl,
+    Profile::Atari65Xe,
+    Profile::Atari130Xe,
+];
 const COMBOS: &[(&str, &str)] = &[
     ("Exclamation", "Digit1"),
     ("DoubleQuote", "Digit2"),
@@ -37,7 +42,7 @@ const COMBOS: &[(&str, &str)] = &[
     ("RightBracket", "Period"),
     ("Question", "Slash"),
 ];
-fn key_names() -> Vec<MachineKeyInfo> {
+fn key_names(model: Profile) -> Vec<MachineKeyInfo> {
     let mut names = plugin_api::key_infos(
         atari_8bit::KEYS
             .iter()
@@ -53,7 +58,10 @@ fn key_names() -> Vec<MachineKeyInfo> {
             ])
             .chain(COMBOS.iter().map(|&(name, _)| name)),
     );
-    let joysticks: Vec<_> = (1..=4)
+    if model.is_xl_xe() {
+        names.extend(plugin_api::key_infos(["Help"]));
+    }
+    let joysticks: Vec<_> = (1..=if model.is_xl_xe() { 2 } else { 4 })
         .flat_map(|port| {
             ["Up", "Down", "Left", "Right", "Fire1"].map(move |key| format!("Joy{port}{key}"))
         })
@@ -103,7 +111,7 @@ fn key_names() -> Vec<MachineKeyInfo> {
     );
     names
 }
-fn profile() -> MachineProfile {
+fn profile(model: Profile) -> MachineProfile {
     let file = |key: &str, required: bool, description: &str| MachineOptionInfo {
         key: key.to_string(),
         flag: key.replace('_', "-"),
@@ -114,8 +122,14 @@ fn profile() -> MachineProfile {
         description: description.to_string(),
     };
     MachineProfile {
-        machine_id: ID.to_string(),
-        display_name: "Atari 800 (experimental)".to_string(),
+        machine_id: model.id().to_string(),
+        display_name: match model {
+            Profile::Atari800 => "Atari 800",
+            Profile::Atari800Xl => "Atari 800XL",
+            Profile::Atari65Xe => "Atari 65XE",
+            Profile::Atari130Xe => "Atari 130XE",
+        }
+        .to_string(),
         cpu_family: CpuFamily::Mos6502,
         default_region: Some("pal".to_string()),
         contract_version: MACHINE_PROFILE_CONTRACT_VERSION,
@@ -126,20 +140,31 @@ fn profile() -> MachineProfile {
             MachineCapability::SaveState,
             MachineCapability::Debug,
             MachineCapability::Disk,
+            MachineCapability::Tape,
+            MachineCapability::Cartridge,
         ],
-        media_kinds: vec![MediaKind::Program, MediaKind::Disk],
+        media_kinds: vec![
+            MediaKind::Program,
+            MediaKind::Disk,
+            MediaKind::Tape,
+            MediaKind::Cartridge,
+        ],
         options: vec![
             file(
                 "rom_os",
                 true,
-                "Atari 800 OS ROM, exactly 10240 bytes; explicit original or replacement ROM",
+                if model.is_xl_xe() {
+                    "XL/XE OS ROM, exactly 16384 bytes; explicit original or replacement ROM"
+                } else {
+                    "Atari 800 OS ROM, exactly 10240 bytes; explicit original or replacement ROM"
+                },
             ),
             file("rom_basic", false, "Optional 8192-byte BASIC ROM cartridge"),
             ExecutionMode::option(
-                "fast (default): instruction-batched accesses; accurate: per-bus-cycle Chip clocks and read stalls. Initial ANTIC/GTIA engine lacks scrolling, P/M, GTIA special modes and exact refresh displacement",
+                "fast (default): instruction-batched accesses, not raster-exact; accurate: per-bus-cycle Chip clocks, DMA HALT, WSYNC and interrupt polling",
             ),
         ],
-        key_names: key_names(),
+        key_names: key_names(model),
         cpus: vec![CpuInfo {
             id: "main".to_string(),
             name: "MOS 6502".to_string(),
@@ -164,9 +189,10 @@ struct InputState {
 }
 impl Instance {
     fn create(request: MachineCreateRequest) -> Result<Self, String> {
-        if request.machine_id != ID {
-            return Err(format!("unknown Machine {:?}", request.machine_id));
-        }
+        let model = PROFILES
+            .into_iter()
+            .find(|model| model.id() == request.machine_id)
+            .ok_or_else(|| format!("unknown Machine {:?}", request.machine_id))?;
         let pal = match request.region.as_deref() {
             None | Some("pal") => true,
             Some("ntsc") => false,
@@ -195,7 +221,8 @@ impl Instance {
             }
         }
         Ok(Self {
-            machine: Atari800::new(
+            machine: Atari800::with_profile(
+                model,
                 Roms {
                     os: roms.remove("rom_os").ok_or("missing rom_os")?,
                     basic: roms.remove("rom_basic"),
@@ -221,7 +248,7 @@ impl Instance {
         }
     }
     fn key(&mut self, name: &str, pressed: bool) -> Result<(), String> {
-        let name = key_names()
+        let name = key_names(self.machine.profile())
             .into_iter()
             .find(|key| key.matches(name))
             .ok_or_else(|| format!("unknown Atari 800 Machine key {name:?}"))?
@@ -237,6 +264,9 @@ impl Instance {
         let mut keys = 0u64;
         let mut shift = self.held.contains("ShiftLeft") || self.held.contains("ShiftRight");
         for name in &self.held {
+            if name == "Help" {
+                keys |= 1u64 << 0x11;
+            }
             let physical = if let Some(&(_, base)) = COMBOS.iter().find(|&&(key, _)| key == name) {
                 shift = true;
                 base
@@ -257,7 +287,7 @@ impl Instance {
             self.machine
                 .set_console(bit as u8, self.held.contains(*name))?;
         }
-        for port in 1..=4 {
+        for port in 1..=self.machine.joystick_count() {
             let directions =
                 ["Up", "Down", "Left", "Right"]
                     .iter()
@@ -276,15 +306,16 @@ impl Instance {
     fn metadata(&self) -> MachineMetadata {
         let rate = self.machine.frame_rate();
         MachineMetadata {
-            machine_id:ID.to_string(),model:Some(ID.to_string()),region:Some(if self.machine.pal() {"pal"} else {"ntsc"}.to_string()),
+            machine_id:self.machine.profile().id().to_string(),model:Some(self.machine.profile().id().to_string()),region:Some(if self.machine.pal() {"pal"} else {"ntsc"}.to_string()),
             frame_rate:(rate.num,rate.den),audio_channels:1,audio_sample_rate:machine::AUDIO_SAMPLE_RATE,
             bitmap_palette:gtia::Gtia::palette().into_iter().enumerate().map(|(i,rgb)| BitmapPaletteColor {name:format!("GTIA {i:02x}"),rgb}).collect(),
             bitmap_defaults:Some(BitmapExplorerDefaults {address:0x3000,bytes_width:40,bitplanes:1,zoom:2}),
             notes:vec![
-                "Experimental 48 KiB Atari 800; explicit OS and optional BASIC cartridge ROMs".to_string(),
-                "Initial engine: no P/M, scrolling, GTIA special modes, composite artifacting or cycle-exact interrupt delivery".to_string(),
-                "Read-only standard ATR on D1: via PIA/POKEY serial pins; not an emulated 810 CPU/FDC, no writes or copy-protected Media".to_string(),
-                "POKEY period timers and linear mixer; no analogue calibration or linked-low timer fidelity. CPU clock rounded down by 0.5 Hz".to_string(),
+                format!("{} KiB RAM; explicit OS and optional BASIC ROMs", self.machine.profile().ram_size()/1024),
+                "ANTIC scrolling/DMA, GTIA P/M and modes 9/10/11; no composite artifacting or overlapping abnormal character-DMA model".to_string(),
+                "Read/write ATR/XFD on D1:/D2: via PIA/POKEY serial pins; sector peripherals, not emulated 810 CPUs/FDCs or protected disks".to_string(),
+                "Standard CAS playback and standard/XEGS CAR cartridges; no turbo cassette, recording or advanced mappers".to_string(),
+                "POKEY digital timers/noise and linear mixer; analogue calibration unverified. CPU clock rounded down by 0.5 Hz".to_string(),
             ],
             ..MachineMetadata::default()
         }
@@ -319,7 +350,8 @@ impl Instance {
                 NamedValue {
                     key: "memory_summary".to_string(),
                     value: DebugValue::Text(format!(
-                        "48 KiB; {:?}; raster {:?}",
+                        "{} KiB; {:?}; raster {:?}",
+                        self.machine.profile().ram_size() / 1024,
                         self.machine.timing(),
                         self.machine.position()
                     )),
@@ -335,25 +367,50 @@ impl Instance {
     }
     fn media(&self) -> MediaSnapshot {
         MediaSnapshot {
-            tape: None,
-            disks: vec![DiskStatus {
-                attached: self.machine.disk_attached(),
-                image_id: None,
-                drive: Some(0),
-                head: None,
-                track: None,
-                sector: Some(self.machine.disk_sector()),
-                controller_phase: Some(format!(
-                    "read-only SIO; {} reads; {}",
-                    self.machine.disk_reads(),
-                    if self.machine.disk_busy() {
-                        "busy"
-                    } else {
-                        "idle"
-                    }
-                )),
-            }],
-            cartridge: None,
+            tape: self.machine.tape().map(|tape| TapeStatus {
+                attached: true,
+                playing: self.machine.tape_motor() && !tape.finished(),
+                finished: tape.finished(),
+                speed_multiplier: 1,
+                position: Some(u64::from(tape.position().record)),
+                total: None,
+                motor_on: Some(self.machine.tape_motor()),
+                ear_bit: Some(tape.input()),
+                cycles_until_next_edge: None,
+                spin_down_cycles: None,
+            }),
+            disks: (0..2)
+                .map(|drive| DiskStatus {
+                    attached: self.machine.disk_attached_in(drive),
+                    image_id: None,
+                    drive: Some(drive),
+                    head: None,
+                    track: None,
+                    sector: Some(self.machine.disk_sector()),
+                    controller_phase: Some(format!(
+                        "SIO {}; {} reads; {}",
+                        if self.machine.disk_dirty_in(drive) {
+                            "modified"
+                        } else {
+                            "saved"
+                        },
+                        self.machine.disk_reads(),
+                        if self.machine.disk_busy() {
+                            "busy"
+                        } else {
+                            "idle"
+                        }
+                    )),
+                })
+                .collect(),
+            cartridge: self.machine.cartridge().map(|cart| CartridgeStatus {
+                attached: true,
+                mapper: Some(format!("CAR type {}", cart.mapper().car_type())),
+                active_banks: vec![NamedValue {
+                    key: "bank".to_string(),
+                    value: DebugValue::U64(u64::from(cart.bank())),
+                }],
+            }),
         }
     }
     fn debug(&mut self, mut command: DebugCommand) -> Result<DebugResponse, String> {
@@ -533,16 +590,34 @@ impl Instance {
                 self.machine.load_program(address as u16,&bytes)?;
                 Ok(MachineResponse::Ack)
             }
-            MachineCommand::AttachMedia{slot:MediaSlot::Disk{drive:0},kind:MediaKind::Disk,name,bytes,options}=>{
-                if !options.is_empty() || !name.as_deref().is_some_and(|name|name.to_ascii_lowercase().ends_with(".atr")) {
-                    return Err("Atari 800 D1: accepts only standard ATR without Options".to_string());
+            MachineCommand::AttachMedia{slot:MediaSlot::Disk{drive},kind:MediaKind::Disk,name,bytes,options}=>{
+                if !options.is_empty() {
+                    return Err("Atari disks accept no Options".to_string());
                 }
-                self.machine.attach_disk(&bytes)?;
+                self.machine.attach_disk_in(drive, media_extension(name.as_deref())?, &bytes)?;
                 Ok(MachineResponse::Ack)
             }
-            MachineCommand::DetachMedia{slot:MediaSlot::Disk{drive:0}}=>{self.machine.eject_disk();Ok(MachineResponse::Ack)}
-            MachineCommand::ExportDisk{drive:0,only_if_modified}=>Ok(MachineResponse::DiskImage(if only_if_modified {None} else {self.machine.export_disk()})),
-            MachineCommand::MarkDiskSaved{drive:0}=>Ok(MachineResponse::Ack),
+            MachineCommand::DetachMedia{slot:MediaSlot::Disk{drive}}=>{self.machine.eject_disk_in(drive)?;Ok(MachineResponse::Ack)}
+            MachineCommand::ExportDisk{drive,only_if_modified}=>{
+                if drive>1 {return Err("Atari SIO supports only D1:/D2:".to_string());}
+                Ok(MachineResponse::DiskImage(if only_if_modified && !self.machine.disk_dirty_in(drive) {None} else {self.machine.export_disk_in(drive)}))
+            }
+            MachineCommand::MarkDiskSaved{drive}=>{self.machine.mark_disk_saved_in(drive)?;Ok(MachineResponse::Ack)}
+            MachineCommand::AttachMedia{slot:MediaSlot::Cartridge{slot:0},kind:MediaKind::Cartridge,name,bytes,options}=>{
+                if !options.is_empty() {return Err("Atari cartridges accept no Options; banked dumps require CAR headers".to_string());}
+                self.machine.attach_cartridge(media_extension(name.as_deref())?,&bytes)?;
+                Ok(MachineResponse::Ack)
+            }
+            MachineCommand::DetachMedia{slot:MediaSlot::Cartridge{slot:0}}=>{self.machine.eject_cartridge();Ok(MachineResponse::Ack)}
+            MachineCommand::AttachMedia{slot:MediaSlot::Tape,kind:MediaKind::Tape,name,bytes,options}=>{
+                if !media_extension(name.as_deref())?.eq_ignore_ascii_case("cas") ||
+                    (!options.is_empty() && !matches!(options.as_slice(), [NamedValue {key, value:DebugValue::U64(1)}] if key=="tape_speed")) {
+                    return Err("Atari cassette accepts standard CAS at tape_speed=1 only".to_string());
+                }
+                self.machine.attach_tape(&bytes)?;
+                Ok(MachineResponse::Ack)
+            }
+            MachineCommand::DetachMedia{slot:MediaSlot::Tape}=>{self.machine.eject_tape();Ok(MachineResponse::Ack)}
             MachineCommand::KeyEvent{key,pressed}=>{self.key(&key,pressed)?;Ok(MachineResponse::Ack)}
             MachineCommand::SetBorder{enabled}=>{self.border=enabled;Ok(MachineResponse::Ack)}
             MachineCommand::RenderFrame=>{
@@ -564,7 +639,7 @@ impl Instance {
                 if bytes.len()>67_108_864{return Err("Atari 800 state exceeds 64 MiB".to_string());}
                 let (state,used):(InputState,usize)=bincode::serde::decode_from_slice(&bytes,bincode::config::standard().with_limit::<67_108_864>())
                     .map_err(|e|format!("invalid Atari 800 input state: {e}"))?;
-                let names=key_names();
+                let names=key_names(self.machine.profile());
                 if used!=bytes.len() || state.magic!=*b"A8IN" || state.held.iter().any(|name|!names.iter().any(|key|key.name==*name)){
                     return Err("invalid Atari 800 input state header, keys or trailing bytes".to_string());
                 }
@@ -575,9 +650,14 @@ impl Instance {
             MachineCommand::GetMediaSnapshot=>Ok(MachineResponse::MediaSnapshot(self.media())),
             MachineCommand::Debug(command)=>Ok(MachineResponse::Debug(self.debug(command)?)),
             MachineCommand::TakePortHit=>Ok(MachineResponse::PortHit(None)),
-            _=>Err("unsupported Atari 800 operation: raw/XEX Program, read-only ATR on D1:, keyboard, digital joysticks, State and the debug contract are implemented".to_string()),
+            _=>Err("unsupported Atari operation: raw/XEX Program, ATR/XFD on D1:/D2:, CAS playback, standard/XEGS cartridges, keyboard, digital joysticks, State and the debug contract are implemented".to_string()),
         }
     }
+}
+fn media_extension(name: Option<&str>) -> Result<&str, String> {
+    name.and_then(|name| name.rsplit_once('.').map(|(_, extension)| extension))
+        .filter(|extension| !extension.is_empty())
+        .ok_or_else(|| "Atari Media requires a filename extension".to_string())
 }
 fn check_memory(address: u64, len: usize, space: Option<&str>) -> Result<(), String> {
     if address > 0xffff || len > 65536 || space.is_some_and(|s| s != "cpu") {
@@ -636,7 +716,7 @@ unsafe extern "C" fn list_profiles(request: RcSlice) -> RcCallResult {
         // SAFETY: caller keeps request storage alive for this call.
         match plugin_api::decode_message::<ListProfilesRequest>(unsafe { request.as_bytes() }) {
             Ok(_) => encode(Ok(ListProfilesResponse {
-                profiles: vec![profile()],
+                profiles: PROFILES.into_iter().map(profile).collect(),
             })),
             Err(e) => e.into_call_result(),
         }
@@ -777,7 +857,7 @@ mod tests {
         let mut os = vec![0xea; 10240];
         os[10236..10238].copy_from_slice(&[0, 0xe0]);
         MachineCreateRequest {
-            machine_id: ID.to_string(),
+            machine_id: Profile::Atari800.id().to_string(),
             region: None,
             options: Vec::new(),
             roms: vec![plugin_api::BinaryBlob {
@@ -790,12 +870,106 @@ mod tests {
     fn names_are_canonical_unique_and_all_accepted() {
         let mut instance = Instance::create(request()).unwrap();
         let mut names = BTreeSet::new();
-        for key in key_names() {
+        for key in key_names(Profile::Atari800) {
             assert!(names.insert(plugin_api::normalize_key_name(&key.name)));
             instance.key(&key.name, true).unwrap();
             instance.key(&key.name, false).unwrap();
         }
         assert!(instance.key("Help", true).is_err(), "800 has no Help key");
+    }
+    #[test]
+    fn each_profile_creates_with_its_own_rom_and_input_contract() {
+        for model in PROFILES {
+            let mut args = request();
+            args.machine_id = model.id().to_string();
+            args.roms[0].bytes = vec![0xea; model.os_size()];
+            let mut instance = Instance::create(args).unwrap();
+            assert_eq!(instance.machine.profile(), model);
+            for key in key_names(model) {
+                instance.key(&key.name, true).unwrap();
+                instance.key(&key.name, false).unwrap();
+            }
+            assert_eq!(instance.key("Help", true).is_ok(), model.is_xl_xe());
+            assert_eq!(instance.key("Joy3Fire1", true).is_ok(), !model.is_xl_xe());
+            let mut wrong = request();
+            wrong.machine_id = model.id().to_string();
+            wrong.roms[0].bytes = vec![0; if model.is_xl_xe() { 10240 } else { 16384 }];
+            assert!(Instance::create(wrong).is_err());
+        }
+    }
+
+    #[test]
+    fn tape_cartridge_and_second_disk_dispatch_restore_and_reject_atomically() {
+        let mut instance = Instance::create(request()).unwrap();
+        let attach = |slot, kind, name: &str, bytes| MachineCommand::AttachMedia {
+            slot,
+            kind,
+            name: Some(name.into()),
+            bytes,
+            options: Vec::new(),
+        };
+        let xfd = vec![0xa5; 92160];
+        instance
+            .command(attach(
+                MediaSlot::Disk { drive: 1 },
+                MediaKind::Disk,
+                "D2.XFD",
+                xfd.clone(),
+            ))
+            .unwrap();
+        instance
+            .command(attach(
+                MediaSlot::Cartridge { slot: 0 },
+                MediaKind::Cartridge,
+                "game.rom",
+                vec![0x42; 8192],
+            ))
+            .unwrap();
+        instance
+            .command(attach(
+                MediaSlot::Tape,
+                MediaKind::Tape,
+                "tape.cas",
+                b"FUJI\0\0\0\0data\x01\0\0\0\x55".to_vec(),
+            ))
+            .unwrap();
+        assert_eq!(instance.machine.read_memory(0xa000), 0x42);
+        let saved = instance.machine.save_state();
+        let MachineResponse::StateBlob(envelope) =
+            instance.command(MachineCommand::SaveState).unwrap()
+        else {
+            panic!()
+        };
+        for (slot, kind, name) in [
+            (MediaSlot::Disk { drive: 1 }, MediaKind::Disk, "bad.xfd"),
+            (
+                MediaSlot::Cartridge { slot: 0 },
+                MediaKind::Cartridge,
+                "bad.car",
+            ),
+            (MediaSlot::Tape, MediaKind::Tape, "bad.cas"),
+        ] {
+            assert!(instance.command(attach(slot, kind, name, vec![0])).is_err());
+            assert_eq!(instance.machine.save_state(), saved);
+        }
+        for slot in [
+            MediaSlot::Disk { drive: 1 },
+            MediaSlot::Cartridge { slot: 0 },
+            MediaSlot::Tape,
+        ] {
+            instance
+                .command(MachineCommand::DetachMedia { slot })
+                .unwrap();
+        }
+        instance
+            .command(MachineCommand::LoadState { bytes: envelope })
+            .unwrap();
+        assert_eq!(instance.machine.read_memory(0xa000), 0x42);
+        assert!(instance.machine.tape().is_some());
+        assert!(matches!(
+            instance.command(MachineCommand::ExportDisk { drive: 1, only_if_modified: false }).unwrap(),
+            MachineResponse::DiskImage(Some(bytes)) if bytes == xfd
+        ));
     }
     #[test]
     fn state_and_memory_failures_are_atomic_and_no_unimplemented_media_claimed() {
@@ -837,8 +1011,13 @@ mod tests {
         );
         assert_eq!(instance.machine.read_memory(0xbfff), 0);
         assert_eq!(
-            profile().media_kinds,
-            vec![MediaKind::Program, MediaKind::Disk]
+            profile(Profile::Atari800).media_kinds,
+            vec![
+                MediaKind::Program,
+                MediaKind::Disk,
+                MediaKind::Tape,
+                MediaKind::Cartridge
+            ]
         );
     }
     #[test]

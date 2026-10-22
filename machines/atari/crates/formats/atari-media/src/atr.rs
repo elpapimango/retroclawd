@@ -10,6 +10,58 @@ pub struct Atr {
 }
 
 impl Atr {
+    /// Normalizes standard XFD geometries into canonical ATR logical sectors.
+    ///
+    /// Atari800 7.2.1 `src/sio.c`, `SIO_Mount` / `SIO_SizeOfSector`
+    /// (revision cited in the crate docs): DD XFD may use logical or physical
+    /// boot sectors. Physical boot-sector padding must be zero to avoid loss.
+    pub fn parse_xfd(bytes: &[u8]) -> Result<Self, String> {
+        bounded(bytes.len())?;
+        let (count, size, physical) = match bytes.len() {
+            92_160 => (720, 128, false),
+            133_120 => (1040, 128, false),
+            183_936 => (720, 256, false),
+            184_320 => (720, 256, true),
+            368_256 => (1440, 256, false),
+            368_640 => (1440, 256, true),
+            _ => {
+                return Err("unsupported XFD size; expected standard SD, ED or DD geometry".into());
+            }
+        };
+        let mut atr = Self::blank(count, size)?;
+        if physical {
+            for index in 0..3 {
+                if bytes[index * 256 + 128..index * 256 + 256]
+                    .iter()
+                    .any(|&byte| byte != 0)
+                {
+                    return Err("XFD physical boot-sector padding must be zero".into());
+                }
+                atr.sector_mut(index as u16 + 1)?
+                    .copy_from_slice(&bytes[index * 256..index * 256 + 128]);
+            }
+            atr.bytes[16 + 384..].copy_from_slice(&bytes[768..]);
+        } else {
+            atr.bytes[16..].copy_from_slice(bytes);
+        }
+        Ok(atr)
+    }
+
+    /// Exports raw XFD sectors, optionally padding DD boot sectors to 256 bytes.
+    pub fn to_xfd(&self, physical_boot: bool) -> Vec<u8> {
+        if physical_boot && self.sector_size == 256 && self.sectors >= 3 {
+            let mut bytes = Vec::with_capacity(self.bytes.len() - 16 + 384);
+            for number in 1..=3 {
+                bytes.extend_from_slice(self.sector(number).expect("boot sector"));
+                bytes.extend_from_slice(&[0; 128]);
+            }
+            bytes.extend_from_slice(&self.bytes[16 + 384..]);
+            bytes
+        } else {
+            self.bytes[16..].to_vec()
+        }
+    }
+
     pub fn parse(bytes: &[u8]) -> Result<Self, String> {
         bounded(bytes.len())?;
         let header = bytes.get(..16).ok_or("truncated ATR header")?;

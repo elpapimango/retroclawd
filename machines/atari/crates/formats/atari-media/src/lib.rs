@@ -16,13 +16,37 @@
 //! The complete accepted header is retained, including the write-protection byte
 //! (any nonzero value protects the image, as in Atari800). No DOS is assumed.
 //! All inputs and serialized outputs are bounded to 16 MiB.
+//!
+//! XFD accepts standard 720x128, 1040x128, 720x256 and 1440x256 images.
+//! DD logical/physical boot layouts normalize to ATR; physical padding must
+//! be zero. `Atr::to_xfd` exports either layout without guessing a filesystem.
+//!
+//! CAR parsing verifies its big-endian header, byte-sum checksum, reserved
+//! bytes and mapper-specific size. Supported types are 1/2 (standard 8K/16K)
+//! and 12/13/14 (XEGS 32K/64K/128K), per the pinned Atari800 `DOC/cart.txt`.
+//! Raw images default only to standard 8K/16K; banked dumps require an explicit
+//! `Mapper`. The cartridge exposes read mapping and D5 write banking separately
+//! so the Machine can prioritize it over BASIC/RAM for both CPU and ANTIC.
+//! Persist ROM identity, mapper and bank in a separate Machine state extension.
+//!
+//! CAS supports `FUJI`, `baud` and `data` per the
+//! [A8CAS specification](https://a8cas.sourceforge.net/format-cas.html).
+//! `CasPlayer` emits decoded 8N1 DATA IN in integer CPU clocks, gated by
+//! the cassette motor. Persist the source/identity, clock and both fields of
+//! `CasPosition`; no hidden byte shifter state exists outside that position.
+//! Recording, WAV/audio demodulation, FSK/PWM turbo chunks, protected disk
+//! formats, flash, cartridge RAM, OSS and other mappers are not implemented.
 
 #![forbid(unsafe_code)]
 
 mod atr;
+mod cartridge;
+mod cas;
 mod xex;
 
 pub use atr::Atr;
+pub use cartridge::{Cartridge, Mapper};
+pub use cas::{Cas, CasPlayer, CasPosition};
 pub use xex::{Segment, Xex};
 
 const MAX_BYTES: usize = 16 * 1024 * 1024;
