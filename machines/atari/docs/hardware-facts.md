@@ -220,3 +220,24 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Motor | the motor line reaches both drives | `[H?]` | — |
 | Head range | cylinders 0-85 | `[H?]` | — |
 | Drives fitted | 2 by default, 1 with `drives = 1`; drive B absent then | `[H?]` | — |
+
+## USART, RS-232, MIDI and printer (`mc68901` `usart.rs`, `serial.rs`)
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| UCR | CLK (bit 7: divide by 16), WL1 WL0 (bits 6-5: 8, 7, 6, 5 bits), ST1 ST0 (bits 4-3: `00` synchronous, `01` 1 stop, `10` 1.5 stop, `11` 2 stop), PE (bit 2), E/O (bit 1) | `[D]` | *MC68901* §6.1.3 Figure 6-2 |
+| Baud clock | timer D drives the USART clocks; a timer output toggles on each time-out, so one clock period is two time-outs; a bit is one period (CLK 0) or sixteen (CLK 1) | `[D]` `[H]` | *MC68901* §5.1.1 (output toggles), §6.1 (divide by 16); *Internals* p.61 ("Timer D sends the timing signal for the MFP's built-in serial interface") |
+| Character time | (1 start + data bits + parity + stop bits) bit periods | `[D]` | *MC68901* §6.1.1, Figure 6-2 |
+| RSR | BF 7, OE 6, PE 5, FE 4, F/S or B 3, M/CIP 2, SS 1, RE 0; BF set when a word reaches the buffer and cleared by reading UDR; OE rises when the held-back overrun word meets a read buffer, clears on an RSR read, and blocks new words until then; RE = 0 clears every flag at once | `[D]` | *MC68901* §6.2.2 Figure 6-3, §6.2.3 |
+| Parity, framing, break | never raised: the peers deliver clean frames | `[H?]` | a choice, no line noise is modelled |
+| TSR | BE 7, UE 6, AT 5, END 4, B 3, H 2, L 1, TE 0; a write to UDR clears BE, BE sets when the word moves to the shift register; UE sets when a word ends with the buffer empty, cleared by reading TSR or disabling; disabling with an idle shifter sets END at once, with a word going out after it; enabling clears END; AT turns the receiver on after the last word | `[D]` | *MC68901* §6.3, §6.3.2 Figure 6-4 |
+| Loopback | H = L = 1: the transmitter feeds the receiver, the receive clock is the transmit clock | `[D]` | *MC68901* §6.3.2 |
+| Break transmission | the B bit stops words moving out of the buffer; no break is shown to a peer | `[H?]` | *MC68901* §6.3 describes the line state, the machine has no line level |
+| Start of a word | the buffer is moved to the shift register at the next time-out of timer D | `[H?]` | §6.3 says only "a delay before the first bit" |
+| Interrupt channels | 9 transmit error (UE, END), 10 transmit buffer empty, 11 receive error, 12 receive buffer full; an overrun uses 12 when 11 is disabled | `[D]` | *MC68901* Table 3-1, §6.2.1 |
+| Reset | UCR, RSR, SCR cleared, words in flight stopped; UDR and TSR keep their values | `[D]` / `[H?]` | §2.2.3 lists TSR among the registers reset leaves alone; Figure 6-4 says reset clears TE: the register list is followed |
+| Synchronous format | not modelled: a transmitter in it never finishes a word | `[H?]` | the ST does not use it |
+| MIDI line | the MIDI ACIA at ÷16: 256 CPU cycles a bit, 2560 a character | `[H]` | *Internals* p.47 and section 2.5 (31 250 baud, 500 kHz / 16) |
+| Centronics | data lines are PSG port B; the strobe is PSG port A bit 5, a low pulse; BUSY is GPIP I0, high when the printer cannot take a byte | `[H]` | *Internals* p.59 (port A list, read one position down: the page's column is shifted), pp.88-89, p.61 |
+| Strobe edge | the byte on port B is taken when port A bit 5 falls between two states in which port A is an output | `[H?]` | the document says only that a low pulse marks the data valid; either edge sees the same byte |
+| BUSY | low with a printer connected, high without; no busy time after a byte | `[H?]` | the document gives no timing |

@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
+use atari_st::serial::{FileSink, FileSource, LinePeer, MIDI_FRAME_CYCLES};
 use atari_st::{Accuracy, AtariSt, Config, Monitor, RamSize, Region};
 use machine::{AUDIO_SAMPLE_RATE, Machine};
 use plugin_api::{
@@ -353,6 +354,54 @@ fn machine_profile() -> MachineProfile {
                 None,
                 "Write the diagnostic report of a stop at an unemulated device here (default: stderr)",
             ),
+            option(
+                "serial_out",
+                MachineOptionKind::Text,
+                None,
+                "Write the characters the guest sends on the RS-232 port to this new file",
+            ),
+            option(
+                "serial_in",
+                MachineOptionKind::Text,
+                None,
+                "Send the bytes of this file (up to 16 MiB) to the guest on the RS-232 port",
+            ),
+            option(
+                "serial_loopback",
+                MachineOptionKind::Bool,
+                Some(DebugValue::Bool(false)),
+                "Connect the RS-232 transmit line to its receive line",
+            ),
+            option(
+                "midi_out",
+                MachineOptionKind::Text,
+                None,
+                "Write the bytes the guest sends to the MIDI OUT port to this new file",
+            ),
+            option(
+                "midi_in",
+                MachineOptionKind::Text,
+                None,
+                "Send the bytes of this file (up to 16 MiB) to the guest on the MIDI IN port",
+            ),
+            option(
+                "midi_loopback",
+                MachineOptionKind::Bool,
+                Some(DebugValue::Bool(false)),
+                "Connect MIDI OUT to MIDI IN",
+            ),
+            option(
+                "printer_out",
+                MachineOptionKind::Text,
+                None,
+                "Connect a Centronics printer that writes to this new file (without it the printer is off line: BUSY stays set)",
+            ),
+            option(
+                "overwrite_outputs",
+                MachineOptionKind::Bool,
+                Some(DebugValue::Bool(false)),
+                "Let serial_out, midi_out and printer_out replace a file that already exists (otherwise that is an error)",
+            ),
         ],
         key_names: key_names(),
         cpus: vec![CpuInfo {
@@ -432,6 +481,89 @@ fn metadata(machine: &AtariSt, region: &str, model: &str) -> MachineMetadata {
     }
 }
 
+/// The serial line, MIDI and printer options: files and echoes on the far ends of the ST's lines.
+#[derive(Default)]
+struct LineOptions {
+    serial_out: Option<PathBuf>,
+    serial_in: Option<PathBuf>,
+    serial_loopback: bool,
+    midi_out: Option<PathBuf>,
+    midi_in: Option<PathBuf>,
+    midi_loopback: bool,
+    printer_out: Option<PathBuf>,
+    overwrite: bool,
+}
+
+impl LineOptions {
+    /// Takes the option when it is one of these; false for any other key.
+    fn accept(&mut self, key: &str, value: &DebugValue) -> bool {
+        let path = |v: &DebugValue| match v {
+            DebugValue::Text(t) if !t.is_empty() => Some(PathBuf::from(t)),
+            _ => None,
+        };
+        let flag = |v: &DebugValue| matches!(v, DebugValue::Bool(true));
+        match key {
+            "serial_out" => self.serial_out = path(value),
+            "serial_in" => self.serial_in = path(value),
+            "serial_loopback" => self.serial_loopback = flag(value),
+            "midi_out" => self.midi_out = path(value),
+            "midi_in" => self.midi_in = path(value),
+            "midi_loopback" => self.midi_loopback = flag(value),
+            "printer_out" => self.printer_out = path(value),
+            "overwrite_outputs" => self.overwrite = flag(value),
+            _ => return false,
+        }
+        true
+    }
+
+    fn peer(
+        &self,
+        out: &Option<PathBuf>,
+        input: &Option<PathBuf>,
+        loopback: bool,
+        frame_cycles: u64,
+    ) -> Result<Option<LinePeer>, String> {
+        if out.is_none() && input.is_none() && !loopback {
+            return Ok(None);
+        }
+        let sink = match out {
+            Some(path) => Some(
+                FileSink::create(path, self.overwrite)
+                    .map_err(|e| format!("{}: {e}", path.display()))?,
+            ),
+            None => None,
+        };
+        let source = match input {
+            Some(path) => {
+                Some(FileSource::open(path).map_err(|e| format!("{}: {e}", path.display()))?)
+            }
+            None => None,
+        };
+        Ok(Some(LinePeer::new(sink, source, loopback, frame_cycles)))
+    }
+
+    fn connect(&self, machine: &mut AtariSt) -> Result<(), String> {
+        if let Some(peer) = self.peer(&self.serial_out, &self.serial_in, self.serial_loopback, 0)? {
+            machine.attach_rs232_peer(Box::new(peer));
+        }
+        if let Some(peer) = self.peer(
+            &self.midi_out,
+            &self.midi_in,
+            self.midi_loopback,
+            MIDI_FRAME_CYCLES,
+        )? {
+            machine.attach_serial_peer(1, Box::new(peer));
+        }
+        if let Some(path) = &self.printer_out {
+            machine.attach_printer(
+                FileSink::create(path, self.overwrite)
+                    .map_err(|e| format!("{}: {e}", path.display()))?,
+            );
+        }
+        Ok(())
+    }
+}
+
 fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, String> {
     if !req.machine_id.eq_ignore_ascii_case(MACHINE_ID) {
         return Err(format!(
@@ -451,6 +583,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let mut io_trace_file = None;
     let mut drives = 2u8;
     let mut write_protect = false;
+    let mut lines = LineOptions::default();
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
             ("ram", DebugValue::Text(v)) => {
@@ -478,6 +611,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             ("write_protect", DebugValue::Bool(v)) => write_protect = *v,
             ("drives", other) => return Err(format!("option \"drives\": 1 or 2, not {other:?}")),
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(PathBuf::from(v)),
+            (key, value) if lines.accept(key, value) => {}
             ("io_trace_file", DebugValue::Text(v)) => io_trace_file = Some(PathBuf::from(v)),
             (key, _) => {
                 return Err(format!(
@@ -515,6 +649,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         },
     })?;
     let mut machine = machine;
+    lines.connect(&mut machine)?;
     machine.set_drives(drives);
     machine.set_version_tag(std::str::from_utf8(PLUGIN_VERSION).unwrap_or("dev"));
     for drive in 0..drives {
@@ -580,7 +715,7 @@ fn chip_snapshots(machine: &AtariSt) -> Vec<ChipSnapshot> {
     let mut mfp: Vec<(String, u64)> = MFP_REGISTERS
         .iter()
         .enumerate()
-        .map(|(i, name)| (name.to_string(), bus.mfp().read(i as u8) as u64))
+        .map(|(i, name)| (name.to_string(), bus.mfp().peek(i as u8) as u64))
         .collect();
     mfp.push(("irq".to_string(), bus.mfp().irq() as u64));
     vec![
@@ -1347,6 +1482,54 @@ mod tests {
         assert!(export(id, 0, true).is_none(), "nothing was written");
         assert_eq!(export(id, 0, false).unwrap(), aa_disk());
         state().lock().unwrap().instances.remove(&id);
+    }
+
+    fn create_with(options: Vec<NamedValue>) -> Result<MachineInstanceHandle, String> {
+        create_machine(MachineCreateRequest {
+            machine_id: MACHINE_ID.to_string(),
+            region: Some("pal".to_string()),
+            roms: vec![BinaryBlob {
+                key: "rom".to_string(),
+                bytes: rom(&[0x60FE]),
+            }],
+            options,
+        })
+        .map(|r| r.instance)
+    }
+
+    #[test]
+    fn an_existing_output_file_is_an_error_unless_overwrite_is_asked_for() {
+        let path = temp("line-out");
+        std::fs::write(&path, b"keep").unwrap();
+        for key in ["serial_out", "midi_out", "printer_out"] {
+            let Err(err) = create_with(vec![text(key, path.to_str().unwrap())]) else {
+                panic!("{key} replaced a file");
+            };
+            assert!(err.contains("exists"), "{key}: {err}");
+            assert_eq!(std::fs::read(&path).unwrap(), b"keep");
+        }
+        let id = create_with(vec![
+            text("serial_out", path.to_str().unwrap()),
+            NamedValue {
+                key: "overwrite_outputs".to_string(),
+                value: DebugValue::Bool(true),
+            },
+        ])
+        .unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"", "replaced on request");
+        state().lock().unwrap().instances.remove(&id);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn an_unreadable_input_file_is_an_error() {
+        let Err(err) = create_with(vec![text(
+            "serial_in",
+            temp("no-such-input").to_str().unwrap(),
+        )]) else {
+            panic!("an unreadable input was accepted");
+        };
+        assert!(err.contains("no-such-input"), "{err}");
     }
 
     #[test]

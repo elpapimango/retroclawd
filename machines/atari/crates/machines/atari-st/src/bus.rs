@@ -16,7 +16,7 @@
 //! writes, without a bus error; writes to `$0-$7` and to the ROM are ignored; an empty cartridge port reads `$FF`;
 //! `$400000-$F9FFFF` and `$FF0000-$FF7FFF` are nonexistent (bus error).
 
-use crate::acia::Acias;
+use crate::acia::{Acias, NullPeer, SerialPeer};
 use crate::config::Config;
 use crate::dma::{Dma, FDC_BYTE_CYCLES};
 use crate::io::{self, Decode, Device};
@@ -25,6 +25,7 @@ use crate::mfp_clock::MfpClock;
 use crate::mmu::Mmu;
 use crate::psg::Psg;
 use crate::scheduler;
+use crate::serial::FileSink;
 use mc68000::{BusFault, FunctionCode, IackResponse, M68kBus, Size};
 use mc68901::Mfp;
 use st_shifter::{Monitor, Shifter};
@@ -64,6 +65,18 @@ pub struct IoStop {
     pub at_cycle: u64,
 }
 
+/// PSG port A bit 5: the Centronics strobe, active low (*Internals* p.59).
+const PRINTER_STROBE: u8 = 0x20;
+
+/// The device on the far end of the MFP's serial line.
+struct Rs232(Box<dyn SerialPeer + Send>);
+
+impl std::fmt::Debug for Rs232 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Rs232")
+    }
+}
+
 #[derive(Debug)]
 pub struct StBus {
     ram: Vec<u8>,
@@ -79,6 +92,9 @@ pub struct StBus {
     pub(crate) shifter: Shifter,
     pub(crate) psg: Psg,
     pub(crate) acias: Acias,
+    /// What the MFP's RS-232 line is connected to (nothing, unless the host attached something).
+    rs232: Rs232,
+    printer: Option<FileSink>,
     pub(crate) dma: Dma,
     /// A DMA/FDC register was accessed: the controller's events may have moved.
     pub(crate) fdc_dirty: bool,
@@ -182,6 +198,8 @@ impl StBus {
             mfp,
             shifter: Shifter::new(cfg.region == crate::config::Region::Pal),
             acias: Acias::new(),
+            rs232: Rs232(Box::new(NullPeer)),
+            printer: None,
             dma: Dma::new(2),
             fdc_dirty: false,
             fdc_irq: false,
@@ -444,6 +462,49 @@ impl StBus {
             self.mfp.tick(target - self.mfp_ticks);
             self.mfp_ticks = target;
         }
+        self.pump_rs232(cycle);
+    }
+
+    /// Moves the characters the USART has finished to the RS-232 peer and, when the receiver is free, the peer's
+    /// next one into the receiver.
+    fn pump_rs232(&mut self, at: u64) {
+        while let Some(byte) = self.mfp.usart_take_tx() {
+            self.rs232.0.receive(byte, at);
+        }
+        if self.mfp.usart_can_receive()
+            && let Some((_, byte)) = self.rs232.0.next_byte(at)
+        {
+            self.mfp.usart_rx_begin(byte);
+        }
+    }
+
+    /// The Centronics strobe (*Internals* p.59 and pp.88-89: PSG port A bit 5, a low pulse; the data lines are port
+    /// B). [H?] the byte is taken when the strobe line falls between two driven states of port A: a port A that
+    /// only now becomes an output does not strobe the printer.
+    fn printer_strobe(&mut self, before: Option<u8>) {
+        let (Some(was), Some(now)) = (before, self.psg.port_a_driven()) else {
+            return;
+        };
+        if was & PRINTER_STROBE != 0
+            && now & PRINTER_STROBE == 0
+            && let Some(printer) = &mut self.printer
+            && let Some(data) = self.psg.port_b_driven()
+        {
+            printer.write(data);
+        }
+    }
+
+    /// Connects a printer: its output file takes the bytes strobed out, and BUSY (GPIP I0) reads low. Without a
+    /// printer BUSY stays high, as a printer that is off line.
+    pub fn attach_printer(&mut self, sink: FileSink) {
+        self.printer = Some(sink);
+        self.mfp.set_input(0, false);
+        self.mfp_dirty = true;
+    }
+
+    /// Connects `peer` to the MFP's serial line.
+    pub fn attach_rs232_peer(&mut self, peer: Box<dyn SerialPeer + Send>) {
+        self.rs232 = Rs232(peer);
     }
 
     /// The completed I/O accesses so far (at most `io_log_limit`).
@@ -562,8 +623,10 @@ impl StBus {
                 self.psg.catch_up(self.now);
                 let v = if write {
                     self.catch_up_fdc(self.now);
+                    let before = self.psg.port_a_driven();
                     self.psg.write(addr, value as u8);
                     self.update_drive_select();
+                    self.printer_strobe(before);
                     value
                 } else {
                     self.psg.read(addr) as u32

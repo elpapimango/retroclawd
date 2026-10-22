@@ -519,3 +519,18 @@ pub fn move_b(value: u8, addr: u16) -> [u16; 3] {
 }
 
 pub const BRA_SELF: u16 = 0x60FE;
+
+/// `BTST #7,$addr.W` then `BEQ` back to it: waits until bit 7 of the byte at `$FFxxxx` is set.
+pub fn wait_bit7(addr: u16) -> [u16; 4] {
+    [0x0838, 0x0007, addr, 0x67F8]
+}
+
+/// `MOVE.B $src.W,$dst.W`.
+pub fn move_b_abs(src: u16, dst: u16) -> [u16; 3] {
+    [0x11F8, src, dst]
+}
+
+/// `BTST #bit,$addr.W` then `BEQ` back to it: waits until that bit of the byte at `$FFxxxx` is set.
+pub fn wait_bit(bit: u16, addr: u16) -> [u16; 4] {
+    [0x0838, bit, addr, 0x67F8]
+}

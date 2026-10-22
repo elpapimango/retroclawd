@@ -514,6 +514,16 @@ impl AtariSt {
         }
     }
 
+    /// Connects a Centronics printer whose output goes to `sink`.
+    pub fn attach_printer(&mut self, sink: crate::serial::FileSink) {
+        self.bus.attach_printer(sink);
+    }
+
+    /// Connects `peer` to the MFP's serial line (the RS-232 port).
+    pub fn attach_rs232_peer(&mut self, peer: Box<dyn SerialPeer + Send>) {
+        self.bus.attach_rs232_peer(peer);
+    }
+
     /// Connects `peer` to ACIA `port` (0 keyboard, 1 MIDI).
     pub fn attach_serial_peer(&mut self, port: usize, peer: Box<dyn SerialPeer + Send>) {
         let now = self.now;

@@ -132,12 +132,12 @@ fn received_byte_raises_gpip_i4_and_mfp_channel_6() {
         m.step();
     }
     assert_eq!(m.bus().acia(0).peek(false), 0x83);
-    assert_eq!(m.bus().mfp().read(0) & 0x10, 0, "I4 low");
+    assert_eq!(m.bus().mfp().peek(0) & 0x10, 0, "I4 low");
     assert_eq!(m.bus().ipl(), 6);
     let mut b = m.into_bus();
     assert_eq!(b.iack(6), IackResponse::Vector(0x46));
     assert_eq!(b.read(0xFFFC02, Size::Byte, SUPER), Ok(0xF1));
-    assert_eq!(b.mfp().read(0) & 0x10, 0x10, "I4 high again");
+    assert_eq!(b.mfp().peek(0) & 0x10, 0x10, "I4 high again");
 }
 
 /// GPIP I4 reads low until the first master reset ([O] Hatari's `$A1`), high (no IRQ) after it.

@@ -138,7 +138,7 @@ fn read_sector_1_into_ram() {
     let status = m.read_memory(0x1001);
     assert_eq!(status & 0x1C, 0, "no RNF, CRC or lost data: {status:02X}");
     assert_eq!(
-        m.bus().mfp().read(0) & 0x20,
+        m.bus().mfp().peek(0) & 0x20,
         0x20,
         "I5 high again after the status read"
     );

@@ -1,16 +1,17 @@
 //! Motorola MC68901 multi-function peripheral (MFP): the general-purpose I/O port, the 16-channel interrupt
-//! controller and the four timers, from the datasheet (Motorola, Advance Information, January 1984). The USART is
-//! register storage only so far.
+//! controller, the four timers and the USART, from the datasheet (Motorola, Advance Information, January 1984).
 //!
 //! Time is counted in timer clocks (the XTAL input), passed in by the machine with `tick`; the chip does no I/O and
 //! reads no clock of its own.
 #![forbid(unsafe_code)]
 
 mod timer;
+mod usart;
 
 use serde::{Deserialize, Serialize};
 
 use timer::{Mode, Timer};
+use usart::{EV_RX_ERROR, EV_RX_FULL, EV_TX_EMPTY, EV_TX_ERROR, Usart};
 
 /// The timer with an auxiliary input (TAI / TBI, §5.1.2-5.1.3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,6 +26,8 @@ const CH_GPIP: [u8; 8] = [0, 1, 2, 3, 6, 7, 14, 15];
 /// The GPIP line whose interrupt channel and edge bit TAI (timer A) and TBI (timer B) use (§5.1.2).
 const LINE_TAI: u8 = 4;
 const LINE_TBI: u8 = 3;
+/// Timer D drives the USART clocks on the ST (*Internals* p.61).
+const TIMER_D: usize = 3;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Mfp {
@@ -38,11 +41,7 @@ pub struct Mfp {
     imr: u16,
     vr: u8,
     timers: [Timer; 4],
-    scr: u8,
-    ucr: u8,
-    rsr: u8,
-    tsr: u8,
-    udr: u8,
+    usart: Usart,
     /// Levels driven onto the GPIP pins from outside.
     inputs: u8,
     tai: bool,
@@ -71,11 +70,7 @@ impl Mfp {
             imr: 0,
             vr: 0,
             timers: Default::default(),
-            scr: 0,
-            ucr: 0,
-            rsr: 0,
-            tsr: 0x80,
-            udr: 0,
+            usart: Usart::new(),
             inputs: 0,
             tai: false,
             tbi: false,
@@ -99,14 +94,12 @@ impl Mfp {
         for t in &mut self.timers {
             t.reset();
         }
-        self.scr = 0;
-        self.ucr = 0;
-        self.rsr = 0;
+        self.usart.reset();
         self.detector = self.detector_levels();
     }
 
     /// Register `reg` (0-23, in the order of the datasheet's register map; on the ST at `$FFFA01 + 2 × reg`).
-    pub fn read(&self, reg: u8) -> u8 {
+    pub fn read(&mut self, reg: u8) -> u8 {
         let a = |r: u16| (r >> 8) as u8;
         let b = |r: u16| r as u8;
         match reg {
@@ -127,13 +120,22 @@ impl Mfp {
             13 => self.timers[1].control(),
             14 => (self.timers[2].control() << 4) | self.timers[3].control(),
             15..=18 => self.timers[(reg - 15) as usize].read_data(),
-            19 => self.scr,
-            20 => self.ucr,
-            21 => self.rsr,
-            22 => self.tsr,
-            23 => self.udr,
+            19 => self.usart.read_scr(),
+            20 => self.usart.read_ucr(),
+            21 => self.usart.read_rsr(),
+            22 => self.usart.read_tsr(),
+            23 => {
+                let (v, ev) = self.usart.read_udr();
+                self.usart_events(ev);
+                v
+            }
             _ => 0xFF,
         }
+    }
+
+    /// What a read of `reg` would return, without its side effects (a debugger looks; the USART's flags stay).
+    pub fn peek(&self, reg: u8) -> u8 {
+        self.clone().read(reg)
     }
 
     pub fn write(&mut self, reg: u8, value: u8) {
@@ -170,13 +172,14 @@ impl Mfp {
                 self.timers[3].set_control(value & 7);
             }
             15..=18 => self.timers[(reg - 15) as usize].write_data(value),
-            19 => self.scr = value,
-            20 => self.ucr = value,
-            // [H?] the low four bits of RSR and TSR are the programmable ones; the upper (status) bits keep their
-            // value until the USART is emulated.
-            21 => self.rsr = (self.rsr & 0xF0) | (value & 0x0F),
-            22 => self.tsr = (self.tsr & 0xF0) | (value & 0x0F),
-            23 => self.udr = value,
+            19 => self.usart.write_scr(value),
+            20 => self.usart.write_ucr(value),
+            21 => self.usart.write_rsr(value),
+            22 => {
+                let ev = self.usart.write_tsr(value);
+                self.usart_events(ev);
+            }
+            23 => self.usart.write_udr(value),
             _ => {}
         }
         // §3.3.1: disabling a channel clears its pending bit.
@@ -204,17 +207,55 @@ impl Mfp {
     pub fn tick(&mut self, clocks: u64) {
         for (i, &ch) in CH_TIMER.iter().enumerate() {
             let active = self.aux_active(i);
-            if self.timers[i].advance(clocks, active) > 0 {
+            let timeouts = self.timers[i].advance(clocks, active);
+            if timeouts > 0 {
                 self.request(ch);
+                if i == TIMER_D {
+                    let ev = self.usart.clock(timeouts);
+                    self.usart_events(ev);
+                }
             }
         }
     }
 
-    /// Timer clocks until the earliest timeout of a running timer.
+    /// Timer clocks until the earliest timeout of a running timer. The USART needs no wake-up of its own: it only
+    /// moves on timer D's time-outs.
     pub fn next_timeout(&self) -> Option<u64> {
         (0..4)
             .filter_map(|i| self.timers[i].next_timeout(self.aux_active(i)))
             .min()
+    }
+
+    /// The channel requests of USART events (§6.2.1: with the receive error channel disabled an error uses the
+    /// buffer full channel).
+    fn usart_events(&mut self, ev: u8) {
+        if ev & EV_TX_ERROR != 0 {
+            self.request(9);
+        }
+        if ev & EV_TX_EMPTY != 0 {
+            self.request(10);
+        }
+        if ev & EV_RX_ERROR != 0 {
+            self.request(if self.ier & (1 << 11) != 0 { 11 } else { 12 });
+        }
+        if ev & EV_RX_FULL != 0 {
+            self.request(12);
+        }
+    }
+
+    /// Whether the receiver can take a character from the line now.
+    pub fn usart_can_receive(&self) -> bool {
+        self.usart.can_receive()
+    }
+
+    /// A character from the line starts coming into the receiver (see [`Mfp::usart_can_receive`]).
+    pub fn usart_rx_begin(&mut self, byte: u8) {
+        self.usart.rx_begin(byte);
+    }
+
+    /// The oldest character the transmitter has finished, for whatever is on the other end of the line.
+    pub fn usart_take_tx(&mut self) -> Option<u8> {
+        self.usart.take_tx()
     }
 
     /// The IRQ output (active when a channel requests service, §3.3.3, §3.4.3).

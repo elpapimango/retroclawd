@@ -77,6 +77,16 @@ impl Psg {
         }
     }
 
+    /// Port A's level while the chip drives it (R7 sets it to output), else `None`.
+    pub fn port_a_driven(&self) -> Option<u8> {
+        self.ym.io_port_output(0).then(|| self.ym.io_port_latch(0))
+    }
+
+    /// Port B's level while the chip drives it, else `None`: the printer's data lines (*Internals* p.88).
+    pub fn port_b_driven(&self) -> Option<u8> {
+        self.ym.io_port_output(1).then(|| self.ym.io_port_latch(1))
+    }
+
     pub fn chip(&self) -> &Ay3_8910 {
         &self.ym
     }

@@ -79,6 +79,9 @@ impl Peer {
 /// CPU clocks per ACIA clock.
 pub const ACIA_DIVIDER: u64 = 16;
 
+/// [H] *Internals* p.47: the MIDI ACIA's clock is divided by 16 (31 250 baud), 8N1: ten bits a character.
+pub const MIDI_FRAME_CYCLES: u64 = 10 * 16 * ACIA_DIVIDER;
+
 /// One port's state as data. The keyboard port's peer is the IKBD and is saved with it; any other peer (the MIDI
 /// port's, a test's) belongs to the host and is left as it is.
 #[derive(Clone, Debug, Serialize, Deserialize)]

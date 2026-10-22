@@ -264,7 +264,7 @@ fn nothing_after_a_stop_reaches_devices_or_ram() {
     b.write(0xFFFA03, Size::Byte, 0xFF, SUPER).unwrap();
     b.write(0xFF8240, Size::Word, 0xFFFF, SUPER).unwrap();
     b.write(0x1000, Size::Word, 0xFFFF, SUPER).unwrap();
-    assert_eq!(b.mfp().read(1), 0, "AER untouched");
+    assert_eq!(b.mfp().peek(1), 0, "AER untouched");
     assert_eq!(b.shifter().palette()[0], 0, "palette untouched");
     assert_eq!(b.peek(0x1000), 0, "RAM untouched");
     assert!(b.io_log().is_empty(), "{:?}", b.io_log());

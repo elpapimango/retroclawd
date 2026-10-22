@@ -15,6 +15,7 @@ mod mfp_clock;
 mod mmu;
 mod psg;
 mod scheduler;
+pub mod serial;
 pub mod state;
 
 pub use acia::{NullPeer, SerialPeer};
