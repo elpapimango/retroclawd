@@ -1911,6 +1911,21 @@ impl HostedMachine {
         }
     }
 
+    /// Hands a program file to a machine plugin that declares `MediaKind::Program` and runs executables itself (the
+    /// Atari ST builds a boot floppy around a GEMDOS `.PRG`); `name` is the file's own, for the name on that floppy.
+    pub(crate) fn attach_program_file(&mut self, name: &str, bytes: &[u8]) -> Result<(), String> {
+        match self.call_machine(MachineCommand::AttachMedia {
+            slot: MediaSlot::Other("program".to_string()),
+            kind: MediaKind::Program,
+            name: Some(name.to_string()),
+            bytes: bytes.to_vec(),
+            options: Vec::new(),
+        })? {
+            MachineResponse::Ack => Ok(()),
+            other => Err(format!("program attach: unexpected response {other:?}")),
+        }
+    }
+
     /// Hands a program to the machine plugin as `MediaKind::Program` (the
     /// plugin decides how to start it -- e.g. a BASIC program is injected
     /// once the machine has booted) instead of poking it and jumping to it.
