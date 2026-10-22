@@ -17,6 +17,8 @@
 //! Every input is untrusted: sizes are capped, arithmetic is checked, nothing indexes past the data.
 #![forbid(unsafe_code)]
 
+pub mod decode;
+
 use serde::{Deserialize, Serialize};
 
 /// Bytes on one track (one revolution).
@@ -68,6 +70,8 @@ pub enum Error {
     TrackTooLong(u8),
     /// A sector address or length outside the image.
     BadSector,
+    /// A track written by the controller does not decode.
+    Decode(decode::DecodeError),
 }
 
 impl std::fmt::Display for Error {
@@ -92,6 +96,7 @@ impl std::fmt::Display for Error {
                 "{spt} sectors of 512 bytes do not fit on a {TRACK_BYTES}-byte track in the WD1772's format"
             ),
             Error::BadSector => write!(f, "no such sector, or the data is not 512 bytes"),
+            Error::Decode(e) => write!(f, "{e}"),
         }
     }
 }
@@ -216,6 +221,28 @@ impl Image {
         }
         self.data[at..at + SECTOR].copy_from_slice(data);
         Ok(())
+    }
+
+    /// Takes the sectors found on a track the controller wrote (`decode::sectors_from_mfm`) into the image and returns
+    /// how many sectors changed. A sector whose ID names another cylinder or side, a size other than 512 bytes, or a
+    /// record the geometry lacks has nowhere to go and is ignored (a `.st` image cannot change its geometry); a track
+    /// that does not decode changes nothing.
+    pub fn apply_track(&mut self, cyl: u8, side: u8, track: &[u16]) -> Result<usize, Error> {
+        let sectors = decode::sectors_from_mfm(track).map_err(Error::Decode)?;
+        let mut changed = 0;
+        for s in sectors {
+            if s.cylinder != cyl || s.side != side || s.size_code != SIZE_CODE {
+                continue;
+            }
+            let Some(old) = self.sector(cyl, side, s.record) else {
+                continue;
+            };
+            if old != s.data.as_slice() {
+                self.write_sector(cyl, side, s.record, &s.data)?;
+                changed += 1;
+            }
+        }
+        Ok(changed)
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
