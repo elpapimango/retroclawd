@@ -8,8 +8,8 @@ recommended, so the owner can decide (decisions 2 and 3 of the Phase 2 plan, bot
 - **What it is:** a track-level disk image format of the Pasti project, used to keep copy-protected floppies: sector
   and track data with timing information and "fuzzy" bits.
 - **What was found:** nothing here. No document of the format was fetched in this work, so no layout is recorded. The
-  design's risk 4 (spec section 24) is the reason: the format was published by its authors with a restrictive licence
-  statement, and the emulators that read it did so from their own reverse engineering.
+  design (spec section 13 table and section 24 item 4) says it is "documented by reverse engineering only; licence of
+  the format docs to check": that check has not been made.
 - **What it would take:** a licence-clean specification (or a written permission) and sample files whose redistribution is
   allowed; the WD1772 model in `retroclawd-crates` already has the read-address/read-track/write-track behaviour a track
   image needs, so the emulator side is not the obstacle.
