@@ -41,6 +41,8 @@ pub const ROM_BASE: u32 = 0xFC_0000;
 pub const ROM_SIZE: usize = 196_608;
 const RAM_DECODE_END: u32 = 0x40_0000;
 const CARTRIDGE: std::ops::Range<u32> = 0xFA_0000..0xFC_0000;
+/// [H] *Internals* p.96: "Up to 128K in the address space $FA0000 to $FBFFFF can be addressed."
+pub const CARTRIDGE_BYTES: usize = 128 * 1024;
 const IO_BASE: u32 = 0xFF_8000;
 const SUPERVISOR_ONLY_BELOW: u32 = 0x800;
 
@@ -95,6 +97,8 @@ pub struct StBus {
     /// What the MFP's RS-232 line is connected to (nothing, unless the host attached something).
     rs232: Rs232,
     printer: Option<FileSink>,
+    /// The ROM cartridge in the slot, at most [`CARTRIDGE_BYTES`] bytes.
+    cartridge: Option<Vec<u8>>,
     pub(crate) dma: Dma,
     /// A DMA/FDC register was accessed: the controller's events may have moved.
     pub(crate) fdc_dirty: bool,
@@ -142,7 +146,8 @@ enum Region {
     Ram(usize),
     UnfittedRam,
     Rom(usize),
-    Cartridge,
+    /// The offset into the 128 KB cartridge window.
+    Cartridge(usize),
     Io,
     None,
 }
@@ -205,6 +210,7 @@ impl StBus {
             acias,
             rs232: Rs232(Box::new(NullPeer)),
             printer: None,
+            cartridge: None,
             dma: Dma::new(2),
             fdc_dirty: false,
             fdc_irq: false,
@@ -408,7 +414,7 @@ impl StBus {
             let addr = self.dma.address & 0xFF_FFFF;
             match self.region(addr) {
                 Region::Ram(i) if self.stop.is_none() => self.ram[i] = b,
-                Region::Ram(_) | Region::Rom(_) | Region::Cartridge | Region::UnfittedRam => {}
+                Region::Ram(_) | Region::Rom(_) | Region::Cartridge(_) | Region::UnfittedRam => {}
                 Region::Io | Region::None => {
                     if self.stop.is_none() {
                         self.stop = Some(IoStop {
@@ -499,6 +505,29 @@ impl StBus {
         }
     }
 
+    /// Puts a ROM cartridge in the slot, or takes it out (`None`). The image is the user's file: any length up to
+    /// 128 KB is accepted, and TOS decides whether it is a cartridge it runs (*Internals* ROM listing, p.273: the `$ABCDEF42`
+    /// application header it scans for at `$FA0000`).
+    pub fn set_cartridge(&mut self, image: Option<Vec<u8>>) -> Result<(), String> {
+        if let Some(bytes) = &image {
+            if bytes.is_empty() {
+                return Err("the cartridge image is empty".to_string());
+            }
+            if bytes.len() > CARTRIDGE_BYTES {
+                return Err(format!(
+                    "a cartridge is at most {CARTRIDGE_BYTES} bytes (128 KB); this image is {}",
+                    bytes.len()
+                ));
+            }
+        }
+        self.cartridge = image;
+        Ok(())
+    }
+
+    pub fn cartridge(&self) -> Option<&[u8]> {
+        self.cartridge.as_deref()
+    }
+
     /// Connects a printer: its output file takes the bytes strobed out, and BUSY (GPIP I0) reads low. Without a
     /// printer BUSY stays high, as a printer that is off line.
     pub fn attach_printer(&mut self, sink: FileSink) {
@@ -549,7 +578,7 @@ impl StBus {
                 None => Region::UnfittedRam,
             }
         } else if CARTRIDGE.contains(&addr) {
-            Region::Cartridge
+            Region::Cartridge((addr - CARTRIDGE.start) as usize)
         } else if (ROM_BASE..ROM_BASE + ROM_SIZE as u32).contains(&addr) {
             Region::Rom((addr - ROM_BASE) as usize)
         } else if addr >= IO_BASE {
@@ -564,6 +593,7 @@ impl StBus {
         match self.region(addr) {
             Region::Ram(i) => self.ram[i],
             Region::Rom(i) => self.rom[i],
+            Region::Cartridge(i) => self.cartridge_byte(i),
             _ => 0xFF,
         }
     }
@@ -719,10 +749,20 @@ impl StBus {
         Ok(ff)
     }
 
+    /// A byte of the cartridge window: the image, then [H?] `$FF` past its end or with no cartridge (an open bus).
+    fn cartridge_byte(&self, i: usize) -> u8 {
+        self.cartridge
+            .as_ref()
+            .and_then(|c| c.get(i))
+            .copied()
+            .unwrap_or(0xFF)
+    }
+
     fn byte(&self, region: &Region) -> u8 {
         match *region {
             Region::Ram(i) => self.ram[i],
             Region::Rom(i) => self.rom[i],
+            Region::Cartridge(i) => self.cartridge_byte(i),
             _ => 0xFF,
         }
     }
@@ -778,7 +818,10 @@ impl M68kBus for StBus {
                     }
                 }
             },
-            Region::Rom(_) | Region::UnfittedRam | Region::Cartridge => {}
+            // [H] *Internals* p.96: "a write access to these addresses creates a bus error. The GLUE takes care of
+            // this."
+            Region::Cartridge(_) => return Err(BusFault),
+            Region::Rom(_) | Region::UnfittedRam => {}
         }
         Ok(())
     }

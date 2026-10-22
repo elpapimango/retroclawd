@@ -14,14 +14,15 @@ use atari_st::serial::{FileSink, FileSource, LinePeer, MIDI_FRAME_CYCLES};
 use atari_st::{Accuracy, AtariSt, Config, Monitor, RamSize, Region};
 use machine::{AUDIO_SAMPLE_RATE, Machine};
 use plugin_api::{
-    ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, BinaryBlob, ChipSnapshot, CodecError, CpuFamily,
-    CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine, DiskStatus, HostMouseButton,
-    MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest,
-    MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse,
-    MachineInstanceHandle, MachineKeyInfo, MachineMetadata, MachineOptionInfo, MachineOptionKind,
-    MachinePluginVTableV1, MachineProfile, MachineResponse, MediaKind, MediaSlot, MediaSnapshot,
-    NamedValue, PluginDescriptorV1, PluginKind, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RcBuffer,
-    RcCallResult, RcSlice, RcStatus, RegisterField, RegisterSnapshot, StatusCode,
+    ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, BinaryBlob, CartridgeStatus, ChipSnapshot,
+    CodecError, CpuFamily, CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine,
+    DiskStatus, HostMouseButton, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability,
+    MachineCommand, MachineCreateRequest, MachineCreateResponse, MachineInstanceCallRequest,
+    MachineInstanceCallResponse, MachineInstanceHandle, MachineKeyInfo, MachineMetadata,
+    MachineOptionInfo, MachineOptionKind, MachinePluginVTableV1, MachineProfile, MachineResponse,
+    MediaKind, MediaSlot, MediaSnapshot, NamedValue, PluginDescriptorV1, PluginKind,
+    REQUIRED_MACHINE_DEBUG_CAPABILITIES, RcBuffer, RcCallResult, RcSlice, RcStatus, RegisterField,
+    RegisterSnapshot, StatusCode,
 };
 
 const MACHINE_ID: &str = "atari-st";
@@ -282,7 +283,7 @@ fn machine_profile() -> MachineProfile {
             MachineCapability::SaveState,
             MachineCapability::Debug,
         ],
-        media_kinds: vec![MediaKind::Disk],
+        media_kinds: vec![MediaKind::Disk, MediaKind::Cartridge],
         options: vec![
             MachineOptionInfo {
                 required: true,
@@ -391,7 +392,7 @@ fn machine_profile() -> MachineProfile {
                 "Connect MIDI OUT to MIDI IN",
             ),
             option(
-                "printer_out",
+                "centronics_out",
                 MachineOptionKind::Text,
                 None,
                 "Connect a Centronics printer that writes to this new file (without it the printer is off line: BUSY stays set)",
@@ -400,7 +401,7 @@ fn machine_profile() -> MachineProfile {
                 "overwrite_outputs",
                 MachineOptionKind::Bool,
                 Some(DebugValue::Bool(false)),
-                "Let serial_out, midi_out and printer_out replace a file that already exists (otherwise that is an error)",
+                "Let serial_out, midi_out and centronics_out replace a file that already exists (otherwise that is an error)",
             ),
         ],
         key_names: key_names(),
@@ -490,7 +491,7 @@ struct LineOptions {
     midi_out: Option<PathBuf>,
     midi_in: Option<PathBuf>,
     midi_loopback: bool,
-    printer_out: Option<PathBuf>,
+    centronics_out: Option<PathBuf>,
     overwrite: bool,
 }
 
@@ -509,7 +510,7 @@ impl LineOptions {
             "midi_out" => self.midi_out = path(value),
             "midi_in" => self.midi_in = path(value),
             "midi_loopback" => self.midi_loopback = flag(value),
-            "printer_out" => self.printer_out = path(value),
+            "centronics_out" => self.centronics_out = path(value),
             "overwrite_outputs" => self.overwrite = flag(value),
             _ => return false,
         }
@@ -554,7 +555,7 @@ impl LineOptions {
         )? {
             machine.attach_serial_peer(1, Box::new(peer));
         }
-        if let Some(path) = &self.printer_out {
+        if let Some(path) = &self.centronics_out {
             machine.attach_printer(
                 FileSink::create(path, self.overwrite)
                     .map_err(|e| format!("{}: {e}", path.display()))?,
@@ -849,7 +850,11 @@ fn handle_debug_command(
         DebugCommand::GetMediaSnapshot => Ok(DebugResponse::MediaSnapshot(MediaSnapshot {
             tape: None,
             disks: Vec::new(),
-            cartridge: None,
+            cartridge: Some(CartridgeStatus {
+                attached: record.machine.cartridge().is_some(),
+                mapper: None,
+                active_banks: Vec::new(),
+            }),
         })),
         DebugCommand::GetChipSnapshots => Ok(DebugResponse::ChipSnapshots(chip_snapshots(
             &record.machine,
@@ -976,13 +981,28 @@ fn handle_machine_command(
             record.machine.mark_disk_saved(drive);
             Ok(MachineResponse::Ack)
         }
+        MachineCommand::AttachMedia {
+            slot: MediaSlot::Cartridge { slot: 0 },
+            kind: MediaKind::Cartridge,
+            bytes,
+            ..
+        } => {
+            record.machine.set_cartridge(Some(bytes))?;
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::DetachMedia {
+            slot: MediaSlot::Cartridge { slot: 0 },
+        } => {
+            record.machine.set_cartridge(None)?;
+            Ok(MachineResponse::Ack)
+        }
         MachineCommand::AttachMedia { .. }
         | MachineCommand::DetachMedia { .. }
         | MachineCommand::ExportTape { .. }
         | MachineCommand::Freeze
         | MachineCommand::ExportCartridge
         | MachineCommand::ExportPrinter => {
-            Err("unsupported: the atari-st takes floppy disks (.st, .msa) only".to_string())
+            Err("unsupported: the atari-st takes floppy disks (.st, .msa) and one ROM cartridge (.stc, up to 128 KB)".to_string())
         }
         MachineCommand::GetMediaSnapshot => Ok(MachineResponse::MediaSnapshot(MediaSnapshot {
             tape: None,
@@ -997,7 +1017,11 @@ fn handle_machine_command(
                     controller_phase: None,
                 })
                 .collect(),
-            cartridge: None,
+            cartridge: Some(CartridgeStatus {
+                attached: record.machine.cartridge().is_some(),
+                mapper: None,
+                active_banks: Vec::new(),
+            }),
         })),
         MachineCommand::KeyEvent { key, pressed } => {
             if let Some(&(_, port, bit)) = JOYSTICK_KEYS
@@ -1501,7 +1525,7 @@ mod tests {
     fn an_existing_output_file_is_an_error_unless_overwrite_is_asked_for() {
         let path = temp("line-out");
         std::fs::write(&path, b"keep").unwrap();
-        for key in ["serial_out", "midi_out", "printer_out"] {
+        for key in ["serial_out", "midi_out", "centronics_out"] {
             let Err(err) = create_with(vec![text(key, path.to_str().unwrap())]) else {
                 panic!("{key} replaced a file");
             };
@@ -1530,6 +1554,68 @@ mod tests {
             panic!("an unreadable input was accepted");
         };
         assert!(err.contains("no-such-input"), "{err}");
+    }
+
+    #[test]
+    fn a_cartridge_attaches_shows_in_memory_and_detaches() {
+        let id = create(&[0x60FE], Vec::new());
+        let image = vec![0xAB, 0xCD, 0xEF, 0x42, 1, 2, 3, 4];
+        assert!(matches!(
+            command(
+                id,
+                MachineCommand::AttachMedia {
+                    slot: MediaSlot::Cartridge { slot: 0 },
+                    kind: MediaKind::Cartridge,
+                    name: Some("cartridge.stc".to_string()),
+                    bytes: image,
+                    options: Vec::new(),
+                }
+            ),
+            Ok(MachineResponse::Ack)
+        ));
+        let read = |id| match command(
+            id,
+            MachineCommand::Debug(DebugCommand::ReadMemory {
+                address: 0xFA_0000,
+                len: 4,
+                space: None,
+            }),
+        ) {
+            Ok(MachineResponse::Debug(DebugResponse::Memory(bytes))) => bytes,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(read(id), vec![0xAB, 0xCD, 0xEF, 0x42]);
+        let attached = |id| match command(id, MachineCommand::GetMediaSnapshot) {
+            Ok(MachineResponse::MediaSnapshot(m)) => m.cartridge.unwrap().attached,
+            other => panic!("{other:?}"),
+        };
+        assert!(attached(id));
+        assert!(matches!(
+            command(
+                id,
+                MachineCommand::DetachMedia {
+                    slot: MediaSlot::Cartridge { slot: 0 }
+                }
+            ),
+            Ok(MachineResponse::Ack)
+        ));
+        assert_eq!(read(id), vec![0xFF; 4]);
+        assert!(!attached(id));
+        // Too big, and a slot that does not exist, are errors.
+        let big = |slot, len| MachineCommand::AttachMedia {
+            slot: MediaSlot::Cartridge { slot },
+            kind: MediaKind::Cartridge,
+            name: None,
+            bytes: vec![0; len],
+            options: Vec::new(),
+        };
+        assert!(
+            command(id, big(0, 128 * 1024 + 1))
+                .unwrap_err()
+                .contains("128 KB")
+        );
+        assert!(command(id, big(1, 16)).is_err());
+        state().lock().unwrap().instances.remove(&id);
     }
 
     #[test]

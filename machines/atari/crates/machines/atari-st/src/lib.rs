@@ -19,7 +19,9 @@ pub mod serial;
 pub mod state;
 
 pub use acia::{NullPeer, SerialPeer};
-pub use bus::{HBL_LEVEL, IoStop, MFP_LEVEL, ROM_BASE, ROM_SIZE, StBus, StopReason, VBL_LEVEL};
+pub use bus::{
+    CARTRIDGE_BYTES, HBL_LEVEL, IoStop, MFP_LEVEL, ROM_BASE, ROM_SIZE, StBus, StopReason, VBL_LEVEL,
+};
 pub use config::{Accuracy, Config, RamSize, Region};
 pub use dma::Dma;
 pub use drive::{Drives, MEDIA_CHANGE_BYTES, StDrive};

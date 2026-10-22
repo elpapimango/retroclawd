@@ -42,6 +42,10 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | `$FF860F` byte | open: reads `$FF`, no bus error | `[O]` | *Hatari io*: "IO read.b $ffff860f = $ff pc=fc0638" |
 | `$FFFC21`, `$FFFC25`, `$FFFC27`, `$FFFC3B` bytes | open: read `$FF`, writes ignored, no bus error (EmuTOS's Mega ST clock probe) | `[O]` | *Hatari io* lines 5-12 |
 | Any other I/O address | unknown: the machine stops | — | — |
+| Cartridge window | `$FA0000-$FBFFFF`, up to 128 KB, read only | `[H]` | *Internals* p.96 |
+| Write to the cartridge window | bus error (the GLUE) | `[H]` | *Internals* p.96: "a write access to these addresses creates a bus error. The GLUE takes care of this." |
+| Empty cartridge slot, and the window past a shorter image | open bus: bytes read `$FF`, no bus error | `[H?]` | slice 1 choice; the document gives no level |
+| Application header | TOS compares the first long at `$FA0000` with `$ABCDEF42` and runs the application chain from there; the emulator does not check it | `[H]` | *Internals* ROM listing p.273 (`cmp.l #$ABCDEF42,(A0)+`). The `$FA52235F` of the Phase 2 plan was not found in any source read and is not used |
 | `$400000-$4FFFFF` with 4 MB | bus error | `[O]` | *Hatari io* `--memsize 4`: "Bus error reading at address $4fffff" (agrees with slice 1's nonexistent-memory rule) |
 
 ## MMU (`mmu.rs`)

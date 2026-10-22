@@ -514,6 +514,15 @@ impl AtariSt {
         }
     }
 
+    /// Puts a ROM cartridge in the slot (`None` takes it out); see [`StBus::set_cartridge`].
+    pub fn set_cartridge(&mut self, image: Option<Vec<u8>>) -> Result<(), String> {
+        self.bus.set_cartridge(image)
+    }
+
+    pub fn cartridge(&self) -> Option<&[u8]> {
+        self.bus.cartridge()
+    }
+
     /// Connects a Centronics printer whose output goes to `sink`.
     pub fn attach_printer(&mut self, sink: crate::serial::FileSink) {
         self.bus.attach_printer(sink);
