@@ -1,0 +1,22 @@
+[package]
+name = "atari-st-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+atari-st = { path = ".." }
+machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "39dfdcc276719bffd9da53ead351e0d3da14b1bb" }
+
+[[bin]]
+name = "state_decode"
+path = "fuzz_targets/state_decode.rs"
+test = false
+doc = false
+
+# Not part of the atari workspace: `cargo +nightly fuzz run state_decode` from this crate's folder.
+[workspace]

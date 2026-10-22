@@ -105,9 +105,34 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "RawImage")]
 pub struct Image {
     pub geometry: Geometry,
     data: Vec<u8>,
+}
+
+/// An image as it arrives from a serialised state: the same checks as a file's, so a hostile state cannot hold a
+/// geometry that does not match its data.
+#[derive(Deserialize)]
+struct RawImage {
+    geometry: Geometry,
+    data: Vec<u8>,
+}
+
+impl TryFrom<RawImage> for Image {
+    type Error = String;
+
+    fn try_from(raw: RawImage) -> Result<Image, String> {
+        let g = raw.geometry;
+        if g.cylinders == 0
+            || u32::from(g.cylinders) > MAX_CYLINDERS
+            || !(1..=2).contains(&g.sides)
+            || g.sectors == 0
+        {
+            return Err(format!("not a disk geometry: {g}"));
+        }
+        Image::from_geometry(g, raw.data).map_err(|e| e.to_string())
+    }
 }
 
 fn le16(bytes: &[u8], at: usize) -> u32 {

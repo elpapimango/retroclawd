@@ -206,3 +206,46 @@ fn a_payload_that_is_not_a_machine_is_an_error() {
     let _ = Header { ..header };
     let _ = StateError::Truncated;
 }
+
+/// Damaged payloads that still carry a valid envelope (right CRC): a state file edited by hand, or made by a program
+/// that is not this one. Whatever they hold, loading and then running the machine must not panic.
+#[test]
+fn mutated_payloads_never_panic() {
+    let good = machine().save_state();
+    let (header, payload) =
+        state::decode(&good, 0, &state::sha1_of(&rom(&[BRA_SELF], &[]))).unwrap();
+    let mut x = 0xC0FF_EE11u32;
+    let mut rnd = move || {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        x
+    };
+    let (mut loaded, mut refused) = (0, 0);
+    for round in 0..100 {
+        let mut p = payload.to_vec();
+        for _ in 0..1 + round % 6 {
+            // The CPU and scheduler at the front, the devices behind the RAM and the picture at the back.
+            let at = if rnd() % 2 == 0 {
+                rnd() as usize % 4096
+            } else {
+                p.len() - 1 - rnd() as usize % 60_000
+            };
+            p[at] = rnd() as u8;
+        }
+        let bytes = state::encode(&header, &p);
+        let mut m = machine();
+        match m.load_state(&bytes) {
+            Ok(()) => {
+                loaded += 1;
+                for _ in 0..3_000 {
+                    m.step();
+                }
+                let _ = m.save_state();
+            }
+            Err(_) => refused += 1,
+        }
+    }
+    eprintln!("{loaded} loaded, {refused} refused");
+    assert!(loaded + refused == 100);
+}

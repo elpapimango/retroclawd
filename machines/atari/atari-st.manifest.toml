@@ -3,7 +3,7 @@ machine = "atari-st"
 # proprietary. The scenario media come from scenarios/build.sh (software/scenarios/, not committed).
 args = ["--firmware", "auto"]
 
-# S5 (state) is not here: save states are Phase 2. S7 (hardware test programs): none is shipped for the ST. S8 has no
+# S7 (hardware test programs): none is shipped for the ST. S8 has no
 # kind yet. Hatari runs headless as a black box but cannot be given keys, mouse or joystick input there, so the input
 # scenarios (S2, S2J, S2M, S3) have `exact` goldens made by retroclawd. Each was made three times, came out
 # byte-identical, and was looked at; its comment says what it shows.
@@ -90,6 +90,14 @@ frames = 300
 args = ["--org", "0x8000"]
 files = { program = "atari/software/scenarios/tone.bin" }
 audio = { from_s = 1.0, to_s = 5.0, tone_hz = 441.31, tone_tolerance_pct = 1.0, min_amplitude = 0.05 }
+
+# S5: the EmuTOS desktop after 1400 frames: two fresh runs save the same state, and a run that loads that state and
+# goes on for 100 frames ends in the same state as a fresh run of 1500 frames (every device, RAM and the CPU are in it).
+[[scenario]]
+id = "S5"
+kind = "state"
+frames = 1400
+more_frames = 100
 
 # S6: a PAL colour frame is 512 x 313 = 160 256 CPU clocks (hardware-facts.md, timing). The machine runs whole instructions, so
 # a frame ends up to one instruction late: at most 170 clocks, the longest 68000 instruction (MC68000 User's Manual Table 8-7:

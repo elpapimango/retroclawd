@@ -278,6 +278,7 @@ fn machine_profile() -> MachineProfile {
             MachineCapability::Video,
             MachineCapability::Audio,
             MachineCapability::Disk,
+            MachineCapability::SaveState,
             MachineCapability::Debug,
         ],
         media_kinds: vec![MediaKind::Disk],
@@ -515,6 +516,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     })?;
     let mut machine = machine;
     machine.set_drives(drives);
+    machine.set_version_tag(std::str::from_utf8(PLUGIN_VERSION).unwrap_or("dev"));
     for drive in 0..drives {
         machine.set_write_protect(drive, write_protect);
     }
@@ -777,8 +779,20 @@ fn handle_machine_command(
             record.machine.set_pc(address);
             Ok(MachineResponse::Ack)
         }
-        MachineCommand::SaveState | MachineCommand::LoadState { .. } => {
-            Err("unsupported: atari-st save states arrive in Phase 2".to_string())
+        MachineCommand::SaveState => record
+            .machine
+            .save_state_checked()
+            .map(MachineResponse::StateBlob)
+            .map_err(|e| e.to_string()),
+        MachineCommand::LoadState { bytes } => {
+            record
+                .machine
+                .load_state_checked(&bytes)
+                .map_err(|e| e.to_string())?;
+            for note in record.machine.take_state_warnings() {
+                eprintln!("atari-st: {note}");
+            }
+            Ok(MachineResponse::Ack)
         }
         MachineCommand::SaveSnapshot { .. } => {
             Err("unsupported: the atari-st has no snapshot format".to_string())
@@ -1356,6 +1370,42 @@ mod tests {
             )
             .is_err()
         );
+        state().lock().unwrap().instances.remove(&id);
+    }
+
+    #[test]
+    fn a_state_saved_through_the_plugin_loads_back() {
+        let id = create(&write_sector_3_program(), Vec::new());
+        attach_named(id, 0, "disk.st", aa_disk());
+        run_steps(id, 50_000);
+        let Ok(MachineResponse::StateBlob(saved)) = command(id, MachineCommand::SaveState) else {
+            panic!("no state");
+        };
+        assert_eq!(&saved[..4], b"RCST");
+        run_steps(id, 350_000);
+        assert!(
+            export(id, 0, true).is_some(),
+            "the program wrote its sector"
+        );
+        assert!(matches!(
+            command(
+                id,
+                MachineCommand::LoadState {
+                    bytes: saved.clone()
+                }
+            ),
+            Ok(MachineResponse::Ack)
+        ));
+        // The disk is the user's file: it keeps what the guest wrote since the state, and still counts as modified
+        // (so --disk-save does not lose it).
+        assert!(export(id, 0, true).is_some(), "the disk is still modified");
+        run_steps(id, 350_000);
+        assert!(export(id, 0, true).is_some());
+        // A state of another machine is refused with the reason.
+        let mut bad = saved;
+        bad[0] = b'X';
+        let err = command(id, MachineCommand::LoadState { bytes: bad }).unwrap_err();
+        assert!(err.contains("RCST"), "{err}");
         state().lock().unwrap().instances.remove(&id);
     }
 

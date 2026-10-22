@@ -298,9 +298,34 @@ impl Drives {
         s
     }
 
+    /// Whether every field of a drive state is one a drive can be in: it came from a file and indexes arrays.
+    pub(crate) fn check_state(&self) -> Result<(), String> {
+        if self.selected.is_some_and(|n| n >= self.fitted as usize) || self.side > 1 {
+            return Err("the drive state selects a drive or a side that does not exist".into());
+        }
+        for d in &self.drives {
+            if d.cylinder > MAX_CYLINDER || d.pos >= TRACK_BYTES {
+                return Err("the drive state puts the head outside the disk".into());
+            }
+            if let Some((_, side, bytes)) = &d.track
+                && (*side > 1 || bytes.len() != TRACK_BYTES)
+            {
+                return Err("the drive state holds a track that is not one revolution long".into());
+            }
+            if d.track_dirty && d.track.is_none() {
+                return Err("the drive state has a written track it does not hold".into());
+            }
+            if d.track_dirty && d.image.is_none() {
+                return Err("the drive state has a written track but no disk".into());
+            }
+        }
+        Ok(())
+    }
+
     /// The state's drives merged onto the current ones: where the state holds no image, the disk in the drive now
     /// stays (the track cache is rebuilt from it); the write-protect tabs and the drive count are the machine's.
     pub(crate) fn merged_with_state(&mut self, mut state: Drives) -> Result<Drives, String> {
+        state.check_state()?;
         if state.fitted != self.fitted {
             return Err(format!(
                 "the state was made with {} floppy drive{}, this machine has {}",
@@ -311,7 +336,10 @@ impl Drives {
         }
         for (new, cur) in state.drives.iter_mut().zip(self.drives.iter_mut()) {
             if new.image.is_none() {
+                // The disk now in the drive stays the user's, with whatever the guest has written to it since.
+                cur.commit_track();
                 new.image = cur.image.take();
+                new.modified = cur.modified;
                 new.track = None;
             }
             new.write_protected = cur.write_protected;
@@ -402,5 +430,66 @@ impl Floppy for Drives {
                 d.rotate(1);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn image() -> Image {
+        Image::parse(&vec![0x11; 737_280]).unwrap()
+    }
+
+    fn drives() -> Drives {
+        let mut d = Drives::new(2);
+        d.insert(0, image()).unwrap();
+        d
+    }
+
+    #[test]
+    fn a_drive_state_with_a_head_outside_the_disk_is_refused() {
+        let mut cur = drives();
+        let mut s = drives().stripped_for_state();
+        s.drives[0].cylinder = 200;
+        assert!(cur.merged_with_state(s).is_err());
+        let mut s = drives().stripped_for_state();
+        s.drives[1].pos = TRACK_BYTES;
+        assert!(cur.merged_with_state(s).is_err());
+    }
+
+    #[test]
+    fn a_drive_state_selecting_a_drive_that_does_not_exist_is_refused() {
+        let mut cur = drives();
+        let mut s = drives().stripped_for_state();
+        s.selected = Some(5);
+        assert!(cur.merged_with_state(s).is_err());
+        let mut s = drives().stripped_for_state();
+        s.side = 9;
+        assert!(cur.merged_with_state(s).is_err());
+    }
+
+    #[test]
+    fn a_cached_track_of_the_wrong_length_is_refused() {
+        let mut cur = drives();
+        let mut s = drives();
+        s.drives[0].track = Some((0, 0, vec![0; 10]));
+        s.drives[0].track_dirty = true;
+        assert!(cur.merged_with_state(s).is_err());
+        let mut s = drives();
+        s.drives[0].track = None;
+        s.drives[0].track_dirty = true;
+        assert!(
+            cur.merged_with_state(s).is_err(),
+            "a written track it does not hold"
+        );
+    }
+
+    #[test]
+    fn a_good_drive_state_merges_and_keeps_the_disk_in_the_drive() {
+        let mut cur = drives();
+        let s = drives().stripped_for_state();
+        let merged = cur.merged_with_state(s).unwrap();
+        assert!(merged.drive(0).has_disk(), "the user's disk stays");
     }
 }
