@@ -1370,7 +1370,7 @@ impl HostedBackend {
             || lower == "msa"
         {
             self.apply_disk(instance, 0, &lower, bytes)
-        } else if lower == "cpr" || lower == "crt" {
+        } else if lower == "cpr" || lower == "crt" || lower == "stc" {
             self.expect_ack(
                 instance,
                 MachineCommand::AttachMedia {
@@ -2665,6 +2665,25 @@ mod tests {
             error.contains("not a disk image"),
             "went to the disk slot: {error}"
         );
+    }
+
+    #[test]
+    fn stc_extension_is_a_cartridge() {
+        use plugin_api::MachineCreateRequest;
+        let mut machine = super::create_hosted_machine(MachineCreateRequest {
+            machine_id: "stub-machine".to_string(),
+            region: Some("pal".to_string()),
+            roms: Vec::new(),
+            options: Vec::new(),
+        })
+        .expect("the bundled stub machine");
+        let error = machine.apply_media("stc", b"anything", 1).unwrap_err();
+        assert!(
+            error.contains("Cartridge"),
+            "went to the cartridge slot: {error}"
+        );
+        let error = machine.apply_media("xyz", b"anything", 1).unwrap_err();
+        assert!(!error.contains("Cartridge"), "not a cartridge: {error}");
     }
 
     #[test]

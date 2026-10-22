@@ -2590,11 +2590,19 @@ fn main() -> ExitCode {
             }
         };
         let extension = inputs::extension(path);
-        if !matches!(extension.as_str(), "crt" | "cpr") {
-            eprintln!("--cartridge expects a .crt (C64) or .cpr (CPC Plus) file, not .{extension}");
+        // `.img` is the Atari ST's other cartridge extension; it is only taken here, where the flag says what it is.
+        let media_extension = if extension == "img" {
+            "stc"
+        } else {
+            extension.as_str()
+        };
+        if !matches!(media_extension, "crt" | "cpr" | "stc") {
+            eprintln!(
+                "--cartridge expects a .crt (C64), .cpr (CPC Plus) or .stc/.img (Atari ST) file, not .{extension}"
+            );
             return ExitCode::FAILURE;
         }
-        if let Err(e) = machine.apply_media(&extension, &bytes, resolved.tape_speed) {
+        if let Err(e) = machine.apply_media(media_extension, &bytes, resolved.tape_speed) {
             eprintln!("{e}");
             return ExitCode::FAILURE;
         }
