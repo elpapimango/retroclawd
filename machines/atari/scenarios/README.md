@@ -16,6 +16,15 @@ Loaded with `--program tone.bin --org 0x8000`. It writes the YM2149 registers th
 Then it loops (`BRA.S *`). The pitch is `fT = fMaster / (16 TP)` (Yamaha YM2149 catalog, section (1)), with the
 master clock the CPU clock / 4 (`docs/hardware-facts.md`, PSG): 8 021 247 / 4 / (16 × 284) = 441.3 Hz.
 
+## `raster.st` (S10)
+
+A blank disk with a boot program (`rcdisk boot`) that takes the machine over: it installs its own HBL handler at `$68`
+and VBL handler at `$70`, clears 32 000 bytes at `$60000`, points the video base there (`$FF8201`/`$FF8203`) so every
+pixel is colour 0, and idles with `MOVE.W #$2100,SR`. The VBL handler zeroes D0 and D1 and writes palette entry 0
+(`$FF8240`). The HBL handler counts lines in D1 and on every 20th adds `$0111` to D0 (masked with `$0777`) and writes it to
+palette entry 0: bands of 20 lines, each a step lighter. Hatari draws the same bands (see the manifest's comment for the
+measured difference).
+
 ## `serial.bin` (S9S)
 
 Loaded with `--program serial.bin --org 0x8000 --serial-loopback --midi-loopback`. It programs the MFP USART

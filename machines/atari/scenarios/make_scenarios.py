@@ -179,6 +179,44 @@ WRITE_ITEMS = (
 )
 
 
+# raster-boot.bin (S10): installs its own HBL (`$68`) and VBL (`$70`) handlers, clears 32000 bytes at $60000 and points
+# the video base there (so every pixel is colour 0), then idles with the interrupt mask at 1. The VBL handler sets
+# D0 = D1 = 0 and palette entry 0 to black; the HBL handler counts lines in D1 and on every 20th adds $0111 to D0
+# and writes it to palette entry 0 ($FF8240): bands of 20 lines, each a step lighter than the one above.
+RASTER_ITEMS = (
+    [0x46FC, 0x2700,            # MOVE.W #$2700,SR
+     0x41FA, ("D", "hbl"),      # LEA hbl(PC),A0
+     0x21C8, 0x0068,            # MOVE.L A0,$68.W
+     0x41FA, ("D", "vbl"),      # LEA vbl(PC),A0
+     0x21C8, 0x0070,            # MOVE.L A0,$70.W
+     0x41F9, 0x0006, 0x0000,    # LEA $60000.L,A0
+     0x343C, 0x1F3F,            # MOVE.W #7999,D2
+     ("L", "clr"),
+     0x4298,                    # CLR.L (A0)+
+     0x51CA, 0xFFFC]            # DBRA D2,clr
+    + move_b(0x06, 0x8201)      # video base $060000
+    + move_b(0x00, 0x8203)
+    + move_b(0x00, 0x8260)      # low resolution
+    + [0x7000, 0x7200,          # MOVEQ #0,D0 ; MOVEQ #0,D1
+       0x46FC, 0x2100,          # MOVE.W #$2100,SR      interrupt mask 1: HBL (2) and VBL (4) run
+       0x60FE,                  # BRA.S *
+       ("L", "hbl"),
+       0x5241,                  # ADDQ.W #1,D1
+       0xB27C, 0x0014,          # CMP.W #20,D1
+       ("S", 0x6600, "out"),    # BNE.S out
+       0x7200,                  # MOVEQ #0,D1
+       0x0640, 0x0111,          # ADDI.W #$0111,D0
+       0x0240, 0x0777,          # ANDI.W #$0777,D0
+       0x31C0, 0x8240,          # MOVE.W D0,$FF8240.W
+       ("L", "out"),
+       0x4E73,                  # RTE
+       ("L", "vbl"),
+       0x7000, 0x7200,          # MOVEQ #0,D0 ; MOVEQ #0,D1
+       0x31C0, 0x8240,          # MOVE.W D0,$FF8240.W
+       0x4E73]                  # RTE
+)
+
+
 def words(ws):
     return b"".join(struct.pack(">H", w) for w in ws)
 
@@ -192,6 +230,8 @@ def main() -> int:
     write = assemble(WRITE_ITEMS, [("okmsg", text("WRITE OK")), ("failmsg", text("WRITE FAILED"))])
     with open(os.path.join(out, "write-boot.bin"), "wb") as f:
         f.write(write)
+    with open(os.path.join(out, "raster-boot.bin"), "wb") as f:
+        f.write(assemble(RASTER_ITEMS, []))
     return 0
 
 

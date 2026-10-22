@@ -105,6 +105,21 @@ len = 32
 golden = "atari-st/S9S-serial.bin"
 golden_sha256 = "b0c5faa1d0f430113cf62160a35fe13c412f188fe8cc21205a6c2aa2b9c1d81f"
 
+# S10: raster.st's boot program changes palette entry 0 from an HBL handler on every 20th line (scenarios/README.md): bands
+# of 20 lines, each a step lighter than the one above. Hatari 2.6.1 draws the same bands (capture_hatari_screen.py 400 with
+# --disk-a). Measured against it: the band edges are the same rows or one line (2 rows) off (ours at rows 32, 72, ... 272 and
+# then 314, 354, 394, Hatari's at 34, 74, ... 394), and Hatari's palette change lands part way along its line (a strip about
+# 58 pixels wide on the left keeps the old colour) where ours changes the whole line. The crop leaves that strip out and
+# normalize takes Hatari's different grey levels (102 against 109 for the same palette value) out. Measured difference 2.55; the limit is set just above it.
+[[scenario]]
+id = "S10"
+kind = "screen"
+frames = 400
+files = { disk = "atari/software/scenarios/raster.st" }
+golden = "atari-st/S10-raster.png"
+golden_sha256 = "d7e07e77440ce585e893b20ce59594f5e5c5f0ce691934170013f9e21066456a"
+compare = { mode = "similarity", max_mad = 3.0, normalize = true, crop = [0.15, 0.0, 1.0, 1.0], reason = "another emulator's picture: its band edges are up to one line (2 rows of 400) away from ours and its grey levels differ; the measured difference is in this scenario's comment" }
+
 # S5: the EmuTOS desktop after 1400 frames: two fresh runs save the same state, and a run that loads that state and
 # goes on for 100 frames ends in the same state as a fresh run of 1500 frames (every device, RAM and the CPU are in it).
 [[scenario]]

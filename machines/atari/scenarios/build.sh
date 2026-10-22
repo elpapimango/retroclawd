@@ -18,6 +18,10 @@ python "$here/make_scenarios.py" "$out"
 "$tools/rcdisk" create "$out/write.st" --force
 "$tools/rcdisk" boot "$out/write.st" "$out/write-boot.bin"
 
+# raster.st: a blank disk whose boot program changes palette entry 0 in an HBL handler, giving coloured bands (S10).
+"$tools/rcdisk" create "$out/raster.st" --force
+"$tools/rcdisk" boot "$out/raster.st" "$out/raster-boot.bin"
+
 # files.st: two text files to list on the desktop.
 "$tools/rcdisk" create "$out/files.st" --force
 printf 'Hello from rcdisk.\r\n' > "$out/HELLO.TXT"

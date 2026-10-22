@@ -241,7 +241,7 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Fact | Value | Label | Source |
 |---|---|---|---|
 | Palette timing | a palette write takes effect on the raster line it is made on and every line below it, until the next write to that colour; the granularity is one line | `[H?]` | a choice; a change inside a line is Phase 3 (spec section 5) |
-| First picture line | raster line 63 of the 313-line 50 Hz frame, 34 of the 263-line 60 Hz frame (provisional) | `[H?]` | to be measured against the reference emulator's picture by scenario S10 (below) |
+| First picture line | raster line 63 of the 313-line 50 Hz frame, 34 of the 263-line 60 Hz frame | `[O]` (50 Hz) / `[H?]` (60 Hz) | scenario S10: Hatari 2.6.1's first band change from a VBL-reset HBL counter lands on picture line 17 = raster line 80 = 63 + 17; ours lands one line earlier because our VBL handler runs before the HBL of the frame's last line, which then counts for the new frame (the order of the two at the frame boundary has no source); the 60 Hz line was not measured |
 | Palette log | every palette write that changes a colour, with its line, in time order, at most 16 384 a frame; the palette register itself always takes the write | `[H?]` | a bound for memory, not hardware |
 | Sync mode and resolution writes | logged with the raster line and the cycles since the line began, at most 256 a frame (the oldest dropped), shown in the stop report; the picture does not use them and no border opens | `[H?]` | overscan is Phase 3 (spec section 5) |
 
