@@ -44,7 +44,7 @@ dependencies = [
 [[package]]
 name = "ay-3-8910"
 version = "0.1.0"
-source = "git+https://github.com/elpapimango/retroclawd-crates?rev=39dfdcc276719bffd9da53ead351e0d3da14b1bb#39dfdcc276719bffd9da53ead351e0d3da14b1bb"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=fc671b33c050ebf6a8fed5e29aad9cae0d39c0a6#fc671b33c050ebf6a8fed5e29aad9cae0d39c0a6"
 dependencies = [
  "serde",
 ]
@@ -81,7 +81,7 @@ dependencies = [
 [[package]]
 name = "build-info"
 version = "0.1.0"
-source = "git+https://github.com/elpapimango/retroclawd-crates?rev=39dfdcc276719bffd9da53ead351e0d3da14b1bb#39dfdcc276719bffd9da53ead351e0d3da14b1bb"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=fc671b33c050ebf6a8fed5e29aad9cae0d39c0a6#fc671b33c050ebf6a8fed5e29aad9cae0d39c0a6"
 
 [[package]]
 name = "cfg-if"
@@ -153,12 +153,12 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 [[package]]
 name = "machine"
 version = "0.1.0"
-source = "git+https://github.com/elpapimango/retroclawd-crates?rev=39dfdcc276719bffd9da53ead351e0d3da14b1bb#39dfdcc276719bffd9da53ead351e0d3da14b1bb"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=fc671b33c050ebf6a8fed5e29aad9cae0d39c0a6#fc671b33c050ebf6a8fed5e29aad9cae0d39c0a6"
 
 [[package]]
 name = "mc68000"
 version = "0.1.0"
-source = "git+https://github.com/elpapimango/retroclawd-crates?rev=39dfdcc276719bffd9da53ead351e0d3da14b1bb#39dfdcc276719bffd9da53ead351e0d3da14b1bb"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=fc671b33c050ebf6a8fed5e29aad9cae0d39c0a6#fc671b33c050ebf6a8fed5e29aad9cae0d39c0a6"
 dependencies = [
  "serde",
 ]
@@ -166,7 +166,7 @@ dependencies = [
 [[package]]
 name = "mc6850"
 version = "0.1.0"
-source = "git+https://github.com/elpapimango/retroclawd-crates?rev=39dfdcc276719bffd9da53ead351e0d3da14b1bb#39dfdcc276719bffd9da53ead351e0d3da14b1bb"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=fc671b33c050ebf6a8fed5e29aad9cae0d39c0a6#fc671b33c050ebf6a8fed5e29aad9cae0d39c0a6"
 dependencies = [
  "serde",
 ]
@@ -181,7 +181,7 @@ dependencies = [
 [[package]]
 name = "plugin-api"
 version = "0.1.0"
-source = "git+https://github.com/elpapimango/retroclawd-crates?rev=39dfdcc276719bffd9da53ead351e0d3da14b1bb#39dfdcc276719bffd9da53ead351e0d3da14b1bb"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=fc671b33c050ebf6a8fed5e29aad9cae0d39c0a6#fc671b33c050ebf6a8fed5e29aad9cae0d39c0a6"
 dependencies = [
  "bincode",
  "serde",
@@ -306,7 +306,7 @@ checksum = "051eb1abcf10076295e815102942cc58f9d5e3b4560e46e53c21e8ff6f3af7b1"
 [[package]]
 name = "wd1770"
 version = "0.1.0"
-source = "git+https://github.com/elpapimango/retroclawd-crates?rev=39dfdcc276719bffd9da53ead351e0d3da14b1bb#39dfdcc276719bffd9da53ead351e0d3da14b1bb"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=fc671b33c050ebf6a8fed5e29aad9cae0d39c0a6#fc671b33c050ebf6a8fed5e29aad9cae0d39c0a6"
 dependencies = [
  "serde",
 ]
