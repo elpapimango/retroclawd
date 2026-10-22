@@ -103,6 +103,20 @@ golden = "atari-st/S8P-hello.png"
 golden_sha256 = "4d7538b8d3fb45efdece06febad3b1b77e8f5d508a3b1aa09b8ff8a9fe4fd790"
 compare = { mode = "exact" }
 
+# S11: hd.img, made by rcdisk hd (an AHDI root sector, one GEM partition, FAT16, HELLO.TXT), is ACSI target 0. EmuTOS probes the
+# targets (TEST UNIT READY, INQUIRY, READ CAPACITY, READ), shows DISK C, and a double click on its icon (the pointer positions
+# measured on this desktop, as S3 did) lists C:\*.* with HELLO.TXT: "39 bytes used in 1 items" (the file
+# is 39 bytes). Made three times, identical, looked at.
+[[scenario]]
+id = "S11"
+kind = "screen"
+frames = 1420
+files = { acsi0 = "atari/software/scenarios/hd.img" }
+actions = ["1300:mouse_move=-1000,-1000", "1310:mouse_move=195,30", "1320:mouse_down=left", "1321:mouse_up=left", "1323:mouse_down=left", "1324:mouse_up=left"]
+golden = "atari-st/S11-harddisk.png"
+golden_sha256 = "3544dcff368b3b57415a3df27c054fc044c4243eb1f03c975de30efa9794bf2f"
+compare = { mode = "exact" }
+
 # S9S: serial.bin sends SERIAL through the MFP USART (timer D) and MIDI through the MIDI ACIA, each looped back by the
 # host (`--serial-loopback`, `--midi-loopback`), and stores what it reads at $0600 and $0610 (scenarios/README.md). The
 # golden is the 32 bytes made by retroclawd, checked by hand against the program's characters; three runs identical.

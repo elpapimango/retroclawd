@@ -16,6 +16,13 @@ Loaded with `--program tone.bin --org 0x8000`. It writes the YM2149 registers th
 Then it loops (`BRA.S *`). The pitch is `fT = fMaster / (16 TP)` (Yamaha YM2149 catalog, section (1)), with the
 master clock the CPU clock / 4 (`docs/hardware-facts.md`, PSG): 8 021 247 / 4 / (16 × 284) = 441.3 Hz.
 
+## `hd.img` (S11)
+
+`rcdisk hd new hd.img --size 8M` makes an 8 MiB disk with an AHDI root sector and one `GEM` partition formatted FAT16;
+`rcdisk hd add` puts `HELLO.TXT` (39 bytes) in its root directory. The machine takes it as ACSI target 0
+(`--acsi0 hd.img`). EmuTOS probes the targets (TEST UNIT READY, INQUIRY, READ CAPACITY, READ of the root sector), shows
+DISK C, and a double click on its icon lists `C:\*.*` with the file.
+
 ## `hello.s` (S8P)
 
 A GEMDOS program written in 68000 assembly: `pea msg(pc)`, `move.w #9,-(sp)` (Cconws), `trap #1`, `addq.l #6,sp`, then a loop.

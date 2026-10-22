@@ -245,6 +245,27 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Palette log | every palette write that changes a colour, with its line, in time order, at most 16 384 a frame; the palette register itself always takes the write | `[H?]` | a bound for memory, not hardware |
 | Sync mode and resolution writes | logged with the raster line and the cycles since the line began, at most 256 a frame (the oldest dropped), shown in the stop report; the picture does not use them and no border opens | `[H?]` | overscan is Phase 3 (spec section 5) |
 
+## ACSI hard disks (`acsi.rs`, `dma.rs`, `retroclawd-tools` `rcdisk hd`)
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| Command block | 6 bytes written to `$FF8604` with the mode register selecting the command register (bit 3); the first byte with A0 = 0, the rest with A0 = 1; byte 0 = controller number (bits 7-5) and operation code (bits 4-0); bytes 1-3 the block address (21 bits; byte 1 bits 7-5 the device number), byte 4 the block count, byte 5 the control byte | `[H]` | *ACSI application notes* (Atari, 27 September 1985, <https://mirrorservice.org/sites/www.bitsavers.org/pdf/atari/ST/Atari_ST_GEM_Programming_1986/GEM_0942.pdf>, SHA-256 `a027f606fe71b0df5c33f2e86f38f20216a891bb1b4e613bdf3e8bf00e74f9fb`) sections 2-3 |
+| Operation codes of the document | `$00` TEST UNIT READY, `$08` READ, `$0A` WRITE, `$0B` SEEK, `$1A` MODE SENSE | `[H]` | same |
+| Completion status | one byte read at `$FF8604`: `$00` no error, `$04` not ready, `$20` invalid command, `$21` invalid address, `$23` volume overflow, `$24` invalid argument, `$25` invalid device number (the scan of the last two codes is poor) | `[H]` / `[H?]` for `$24`, `$25` | same, "Command Errors" |
+| Handshake | DMA address, toggle the write bit, direction, select the sector count register, load the count (the trigger), select the command register, the select byte with A0 = 0, the others with A0 = 1, the last byte, then the status | `[H]` | same, section 3 |
+| Command byte acknowledge | the controller raises GPIP I5 after every command byte but the last, and the driver waits for it before the next | `[H?]` | the document's "Command Phase" diagram shows the line beside each byte; EmuTOS waits on I5 after the select byte (observed, S11) |
+| Completion | the transfer is made when the last byte arrives, all at once; I5 falls and stays low until the status is read | `[H?]` | the document gives no timing |
+| Sector count | the DMA moves at most sector count x 512 bytes; the count falls by the sectors the transfer covers; a short count limits a READ and refuses a WRITE (nothing is written, DMA error bit) | `[H?]` | the document says the count triggers and bounds the DMA |
+| Transfer outside RAM | refused: nothing moves, the DMA error bit is set (status bit 0 clear, the polarity of `[O]` above) | `[H?]` | the deferred item of slices 3-5 |
+| Block count 0 | 256 blocks | `[H?]` | the SCSI convention; the document is silent |
+| INQUIRY (`$12`), REQUEST SENSE (`$03`), MODE SENSE (`$1A`) data, READ CAPACITY (extended command `$1F`, then a SCSI-2 `$25` block) | SCSI-2 layouts: INQUIRY 36 bytes (direct access, 31 more bytes), sense in fixed format with the key of the last failed command, MODE SENSE a header and one block descriptor, READ CAPACITY the last block and 512 | `[H?]` | not in the 1985 notes; these are what EmuTOS's driver sends (observed, S11) and the SCSI-2 layouts; owner: download the ACSI/SCSI references to settle |
+| Extended command | first byte `$1F` in the operation field, then a 10-byte descriptor (11 bytes in all) | `[H?]` | observed from EmuTOS |
+| Target not there | its select byte is ignored, I5 stays high, a read of the HDC register is the known stop | `[O]` | EmuTOS's probe in Hatari (as before) |
+| Images | a raw image of whole 512-byte blocks, at most 512 MiB; the guest's writes change the copy in memory only | `[H?]` | a choice |
+| Root sector | `hd_siz` Motorola long at `$1C2`, four 12-byte partition headers at `$1C6` (flag: bit 0 exists, bit 7 bootable; id `GEM` < 16 MB, `BGM`, `XGM`; start and size Motorola longs in 512-byte sectors), bad sector list at `$1F6`/`$1FA` | `[H]` | *Atari Compendium* chapter 4 (http://bus-error.nokturnal.pl/atari_compendium/html/chap4.htm, page SHA-256 `36b88a35bf8858582348cc8f31bb75bf216f5302aca95214b04bf5d58ac2fff3`) |
+| Extended partitions | the first sector holds a standard root sector's headers: a partition (start from that sector) and an `XGM` link to the next (start `[H?]` from the first extended partition) | `[H]` / `[H?]` | same |
+| FAT16 | the BPB of a floppy with media `$F8`; 16-bit sector counts, so a partition of 32 MB or more has logical sectors above 512 bytes | `[H]` / `[H?]` | same page and *Internals* pp.178-179 |
+
 ## GEMDOS programs (`st-floppy` `boot.rs`; `retroclawd-tools` `rc-common` `prg.rs`)
 
 | Fact | Value | Label | Source |

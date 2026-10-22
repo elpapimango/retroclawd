@@ -434,8 +434,61 @@ impl StBus {
     }
 
     /// GPIP I5 follows the FDC's INTRQ (active low), at CPU cycle `at`.
+    /// Runs a complete ACSI command and moves its data through the DMA (the whole transfer at once: [H?] the
+    /// document gives no timing). A transfer that would leave RAM is refused with the DMA error bit, and moves
+    /// nothing.
+    fn run_acsi(&mut self, target: u8, cdb: &[u8]) {
+        use crate::acsi::Transfer;
+        let outcome = self.dma.acsi.execute(target, cdb);
+        let mut status = outcome.status;
+        match outcome.transfer {
+            Transfer::None => {}
+            Transfer::ToHost(data) => {
+                let n = data.len().min(self.dma.dma_bytes_left());
+                match self.dma_ram_range(n) {
+                    Some(places) => {
+                        for (place, byte) in places.into_iter().zip(&data) {
+                            self.ram[place] = *byte;
+                        }
+                        self.dma.acsi_moved(n);
+                    }
+                    None => self.dma.set_error(),
+                }
+            }
+            Transfer::FromHost { target, lba, bytes } => {
+                let n = bytes.min(self.dma.dma_bytes_left());
+                match self.dma_ram_range(n) {
+                    Some(places) if n == bytes => {
+                        let data: Vec<u8> = places.into_iter().map(|p| self.ram[p]).collect();
+                        self.dma.acsi_moved(n);
+                        status = self.dma.acsi.finish_write(target, lba, &data);
+                    }
+                    Some(_) => {
+                        // The sector count is short of the blocks the command asked for: nothing is written.
+                        self.dma.set_error();
+                    }
+                    None => self.dma.set_error(),
+                }
+            }
+        }
+        self.dma.acsi.complete(status);
+    }
+
+    /// The RAM offsets of the `n` bytes from the DMA address, or `None` when any of them is outside installed RAM.
+    fn dma_ram_range(&self, n: usize) -> Option<Vec<usize>> {
+        let start = self.dma.address & 0xFF_FFFF;
+        (0..n as u32)
+            .map(|k| {
+                let a = start + k;
+                (a < RAM_DECODE_END)
+                    .then(|| self.mmu.translate(a))
+                    .flatten()
+            })
+            .collect()
+    }
+
     fn update_fdc_irq(&mut self, at: u64) {
-        let irq = self.dma.fdc.intrq();
+        let irq = self.dma.fdc.intrq() || self.dma.acsi.irq();
         if irq != self.fdc_irq {
             self.fdc_irq = irq;
             self.catch_up_mfp(at);
@@ -670,12 +723,27 @@ impl StBus {
                 return Ok(v);
             }
             Decode::Device(Device::Dma)
-                if !(addr == 0xFF_8604 && !write && self.dma.hdc_selected()) =>
+                if !(addr == 0xFF_8604
+                    && !write
+                    && self.dma.hdc_selected()
+                    && !self.dma.acsi.has_status()) =>
             {
                 let now = self.now;
                 self.catch_up_fdc(now);
                 let v = match (addr, write) {
+                    // With the HDC selected a read is the completion status of the last ACSI command.
+                    (0xFF_8604, false) if self.dma.hdc_selected() => {
+                        0xFF00 | self.dma.acsi.take_status().unwrap_or(0xFF) as u32
+                    }
                     (0xFF_8604, false) => self.dma.read_data() as u32,
+                    (0xFF_8604, true) if self.dma.acsi_command_mode() => {
+                        let first = self.dma.acsi_first_byte();
+                        if let Some((target, cdb)) = self.dma.acsi.command_byte(first, value as u8)
+                        {
+                            self.run_acsi(target, &cdb);
+                        }
+                        value
+                    }
                     (0xFF_8604, true) => {
                         self.dma.write_data(value as u16);
                         value

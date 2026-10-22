@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 mod acia;
+pub mod acsi;
 mod bus;
 mod config;
 mod diag;

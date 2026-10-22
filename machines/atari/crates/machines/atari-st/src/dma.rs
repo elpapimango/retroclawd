@@ -18,6 +18,7 @@
 use serde::{Deserialize, Serialize};
 use wd1770::{Wd1770, Wd1770State};
 
+use crate::acsi::{Acsi, AcsiState};
 use crate::drive::Drives;
 
 /// One byte time of the controller, in CPU cycles (32 µs at 8 MHz).
@@ -35,6 +36,8 @@ pub struct Dma {
     pub(crate) fifo: Vec<u8>,
     bytes_in_sector: u16,
     error: bool,
+    /// The ACSI controller behind the HDC select bit.
+    pub(crate) acsi: Acsi,
     /// The generation of the one current controller event.
     pub(crate) generation: u64,
 }
@@ -61,6 +64,7 @@ pub struct DmaState {
     fifo: Vec<u8>,
     bytes_in_sector: u16,
     error: bool,
+    acsi: AcsiState,
     generation: u64,
 }
 
@@ -76,6 +80,7 @@ impl Dma {
             fifo: self.fifo.clone(),
             bytes_in_sector: self.bytes_in_sector,
             error: self.error,
+            acsi: self.acsi.state(),
             generation: self.generation,
         }
     }
@@ -85,6 +90,7 @@ impl Dma {
         if s.fifo.len() > FIFO_BYTES || s.bytes_in_sector >= SECTOR_BYTES {
             return Err("the DMA state is not one this machine can be in".into());
         }
+        self.acsi.restore(s.acsi.clone())?;
         let drives = self.fdc.floppy.merged_with_state(s.drives)?;
         self.fdc.restore_state(s.fdc);
         self.fdc.floppy = drives;
@@ -109,6 +115,7 @@ impl Dma {
             fifo: Vec::with_capacity(FIFO_BYTES),
             bytes_in_sector: 0,
             error: false,
+            acsi: Acsi::new(),
             generation: 0,
         }
     }
@@ -149,15 +156,41 @@ impl Dma {
     }
 
     pub(crate) fn write_data(&mut self, value: u16) {
-        if self.hdc_selected() {
-            return;
-        }
+        // The sector count register is the DMA's own, whichever controller is selected (*ACSI notes* section 3).
         if self.mode & 0x10 != 0 {
             self.sector_count = value & 0xFF;
             self.bytes_in_sector = 0;
-        } else {
+        } else if !self.hdc_selected() {
             self.fdc.write(self.fdc_register(), value as u8);
         }
+    }
+
+    /// Whether `$FF8604` writes are now bytes of an ACSI command: the HDC is selected and the sector count is not.
+    pub(crate) fn acsi_command_mode(&self) -> bool {
+        self.hdc_selected() && self.mode & 0x10 == 0
+    }
+
+    /// A command byte is the first of a command when the mode register's A0 bit is 0 (*ACSI notes* section 3).
+    pub(crate) fn acsi_first_byte(&self) -> bool {
+        self.mode & 0x02 == 0
+    }
+
+    /// The sector count the DMA still has to move, in bytes.
+    pub(crate) fn dma_bytes_left(&self) -> usize {
+        self.sector_count as usize * SECTOR_BYTES as usize
+    }
+
+    /// `bytes` were moved by an ACSI transfer: the sector count falls by the whole or part sectors they fill, and the
+    /// address moves on.
+    pub(crate) fn acsi_moved(&mut self, bytes: usize) {
+        let sectors = bytes.div_ceil(SECTOR_BYTES as usize) as u16;
+        self.sector_count = self.sector_count.saturating_sub(sectors);
+        self.address = (self.address + bytes as u32) & 0xFF_FFFF;
+    }
+
+    /// A DMA error: the status register's bit 0 clears.
+    pub(crate) fn set_error(&mut self) {
+        self.error = true;
     }
 
     pub(crate) fn write_mode(&mut self, value: u16) {

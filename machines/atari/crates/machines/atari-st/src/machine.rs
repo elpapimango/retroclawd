@@ -538,6 +538,31 @@ impl AtariSt {
         }
     }
 
+    /// Puts a raw disk image behind ACSI target `id` (0-7); a guest write changes this copy only.
+    pub fn attach_hard_disk(&mut self, id: u8, image: Vec<u8>) -> Result<(), String> {
+        let disk = crate::acsi::MemoryDisk::from_image(image)?;
+        self.bus.dma.acsi.attach(id, Box::new(disk))
+    }
+
+    pub fn detach_hard_disk(&mut self, id: u8) {
+        self.bus.dma.acsi.detach(id);
+    }
+
+    /// The image behind target `id`, with the guest's writes in it.
+    pub fn hard_disk_image(&self, id: u8) -> Option<&[u8]> {
+        self.bus.dma.acsi.disk(id)?.image()
+    }
+
+    pub fn hard_disk_modified(&self, id: u8) -> bool {
+        self.bus.dma.acsi.disk(id).is_some_and(|d| d.is_modified())
+    }
+
+    pub fn mark_hard_disk_saved(&mut self, id: u8) {
+        if let Some(d) = self.bus.dma.acsi.disk_mut(id) {
+            d.mark_saved();
+        }
+    }
+
     /// Puts a ROM cartridge in the slot (`None` takes it out); see [`StBus::set_cartridge`].
     pub fn set_cartridge(&mut self, image: Option<Vec<u8>>) -> Result<(), String> {
         self.bus.set_cartridge(image)

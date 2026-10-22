@@ -403,7 +403,19 @@ fn machine_profile() -> MachineProfile {
                 Some(DebugValue::Bool(false)),
                 "Let serial_out, midi_out and centronics_out replace a file that already exists (otherwise that is an error)",
             ),
-        ],
+        ]
+        .into_iter()
+        .chain((0..8).map(|n| {
+            option(
+                &format!("acsi{n}"),
+                MachineOptionKind::File,
+                None,
+                &format!(
+                    "A raw hard disk image (a whole number of 512-byte blocks, at most 512 MiB) behind ACSI target {n}: with an AHDI partition, EmuTOS sees it as a drive. The guest's writes change the copy in memory only."
+                ),
+            )
+        }))
+        .collect(),
         key_names: key_names(),
         cpus: vec![CpuInfo {
             id: "main".to_string(),
@@ -588,6 +600,17 @@ fn program_name(name: Option<&str>) -> String {
     format!("{}.{ext}", if stem.is_empty() { "PROG" } else { &stem })
 }
 
+/// `ExportDisk` and `MarkDiskSaved` name the ACSI hard disk behind target `n` as drive `ACSI_DRIVE_BASE + n`.
+const ACSI_DRIVE_BASE: u8 = 8;
+
+/// The target number of a media slot called `acsi0` to `acsi7`.
+fn acsi_target(slot: &str) -> Result<u8, String> {
+    slot.strip_prefix("acsi")
+        .and_then(|n| n.parse::<u8>().ok())
+        .filter(|&n| n < 8)
+        .ok_or_else(|| format!("\"{slot}\" is not an ACSI slot (acsi0 to acsi7)"))
+}
+
 fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, String> {
     if !req.machine_id.eq_ignore_ascii_case(MACHINE_ID) {
         return Err(format!(
@@ -674,6 +697,13 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     })?;
     let mut machine = machine;
     lines.connect(&mut machine)?;
+    for id in 0..8u8 {
+        if let Some(image) = blob(&req.roms, &format!("acsi{id}")) {
+            machine
+                .attach_hard_disk(id, image.to_vec())
+                .map_err(|e| format!("option \"acsi{id}\": {e}"))?;
+        }
+    }
     machine.set_drives(drives);
     machine.set_version_tag(std::str::from_utf8(PLUGIN_VERSION).unwrap_or("dev"));
     for drive in 0..drives {
@@ -988,6 +1018,16 @@ fn handle_machine_command(
             drive,
             only_if_modified,
         } => {
+            if let Some(id) = drive.checked_sub(ACSI_DRIVE_BASE).filter(|&id| id < 8) {
+                // Hard disks are exported by drive number 8 + target.
+                return Ok(MachineResponse::DiskImage(
+                    if only_if_modified && !record.machine.hard_disk_modified(id) {
+                        None
+                    } else {
+                        record.machine.hard_disk_image(id).map(<[u8]>::to_vec)
+                    },
+                ));
+            }
             if drive >= record.machine.drives() {
                 return Err(format!("drive {drive} does not exist"));
             }
@@ -1002,10 +1042,30 @@ fn handle_machine_command(
             ))
         }
         MachineCommand::MarkDiskSaved { drive } => {
+            if let Some(id) = drive.checked_sub(ACSI_DRIVE_BASE).filter(|&id| id < 8) {
+                record.machine.mark_hard_disk_saved(id);
+                return Ok(MachineResponse::Ack);
+            }
             if drive >= record.machine.drives() {
                 return Err(format!("drive {drive} does not exist"));
             }
             record.machine.mark_disk_saved(drive);
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::AttachMedia {
+            slot: MediaSlot::Other(slot),
+            kind: MediaKind::Other(kind),
+            bytes,
+            ..
+        } if kind == "acsi" => {
+            let id = acsi_target(&slot)?;
+            record.machine.attach_hard_disk(id, bytes)?;
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::DetachMedia {
+            slot: MediaSlot::Other(slot),
+        } if slot.starts_with("acsi") => {
+            record.machine.detach_hard_disk(acsi_target(&slot)?);
             Ok(MachineResponse::Ack)
         }
         // A GEMDOS program: the machine gets a floppy built around it (AUTO\NAME.PRG) in drive A, which TOS runs at boot.
@@ -1639,6 +1699,105 @@ mod tests {
         // Not a GEMDOS program, and nothing at all, are refused with the reason.
         assert!(attach(None, vec![1, 2, 3]).unwrap_err().contains("$601A"));
         assert!(attach(None, Vec::new()).is_err());
+        state().lock().unwrap().instances.remove(&id);
+    }
+
+    #[test]
+    fn hard_disks_attach_by_option_and_by_media_and_two_targets_are_independent() {
+        let blob = |key: &str, bytes: Vec<u8>| BinaryBlob {
+            key: key.to_string(),
+            bytes,
+        };
+        // An option with a bad image is an error that names the option.
+        let bad = create_machine(MachineCreateRequest {
+            machine_id: MACHINE_ID.to_string(),
+            region: Some("pal".to_string()),
+            roms: vec![blob("rom", rom(&[0x60FE])), blob("acsi2", vec![0; 1000])],
+            options: Vec::new(),
+        });
+        let Err(e) = bad else {
+            panic!("an image that is not whole blocks was accepted");
+        };
+        assert!(e.contains("acsi2") && e.contains("512"), "{e}");
+        let id = create_machine(MachineCreateRequest {
+            machine_id: MACHINE_ID.to_string(),
+            region: Some("pal".to_string()),
+            roms: vec![blob("rom", rom(&[0x60FE])), blob("acsi0", vec![1; 1024])],
+            options: Vec::new(),
+        })
+        .unwrap()
+        .instance;
+        // Target 1 by media: a different image.
+        assert!(matches!(
+            command(
+                id,
+                MachineCommand::AttachMedia {
+                    slot: MediaSlot::Other("acsi1".to_string()),
+                    kind: MediaKind::Other("acsi".to_string()),
+                    name: None,
+                    bytes: vec![2; 2048],
+                    options: Vec::new(),
+                }
+            ),
+            Ok(MachineResponse::Ack)
+        ));
+        let export = |drive| match command(
+            id,
+            MachineCommand::ExportDisk {
+                drive,
+                only_if_modified: false,
+            },
+        ) {
+            Ok(MachineResponse::DiskImage(i)) => i,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(export(8), Some(vec![1; 1024]));
+        assert_eq!(export(9), Some(vec![2; 2048]));
+        assert_eq!(export(10), None, "no disk behind target 2");
+        // Not modified: nothing to save.
+        let Ok(MachineResponse::DiskImage(none)) = command(
+            id,
+            MachineCommand::ExportDisk {
+                drive: 8,
+                only_if_modified: true,
+            },
+        ) else {
+            panic!();
+        };
+        assert!(none.is_none());
+        // A state saved and loaded with disks attached still works (the disks are the user's, not the state's).
+        let Ok(MachineResponse::StateBlob(saved)) = command(id, MachineCommand::SaveState) else {
+            panic!("no state");
+        };
+        assert!(matches!(
+            command(id, MachineCommand::LoadState { bytes: saved }),
+            Ok(MachineResponse::Ack)
+        ));
+        assert_eq!(export(9), Some(vec![2; 2048]));
+        // Detaching removes it; a slot that is not an ACSI slot is an error.
+        assert!(matches!(
+            command(
+                id,
+                MachineCommand::DetachMedia {
+                    slot: MediaSlot::Other("acsi1".to_string())
+                }
+            ),
+            Ok(MachineResponse::Ack)
+        ));
+        assert_eq!(export(9), None);
+        assert!(
+            command(
+                id,
+                MachineCommand::AttachMedia {
+                    slot: MediaSlot::Other("acsi9".to_string()),
+                    kind: MediaKind::Other("acsi".to_string()),
+                    name: None,
+                    bytes: vec![0; 512],
+                    options: Vec::new(),
+                }
+            )
+            .is_err()
+        );
         state().lock().unwrap().instances.remove(&id);
     }
 
