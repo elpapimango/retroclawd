@@ -299,3 +299,13 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Centronics | data lines are PSG port B; the strobe is PSG port A bit 5, a low pulse; BUSY is GPIP I0, high when the printer cannot take a byte | `[H]` | *Internals* p.59 (port A list, read one position down: the page's column is shifted), pp.88-89, p.61 |
 | Strobe edge | the byte on port B is taken when port A bit 5 falls between two states in which port A is an output | `[H?]` | the document says only that a low pulse marks the data valid; either edge sees the same byte |
 | BUSY | low with a printer connected, high without; no busy time after a byte | `[H?]` | the document gives no timing |
+
+## Timing (Phase 3)
+
+Every row here is `[O]`: observed with a timing probe that runs in Hatari 2.6.1 (a black box) and in retroclawd with
+byte-identical results (`timing-oracle.md`). The row names its probe.
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| Method | probes P01-P20 of the Phase 3 plan; Hatari with `--cpu-exact true --video-timing ws3` (its default wake-up state) | `[O]` | `timing-oracle.md` |
+| Probe harness | a boot floppy loads the body with XBIOS Floprd and jumps to `$90000`; results at `$C000` | `[O]` | P01 (the 16-byte smoke test matches) |

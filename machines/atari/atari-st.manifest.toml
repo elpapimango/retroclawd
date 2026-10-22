@@ -163,3 +163,18 @@ kind = "timing"
 frames = 100
 cycles_per_frame = 160256
 cycles_tolerance = 170
+
+# P01 (Phase 3 timing probes, machines/atari/timing/): the harness smoke test. The probe floppy boots through a shared
+# stub (stub.s), writes 16 bytes at $C000 and loops; the golden is Hatari 2.6.1's dump of the same memory
+# (retroclawd-tools/scripts/capture_hatari_mem.py ... 600 0xC000 16): the same bytes, exactly. Later probes (P02-P20)
+# compare timing the same way; docs/timing-oracle.md.
+[[scenario]]
+id = "P01"
+kind = "memory"
+frames = 600
+files = { disk = "atari/software/scenarios/timing/p01.st" }
+start = 49152
+len = 16
+golden = "atari-st/timing/p01.bin"
+golden_sha256 = "2540ccda0a84c47dd18883dbb4cf499d3f604ac69f9ec15c8fe9949ecba868fd"
+compare = { mode = "exact" }
