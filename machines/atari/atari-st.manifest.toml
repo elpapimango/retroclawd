@@ -164,6 +164,149 @@ frames = 100
 cycles_per_frame = 160256
 cycles_tolerance = 170
 
+# Accurate-mode variants of the Phase 1 and 2 scenarios (the same media, actions and goldens with --accuracy accurate): the machine
+# is the same in both modes, so every picture, sound and result agrees with the fast one (Task 44). Each passed three runs.
+
+# S1A: S1 in accurate mode
+[[scenario]]
+id = "S1A"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 1500
+golden = "atari-st/S1-desktop.png"
+golden_sha256 = "73765474b9c26d5113947d4fd20a61def826fd42ef109b48795752cb8e6126ae"
+compare = { mode = "similarity", max_mad = 2.0, normalize = true, crop = [0.0, 0.0, 0.45, 1.0], reason = "another emulator's picture, and its palette (normalize: Hatari's green is a different shade); the crop is the left part (menu bar, both drive icons, the trash) and leaves out the mouse pointer, which Hatari draws at its own start position" }
+
+# S2A: S2 in accurate mode
+[[scenario]]
+id = "S2A"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 600
+files = { disk = "atari/software/scenarios/keys.st" }
+actions = ["450:key_down=KeyH", "455:key_up=KeyH", "460:key_down=KeyI", "465:key_up=KeyI"]
+golden = "atari-st/S2-keys.png"
+golden_sha256 = "c1ba46e89bec835dc131035f29a396ee9b15a77206b86c3ee219d83ec3864d2c"
+compare = { mode = "exact" }
+
+# S2JA: S2J in accurate mode
+[[scenario]]
+id = "S2JA"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 520
+files = { disk = "atari/software/scenarios/keys.st" }
+actions = ["450:key_down=Joy1Fire1"]
+golden = "atari-st/S2J-joystick.png"
+golden_sha256 = "8158ff4f26d0b25c4e0c618cd9735043871a0e3bc4a8f79659aaa10ae6fc4596"
+compare = { mode = "exact" }
+
+# S2MA: S2M in accurate mode
+[[scenario]]
+id = "S2MA"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 1330
+actions = ["1300:mouse_move=-1000,-1000", "1310:mouse_move=100,60"]
+golden = "atari-st/S2M-mouse.png"
+golden_sha256 = "9b06188f11acc45b7ddd7e054f9a1071a525253dd009d6fd6ed2393564e4a422"
+compare = { mode = "exact" }
+
+# S3A: S3 in accurate mode
+[[scenario]]
+id = "S3A"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 1420
+files = { disk = "atari/software/scenarios/files.st" }
+actions = ["1300:mouse_move=-1000,-1000", "1310:mouse_move=30,20", "1320:mouse_down=left", "1321:mouse_up=left", "1323:mouse_down=left", "1324:mouse_up=left"]
+golden = "atari-st/S3-floppy.png"
+golden_sha256 = "15a7d1a15e50fa85f5d5fc6e704a70182b98d9a2233addd1bc1f0371d92bb8de"
+compare = { mode = "exact" }
+
+# S3WA: S3W in accurate mode
+[[scenario]]
+id = "S3WA"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 400
+files = { disk = "atari/software/scenarios/write.st" }
+golden = "atari-st/S3W-write.png"
+golden_sha256 = "bb9dbcce4e814124187770c4dfefc39c4f9f5091aee91c194fda1d2294048f87"
+compare = { mode = "exact" }
+
+# S4A: S4 in accurate mode
+[[scenario]]
+id = "S4A"
+kind = "audio"
+frames = 300
+args = ["--org", "0x8000", "--accuracy", "accurate"]
+files = { program = "atari/software/scenarios/tone.bin" }
+audio = { from_s = 1.0, to_s = 5.0, tone_hz = 441.31, tone_tolerance_pct = 1.0, min_amplitude = 0.05 }
+
+# S8PA: S8P in accurate mode
+[[scenario]]
+id = "S8PA"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 1200
+files = { program = "atari/software/scenarios/hello.prg" }
+golden = "atari-st/S8P-hello.png"
+golden_sha256 = "4d7538b8d3fb45efdece06febad3b1b77e8f5d508a3b1aa09b8ff8a9fe4fd790"
+compare = { mode = "exact" }
+
+# S11A: S11 in accurate mode
+[[scenario]]
+id = "S11A"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 1420
+files = { acsi0 = "atari/software/scenarios/hd.img" }
+actions = ["1300:mouse_move=-1000,-1000", "1310:mouse_move=195,30", "1320:mouse_down=left", "1321:mouse_up=left", "1323:mouse_down=left", "1324:mouse_up=left"]
+golden = "atari-st/S11-harddisk.png"
+golden_sha256 = "3544dcff368b3b57415a3df27c054fc044c4243eb1f03c975de30efa9794bf2f"
+compare = { mode = "exact" }
+
+# S9SA: S9S in accurate mode
+[[scenario]]
+id = "S9SA"
+kind = "memory"
+frames = 30
+args = ["--org", "0x8000", "--serial-loopback", "--midi-loopback", "--accuracy", "accurate"]
+files = { program = "atari/software/scenarios/serial.bin" }
+start = 1536
+len = 32
+golden = "atari-st/S9S-serial.bin"
+golden_sha256 = "b0c5faa1d0f430113cf62160a35fe13c412f188fe8cc21205a6c2aa2b9c1d81f"
+
+# S10A: S10 in accurate mode
+[[scenario]]
+id = "S10A"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 400
+files = { disk = "atari/software/scenarios/raster.st" }
+golden = "atari-st/S10-raster.png"
+golden_sha256 = "d7e07e77440ce585e893b20ce59594f5e5c5f0ce691934170013f9e21066456a"
+compare = { mode = "similarity", max_mad = 3.0, normalize = true, crop = [0.15, 0.0, 1.0, 1.0], reason = "another emulator's picture: its band edges are up to one line (2 rows of 400) away from ours and its grey levels differ; the measured difference is in this scenario's comment" }
+
+# S5A: S5 in accurate mode
+[[scenario]]
+id = "S5A"
+args = ["--accuracy", "accurate"]
+kind = "state"
+frames = 1400
+more_frames = 100
+
+# S6A: S6 in accurate mode
+[[scenario]]
+id = "S6A"
+args = ["--accuracy", "accurate"]
+kind = "timing"
+frames = 100
+cycles_per_frame = 160256
+cycles_tolerance = 170
+
 # P01 (Phase 3 timing probes, machines/atari/timing/): the harness smoke test. The probe floppy boots through a shared
 # stub (stub.s), writes 16 bytes at $C000 and loops; the golden is Hatari 2.6.1's dump of the same memory
 # (retroclawd-tools/scripts/capture_hatari_mem.py ... 600 0xC000 16): the same bytes, exactly. Later probes (P02-P20)
