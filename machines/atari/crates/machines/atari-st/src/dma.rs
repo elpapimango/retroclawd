@@ -213,12 +213,12 @@ impl Dma {
 
     /// Whether a command is running (the controller's BUSY bit), whatever the data request line says.
     pub(crate) fn command_running(&self) -> bool {
-        self.fdc.peek(0) & 0x01 != 0
+        self.fdc.peek(0) & 0x01 != 0 || self.fdc.command_pending()
     }
 
     /// Whether the controller has anything to do (a command running or a byte waiting).
     pub(crate) fn busy(&self) -> bool {
-        self.fdc.peek(0) & 0x01 != 0 || self.fdc.drq()
+        self.command_running() || self.fdc.drq()
     }
 
     fn writing(&self) -> bool {

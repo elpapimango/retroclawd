@@ -214,6 +214,11 @@ pub struct Drives {
     /// Drives fitted (1 or 2).
     fitted: u8,
     selected: Option<usize>,
+    /// The drive whose index pulses the controller has been counting since it last restarted the count (the drive that was
+    /// selected then): the motor-off countdown follows it, whichever drive is selected later. [O] Hatari 2.6.1 stops the
+    /// motor after commands on a drive with a disk but never after commands on an empty drive (EmuTOS leaves one selected).
+    #[serde(default)]
+    counting: Option<usize>,
     side: u8,
     /// Byte times since power-on (the controller's clock as the drives see it).
     elapsed: u64,
@@ -225,6 +230,7 @@ impl Drives {
             drives: [StDrive::new(), StDrive::new()],
             fitted: fitted.clamp(1, 2),
             selected: None,
+            counting: None,
             side: 0,
             elapsed: 0,
         }
@@ -300,7 +306,10 @@ impl Drives {
 
     /// Whether every field of a drive state is one a drive can be in: it came from a file and indexes arrays.
     pub(crate) fn check_state(&self) -> Result<(), String> {
-        if self.selected.is_some_and(|n| n >= self.fitted as usize) || self.side > 1 {
+        if self.selected.is_some_and(|n| n >= self.fitted as usize)
+            || self.counting.is_some_and(|n| n >= 2)
+            || self.side > 1
+        {
             return Err("the drive state selects a drive or a side that does not exist".into());
         }
         for d in &self.drives {
@@ -359,24 +368,34 @@ impl Drives {
         self.drives.iter().any(StDrive::has_pending_track)
     }
 
+    pub fn debug_pos(&self) -> usize {
+        self.sel().map_or(0, |d| d.pos)
+    }
+
     fn sel(&self) -> Option<&StDrive> {
         self.selected.map(|n| &self.drives[n])
     }
 }
 
 impl Floppy for Drives {
+    fn revolution_bytes(&self) -> u64 {
+        TRACK_BYTES as u64
+    }
+
     fn index(&self) -> bool {
         self.sel().is_some_and(Floppy::index)
     }
 
     fn index_count(&self) -> u32 {
-        self.sel().map_or(0, Floppy::index_count)
+        self.counting
+            .map_or(0, |n| Floppy::index_count(&self.drives[n]))
     }
 
     fn index_count_reset(&mut self) {
         for d in &mut self.drives {
             d.index_count_reset();
         }
+        self.counting = self.selected;
     }
 
     fn rotate(&mut self, bytes: u64) {

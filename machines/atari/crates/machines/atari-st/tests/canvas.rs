@@ -66,7 +66,7 @@ fn the_desktop_is_inside_the_borders_on_the_canvas() {
         return;
     };
     let mut m = machine(&rom, Accuracy::Accurate, true);
-    run_to_vbl(&mut m, 700);
+    run_to_vbl(&mut m, 1500);
     let (w, _, rgb) = m.render_frame().unwrap();
     let px = |x: u32, y: u32| {
         let i = ((y * w + x) * 3) as usize;

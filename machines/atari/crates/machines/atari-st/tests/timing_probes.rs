@@ -1067,3 +1067,195 @@ fn p22_an_acsi_command_is_done_at_once_as_in_hatari() {
         vec![0x20000, 0x20200, 0x21000, 0x24000]
     );
 }
+
+/// P23: twelve longs: TOS's 200 Hz counter and frame counter at the body's start and after a counted loop, then eight more
+/// 200 Hz counters.
+fn p23_values(b: &[u8]) -> Vec<u32> {
+    b[4..52]
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_be_bytes(*c))
+        .collect()
+}
+
+#[test]
+#[ignore = "report"]
+fn p23_report() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p23", 600, 52, Accuracy::Accurate),
+        golden_bytes("p23"),
+    ) else {
+        return;
+    };
+    println!("ours   {:?}", p23_values(&ours));
+    println!("theirs {:?}", p23_values(&theirs));
+}
+
+/// P24: twelve longs, the summed waits of eight single-sector reads for twelve pauses between them.
+fn p24_values(b: &[u8]) -> Vec<u32> {
+    b[4..52]
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_be_bytes(*c))
+        .collect()
+}
+
+#[test]
+#[ignore = "report"]
+fn p24_report() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p24", 2500, 52, Accuracy::Accurate),
+        golden_bytes("p24"),
+    ) else {
+        return;
+    };
+    println!("ours   {:?}", p24_values(&ours));
+    println!("theirs {:?}", p24_values(&theirs));
+}
+
+#[test]
+#[ignore = "report"]
+fn p25_report() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p25", 1500, 132, Accuracy::Accurate),
+        golden_bytes("p25"),
+    ) else {
+        return;
+    };
+    let pairs = |b: &[u8]| -> Vec<(u32, u32)> {
+        b[4..]
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|c| {
+                (
+                    u32::from_be_bytes([c[0], c[1], c[2], c[3]]),
+                    u32::from_be_bytes([c[4], c[5], c[6], c[7]]),
+                )
+            })
+            .collect()
+    };
+    println!("ours   {:X?}", pairs(&ours));
+    println!("theirs {:X?}", pairs(&theirs));
+}
+
+/// P26: five (loops to the interrupt request of a Read Address after an idle time, status) pairs of longs: idle times 0.25,
+/// 1.25, 2.5, 2.5 and 5 seconds.
+fn p26_pairs(b: &[u8]) -> Vec<(u32, u32)> {
+    b[4..44]
+        .chunks(8)
+        .map(|c| {
+            (
+                u32::from_be_bytes([c[0], c[1], c[2], c[3]]),
+                u32::from_be_bytes([c[4], c[5], c[6], c[7]]),
+            )
+        })
+        .collect()
+}
+
+#[test]
+#[ignore = "report"]
+fn p26_report() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p26", 3000, 44, Accuracy::Accurate),
+        golden_bytes("p26"),
+    ) else {
+        return;
+    };
+    println!("ours   {:?}", p26_pairs(&ours));
+    println!("theirs {:?}", p26_pairs(&theirs));
+}
+
+#[test]
+fn p24_consecutive_sector_reads_catch_the_next_header_as_in_hatari() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p24", 2500, 52, Accuracy::Accurate),
+        golden_bytes("p24"),
+    ) else {
+        return;
+    };
+    let (o, t) = (p24_values(&ours), p24_values(&theirs));
+    // The summed waits of eight reads, about 33 000 runs, for twelve pauses: a header missed would add a revolution
+    // (36 000 runs); the interrupt request has to come when the sector ends, not when the frame does.
+    for (i, (a, b)) in o.iter().zip(&t).enumerate() {
+        assert!(a.abs_diff(*b) <= 150, "pause {i}: ours {o:?} theirs {t:?}");
+    }
+}
+
+#[test]
+fn p23_the_floppy_boot_takes_as_long_as_in_hatari() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p23", 600, 52, Accuracy::Accurate),
+        golden_bytes("p23"),
+    ) else {
+        return;
+    };
+    let (o, t) = (p23_values(&ours), p23_values(&theirs));
+    // TOS's 200 Hz counter when the body starts: within 60 ticks (0.3 s: the revolution phase of the sector reads).
+    assert!(
+        o[0].abs_diff(t[0]) <= 60,
+        "body start: ours {o:?} theirs {t:?}"
+    );
+    // The counted loops after it take the same ticks: 100 000 runs, then 10 000 runs eight times.
+    assert!(
+        (o[2] - o[0]).abs_diff(t[2] - t[0]) <= 2,
+        "loop: ours {o:?} theirs {t:?}"
+    );
+    for i in 5..12 {
+        assert!(
+            (o[i] - o[i - 1]).abs_diff(t[i] - t[i - 1]) <= 1,
+            "step {i}: ours {o:?} theirs {t:?}"
+        );
+    }
+}
+
+#[test]
+fn p26_the_motor_spins_up_for_six_revolutions_after_a_long_idle_as_in_hatari() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p26", 3000, 44, Accuracy::Accurate),
+        golden_bytes("p26"),
+    ) else {
+        return;
+    };
+    let (o, t) = (p26_pairs(&ours), p26_pairs(&theirs));
+    for i in 0..2 {
+        assert!(o[i].0 < 40_000, "no spin-up after a short idle: {o:?}");
+    }
+    for i in 2..5 {
+        assert!(
+            o[i].0.abs_diff(t[i].0) <= t[i].0 / 60,
+            "idle case {i}: ours {o:?} theirs {t:?}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "report"]
+fn boot_transitions_report() {
+    let Some(rom) = emutos() else {
+        return;
+    };
+    let mut cfg = config(rom, RamSize::M1);
+    cfg.accuracy = Accuracy::Accurate;
+    let mut m = AtariSt::new(cfg).unwrap();
+    let mut last = 0u64;
+    let mut frame = 0;
+    while m.io_stop().is_none() && m.vbl_count() < 1000 {
+        m.step();
+        if m.vbl_count() != frame {
+            frame = m.vbl_count();
+            if frame % 5 == 0 {
+                let rgb = m.render_frame().unwrap().2;
+                let h = rgb.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &b| {
+                    (h ^ b as u64).wrapping_mul(0x100_0000_01b3)
+                });
+                if h != last {
+                    println!("frame {frame}: picture changed ({h:016x})");
+                    last = h;
+                }
+            }
+        }
+    }
+}

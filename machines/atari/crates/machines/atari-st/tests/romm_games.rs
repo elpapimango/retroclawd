@@ -7,7 +7,7 @@ mod common;
 
 use std::path::PathBuf;
 
-use atari_st::{AtariSt, RamSize};
+use atari_st::{Accuracy, AtariSt, RamSize};
 use machine::Machine;
 use st_floppy::Image;
 
@@ -45,7 +45,14 @@ fn fnv(bytes: &[u8]) -> u64 {
 
 /// A machine with EmuTOS and `disk` in drive A, run for `FRAMES` frames; its frame hash and whether it stopped.
 fn run(rom: &[u8], disk: Option<&[u8]>) -> (AtariSt, u64) {
-    let mut m = AtariSt::new(common::config(rom.to_vec(), RamSize::M1)).unwrap();
+    run_in(rom, disk, Accuracy::Fast)
+}
+
+/// `run` in the given mode.
+fn run_in(rom: &[u8], disk: Option<&[u8]>, accuracy: Accuracy) -> (AtariSt, u64) {
+    let mut cfg = common::config(rom.to_vec(), RamSize::M1);
+    cfg.accuracy = accuracy;
+    let mut m = AtariSt::new(cfg).unwrap();
     if let Some(bytes) = disk {
         m.insert_disk(0, Image::parse(bytes).expect("the image parses"))
             .unwrap();
@@ -105,6 +112,40 @@ fn games_are_not_modified_by_reading() {
     let Some(rom) = common::emutos() else { return };
     for (name, bytes) in games() {
         let (mut m, _) = run(&rom, Some(&bytes));
+        m.commit_disks();
+        assert!(
+            !m.disk_modified(0),
+            "{name}: reading marked the disk modified"
+        );
+        assert_eq!(
+            m.disk(0).unwrap().to_bytes(),
+            bytes,
+            "{name}: the image is unchanged"
+        );
+    }
+}
+
+/// The same games in `accurate` mode (the machine follows every bus cycle): no stop, and the same frame on two runs.
+#[test]
+fn every_game_boots_without_a_stop_in_accurate_mode_and_gives_the_same_frame_on_two_runs() {
+    let Some(rom) = common::emutos() else { return };
+    for (name, bytes) in games() {
+        let (m1, h1) = run_in(&rom, Some(&bytes), Accuracy::Accurate);
+        assert!(m1.io_stop().is_none(), "{name}: {:?}", m1.io_stop());
+        let (m2, h2) = run_in(&rom, Some(&bytes), Accuracy::Accurate);
+        assert!(m2.io_stop().is_none(), "{name}: {:?}", m2.io_stop());
+        assert_eq!(h1, h2, "{name}: two accurate runs give the same frame");
+        assert_eq!(m1.now(), m2.now(), "{name}: and the same time");
+        eprintln!("{name}: accurate frame hash {h1:016x}");
+    }
+}
+
+/// Reading a game in `accurate` mode does not modify it either.
+#[test]
+fn games_are_not_modified_by_reading_in_accurate_mode() {
+    let Some(rom) = common::emutos() else { return };
+    for (name, bytes) in games() {
+        let (mut m, _) = run_in(&rom, Some(&bytes), Accuracy::Accurate);
         m.commit_disks();
         assert!(
             !m.disk_modified(0),

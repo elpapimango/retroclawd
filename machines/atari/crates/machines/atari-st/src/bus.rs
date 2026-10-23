@@ -539,6 +539,14 @@ impl StBus {
     fn update_fdc_irq(&mut self, at: u64) {
         let irq = self.dma.fdc.intrq() || self.dma.acsi.irq();
         if irq != self.fdc_irq {
+            if std::env::var_os("RC_FDC_TRACE").is_some() {
+                eprintln!(
+                    "FDC irq {irq} seen at {} (call at {at}) fdc_at {} pos {}",
+                    self.now,
+                    self.dma.fdc_at,
+                    self.dma.fdc.floppy.debug_pos()
+                );
+            }
             self.fdc_irq = irq;
             self.catch_up_mfp(at);
             self.mfp.set_input(5, !irq);
@@ -801,6 +809,15 @@ impl StBus {
                         value
                     }
                     (0xFF_8604, true) => {
+                        if std::env::var_os("RC_FDC_TRACE").is_some() && self.dma.mode() == 0x80 {
+                            eprintln!(
+                                "FDC cmd {:02X} at {} fdc_at {} pos {}",
+                                value,
+                                self.now,
+                                self.dma.fdc_at,
+                                self.dma.fdc.floppy.debug_pos()
+                            );
+                        }
                         self.dma.write_data(value as u16);
                         value
                     }
