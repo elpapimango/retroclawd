@@ -14,6 +14,11 @@ pub struct MfpClock {
     /// MFP ticks per CPU clock = `num / den` = 4 × MFP_HZ / crystal.
     num: u64,
     den: u64,
+    /// Ticks are counted from CPU clock `origin`, `base` of them done by then (0 and 0 until a timer is started in
+    /// `accurate` mode: a timer's prescaler then starts at the clock of the control-register write, as Hatari's does,
+    /// not at the next tick of a clock that has run since power-on).
+    origin: u64,
+    base: u64,
 }
 
 impl MfpClock {
@@ -21,16 +26,28 @@ impl MfpClock {
         Self {
             num: 4 * MFP_HZ,
             den: crystal_hz as u64,
+            origin: 0,
+            base: 0,
         }
     }
 
     /// MFP ticks completed by CPU clock `cycle`.
     pub fn ticks_at(&self, cycle: u64) -> u64 {
-        (cycle as u128 * self.num as u128 / self.den as u128) as u64
+        self.base
+            + ((cycle.saturating_sub(self.origin)) as u128 * self.num as u128 / self.den as u128)
+                as u64
     }
 
     /// The first CPU clock by which `tick` MFP ticks have completed.
     pub fn cycle_for(&self, tick: u64) -> u64 {
-        (tick as u128 * self.den as u128).div_ceil(self.num as u128) as u64
+        self.origin
+            + (tick.saturating_sub(self.base) as u128 * self.den as u128).div_ceil(self.num as u128)
+                as u64
+    }
+
+    /// Counts ticks from CPU clock `cycle` on, `done` of them having been counted by then.
+    pub fn restart_at(&mut self, cycle: u64, done: u64) {
+        self.origin = cycle;
+        self.base = done;
     }
 }

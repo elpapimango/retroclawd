@@ -722,6 +722,10 @@ impl StBus {
                 let v = if write {
                     self.mfp.write(reg, value as u8);
                     self.mfp_dirty = true;
+                    // The timer control registers (A, B, C and D): the prescaler starts at this clock.
+                    if self.accurate && matches!(reg, 12..=14) {
+                        self.clock.restart_at(self.now, self.mfp_ticks);
+                    }
                     value
                 } else {
                     self.mfp.read(reg) as u32
@@ -883,7 +887,7 @@ impl M68kBus for StBus {
             return self.read_cycle(addr, size, fc);
         }
         let wait = self.wait_clocks(addr, size);
-        let start = self.begin_cycle(wait);
+        let start = self.begin_cycle(wait, false);
         let result = self.read_cycle(addr, size, fc);
         self.end_cycle(start, 0);
         result
@@ -900,7 +904,7 @@ impl M68kBus for StBus {
             return self.write_cycle(addr, size, value, fc);
         }
         let wait = self.wait_clocks(addr, size);
-        let start = self.begin_cycle(wait);
+        let start = self.begin_cycle(wait, true);
         let result = self.write_cycle(addr, size, value, fc);
         self.end_cycle(start, 0);
         result

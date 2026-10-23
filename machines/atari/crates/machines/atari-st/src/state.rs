@@ -20,7 +20,7 @@ use sha1::{Digest, Sha1};
 
 pub const MAGIC: &[u8; 4] = b"RCST";
 /// The envelope and payload layout. Older schemas would migrate by an explicit chain; there is only this one.
-pub const SCHEMA: u16 = 1;
+pub const SCHEMA: u16 = 2;
 /// The `mc68000` crate's saved state layout (its `Cpu` as serialised); bump it with that type.
 pub const CPU_STATE_VERSION: u16 = 1;
 pub const MACHINE_ID: &str = "atari-st";
@@ -34,6 +34,7 @@ pub enum StateError {
     BadMagic,
     WrongMachine(String),
     NewerSchema(u16),
+    OlderSchema(u16),
     CpuVersion {
         saved: u16,
         this: u16,
@@ -76,6 +77,10 @@ impl std::fmt::Display for StateError {
             StateError::NewerSchema(v) => write!(
                 f,
                 "this save state has schema version {v}; this build reads up to {SCHEMA}"
+            ),
+            StateError::OlderSchema(v) => write!(
+                f,
+                "this save state has schema version {v}, which this build no longer reads (it needs {SCHEMA});                  save a new one"
             ),
             StateError::CpuVersion { saved, this } => write!(
                 f,
@@ -248,6 +253,9 @@ pub fn decode<'a>(
     let schema = r.u16()?;
     if schema > SCHEMA {
         return Err(StateError::NewerSchema(schema));
+    }
+    if schema < SCHEMA {
+        return Err(StateError::OlderSchema(schema));
     }
     let id = r.string()?;
     if id != MACHINE_ID {

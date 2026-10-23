@@ -294,3 +294,60 @@ fn p04_report() {
     }
     println!("SCORE equal 0 abs_diff {total} mean_score {total}");
 }
+
+/// P06: the MFP timer A data register against the time since the control register started the timer, for four
+/// prescalers (/4, /10, /50, /200) and 64 starting points each.
+/// All 256 reads of the timer are within one count of Hatari's and all but a few are equal (manifest P06, known gap).
+#[test]
+fn p06_mfp_timer_agrees_with_hatari() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p06", 700, 4 + 4 * 64, Accuracy::Accurate),
+        golden_bytes("p06"),
+    ) else {
+        return;
+    };
+    let diffs: Vec<i32> = ours[4..]
+        .iter()
+        .zip(&theirs[4..])
+        .map(|(a, b)| *a as i32 - *b as i32)
+        .collect();
+    assert!(diffs.iter().all(|d| d.abs() <= 1), "{diffs:?}");
+    assert!(diffs.iter().filter(|d| **d != 0).count() <= 4, "{diffs:?}");
+}
+
+#[test]
+#[ignore]
+fn p06_report() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p06", 700, 4 + 4 * 64, Accuracy::Accurate),
+        golden_bytes("p06"),
+    ) else {
+        return;
+    };
+    for m in 0..4 {
+        let a = &ours[4 + m * 64..4 + (m + 1) * 64];
+        let b = &theirs[4 + m * 64..4 + (m + 1) * 64];
+        println!("mode {m} ours   {a:?}");
+        println!("mode {m} theirs {b:?}");
+    }
+}
+
+#[test]
+#[ignore]
+fn p06_score() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p06", 700, 4 + 4 * 64, Accuracy::Accurate),
+        golden_bytes("p06"),
+    ) else {
+        return;
+    };
+    let d: u64 = ours[4..]
+        .iter()
+        .zip(&theirs[4..])
+        .map(|(a, b)| (*a as i64 - *b as i64).unsigned_abs())
+        .sum();
+    let eq = (0..4)
+        .filter(|m| ours[4 + m * 64..4 + (m + 1) * 64] == theirs[4 + m * 64..4 + (m + 1) * 64])
+        .count();
+    println!("SCORE equal {eq} abs_diff {d}");
+}

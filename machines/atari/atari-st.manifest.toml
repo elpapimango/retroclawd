@@ -213,3 +213,19 @@ golden_sha256 = "ae3e92a52a27f7067920a32e2fcbfd9af867f5a8466107466a978c605392773
 compare = { mode = "exact" }
 status = "known-gap"
 gap = { reason = "inside the picture Hatari's counter differs from ours by one word on about half of the samples: the reads of the three counter bytes take clock-exact slots that the model of the wait states does not reproduce, and the interrupt that starts the sample is placed to a few clocks only", evidence = "sum of the absolute differences 94 bytes over 128 samples a line (RC_SHOW=1 cargo test --release -p atari-st --test timing_probes p04_report -- --ignored --nocapture)" }
+
+# P06: the MFP timer A data register against the time since the control register started the timer (timing/p06_mfp_timer.s): four
+# prescalers, 64 starting points each. Hatari's dump is the golden: all but two reads equal, two off by one.
+[[scenario]]
+id = "P06"
+kind = "memory"
+frames = 700
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p06.st" }
+start = 49152
+len = 260
+golden = "atari-st/timing/p06.bin"
+golden_sha256 = "3cc16ecb34395c87a8d14b1202d225e722086aa9822f4c6c231a50482378c68d"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "two of the 256 timer reads differ from Hatari's by one count: the timer's first count after the control write is placed to the clock in Hatari and to the nearest MFP tick here", evidence = "ours-minus-theirs over the 256 reads has two entries of 1 and none else (cargo test --release -p atari-st --test timing_probes p06_report -- --ignored --nocapture)" }

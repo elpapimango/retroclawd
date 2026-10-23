@@ -46,18 +46,19 @@ fn timer_value(early: usize, pad: usize, accuracy: Accuracy) -> u8 {
 #[test]
 fn a_device_is_caught_up_to_the_cycle_of_the_access() {
     // The MFP data register is written 8 clocks into its instruction and the control register after 8 clocks of the next
-    // one; the counter is read 4 clocks into its own (each fetches its address words first), and an access to the MFP
-    // waits 4 clocks more (waits.rs), which also lengthens the instructions that make one. `fast` mode sees every
-    // access at the start of its instruction. A `fast` program with 4 NOPs more before the control write puts the
-    // control write and the read at the same absolute clocks, so the counts agree for every starting point.
+    // one; the counter is read 4 clocks into its own (each fetches its address words first), an access to the MFP waits 4
+    // clocks more (waits.rs), which also lengthens the instructions that make one, and the device sees the write at the
+    // 4th clock of the cycle and the read at its end (scheduler.rs). `fast` mode sees every access at the start of its
+    // instruction. A `fast` program with 4 NOPs more before the control write puts the two accesses within a clock of the
+    // same absolute clocks, so the counts agree to within one for every starting point.
     let mut differs = false;
     for pad in 0..60 {
         let accurate = timer_value(0, pad, Accuracy::Accurate);
         let fast_shifted = timer_value(4, pad, Accuracy::Fast);
         let fast_here = timer_value(0, pad, Accuracy::Fast);
-        assert_eq!(
-            accurate, fast_shifted,
-            "pad {pad}: the same absolute clocks give the same count"
+        assert!(
+            (accurate as i32 - fast_shifted as i32).abs() <= 1,
+            "pad {pad}: {accurate} here, {fast_shifted} in fast mode at the same clocks"
         );
         differs |= accurate != fast_here;
     }
