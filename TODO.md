@@ -106,7 +106,12 @@ No real hardware is available, so these stay parked until someone has it; everyt
   entities; gilrs itself was never exercised. To check: a physical pad, bind `reset = ["f12", "pad:select+start"]`, hold Select then
   press Start, and confirm Select alone does not reach the machine as a joystick button once it is part of a chord.
 
-## Atari ST: Phase 3 done, Phase 4 next (2026-10-23)
+## Atari ST: Phase 4 done except the items below (2026-10-23)
+
+Phase 4 (spec Status 2026-10-23): the Blitter, the STE (Shifter, DMA sound, ports), the Mega ST clock, watchpoints, fuzz runs, ACSI `--disk-save`.
+Open: second attempts at 13 `known-gap` probes (P02 P04 P06 P09 P10 P12 P14 P16 P17 P18 P20 P21 P22) and P35 (mid-line resolution picture); scenarios S17 (4096 colours), S18 (DMA tone), S19 (blitted picture); USART break/parity/frame error flags; an ACSI save action beside the exit save; the RomM games on the new models; the real RP5C15 and LMC1992 data sheets (their `[H?]` rows); Hatari's other wake-up states.
+
+### Atari ST: Phase 3 done (kept for the record, 2026-10-23)
 
 Phases 1 to 3 are done (spec section 24, Status 2026-10-21, 2026-10-22 and 2026-10-23). Phase 3 gave `--accuracy accurate` (every bus
 cycle, wait states, cycle-exact Shifter with borders and mid-line palette, exact MFP/ACIA/IKBD/DMA/FDC timing, the mono monitor, the
