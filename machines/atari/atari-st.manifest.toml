@@ -178,3 +178,21 @@ len = 16
 golden = "atari-st/timing/p01.bin"
 golden_sha256 = "2540ccda0a84c47dd18883dbb4cf499d3f604ac69f9ec15c8fe9949ecba868fd"
 compare = { mode = "exact" }
+
+# P02: how long 48 instruction forms take on the ST, wait states included (timing/gen_p02.py). One frame a form: a loop of
+# four copies runs while the HBL handler stores, for the first 64 lines after the VBL, how many times it ran since the last
+# HBL. Hatari's dump is the golden. The mean counts agree to 0.035 (tests/timing_probes.rs, p02_instruction_timing_agrees_
+# with_hatari_on_the_mean) but the sequences do not: see the gap.
+[[scenario]]
+id = "P02"
+kind = "memory"
+frames = 1200
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p02.st" }
+start = 49152
+len = 6148
+golden = "atari-st/timing/p02.bin"
+golden_sha256 = "2f315d8f18747534c24e87838d03ae1732f6c7eb9cbc0204ed3532d1fe76c3b3"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the line-by-line counts differ from Hatari's by one run on about a third of the lines: where inside an instruction an interrupt is taken, and the clocks of its acknowledge, are modelled to the nearest few clocks only", evidence = "per-variant mean difference at most 0.035 runs a line (2 runs in 58); the exact sequences differ (RC_SHOW=<variant> cargo test --release -p atari-st --test timing_probes p02_report -- --ignored --nocapture); model fitted in a small simulation: the 4 and 12-clock loops fit exactly, the 8-clock ones to within 4 runs in 61" }

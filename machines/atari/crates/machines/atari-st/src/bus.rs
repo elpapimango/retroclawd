@@ -156,7 +156,7 @@ pub struct BusState {
 
 /// Where an address falls.
 #[derive(Debug)]
-enum Region {
+pub(crate) enum Region {
     Ram(usize),
     UnfittedRam,
     Rom(usize),
@@ -654,7 +654,7 @@ impl StBus {
         self.stop.as_ref()
     }
 
-    fn region(&self, addr: u32) -> Region {
+    pub(crate) fn region(&self, addr: u32) -> Region {
         let addr = addr & 0xFF_FFFF;
         if addr < 8 {
             Region::Rom(addr as usize)
@@ -879,7 +879,8 @@ impl M68kBus for StBus {
         if !self.accurate {
             return self.read_cycle(addr, size, fc);
         }
-        let start = self.begin_cycle();
+        let wait = self.wait_clocks(addr, size);
+        let start = self.begin_cycle(wait);
         let result = self.read_cycle(addr, size, fc);
         self.end_cycle(start, 0);
         result
@@ -895,7 +896,8 @@ impl M68kBus for StBus {
         if !self.accurate {
             return self.write_cycle(addr, size, value, fc);
         }
-        let start = self.begin_cycle();
+        let wait = self.wait_clocks(addr, size);
+        let start = self.begin_cycle(wait);
         let result = self.write_cycle(addr, size, value, fc);
         self.end_cycle(start, 0);
         result
@@ -911,6 +913,8 @@ impl M68kBus for StBus {
     /// ends as spurious.
     fn iack(&mut self, level: u8) -> IackResponse {
         if self.accurate {
+            let wait = self.iack_wait_clocks();
+            self.pass(wait);
             self.run_events(self.now);
         }
         self.iack_cycle(level)

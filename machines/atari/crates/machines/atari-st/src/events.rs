@@ -87,7 +87,11 @@ impl StBus {
 
     /// `accurate`: the cycle that starts now is about to put its address on the bus. Returns the time the device
     /// sees it: the events due by then have been processed and `now` is that time.
-    pub(crate) fn begin_cycle(&mut self) -> u64 {
+    pub(crate) fn begin_cycle(&mut self, wait: u32) -> u64 {
+        // The cycle waits for its slot; time passes (and events fall due) meanwhile.
+        if wait > 0 {
+            self.pass(wait);
+        }
         let start = self.now;
         let seen = start + scheduler::ACCESS_POINT;
         self.run_events(seen);

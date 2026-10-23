@@ -45,14 +45,15 @@ fn timer_value(early: usize, pad: usize, accuracy: Accuracy) -> u8 {
 
 #[test]
 fn a_device_is_caught_up_to_the_cycle_of_the_access() {
-    // The control register is written 8 clocks into its instruction and the counter read 4 clocks into its own
-    // (each fetches its address words first); `fast` mode sees both at the start of the instruction. A `fast` program
-    // with 2 NOPs more before the control write and one NOP less before the read puts both accesses at the same
-    // absolute clocks, so the counts agree for every starting point.
+    // The MFP data register is written 8 clocks into its instruction and the control register after 8 clocks of the next
+    // one; the counter is read 4 clocks into its own (each fetches its address words first), and an access to the MFP
+    // waits 4 clocks more (waits.rs), which also lengthens the instructions that make one. `fast` mode sees every
+    // access at the start of its instruction. A `fast` program with 4 NOPs more before the control write puts the
+    // control write and the read at the same absolute clocks, so the counts agree for every starting point.
     let mut differs = false;
-    for pad in 1..60 {
+    for pad in 0..60 {
         let accurate = timer_value(0, pad, Accuracy::Accurate);
-        let fast_shifted = timer_value(2, pad - 1, Accuracy::Fast);
+        let fast_shifted = timer_value(4, pad, Accuracy::Fast);
         let fast_here = timer_value(0, pad, Accuracy::Fast);
         assert_eq!(
             accurate, fast_shifted,
@@ -87,7 +88,18 @@ fn accurate_and_fast_agree_when_nothing_timing_sensitive_is_touched() {
         }
         (m.now(), clocks, m.cpu().d, m.cpu().pc, m.bus().peek(0x0600))
     };
-    assert_eq!(run(Accuracy::Fast), run(Accuracy::Accurate));
+    // The wait states of `accurate` mode make the same program take longer; nothing else differs.
+    let (fast, accurate) = (run(Accuracy::Fast), run(Accuracy::Accurate));
+    assert_eq!(
+        (fast.2, fast.3, fast.4),
+        (accurate.2, accurate.3, accurate.4)
+    );
+    assert!(
+        accurate.0 >= fast.0 && accurate.0 % 4 == 0,
+        "{} then {}",
+        fast.0,
+        accurate.0
+    );
 }
 
 /// A tiny deterministic generator for the property test.

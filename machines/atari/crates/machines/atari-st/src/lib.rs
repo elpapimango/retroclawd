@@ -19,6 +19,7 @@ mod psg;
 mod scheduler;
 pub mod serial;
 pub mod state;
+mod waits;
 
 pub use acia::{NullPeer, SerialPeer};
 pub use bus::{

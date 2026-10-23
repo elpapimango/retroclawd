@@ -77,17 +77,19 @@ impl AtariSt {
     }
 
     /// The CPU ran for `clocks` from `start`: in `fast` mode that time passes now, in `accurate` mode the bus
-    /// cycles let it pass as they happened, and only the interrupt level is left to hand to the CPU.
-    fn after_cpu(&mut self, start: u64, clocks: u32) {
+    /// cycles let it pass as they happened (and waited for their slots), and only the interrupt level is left to hand
+    /// to the CPU. Returns the clocks that went by.
+    fn after_cpu(&mut self, start: u64, clocks: u32) -> u32 {
         if self.bus.accurate {
-            debug_assert_eq!(
-                self.bus.now,
-                start + clocks as u64,
-                "the bus cycles and the internal clocks add up to the instruction's clocks"
+            debug_assert!(
+                self.bus.now >= start + clocks as u64,
+                "the bus cycles and the internal clocks cover the instruction's clocks"
             );
             self.cpu.set_ipl(self.bus.ipl());
+            (self.bus.now - start) as u32
         } else {
             self.advance(clocks);
+            clocks
         }
     }
 
@@ -547,8 +549,7 @@ impl Machine for AtariSt {
         if let Some(e) = self.cpu.take_exception() {
             self.diag.exception(e);
         }
-        self.after_cpu(start, clocks);
-        clocks
+        self.after_cpu(start, clocks)
     }
 
     fn halted(&self) -> bool {
