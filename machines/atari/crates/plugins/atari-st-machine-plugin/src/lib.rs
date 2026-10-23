@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use atari_st::serial::{FileSink, FileSource, LinePeer, MIDI_FRAME_CYCLES};
-use atari_st::{Accuracy, AtariSt, Config, Monitor, RamSize, Region};
+use atari_st::{Accuracy, AtariSt, Chipset, Config, Monitor, RamSize, Region};
 use machine::{AUDIO_SAMPLE_RATE, Machine};
 use plugin_api::{
     ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, BinaryBlob, CartridgeStatus, ChipSnapshot,
@@ -267,11 +267,31 @@ fn option(
     }
 }
 
+/// The profile of the ST, STF and STFM (the machine id every test and the first plugin version knew).
+#[cfg(test)]
 fn machine_profile() -> MachineProfile {
+    machine_profile_for(Chipset::St)
+}
+
+fn machine_profile_for(chipset: Chipset) -> MachineProfile {
     let text = |s: &str| Some(DebugValue::Text(s.to_string()));
+    let (display_name, rom_text) = match chipset {
+        Chipset::St => (
+            "Atari ST / STF / STFM",
+            "192 KB TOS image (EmuTOS 1.4 etos192*.img via --firmware auto, or your own TOS 1.0x)",
+        ),
+        Chipset::MegaSt => (
+            "Atari Mega ST",
+            "192 KB TOS image (EmuTOS 1.4 etos192*.img via --firmware auto, or your own TOS 1.02 or 1.04)",
+        ),
+        Chipset::Ste => (
+            "Atari STE",
+            "256 KB TOS image at $E00000 (EmuTOS 1.4 etos256*.img via --firmware auto, or your own TOS 1.62 or 2.0x)",
+        ),
+    };
     MachineProfile {
-        machine_id: MACHINE_ID.to_string(),
-        display_name: "Atari ST / STF / STFM".to_string(),
+        machine_id: chipset.id().to_string(),
+        display_name: display_name.to_string(),
         cpu_family: CpuFamily::M68k,
         default_region: Some("pal".to_string()),
         contract_version: MACHINE_PROFILE_CONTRACT_VERSION,
@@ -291,7 +311,7 @@ fn machine_profile() -> MachineProfile {
                     "rom",
                     MachineOptionKind::File,
                     None,
-                    "192 KB TOS image (EmuTOS 1.4 etos192*.img via --firmware auto, or your own TOS 1.0x)",
+                    rom_text,
                 )
             },
             option("ram", text_choices(&RAM_CHOICES), text("1m"), "RAM fitted"),
@@ -489,7 +509,7 @@ fn blob<'a>(roms: &'a [BinaryBlob], key: &str) -> Option<&'a [u8]> {
 fn metadata(machine: &AtariSt, region: &str, model: &str) -> MachineMetadata {
     let rate = machine.frame_rate();
     MachineMetadata {
-        machine_id: MACHINE_ID.to_string(),
+        machine_id: machine.chipset().id().to_string(),
         model: Some(model.to_string()),
         region: Some(region.to_string()),
         notes: vec![
@@ -618,12 +638,12 @@ fn acsi_target(slot: &str) -> Result<u8, String> {
 }
 
 fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, String> {
-    if !req.machine_id.eq_ignore_ascii_case(MACHINE_ID) {
+    let Some(chipset) = Chipset::from_id(&req.machine_id) else {
         return Err(format!(
-            "unsupported machine id \"{}\" (plugin supports only {MACHINE_ID})",
+            "unsupported machine id \"{}\" (plugin supports atari-st, atari-mega-st and atari-ste)",
             req.machine_id
         ));
-    }
+    };
     let rom =
         blob(&req.roms, "rom").ok_or_else(|| "missing required binary blob: rom".to_string())?;
     let mut ram = RamSize::M1;
@@ -692,23 +712,26 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         Some(other) => return Err(format!("unsupported region \"{other}\" (pal or ntsc)")),
     };
     let region_name = if region == Region::Pal { "pal" } else { "ntsc" };
-    let machine = AtariSt::new(Config {
-        ram,
-        region,
-        accuracy,
-        monitor,
-        rom: rom.to_vec(),
-        trace_limit: if trace_file.is_some() {
-            trace_limit.min(u32::MAX as u64) as u32
-        } else {
-            0
+    let machine = AtariSt::with_chipset(
+        Config {
+            ram,
+            region,
+            accuracy,
+            monitor,
+            rom: rom.to_vec(),
+            trace_limit: if trace_file.is_some() {
+                trace_limit.min(u32::MAX as u64) as u32
+            } else {
+                0
+            },
+            io_log_limit: if io_trace_file.is_some() {
+                IO_LOG_LIMIT
+            } else {
+                0
+            },
         },
-        io_log_limit: if io_trace_file.is_some() {
-            IO_LOG_LIMIT
-        } else {
-            0
-        },
-    })?;
+        chipset,
+    )?;
     let mut machine = machine;
     machine
         .set_borders(borders)
@@ -1228,7 +1251,10 @@ unsafe fn plugin_list_profiles_inner(req: RcSlice) -> RcCallResult {
         Err(e) => return e.into_call_result(),
     };
     encode_ok(&plugin_api::ListProfilesResponse {
-        profiles: vec![machine_profile()],
+        profiles: [Chipset::St, Chipset::MegaSt, Chipset::Ste]
+            .into_iter()
+            .map(machine_profile_for)
+            .collect(),
     })
 }
 
@@ -2141,5 +2167,60 @@ mod tests {
         let machine = guard.instances.get(&id).expect("the instance exists");
         assert_eq!(machine.machine.cycles_per_frame(), 224 * 501);
         guard.instances.remove(&id);
+    }
+
+    #[test]
+    fn the_plugin_declares_three_machine_ids_with_their_options() {
+        let profiles: Vec<_> = [Chipset::St, Chipset::MegaSt, Chipset::Ste]
+            .into_iter()
+            .map(machine_profile_for)
+            .collect();
+        let ids: Vec<&str> = profiles.iter().map(|p| p.machine_id.as_str()).collect();
+        assert_eq!(ids, ["atari-st", "atari-mega-st", "atari-ste"]);
+        let rom_text = |p: &MachineProfile| {
+            p.options
+                .iter()
+                .find(|o| o.key == "rom")
+                .map(|o| o.description.clone())
+                .unwrap()
+        };
+        assert!(rom_text(&profiles[0]).contains("192 KB"));
+        assert!(rom_text(&profiles[2]).contains("256 KB"));
+    }
+
+    #[test]
+    fn an_ste_is_created_from_a_256_kb_image_and_reports_its_id() {
+        let mut rom = vec![0u8; 262_144];
+        rom[0..4].copy_from_slice(&0x8000u32.to_be_bytes());
+        rom[4..8].copy_from_slice(&0x00E0_0030u32.to_be_bytes());
+        rom[0x30..0x32].copy_from_slice(&0x60FEu16.to_be_bytes());
+        let created = create_machine(MachineCreateRequest {
+            machine_id: "atari-ste".to_string(),
+            region: Some("pal".to_string()),
+            roms: vec![BinaryBlob {
+                key: "rom".to_string(),
+                bytes: rom,
+            }],
+            options: Vec::new(),
+        })
+        .expect("an STE is created");
+        assert_eq!(created.metadata.machine_id, "atari-ste");
+        state().lock().unwrap().instances.remove(&created.instance);
+        // An ST image is refused by the STE.
+        let err = create_machine(MachineCreateRequest {
+            machine_id: "atari-ste".to_string(),
+            region: Some("pal".to_string()),
+            roms: vec![BinaryBlob {
+                key: "rom".to_string(),
+                bytes: rom_for_st(),
+            }],
+            options: Vec::new(),
+        })
+        .expect_err("refused");
+        assert!(err.contains("262144"), "{err}");
+    }
+
+    fn rom_for_st() -> Vec<u8> {
+        rom(&[0x60FE])
     }
 }

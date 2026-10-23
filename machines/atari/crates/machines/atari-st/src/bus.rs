@@ -17,7 +17,7 @@
 //! `$400000-$F9FFFF` and `$FF0000-$FF7FFF` are nonexistent (bus error).
 
 use crate::acia::{Acias, NullPeer, SerialPeer};
-use crate::config::Config;
+use crate::config::{Chipset, Config};
 use crate::dma::{Dma, FDC_BYTE_CYCLES};
 use crate::io::{self, Decode, Device};
 use crate::iolog::IoAccess;
@@ -36,6 +36,7 @@ pub const HBL_LEVEL: u8 = 2;
 pub const VBL_LEVEL: u8 = 4;
 pub const MFP_LEVEL: u8 = 6;
 
+/// The ST and Mega ST's ROM window (`Chipset::rom_base`, `rom_size` give the STE's).
 pub const ROM_BASE: u32 = 0xFC_0000;
 /// TOS 1.0x and the EmuTOS 192 KB images.
 pub const ROM_SIZE: usize = 196_608;
@@ -84,6 +85,8 @@ pub struct StBus {
     ram: Vec<u8>,
     mmu: Mmu,
     rom: Vec<u8>,
+    /// What is fitted (`Config`'s ROM is checked against it).
+    pub(crate) chipset: Chipset,
     stop: Option<IoStop>,
     /// Emulated time in CPU clocks. `fast`: the start of the running instruction; `accurate`: the cycle being run.
     pub(crate) now: u64,
@@ -173,7 +176,7 @@ pub(crate) enum Region {
 /// The image must start the CPU inside itself: the reset PC (long 1 of the image, read through the `$0-$7` mirror)
 /// even and within `$FC0000-$FEFFFF`. A TOS image starts with `BRA.S` (`$602E` in TOS 1.0x and EmuTOS 1.4); seen as
 /// `$2E60`, the image is byte-swapped, a common result of reading the two ROM chips separately.
-fn check_reset_pc(rom: &[u8]) -> Result<(), String> {
+fn check_reset_pc(rom: &[u8], base: u32, size: usize) -> Result<(), String> {
     if rom[0..2] == [0x2E, 0x60] {
         return Err("this TOS image looks byte-swapped (it starts 2E 60 instead of 60 2E): swap each pair of bytes".into());
     }
@@ -183,9 +186,11 @@ fn check_reset_pc(rom: &[u8]) -> Result<(), String> {
             "the image's reset PC ${pc:06X} is odd: not a TOS image for the ST"
         ));
     }
-    if !(ROM_BASE..ROM_BASE + ROM_SIZE as u32).contains(&pc) {
+    if !(base..base + size as u32).contains(&pc) {
         return Err(format!(
-            "the image's reset PC ${pc:06X} is outside the ROM at $FC0000-$FEFFFF: not a 192 KB TOS image for the ST"
+            "the image's reset PC ${pc:06X} is outside the ROM at ${base:06X}-${:06X}: not a {} KB TOS image for this machine",
+            base + size as u32 - 1,
+            size / 1024
         ));
     }
     Ok(())
@@ -193,18 +198,27 @@ fn check_reset_pc(rom: &[u8]) -> Result<(), String> {
 
 impl StBus {
     pub fn new(cfg: &Config) -> Result<Self, String> {
-        if cfg.rom.len() != ROM_SIZE {
+        Self::with_chipset(cfg, Chipset::St)
+    }
+
+    pub fn with_chipset(cfg: &Config, chipset: Chipset) -> Result<Self, String> {
+        let (base, size) = (chipset.rom_base(), chipset.rom_size());
+        if cfg.rom.len() != size {
             return Err(format!(
-                "the ST takes a {ROM_SIZE}-byte (192 KB) TOS image at $FC0000; this one has {} bytes{}",
+                "the {} takes a {size}-byte ({} KB) TOS image at ${base:06X}; this one has {} bytes{}",
+                chipset.id(),
+                size / 1024,
                 cfg.rom.len(),
-                if cfg.rom.len() == 262_144 {
+                if chipset != Chipset::Ste && cfg.rom.len() == 262_144 {
                     " (262144 bytes is a 256 KB image, for the STE, which maps it at $E00000)"
+                } else if chipset == Chipset::Ste && cfg.rom.len() == ROM_SIZE {
+                    " (196608 bytes is a 192 KB image, for the ST and Mega ST)"
                 } else {
                     ""
                 }
             ));
         }
-        check_reset_pc(&cfg.rom)?;
+        check_reset_pc(&cfg.rom, base, size)?;
         let mmu = Mmu::new(cfg.ram);
         let cpu_hz = (scheduler::crystal_hz(cfg.region) / scheduler::CPU_DIVIDER) as u64;
         let mut acias = Acias::new();
@@ -222,6 +236,7 @@ impl StBus {
             ram: vec![0; mmu.ram_bytes()],
             mmu,
             rom: cfg.rom.clone(),
+            chipset,
             stop: None,
             now: 0,
             sched: scheduler::Scheduler::new(),
@@ -683,8 +698,11 @@ impl StBus {
             }
         } else if CARTRIDGE.contains(&addr) {
             Region::Cartridge((addr - CARTRIDGE.start) as usize)
-        } else if (ROM_BASE..ROM_BASE + ROM_SIZE as u32).contains(&addr) {
-            Region::Rom((addr - ROM_BASE) as usize)
+        } else if (self.chipset.rom_base()
+            ..self.chipset.rom_base() + self.chipset.rom_size() as u32)
+            .contains(&addr)
+        {
+            Region::Rom((addr - self.chipset.rom_base()) as usize)
         } else if addr >= IO_BASE {
             Region::Io
         } else {

@@ -118,18 +118,21 @@ impl std::fmt::Display for StateError {
 
 impl std::error::Error for StateError {}
 
-fn accuracy_name(code: u8) -> &'static str {
-    match code {
-        0 => "fast",
-        1 => "accurate",
-        2 => "fast with borders",
-        3 => "accurate with borders",
-        4 => "fast, mono monitor",
-        5 => "accurate, mono monitor",
-        6 => "fast with borders, mono monitor",
-        7 => "accurate with borders, mono monitor",
-        _ => "unknown",
+fn accuracy_name(code: u8) -> String {
+    let mut text = String::from(if code & 1 != 0 { "accurate" } else { "fast" });
+    if code & 2 != 0 {
+        text.push_str(" with borders");
     }
+    if code & 4 != 0 {
+        text.push_str(", mono monitor");
+    }
+    match (code >> 3) & 3 {
+        0 => {}
+        1 => text.push_str(", Mega ST"),
+        2 => text.push_str(", STE"),
+        _ => text.push_str(", unknown chipset"),
+    }
+    text
 }
 
 /// What the envelope records about one drive.

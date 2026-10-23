@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::acia::SerialPeer;
 use crate::bus::{IoStop, StBus};
-use crate::config::{Accuracy, Config, Region};
+use crate::config::{Accuracy, Chipset, Config, Region};
 use crate::diag::Diag;
 use crate::scheduler::{self, CLASS_VIDEO, Event, Scheduler, SchedulerState};
 use crate::state::{self, DriveMeta, Header, StateError};
@@ -44,7 +44,12 @@ pub struct AtariSt {
 
 impl AtariSt {
     pub fn new(cfg: Config) -> Result<Self, String> {
-        let bus = StBus::new(&cfg)?;
+        Self::with_chipset(cfg, Chipset::St)
+    }
+
+    /// A machine of the given chipset (`new` is the ST): the ROM must be the chipset's size.
+    pub fn with_chipset(cfg: Config, chipset: Chipset) -> Result<Self, String> {
+        let bus = StBus::with_chipset(&cfg, chipset)?;
         let mut m = Self {
             cpu: Cpu::new(),
             bus,
@@ -281,14 +286,15 @@ impl AtariSt {
         std::mem::take(&mut self.state_warnings)
     }
 
-    /// The accuracy in the state header: bit 0 accurate, bit 1 borders, bit 2 mono monitor (a state is only loaded by the
-    /// same canvas and monitor).
+    /// The accuracy in the state header: bit 0 accurate, bit 1 borders, bit 2 mono monitor, bits 3-4 the chipset (a state is
+    /// only loaded by the same canvas, monitor and chipset).
     fn accuracy_code(&self) -> u8 {
         let accuracy = match self.accuracy {
             Accuracy::Fast => 0,
             Accuracy::Accurate => 1,
         };
         accuracy
+            | self.bus.chipset.code() << 3
             | if self.bus.borders { 2 } else { 0 }
             | if self.bus.monitor == st_shifter::Monitor::Mono {
                 4
@@ -306,6 +312,11 @@ impl AtariSt {
         let (w, h) = self.canvas();
         self.bus.frame = vec![0; (w * h * 3) as usize];
         Ok(())
+    }
+
+    /// What is fitted.
+    pub fn chipset(&self) -> Chipset {
+        self.bus.chipset
     }
 
     /// The size of the picture `render_frame` returns.
