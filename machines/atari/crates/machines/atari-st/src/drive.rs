@@ -2,7 +2,7 @@
 //!
 //! - [H] *Internals* p.60, PSG port A: bit 0 side select, bit 1 drive 0 select, bit 2 drive 1 select; [H?] the
 //!   selects are active low (the `$07` TOS writes deselects both, [O]) and bit 0 clear chooses side 1.
-//! - [H?] one revolution is `st_floppy::TRACK_BYTES` byte times (300 rpm at 250 kbit/s); the index pulse is the
+//! - [O] one revolution is `st_floppy::TRACK_BYTES` byte times (300 rpm); the index pulse is the
 //!   first [`INDEX_BYTES`] bytes of the revolution, and only a disk turning in a drive makes one.
 //! - [O] a drive without a disk reads write-protected (status `$E4` in Hatari), one with a disk does not (`$24`,
 //!   `$A4`).
@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 use st_floppy::{Image, TRACK_BYTES};
 use wd1770::Floppy;
 
-/// [H?] how long the index sensor sees the hole, in byte times.
-pub const INDEX_BYTES: usize = 64;
+/// [O] how long the index sensor sees the hole, in byte times: Hatari 2.6.1 (probe P17) holds the index bit for 29 666 clocks.
+pub const INDEX_BYTES: usize = 116;
 /// [H?] how long the write-protect sensor stays blocked while a disk goes in or out, in byte times (0.5 s). TOS
 /// notices a disk change by this transition.
 pub const MEDIA_CHANGE_BYTES: u64 = 15_625;

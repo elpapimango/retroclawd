@@ -22,6 +22,11 @@ pub(crate) const E_PERIOD: u64 = 10;
 /// P02: the mean number of loop runs a line fits Hatari's to 0.01 with this value).
 pub(crate) const IACK_EXTRA: u32 = 8;
 
+/// Clocks an ACIA access takes beyond the E clock edge it waits for. [O] P18: values 6 to 8 fit Hatari's loop lengths for five
+/// alignments of the access (an ACIA read in a counted loop takes 50 clocks, 60 with one NOP more); 8, the same as the
+/// interrupt acknowledge's, the other access that waits for the E clock.
+pub(crate) const ACIA_EXTRA: u32 = 8;
+
 /// The E clock's phase against the start of the frame: its edges fall at this many clocks past a multiple of 10 (probe
 /// P02, fitted together with the VBL delay below).
 pub(crate) const E_PHASE: u64 = 6;
@@ -84,18 +89,33 @@ impl StBus {
         base.wrapping_add(fetch.bytes_before(line) + 2 * words as u32)
     }
 
-    /// The clocks a bus cycle that would start now at `addr` waits first.
-    pub(crate) fn wait_clocks(&self, addr: u32, size: Size) -> u32 {
+    /// The clocks a bus cycle that would start now at `addr` waits first (`write`: the CPU writes).
+    pub(crate) fn wait_clocks(&self, addr: u32, size: Size, write: bool) -> u32 {
         let t = self.now;
         match self.region(addr) {
             Region::Io => match io::decode(addr & 0xFF_FFFF, size) {
-                Decode::Device(Device::Mfp | Device::Psg | Device::Acia) => {
+                Decode::Device(Device::Mfp | Device::Psg) => align4(t) + PERIPHERAL_EXTRA,
+                Decode::Device(Device::Acia) => {
+                    let a = align4(t);
+                    a + self.e_clock_wait(t + a as u64) + ACIA_EXTRA
+                }
+                // [O] P18: the FDC/sector count data register (`$FF8604`) and a write of the mode register (`$FF8606`)
+                // take the extra 4 clocks; the status read, the address counter and the other registers do not.
+                Decode::Device(Device::Dma)
+                    if (addr & 0xFF) == 0x04 || (write && (addr & 0xFF) == 0x06) =>
+                {
                     align4(t) + PERIPHERAL_EXTRA
                 }
                 _ => align4(t),
             },
             _ => align4(t),
         }
+    }
+
+    /// The clocks from `t` to the next edge of the E clock (0 when `t` is on one).
+    fn e_clock_wait(&self, t: u64) -> u32 {
+        let phase = (t + E_PERIOD - E_PHASE - self.last_vbl_at % E_PERIOD) % E_PERIOD;
+        ((E_PERIOD - phase) % E_PERIOD) as u32
     }
 
     /// The clocks the interrupt acknowledge that would start now waits: for the next E clock edge, counted from the

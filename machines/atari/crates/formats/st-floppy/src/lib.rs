@@ -9,10 +9,12 @@
 //!   82×2×10.
 //! - **Tracks** ([D] WD177X-00 data sheet, *1986 Storage Management Products Handbook* p.1-18, "recommended
 //!   dual-density format"): gap I 60 × `$4E`; per sector 12 × `$00`, 3 × `$A1` (sync), `$FE`, C H R N, CRC, gap II
-//!   22 × `$4E`, 12 × `$00`, 3 × `$A1`, `$FB`, data, CRC, gap III 24 × `$4E`; gap IV `$4E` to the end of the track.
-//!   Gaps I and III may shrink to 2 bytes ("as short as 2 bytes for WD177X-00 operation"); gap II may not. CRC-CCITT
+//!   22 × `$4E`, 12 × `$00`, 3 × `$A1`, `$FB`, data, CRC, gap III 40 × `$4E` ([O] Hatari 2.6.1, probe P17: the headers of a
+//!   9-sector track are 614 bytes apart; the data sheet's 24 is the fallback when the sectors do not fit); gap IV `$4E` to the
+//!   end of the track. Gaps I and III may shrink to 2 bytes ("as short as 2 bytes for WD177X-00 operation"); gap II may not. CRC-CCITT
 //!   from `$FFFF` over the sync bytes, the mark and the field, high byte first.
-//! - **Track length** [H?]: 6250 bytes, 250 kbit/s MFM for one revolution at 300 rpm.
+//! - **Track length** [O]: 6267 bytes of 256 CPU clocks, the 200 ms of one revolution at 300 rpm on the PAL machine's
+//!   8 021 247 Hz clock (1 604 249 clocks; Hatari 2.6.1, probe P17: the index pulse comes every 1 604 200 clocks).
 //!
 //! Every input is untrusted: sizes are capped, arithmetic is checked, nothing indexes past the data.
 #![forbid(unsafe_code)]
@@ -24,7 +26,7 @@ pub mod msa;
 use serde::{Deserialize, Serialize};
 
 /// Bytes on one track (one revolution).
-pub const TRACK_BYTES: usize = 6250;
+pub const TRACK_BYTES: usize = 6267;
 /// Images larger than this are refused.
 pub const MAX_IMAGE_BYTES: usize = 2 * 1024 * 1024;
 const SECTOR: usize = 512;
@@ -185,7 +187,7 @@ fn table_geometry(size: usize) -> Option<Geometry> {
 fn layout(sectors: u8) -> Option<(usize, usize)> {
     let fixed_per_sector = 12 + 3 + 1 + 4 + 2 + 22 + 12 + 3 + 1 + SECTOR + 2;
     let n = sectors as usize;
-    for (gap1, gap3) in [(60, 24), (2, 24), (2, 2)] {
+    for (gap1, gap3) in [(60, 40), (60, 24), (2, 24), (2, 2)] {
         if gap1 + n * (fixed_per_sector + gap3) <= TRACK_BYTES {
             return Some((gap1, gap3));
         }

@@ -20,7 +20,7 @@ fn drive_with_disk() -> StDrive {
 }
 
 #[test]
-fn index_once_per_6250_byte_times() {
+fn index_once_per_revolution() {
     let mut d = drive_with_disk();
     d.index_count_reset();
     let mut first = None;

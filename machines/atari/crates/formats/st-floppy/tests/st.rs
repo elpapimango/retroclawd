@@ -170,10 +170,10 @@ fn eleven_sectors_do_not_fit_a_track() {
 }
 
 #[test]
-fn track_length_is_6250() {
+fn track_length_is_one_revolution_at_the_cpu_clock() {
     let img = Image::parse(&image(80, 1, 9, true)).unwrap();
-    assert_eq!(img.track(0, 0).len(), 6250);
-    assert_eq!(TRACK_BYTES, 6250);
+    assert_eq!(img.track(0, 0).len(), 6267);
+    assert_eq!(TRACK_BYTES, 6267);
 }
 
 #[test]

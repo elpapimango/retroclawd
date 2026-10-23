@@ -282,6 +282,66 @@ compare = { mode = "exact" }
 status = "known-gap"
 gap = { reason = "the first HBL count is 500 here and 501 in Hatari (the HBL pending when the mask came off), and the loop counts differ by the placement of the VBL handler by up to a count", evidence = "cargo test --release -p atari-st --test timing_probes p14 (the test compares lines per frame from the second interval and the loop counts' mean within 1)" }
 
+# P16 (floppy DMA stall: a counted loop while nine sectors are read)
+[[scenario]]
+id = "P16"
+kind = "memory"
+frames = 800
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p16.st" }
+start = 49152
+len = 244
+golden = "atari-st/timing/p16.bin"
+golden_sha256 = "3d07951976138a4b7e6a123a0cc2c6f71986dcf3de85dbe293885169b55ccf5c"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the transfer starts at another frame: where the head and the disk are when the command is given differs (rotation phase is not modelled to Hatari's origin); the loss per burst and the frames inside a transfer agree", evidence = "timing_probes p16_a_dma_burst_holds_the_cpu_for_the_clocks_hatari_shows passes; p16_report lists both" }
+
+# P17 (floppy index pulse and sector pitch)
+[[scenario]]
+id = "P17"
+kind = "memory"
+frames = 800
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p17.st" }
+start = 49152
+len = 196
+golden = "atari-st/timing/p17.bin"
+golden_sha256 = "b9e3e660656329917c8181da183e2dd94e0c313a2c598ef9e488481cbae50ab0"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the index pulse and the header pitch agree to a few loop runs, but the phase of the revolution at the start is Hatari's own (its origin is the motor start), so the first stretch and the first header time differ", evidence = "timing_probes p17_the_index_pulse_and_the_sector_pitch_are_hatari_s passes; p17_report lists both" }
+
+# P18 (what an access to each I/O register costs)
+[[scenario]]
+id = "P18"
+kind = "memory"
+frames = 800
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p18.st" }
+start = 49152
+len = 196
+golden = "atari-st/timing/p18.bin"
+golden_sha256 = "4c5fc266e8675af8fd14850b814fdbd7b017193ca6c062dd147ed7b863840679"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the loop counts of a frame differ by one here and there (where the VBL handler falls in the loop); the clocks an iteration take, which the test compares, are equal for all 16 variants", evidence = "timing_probes p18_an_access_to_each_register_costs_the_clocks_hatari_shows passes" }
+
+# P19 (floppy step rates)
+[[scenario]]
+id = "P19"
+kind = "memory"
+frames = 800
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p19.st" }
+start = 49152
+len = 24
+golden = "atari-st/timing/p19.bin"
+golden_sha256 = "b315e7055f896453bb4e22b45c2fd2e9563c7c36ab1904a2ccc0a86333585c52"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the data sheet's step times agree to 0.25%: the controller's settle and command set-up are a few hundred clocks apart in the two emulators", evidence = "timing_probes p19_the_step_rates_take_the_times_hatari_shows passes (0.25% limit)" }
+
 # P09 (timing/gen_p09.py): a high-then-low resolution write pair swept along line 100 (4 clocks a frame); the golden is the video address
 # counter at the entry of line 102 in Hatari. The model reproduces the frames where the right border (+44 bytes) and the left border (+26)
 # open (tests/timing_probes.rs, p09_and_p10_open_the_borders_on_the_frames_hatari_does); Hatari also cuts lines short and loses whole lines

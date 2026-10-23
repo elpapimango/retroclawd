@@ -902,7 +902,7 @@ impl M68kBus for StBus {
         if !self.accurate {
             return self.read_cycle(addr, size, fc);
         }
-        let wait = self.wait_clocks(addr, size);
+        let wait = self.wait_clocks(addr, size, false);
         let start = self.begin_cycle(wait, false);
         let result = self.read_cycle(addr, size, fc);
         self.end_cycle(start, 0);
@@ -919,7 +919,7 @@ impl M68kBus for StBus {
         if !self.accurate {
             return self.write_cycle(addr, size, value, fc);
         }
-        let wait = self.wait_clocks(addr, size);
+        let wait = self.wait_clocks(addr, size, true);
         let start = self.begin_cycle(wait, true);
         let result = self.write_cycle(addr, size, value, fc);
         self.end_cycle(start, 0);
