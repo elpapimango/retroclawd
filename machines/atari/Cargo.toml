@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/chips/ikbd", "crates/formats/st-floppy", "crates/chips/mc68901", "crates/chips/st-shifter", "crates/chips/blitter", "crates/machines/atari-st", "crates/plugins/atari-st-machine-plugin", "crates/plugin-dlls/atari-st"]
+members = ["crates/chips/ikbd", "crates/formats/st-floppy", "crates/chips/mc68901", "crates/chips/st-shifter", "crates/chips/blitter", "crates/machines/atari-st", "crates/plugins/atari-st-machine-plugin", "crates/plugin-dlls/atari-st", "crates/chips/antic", "crates/chips/gtia", "crates/chips/pokey", "crates/machines/atari-8bit", "crates/plugins/atari-8bit-machine-plugin", "crates/plugin-dlls/atari-8bit", "crates/formats/atari-media"]
 
 # Same release profile as the retroclawd host.
 [profile.release]
@@ -15,6 +15,21 @@ debug = true
 opt-level = 3
 
 [profile.release.package.machine]
+opt-level = 3
+
+[profile.release.package.atari-8bit]
+opt-level = 3
+
+[profile.release.package.antic]
+opt-level = 3
+
+[profile.release.package.gtia]
+opt-level = 3
+
+[profile.release.package.pokey]
+opt-level = 3
+
+[profile.release.package.atari-media]
 opt-level = 3
 
 [profile.release.package.atari-st]

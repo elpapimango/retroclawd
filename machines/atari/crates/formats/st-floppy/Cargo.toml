@@ -10,5 +10,5 @@ bincode = { version = "2", features = ["serde"] }
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-wd1770 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "cdc441725cce3ae9771876eede52023f71f6edcd" }
+wd1770 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
 

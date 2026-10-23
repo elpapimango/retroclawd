@@ -10,7 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 atari-st = { path = ".." }
-machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "cdc441725cce3ae9771876eede52023f71f6edcd" }
+machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
 
 [[bin]]
 name = "accurate_regs"

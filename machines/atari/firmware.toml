@@ -29,6 +29,30 @@ archive_sha1 = "6f146a126065f0671a1df3d9a273c01f962e9d06"
 entry = "emutos-192k-1.4/etos192us.img"
 when = { region = "ntsc" }
 
+# Explicitly identified replacements, matched only from cache or RomM.
+# Their upstream distribution is C arrays, not a supported direct ROM URL.
+# Supplying --rom-os / --rom-basic always takes precedence.
+[[rom]]
+machines = ["atari-800"]
+option = "rom_os"
+label = "AltirraOS 800 3.11 replacement (not original Atari firmware)"
+sha1 = ["24b16053b5a11ed2f35f208c9a061d973b8be3e7"]
+
+[[rom]]
+machines = ["atari-800", "atari-800xl", "atari-65xe", "atari-130xe"]
+option = "rom_basic"
+label = "Altirra BASIC 1.59 replacement (not original Atari BASIC)"
+sha1 = ["95778af5688ec180baa9db364577d113bfc189ea"]
+
+# AltirraOS XL/XE 3.11 from pinned Atari800 7.2.1 src/roms/altirraos_xl.c.
+# 16384 bytes; SHA-256 9de5a313fe3946f04fe236a8d3ceacb471fbed4ec5fc5db009732e1169946ccf.
+# Avery Lee's permissive copyright/notice-preserving terms apply; no ROM bytes
+# or unsupported direct C-source download URL are supplied.
+[[rom]]
+machines = ["atari-800xl", "atari-65xe", "atari-130xe"]
+option = "rom_os"
+label = "AltirraOS XL/XE 3.11 replacement (not original Atari firmware)"
+sha1 = ["738b9590a29f424ad2c9d3f9cb1d170de79241f7"]
 # The STE takes the 256 KB images (readme.txt of emutos-256k-1.4.zip: "STe / Mega STe"), mapped at $E00000. The image SHA-1s
 # are pinned from the 2026-10-23 download, as for the 192 KB ones.
 [[rom]]
