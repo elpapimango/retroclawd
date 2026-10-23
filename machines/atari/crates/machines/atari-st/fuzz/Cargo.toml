@@ -13,6 +13,12 @@ atari-st = { path = ".." }
 machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "fc671b33c050ebf6a8fed5e29aad9cae0d39c0a6" }
 
 [[bin]]
+name = "accurate_regs"
+path = "fuzz_targets/accurate_regs.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "state_decode"
 path = "fuzz_targets/state_decode.rs"
 test = false
