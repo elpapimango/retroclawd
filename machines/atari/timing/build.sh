@@ -11,4 +11,6 @@ for src in "$here"/p[0-9][0-9]_*.s; do
   name="$(basename "$src" .s)"
   python "$here/mkprobe.py" "$tools" "$src" "$out/${name%%_*}.st"
 done
+# p22: a blank 1 MB disk for ACSI target 0 (no partitions: EmuTOS still boots the floppy)
+python -c "open(r'$out/blank-hd.img', 'wb').write(bytes(1 << 20))"
 echo "built $out"

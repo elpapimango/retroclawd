@@ -1006,3 +1006,64 @@ fn p21_the_transmitter_follows_the_baud_rate_the_data_sheet_gives() {
     // 9600 baud is 8 355 clocks a byte; a loop run of the poll is about 40 clocks.
     assert!((f * 40.0 - 8_355.0).abs() < 250.0, "{fast:?}");
 }
+
+/// Runs the floppy probe `name` with a blank 1 MB hard disk on ACSI target 0 (no partitions, so EmuTOS still boots the
+/// floppy); the disk's data does not matter to the timing.
+fn run_probe_hd(name: &str, vbls: u64, len: usize, accuracy: Accuracy) -> Option<Vec<u8>> {
+    let rom = emutos()?;
+    let image = floppy(name)?;
+    let mut cfg = config(rom, RamSize::M1);
+    cfg.accuracy = accuracy;
+    let mut m = AtariSt::new(cfg).unwrap();
+    m.insert_disk(0, image).unwrap();
+    m.attach_hard_disk(0, vec![0; 1 << 20]).unwrap();
+    while m.io_stop().is_none() && m.vbl_count() < vbls {
+        m.step();
+    }
+    assert!(m.io_stop().is_none(), "{name} stopped: {:?}", m.io_stop());
+    Some((0..len as u32).map(|i| m.bus().peek(RESULT + i)).collect())
+}
+
+#[test]
+#[ignore = "report"]
+fn p22_report() {
+    let Some(ours) = run_probe_hd("p22", 1500, 36, Accuracy::Accurate) else {
+        return;
+    };
+    println!("ours {:02X?}", ours);
+}
+
+/// P22: four (loops to the completion request, DMA address after) pairs of longs: TEST UNIT READY, READ(6) of 1, 8 and 32 blocks.
+fn p22_pairs(b: &[u8]) -> Vec<(u32, u32)> {
+    let longs: Vec<u32> = b[4..36]
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_be_bytes(*c))
+        .collect();
+    longs.chunks(2).map(|c| (c[0], c[1])).collect()
+}
+
+/// Hatari 2.6.1 finishes an ACSI command at once (the completion request is there at the first look), which is what the
+/// Phase 2 model does; it also leaves the DMA address counter where it was, where the ACSI notes have the transfer move it
+/// on: ours follows the notes (the difference is the second column of the probe).
+#[test]
+fn p22_an_acsi_command_is_done_at_once_as_in_hatari() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe_hd("p22", 1500, 36, Accuracy::Accurate),
+        golden_bytes("p22"),
+    ) else {
+        return;
+    };
+    let (o, t) = (p22_pairs(&ours), p22_pairs(&theirs));
+    assert_eq!(
+        o.iter().map(|p| p.0).collect::<Vec<_>>(),
+        t.iter().map(|p| p.0).collect::<Vec<_>>(),
+        "loops to completion: ours {o:?} theirs {t:?}"
+    );
+    // Ours moves the address by the blocks read: 0, 1, 8, 32 blocks of 512 bytes.
+    assert_eq!(
+        o.iter().map(|p| p.1).collect::<Vec<_>>(),
+        vec![0x20000, 0x20200, 0x21000, 0x24000]
+    );
+}

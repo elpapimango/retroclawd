@@ -372,6 +372,22 @@ compare = { mode = "exact" }
 status = "known-gap"
 gap = { reason = "Hatari 2.6.1 transmits at once with no RS-232 device attached (the buffer is empty after every write), so it has no byte time to match; ours follows the MC68901 data sheet", evidence = "timing_probes p21_the_transmitter_follows_the_baud_rate_the_data_sheet_gives" }
 
+# P22 (timing/p22_acsi_timing.s): an ACSI command done at once, TEST UNIT READY and READ(6) of 1, 8 and 32 blocks, from a floppy probe with a
+# blank disk on target 0
+[[scenario]]
+id = "P22"
+kind = "memory"
+frames = 1500
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p22.st", acsi0 = "atari/software/scenarios/timing/blank-hd.img" }
+start = 49152
+len = 36
+golden = "atari-st/timing/p22.bin"
+golden_sha256 = "4505fd9827fd845c2f51c456c2af657bc2630a7c69d2131bd2615f98cf639eba"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the completion is as immediate as Hatari's (loops equal), but Hatari leaves the DMA address counter at $020000 after a read where the ACSI notes move it on by the blocks read, as ours does", evidence = "timing_probes p22_an_acsi_command_is_done_at_once_as_in_hatari passes" }
+
 # P09 (timing/gen_p09.py): a high-then-low resolution write pair swept along line 100 (4 clocks a frame); the golden is the video address
 # counter at the entry of line 102 in Hatari. The model reproduces the frames where the right border (+44 bytes) and the left border (+26)
 # open (tests/timing_probes.rs, p09_and_p10_open_the_borders_on_the_frames_hatari_does); Hatari also cuts lines short and loses whole lines
