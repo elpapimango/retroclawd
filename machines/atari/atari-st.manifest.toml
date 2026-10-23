@@ -338,7 +338,7 @@ golden = "atari-st/timing/p02.bin"
 golden_sha256 = "7d7d209a6fdd439706781bed68b387e940743064b063228f32169edf37876a23"
 compare = { mode = "exact" }
 status = "known-gap"
-gap = { reason = "the line-by-line counts differ from Hatari's by one run on about a third of the lines: where inside an instruction an interrupt is taken, and the clocks of its acknowledge, are modelled to the nearest few clocks only", evidence = "per-variant mean difference at most 0.035 runs a line (2 runs in 58); the exact sequences differ (RC_SHOW=<variant> cargo test --release -p atari-st --test timing_probes p02_report -- --ignored --nocapture); model fitted in a small simulation: the 4 and 12-clock loops fit exactly, the 8-clock ones to within 4 runs in 61" }
+gap = { reason = "the line-by-line counts differ from Hatari's by one run on about a third of the lines: where inside an instruction an interrupt is taken, and the clocks of its acknowledge, are modelled to the nearest few clocks only", evidence = "second look 2026-10-23: no new explanation; the per-variant means agree, the sequences differ in where an interrupt lands in an instruction, and no data sheet gives that placement to the clock; per-variant mean difference at most 0.035 runs a line (2 runs in 58); the exact sequences differ (RC_SHOW=<variant> cargo test --release -p atari-st --test timing_probes p02_report -- --ignored --nocapture); model fitted in a small simulation: the 4 and 12-clock loops fit exactly, the 8-clock ones to within 4 runs in 61" }
 
 # P04: the video address counter ($FF8205/07/09) read at 128 points along a line, on five lines of the frame
 # (timing/p04_video_counter.s). Hatari's dump is the golden. Border lines agree exactly; inside the picture the counter agrees
@@ -355,7 +355,7 @@ golden = "atari-st/timing/p04.bin"
 golden_sha256 = "ae3e92a52a27f7067920a32e2fcbfd9af867f5a8466107466a978c6053927733"
 compare = { mode = "exact" }
 status = "known-gap"
-gap = { reason = "inside the picture Hatari's counter differs from ours by one word on about half of the samples: the reads of the three counter bytes take clock-exact slots that the model of the wait states does not reproduce, and the interrupt that starts the sample is placed to a few clocks only", evidence = "sum of the absolute differences 94 bytes over 128 samples a line (RC_SHOW=1 cargo test --release -p atari-st --test timing_probes p04_report -- --ignored --nocapture)" }
+gap = { reason = "inside the picture Hatari's counter differs from ours by one word on about half of the samples: the reads of the three counter bytes take clock-exact slots that the model of the wait states does not reproduce, and the interrupt that starts the sample is placed to a few clocks only", evidence = "second look 2026-10-23: on lines 100 and 250 the differences repeat with period five samples ([0,-2,2,0,2,0,-2,2,0,2]) and sum to zero over a period, and Hatari's counter is not monotonic in the sample order (9758 then 9756) while ours is: Hatari reads the three counter bytes at slots rounded differently from ours; the mean agrees, border lines are exact (sum |d| 0), the pattern is Hatari's rounding with no hardware fact behind it; sum of the absolute differences 94 bytes over 128 samples a line (RC_SHOW=1 cargo test --release -p atari-st --test timing_probes p04_report -- --ignored --nocapture)" }
 
 # P06: the MFP timer A data register against the time since the control register started the timer (timing/p06_mfp_timer.s): four
 # prescalers, 64 starting points each. Hatari's dump is the golden: all but two reads equal, two off by one.
@@ -438,7 +438,7 @@ golden = "atari-st/timing/p16.bin"
 golden_sha256 = "3d07951976138a4b7e6a123a0cc2c6f71986dcf3de85dbe293885169b55ccf5c"
 compare = { mode = "exact" }
 status = "known-gap"
-gap = { reason = "the transfer starts at another frame: where the head and the disk are when the command is given differs (rotation phase is not modelled to Hatari's origin); the loss per burst and the frames inside a transfer agree", evidence = "timing_probes p16_a_dma_burst_holds_the_cpu_for_the_clocks_hatari_shows passes; p16_report lists both" }
+gap = { reason = "the transfer starts at another frame: where the head and the disk are when the command is given differs (rotation phase is not modelled to Hatari's origin); the loss per burst and the frames inside a transfer agree", evidence = "second look 2026-10-23: the transfer rate per frame is equal (528 bytes) and only the start differs by about 176 bytes (frame 12: ours 208, Hatari 384), the same size as the P17 first-stretch offset (979 loop runs, about 193 bytes); both come from the spindle phase: ours counts from power-on, Hatari's from motor start. A real drive's phase is arbitrary, so no hardware fact decides it; matching Hatari needs a motor-start hook in the shared Floppy trait (a pin bump of every family) for no gain in accuracy, so it stays a gap; timing_probes p16_a_dma_burst_holds_the_cpu_for_the_clocks_hatari_shows passes; p16_report lists both" }
 
 # P17 (floppy index pulse and sector pitch)
 [[scenario]]
@@ -453,7 +453,7 @@ golden = "atari-st/timing/p17.bin"
 golden_sha256 = "b9e3e660656329917c8181da183e2dd94e0c313a2c598ef9e488481cbae50ab0"
 compare = { mode = "exact" }
 status = "known-gap"
-gap = { reason = "the index pulse and the header pitch agree to a few loop runs, but the phase of the revolution at the start is Hatari's own (its origin is the motor start), so the first stretch and the first header time differ", evidence = "timing_probes p17_the_index_pulse_and_the_sector_pitch_are_hatari_s passes; p17_report lists both" }
+gap = { reason = "the index pulse and the header pitch agree to a few loop runs, but the phase of the revolution at the start is Hatari's own (its origin is the motor start), so the first stretch and the first header time differ", evidence = "second look 2026-10-23: the first stretch is 3937 loop runs here and 2958 in Hatari, every later stretch within 2 runs: the spindle phase origin (see P16); timing_probes p17_the_index_pulse_and_the_sector_pitch_are_hatari_s passes; p17_report lists both" }
 
 # P18 (what an access to each I/O register costs)
 [[scenario]]
@@ -498,7 +498,7 @@ golden = "atari-st/timing/p20.bin"
 golden_sha256 = "f4ccc0e37dfee69206ca6ac3264a772c2417efeee393fcdd45b1ab2cd2e514a2"
 compare = { mode = "exact" }
 status = "known-gap"
-gap = { reason = "Hatari's first-answer latency varies by about 30 loop runs from one start to another (the 6301's loop position); ours is the mean of its figures per class of command, so single loop counts differ, the byte spacing and the answers equal", evidence = "timing_probes p20_the_keyboard_answers_with_the_latencies_and_byte_spacing_hatari_shows passes (40 runs for the reset, 70 for the rest)" }
+gap = { reason = "Hatari's first-answer latency varies by about 30 loop runs from one start to another (the 6301's loop position); ours is the mean of its figures per class of command, so single loop counts differ, the byte spacing and the answers equal", evidence = "second look 2026-10-23: the first answer comes 427 to 482 runs after the command in Hatari and always 429 to 454 here, the later bytes alternate 169/170 runs in both but in another phase; the content bytes are equal in all cases; timing_probes p20_the_keyboard_answers_with_the_latencies_and_byte_spacing_hatari_shows passes (40 runs for the reset, 70 for the rest)" }
 
 # P21 (MFP transmitter byte time)
 [[scenario]]
@@ -513,7 +513,7 @@ golden = "atari-st/timing/p21.bin"
 golden_sha256 = "f694e0ead47ba40e140982d240a44e84a2879540c15cbcebf8e46748bd772212"
 compare = { mode = "exact" }
 status = "known-gap"
-gap = { reason = "Hatari 2.6.1 transmits at once with no RS-232 device attached (the buffer is empty after every write), so it has no byte time to match; ours follows the MC68901 data sheet", evidence = "timing_probes p21_the_transmitter_follows_the_baud_rate_the_data_sheet_gives" }
+gap = { reason = "Hatari 2.6.1 transmits at once with no RS-232 device attached (the buffer is empty after every write), so it has no byte time to match; ours follows the MC68901 data sheet", evidence = "second look 2026-10-23: unchanged, the data sheet is the source and Hatari's instant transmit has none; timing_probes p21_the_transmitter_follows_the_baud_rate_the_data_sheet_gives" }
 
 # P22 (timing/p22_acsi_timing.s): an ACSI command done at once, TEST UNIT READY and READ(6) of 1, 8 and 32 blocks, from a floppy probe with a
 # blank disk on target 0
@@ -529,7 +529,7 @@ golden = "atari-st/timing/p22.bin"
 golden_sha256 = "4505fd9827fd845c2f51c456c2af657bc2630a7c69d2131bd2615f98cf639eba"
 compare = { mode = "exact" }
 status = "known-gap"
-gap = { reason = "the completion is as immediate as Hatari's (loops equal), but Hatari leaves the DMA address counter at $020000 after a read where the ACSI notes move it on by the blocks read, as ours does", evidence = "timing_probes p22_an_acsi_command_is_done_at_once_as_in_hatari passes" }
+gap = { reason = "the completion is as immediate as Hatari's (loops equal), but Hatari leaves the DMA address counter at $020000 after a read where the ACSI notes move it on by the blocks read, as ours does", evidence = "second look 2026-10-23: unchanged, the data-chip documentation moves the address and Hatari leaves it, a documented Hatari quirk; timing_probes p22_an_acsi_command_is_done_at_once_as_in_hatari passes" }
 
 # P09 (timing/gen_p09.py): a high-then-low resolution write pair swept along line 100 (4 clocks a frame); the golden is the video address
 # counter at the entry of line 102 in Hatari. The model reproduces the frames where the right border (+44 bytes) and the left border (+26)
@@ -547,7 +547,7 @@ golden = "atari-st/timing/p09.bin"
 golden_sha256 = "d7c60e3f824088a4fc9f159974c7e54510a840bba5024d807c9e65dd615915f6"
 compare = { mode = "exact" }
 status = "known-gap"
-gap = { reason = "Hatari also shows lines cut short (-106 bytes) and lost (-160 bytes) on about a dozen frames of this sweep, and the +-2..4 jitter of its interrupt timing; the model has the borders only", evidence = "sets of frames with +44 and +26 equal; -106 and -160 frames missing (cargo test --release -p atari-st --test timing_probes border_report -- --ignored --nocapture with RC_PROBE=p09)" }
+gap = { reason = "Hatari also shows lines cut short (-106 bytes) and lost (-160 bytes) on about a dozen frames of this sweep, and the +-2..4 jitter of its interrupt timing; the model has the borders only", evidence = "second look 2026-10-23: no new experiment; the lost lines are Hatari's own and no fact orders them; sets of frames with +44 and +26 equal; -106 and -160 frames missing (cargo test --release -p atari-st --test timing_probes border_report -- --ignored --nocapture with RC_PROBE=p09)" }
 
 # P10: the same sweep with the sync mode written 60 Hz then 50 Hz; the right border (+44) opens on the frame Hatari's does.
 [[scenario]]
@@ -562,7 +562,7 @@ golden = "atari-st/timing/p10.bin"
 golden_sha256 = "030af85ce7d085eaa11ebba2004a386c359af44c0a25ef2166b82d99f3f7e96e"
 compare = { mode = "exact" }
 status = "known-gap"
-gap = { reason = "the sweep shows the +44 frame as Hatari does, but one more effect of Hatari (a lost line, -158 bytes, at the end of the sweep) is not modelled and the interrupt jitter makes the counters differ by 2 to 4 bytes", evidence = "p09_and_p10_open_the_borders_on_the_frames_hatari_does passes; border_report with RC_PROBE=p10 lists both sweeps" }
+gap = { reason = "the sweep shows the +44 frame as Hatari does, but one more effect of Hatari (a lost line, -158 bytes, at the end of the sweep) is not modelled and the interrupt jitter makes the counters differ by 2 to 4 bytes", evidence = "second look 2026-10-23: no new experiment; the lost lines are Hatari's own and no fact orders them; p09_and_p10_open_the_borders_on_the_frames_hatari_does passes; border_report with RC_PROBE=p10 lists both sweeps" }
 
 # P12 (timing/gen_p12.py): the sync mode written 60 Hz on line 10 + frame and 50 Hz on the next line, 256 frames; the golden holds the video address
 # counter at the entry of lines 120 and 300 in Hatari. The top border (60 Hz on line 33), the missed picture (line 62), the early end (line 233) and the
@@ -579,4 +579,4 @@ golden = "atari-st/timing/p12.bin"
 golden_sha256 = "c1122cfed51ef8b3927d0fe0bd8327a66a789d1a71feb40e3250c2712d1bfbae"
 compare = { mode = "exact" }
 status = "known-gap"
-gap = { reason = "one effect of Hatari (the picture ends 5 lines early when 60 Hz is written on line 257) is not modelled; the counter at line 120 after the top border differs by 250 bytes", evidence = "p12_moves_the_picture_window_on_the_lines_hatari_does passes for lines 33, 62, 233 and 262 (vertical_report lists both)" }
+gap = { reason = "one effect of Hatari (the picture ends 5 lines early when 60 Hz is written on line 257) is not modelled; the counter at line 120 after the top border differs by 250 bytes", evidence = "second look 2026-10-23: no new experiment; the 60 Hz line-257 effect and lost lines are Hatari's own; p12_moves_the_picture_window_on_the_lines_hatari_does passes for lines 33, 62, 233 and 262 (vertical_report lists both)" }
