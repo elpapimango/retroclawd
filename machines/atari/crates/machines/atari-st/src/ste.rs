@@ -101,6 +101,8 @@ impl SteRegs {
             && self.pads.iter().all(|p| p >> 9 == 0)
             && self.blitter.is_consistent()
             && self.dma.is_consistent()
+            && self.blit_timing.credit <= 160_256
+            && self.blit_timing.cpu <= 96 * 8
             && self.rtc.is_consistent();
         if ok {
             Ok(())

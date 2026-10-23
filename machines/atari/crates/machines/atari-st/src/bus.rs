@@ -444,7 +444,11 @@ impl StBus {
             return;
         }
         let timing = &mut self.ste.blit_timing;
-        timing.cpu += self.now.saturating_sub(timing.mark);
+        // At most a few bursts come due at once, however long the CPU ran (and whatever a state said).
+        timing.cpu = timing
+            .cpu
+            .saturating_add(self.now.saturating_sub(timing.mark))
+            .min(BLIT_CPU_SLICE * 8);
         while self.ste.blit_timing.cpu >= BLIT_CPU_SLICE && self.ste.blitter.busy() {
             self.ste.blit_timing.cpu -= BLIT_CPU_SLICE;
             self.blit_burst();

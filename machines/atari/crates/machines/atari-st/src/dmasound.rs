@@ -170,9 +170,11 @@ impl DmaSound {
     /// CPU clocks times DMA clocks per frame: the cycle of the `n`th sample frame after the start.
     fn frame_cycle(&self, n: u64, clock_hz: u64) -> u64 {
         let div = 1280u128 >> (self.mode & 3);
+        let after = (n as u128 * div * u128::from(clock_hz)).div_ceil(DMA_HZ);
+        // A state is untrusted: the sum saturates instead of overflowing.
         self.start
-            + START_LATENCY
-            + (n as u128 * div * u128::from(clock_hz)).div_ceil(DMA_HZ) as u64
+            .saturating_add(START_LATENCY)
+            .saturating_add(u64::try_from(after).unwrap_or(u64::MAX))
     }
 
     fn audio_cycle(&self, n: u64, clock_hz: u64) -> u64 {
