@@ -106,22 +106,23 @@ No real hardware is available, so these stay parked until someone has it; everyt
   entities; gilrs itself was never exercised. To check: a physical pad, bind `reset = ["f12", "pad:select+start"]`, hold Select then
   press Start, and confirm Select alone does not reach the machine as a joystick button once it is part of a chord.
 
-## Atari ST: Phase 2 done, Phase 3 next (2026-10-22)
+## Atari ST: Phase 3 done, Phase 4 next (2026-10-23)
 
-Phases 1 and 2 are done (spec section 24, Status 2026-10-21 and 2026-10-22). Next: Phase 3 (spec section 5): cycle-exact
-video and the sync/resolution borders (the log of those writes is in place), Blitter and STE, memory watchpoints (decision
-1 of Phase 2: wait for a need and the trace file), `.stx` once a specification with a usable licence exists
-(`machines/atari/docs/stx-and-dim-provenance.md`).
-Deferred from Phase 2 (plan ledger, `Deferred minors`): the host has no `--disk-save` for ACSI hard disks (the plugin exports
-them as drive 8 + target; wire a flag), the libFuzzer targets were never run (install nightly + cargo-fuzz and run each
-for 60 s: `msa`, `state_decode`, `prg`, `ahdi_fat16`, `rcasm68k`, `rcdis68k`), a download of Atari's hardware
-specification and the ACSI/SCSI references to settle the `[H?]` rows (bus errors per region, INQUIRY/REQUEST SENSE/MODE
-SENSE/READ CAPACITY data, the command acknowledge), IKBD joystick key code mode for joystick 1's stick, the break and
-parity features of the USART peers.
+Phases 1 to 3 are done (spec section 24, Status 2026-10-21, 2026-10-22 and 2026-10-23). Phase 3 gave `--accuracy accurate` (every bus
+cycle, wait states, cycle-exact Shifter with borders and mid-line palette, exact MFP/ACIA/IKBD/DMA/FDC timing, the mono monitor, the
+`borders = on` canvas) and a timing oracle (probes run in Hatari 2.6.1 and here, `machines/atari/docs/timing-oracle.md`). Next: Phase 4
+(spec section 5): the Blitter, the STE (its Shifter, DMA sound, joystick ports), the Mega ST clock, memory watchpoints (decision 1 of
+Phase 2: wait for a need), `.stx` once a specification with a usable licence exists.
+Deferred from Phase 3 (ledger, `Deferred minors`; the exit table with every `known-gap` probe is in the spec Status): the libFuzzer
+targets were never run (nightly + cargo-fuzz: `msa`, `state_decode`, `prg`, `ahdi_fat16`, `rcasm68k`, `rcdis68k`, `accurate_regs`,
+60 s each); Hatari's other wake-up states (only `ws3`); the YM2149's audio phase against the register write (no black-box reading);
+picture-level comparisons of the border tricks and of mid-line resolution switches (P08 not probed on its own; Hatari's lost and
+cut lines, P09/P10/P12); the 14 `known-gap` probes (interrupt placement to a few clocks, Hatari's own jitter and its instant USART and
+unchanged ACSI DMA address); the host has no `--disk-save` for ACSI hard disks; the numbering of the probes follows the order written,
+not the plan's table.
 Open hardware facts (`machines/atari/docs/hardware-facts.md`, `[H?]` and `[O]` rows; Atari's hardware specification
 is behind Cloudflare from here, download it by hand): the MMU's address multiplexing (modelled as DRAM row/column,
-checked only through EmuTOS's sizing), RAM above the configured top, unused register bits, the mono frame's line
-count (mono refused), display-enable timing (Timer B input not connected; the video address counter stops the
+checked only through EmuTOS's sizing), RAM above the configured top, unused register bits, display-enable timing (Timer B input not connected; the video address counter stops the
 machine), plane-to-colour bit order, the GPIP idle levels, the NTSC crystal (32.0424 vs 32.04245 MHz), the ACIA
 clock. Known limit: fast mode advances the MFP to an instruction's start time on access.
 

@@ -97,6 +97,21 @@ images, AHDI/FAT16 made by `rcdisk hd`, EmuTOS shows drive C). A `.prg` given to
 `AUTO\NAME.PRG` (`st_floppy::boot`) and EmuTOS runs it. `retroclawd-tools` gained the 68000 toolchain: `rcasm --cpu 68000`
 (`-f gemdos` for a relocatable `.PRG`), `rcdis --cpu 68000`, `rcld` with `machine = "atari-st"`, `rc_common::prg` (the GEMDOS
 executable format) and `rcdisk hd`. The manifest now has S3W, S5, S8P, S9S, S10 and S11 as well. Scenario media build: `machines/atari/scenarios/build.sh`.
+**Phase 3 (2026-10-23, slices 13-17; plan `docs/superpowers/plans/2026-10-22-atari-st-phase3.md`, spec Status 2026-10-23).**
+`--accuracy accurate` follows every bus cycle: the 68000 (`mc68000`, bus transactions now equal SingleStepTests', 996 322 of
+1 000 060 cases, interrupt timing pinned to UM Table 8-14) takes 4-clock aligned cycles with wait states, devices are brought up
+to date at the cycle of the access (`events.rs`, `waits.rs`), the Shifter keeps the clock of every palette/resolution/sync write
+(`fetch.rs`: picture window and left/right/top/bottom borders; `render_exact`, `render_overscan`: the `borders = on` option's
+832 x 552 canvas) and the mono monitor works (`--monitor mono`: 501 lines of 224 clocks). Every timing fact was observed with
+a probe, a 68000 program in `machines/atari/timing/` that runs in Hatari 2.6.1 (a black box, memory dumped with the debugger's
+`savebin` by `retroclawd-tools/scripts/capture_hatari_mem.py`) and here; `machines/atari/docs/timing-oracle.md`,
+`timing/README.md`, `docs/hardware-facts.md` "Timing (Phase 3)". The probes found a real defect (the FDC was not ticked until it
+set Busy, so completion came at frame boundaries and EmuTOS lost a revolution per sector: boot 137 frames slower than Hatari;
+fixed in the shared `wd1770`), the floppy rotation facts (6267-byte revolution, 116-byte index pulse, 614-byte sector pitch,
+exact six-revolution spin-up), the IKBD answer delays and the register access costs. Fourteen probes stay `known-gap` in the
+manifest with the measured difference (interrupt placement jitter, Hatari's lost lines, its instant USART and unchanged ACSI DMA
+address); the exit table is in the spec. `accurate` runs the idle desktop at 12.8x real time and `fast` at 13.8x
+(`docs/benchmarks.md`); both modes boot the three RomM games to the same frames. Pins: crates `cdc4417`.
 Unfinished and unsourced items are the `[H?]` rows of `machines/atari/docs/hardware-facts.md` and TODO.md "Atari ST: Phase 2 done, Phase 3 next".
 
 ## What this is

@@ -1004,3 +1004,34 @@ SENSE); an ACSI command finishes at its last byte with no timing; hard disk cont
 targets (`msa`, `state_decode`, `prg`, `ahdi_fat16`, `rcasm68k`, `rcdis68k`) are written but were not run (no nightly
 toolchain here), the same inputs were swept as mutation loops (`RC_SWEEP=40`). Phase 3 (cycle-exact video, overscan,
 Blitter, STE) is untouched.
+
+## Status (2026-10-23): Phase 3 done (slices 13-17)
+
+Plan `docs/superpowers/plans/2026-10-22-atari-st-phase3.md`, one push at the end (crates `cdc4417`). The decisions taken: `fast`
+stays the default and `accurate` is opt-in; "exact" means agreement with Hatari 2.6.1 on the probes (Atari's hardware
+specification was still unreachable, so every timing fact is `[O]` with its probe: `machines/atari/docs/timing-oracle.md`);
+only Hatari's default wake-up state `ws3` is modelled; the default canvas stays 640 x 400 and `borders = on` (accurate mode)
+draws the 832 x 552 overscan canvas; the mono monitor is in; the probe numbers follow the order they were written in.
+
+| Exit criterion | Status and where |
+|---|---|
+| 1. `mc68000` SingleStepTests pass with the bus transaction comparison on | **Met.** 996 322 of 1 000 060 cases exact with the comparison on (equal to the functional pass); the rest is the documented ASR carry disagreement and two bad upstream cases (`tests/singlestep-expected.md`); interrupt and exception timing is pinned to UM Table 8-14 (`tests/interrupt_timing.rs`) |
+| 2. every probe byte-identical in Hatari and here (`accurate`) | **Not met.** Property-level tests pass for all of them (`tests/timing_probes.rs`), and P01, P15 (edges), P18 (clocks an iteration), P22 (completion), the mono frame (P14), the DMA burst stall (P16), the floppy index, pitch, steps, turnaround and spin-up (P17, P19, P23-P26) and the palette strips (S12) agree; but the dumps differ byte for byte for **fourteen** probes, each a `known-gap` in the manifest with the measured difference: P02 (interrupt placement to the nearest few clocks, means within 0.035 runs a line), P04 (counter inside a line within one word), P06 (2 of 256 timer reads off by one), P09 and P10 (Hatari cuts and loses lines on some frames, jitter of 2 to 4 bytes), P12 (the picture ends 5 lines early on line 257), P14 (first HBL count), P16 and P17 (the revolution phase has Hatari's own origin), P18 (loop counts +-1), P19 (0.25%), P20 (Hatari's own latency varies by 30 runs), P21 (Hatari sends USART bytes at once, ours takes the data sheet's time), P22 (Hatari leaves the DMA address unchanged after an ACSI read, ours follows the ACSI notes) |
+| 3. mid-line palette and border pictures match Hatari's `--borders on` screenshots | **Partly met.** S12 (palette strips: all 122 rows start and end on the same pixel) and S13 (the canvas: size and picture position measured, similarity as S1) pass; the border-opening effects (right +44, left +26 bytes, top, bottom) happen on the frames Hatari's do (P09, P10, P12 effect-frame tests) but their pictures are compared only through the video counter, not as screenshots: HBL-timed tricks are not reproducible line by line because of interrupt jitter |
+| 4. the mono monitor works | **Met.** S15 (EmuTOS mono desktop against Hatari, similarity), `tests/mono.rs` (both modes), P14 and P15 (501 lines of 224 clocks, picture on lines 34 to 433) |
+| 5. `accurate`: identical frame hashes on 3 runs, state round trip, speed budget | **Met.** `tests/accurate_determinism.rs` (3 runs, states at frames 1, 37, 120 inside a line, host interleavings), `tests/state_accurate.rs`; `docs/benchmarks.md`: `fast` 13.8x and `accurate` 12.8x real time on the idle desktop (budget 10x and 2x) |
+| 6. the owner's RomM games boot without a stop in both modes | **Met** for the three images available (1943, Alien Syndrome, Defender of the Crown): no stop, the same frame in both modes and on two runs (`tests/romm_games.rs`) |
+| 7. `check_all` includes the new scenarios in both modes and passes; every new parser or log has a bound and a hostile-input test | **Met.** `tools/check_all.sh` (the app, every family, their unit tests, the smoke test, every manifest through `rc-scenarios` including the atari manifest with 30 passing scenarios and 14 known gaps and the accurate variants, and the rc-suite cases) ends with "all checks passed" on 2026-10-23; `tests/hostile_video.rs` (a write to every Shifter register on every cycle, random sequences, mutated states, `RC_SWEEP=40`); the capped logs are the palette change log (16 384) and the sync log (256); `tests/hostile_video.rs` (a write to every Shifter register on every cycle, random sequences, mutated states, `RC_SWEEP=40`); the capped logs are the palette change log (16 384) and the sync log (256) |
+
+Found by the probes and fixed (both modes): the FDC was not ticked between a command's write and Busy, so INTRQ came at frame
+boundaries and a floppy boot took 137 frames more than Hatari's (`wd1770::command_pending`); the spin-up is six whole revolutions
+(`Floppy::revolution_bytes`); the motor-off countdown follows the drive that was selected when the count restarted, so commands to
+the empty drive B never stop the motor. Other device facts: a floppy revolution is 6267 byte times and the headers are 614 bytes
+apart, the index pulse lasts 116 bytes, the IKBD answers to a query 6 500 and to a status inquiry 5 000 cycles after the command,
+the FDC data register and the DMA mode write cost 4 more clocks, an ACIA access waits for the E clock (+8), a floppy DMA burst holds
+the CPU 32 clocks. The mono polarity follows Hatari (palette 0 bit 0 set = black on white; the book says the opposite).
+
+Limits that remain: Hatari's other wake-up states; the YM2149's audio phase against the write that changes it (Hatari offers no
+black-box audio reading in this harness) stays `[H?]`; the picture-level border comparisons above; mid-line resolution pictures
+(P08 was not probed on its own); the libFuzzer targets (including the new `accurate_regs`) compile but were not run (no nightly
+toolchain); the ACSI `--disk-save` flag of the host; Phase 4 (Blitter, STE, Mega ST clock, the STE Shifter) is untouched.
