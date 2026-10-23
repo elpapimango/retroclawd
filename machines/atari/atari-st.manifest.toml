@@ -371,7 +371,7 @@ golden = "atari-st/timing/p06.bin"
 golden_sha256 = "3cc16ecb34395c87a8d14b1202d225e722086aa9822f4c6c231a50482378c68d"
 compare = { mode = "exact" }
 status = "known-gap"
-gap = { reason = "two of the 256 timer reads differ from Hatari's by one count: the timer's first count after the control write is placed to the clock in Hatari and to the nearest MFP tick here", evidence = "ours-minus-theirs over the 256 reads has two entries of 1 and none else (cargo test --release -p atari-st --test timing_probes p06_report -- --ignored --nocapture)" }
+gap = { reason = "two of the 256 timer reads differ from Hatari's by one count: the timer's first count after the control write is placed to the clock in Hatari and to the nearest MFP tick here", evidence = "second look 2026-10-23: the two reads (prescaler /4 at 58 NOPs, /10 at 27 NOPs) are both +1 and both on the edge where a count falls, so Hatari's first count comes about one CPU clock earlier than ours at those two phases and equal at the other 254; one start-phase shift cannot move these two without moving others, and no source gives the sub-tick phase, so it stays a gap. ours-minus-theirs over the 256 reads has two entries of 1 and none else (cargo test --release -p atari-st --test timing_probes p06_report -- --ignored --nocapture)" }
 
 # S12 (probe P07, timing/p07_palette_strip.s): on 64 lines the HBL handler writes palette entry 1 red part way along the line and
 # white again 100 clocks later, a red strip on each line that starts one clock later than the line above. Hatari 2.6.1's picture is the
@@ -423,7 +423,7 @@ golden = "atari-st/timing/p14.bin"
 golden_sha256 = "d50216e0ec2d26066880ddbdb85d0662dedb425a1e110f4885f8397d9f361c96"
 compare = { mode = "exact" }
 status = "known-gap"
-gap = { reason = "the first HBL count is 500 here and 501 in Hatari (the HBL pending when the mask came off), and the loop counts differ by the placement of the VBL handler by up to a count", evidence = "cargo test --release -p atari-st --test timing_probes p14 (the test compares lines per frame from the second interval and the loop counts' mean within 1)" }
+gap = { reason = "the first HBL count is 500 here and 501 in Hatari (the HBL pending when the mask came off), and the loop counts differ by the placement of the VBL handler by up to a count", evidence = "second look 2026-10-23: tests/hbl_latch.rs shows a pending HBL is taken at the rte that lowers the mask, so the latch is not the cause; the single missing HBL in the first interval is the VBL/HBL ordering at the frame boundary after twelve masked frames, which Hatari places to its own jitter; cargo test --release -p atari-st --test timing_probes p14 (the test compares lines per frame from the second interval and the loop counts' mean within 1)" }
 
 # P16 (floppy DMA stall: a counted loop while nine sectors are read)
 [[scenario]]
@@ -468,7 +468,7 @@ golden = "atari-st/timing/p18.bin"
 golden_sha256 = "4c5fc266e8675af8fd14850b814fdbd7b017193ca6c062dd147ed7b863840679"
 compare = { mode = "exact" }
 status = "known-gap"
-gap = { reason = "the loop counts of a frame differ by one here and there (where the VBL handler falls in the loop); the clocks an iteration take, which the test compares, are equal for all 16 variants", evidence = "timing_probes p18_an_access_to_each_register_costs_the_clocks_hatari_shows passes" }
+gap = { reason = "the loop counts of a frame differ by one here and there (where the VBL handler falls in the loop); the clocks an iteration take, which the test compares, are equal for all 16 variants", evidence = "second look 2026-10-23: no new explanation; same family as P14 (Hatari places the VBL handler within the loop to its own jitter, 5604/5603 alternating); timing_probes p18_an_access_to_each_register_costs_the_clocks_hatari_shows passes" }
 
 # P19 (floppy step rates)
 [[scenario]]

@@ -600,6 +600,9 @@ fn p14_the_mono_frame_has_the_lines_and_length_hatari_has() {
         return;
     };
     let (loops, hbls) = p14(Accuracy::Accurate).unwrap();
+    if std::env::var_os("RC_REPORT").is_some() {
+        eprintln!("p14 ours {loops:?} {hbls:?}");
+    }
     // The first interval holds the HBL that was pending when the mask came off: Hatari counts one more there (ledger).
     assert_eq!(hbls[1..], [501; 10], "lines in a frame");
     // A frame is 501 x 224 clocks: the counted loop (20 clocks an iteration) fills it but the VBL handler's few hundred.
