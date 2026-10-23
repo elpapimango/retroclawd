@@ -10,6 +10,9 @@
 #   amstrad-diagnostics v1.3 (Lyle Llopis; MIT) -- the CPC/GX4000 diagnostics, as a disk (AmstradDiag.dsk) and a Plus
 #       cartridge (AmstradDiag.cpr, which has a malformed header the CPC plugin repairs):
 #       https://github.com/llopis/amstrad-diagnostics
+#   VIC-20 Dead Test v1.1.01 (Simon Rowe, Greg McCarthy, Piers Finlayson; GPL-3.0) -- raw BLK5 cartridge
+#       and PAL/NTSC replacement KERNALs. Source/license pin e4e4bdf8f9758e63da6f2754a576d4bab6eb1631:
+#       https://github.com/piersfinlayson/Vic20-dead-test/tree/e4e4bdf8f9758e63da6f2754a576d4bab6eb1631
 #
 #   C64 Unified Diagnostic Cartridge (crystalct; CERN-OHL-W-2.0, which licenses the hardware design -- the dead-test code inside is
 #       Commodore's own, so this is only ever downloaded for local testing, never committed or redistributed) -- the modified
@@ -31,6 +34,9 @@ ITEMS=(
   "amstrad-diagnostics v1.3 AmstradDiag.cpr|https://github.com/llopis/amstrad-diagnostics/releases/download/v1.3/AmstradDiag.zip|65dbf840e590bbe9ae4ccea934b54180eabf7ada6d54283e30725d3f868e8f92|AmstradDiag.cpr|bf82fff3646eb707a0fbc153bfe78bd5ba55a82ff604be8bf06d3e6211352310|machines/amstrad/software/diagnostics/AmstradDiag.cpr"
   "amstrad-diagnostics v1.3 AmstradDiag.dsk|https://github.com/llopis/amstrad-diagnostics/releases/download/v1.3/AmstradDiag.zip|65dbf840e590bbe9ae4ccea934b54180eabf7ada6d54283e30725d3f868e8f92|AmstradDiag.dsk|a6b5dc9abc9f0dcd3dd74b2ec23862f2f55ccc3a2b6f62505e9a93cdf1a6fe97|machines/amstrad/software/diagnostics/AmstradDiag.dsk"
   "c64-unified-diag Unified_32k|https://raw.githubusercontent.com/crystalct/C64UnifDiagCart/c6c4f7a210d0b35df4ea680d7a0d0ad30faf8b7b/files/Unified_32k.bin|d3b759c3eb777292b25e6278dc8e01f0a8549bfb31c455d24d8fd070124bbf26||d3b759c3eb777292b25e6278dc8e01f0a8549bfb31c455d24d8fd070124bbf26|machines/commodore/software/diagnostics/unified_32k.bin"
+  "VIC-20 Dead Test v1.1.01 cartridge|https://github.com/piersfinlayson/Vic20-dead-test/releases/download/v1.1.01/dead-test.a0|1b23bd17ec878fa6f87d5be67d40406f0f28abdbd7f6ffb21c5826b796198ea3||1b23bd17ec878fa6f87d5be67d40406f0f28abdbd7f6ffb21c5826b796198ea3|machines/commodore/software/diagnostics/vic20-dead-test-v1.1.01.a0"
+  "VIC-20 Dead Test v1.1.01 PAL KERNAL|https://github.com/piersfinlayson/Vic20-dead-test/releases/download/v1.1.01/dead-test.pal.e0|60873ebefe0d00ee1ebe1345c6b170ff2306ee87912d63ec90b7a602e8ee2be1||60873ebefe0d00ee1ebe1345c6b170ff2306ee87912d63ec90b7a602e8ee2be1|machines/commodore/software/diagnostics/vic20-dead-test-v1.1.01.pal.e0"
+  "VIC-20 Dead Test v1.1.01 NTSC KERNAL|https://github.com/piersfinlayson/Vic20-dead-test/releases/download/v1.1.01/dead-test.ntsc.e0|77f25a9c859ec04e89915d29c79aecb80b3084f32360ae71b490c7cb8357f841||77f25a9c859ec04e89915d29c79aecb80b3084f32360ae71b490c7cb8357f841|machines/commodore/software/diagnostics/vic20-dead-test-v1.1.01.ntsc.e0"
 )
 
 extract() { # zip entry dest

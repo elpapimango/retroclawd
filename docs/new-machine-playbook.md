@@ -56,6 +56,18 @@ Scenarios are data: a `<id>.manifest.toml` in the Family repository, run by `rc-
 
 **A picture from another emulator is compared by similarity, not pixel for pixel.** The reference draws its own border, scale and palette, so only the content can agree: both pictures are reduced to a 64x48 luminance grid over a `crop` and compared by mean absolute difference (`max_mad`, with the reason written in the manifest). Pixel-exact comparison is only for goldens this project made itself. This replaces the earlier assumption of pixel-exact comparison against the reference.
 
+An uncaptured `screen` or `memory` reference remains `status = "known-gap"`
+with nonempty reason and evidence, omitting both `golden` and `golden_sha256`
+(and `compare` for an uncaptured screen). The matching `rc-scenarios` support
+reports it as not run, never as passed; memory ranges are still required.
+Do not invent a filename/hash to satisfy validation. Once captured, record
+the real hash and comparison settings; ordinary validation and unexpected-pass
+rules then apply unchanged.
+
+An uncaptured `audio` reference likewise requires `status = "known-gap"` and
+nonempty reason/evidence, omitting the `audio` expectation table. The runner
+reports it as not run; passing audio scenarios require measured expectations.
+
 ## Goldens
 
 Captured once by a script that runs the reference emulator headless on the scenarios (`scripts/capture_zesarux_screen.py`, `capture_zesarux_audio.py` and `capture_vice_screen.py` in `retroclawd-tools`), stored in RomM keyed by hash (they derive from copyrighted software, so they stay out of git like ROMs), and pinned by the manifest (reference name and version, exact command, hash). CI compares our output to the golden and never runs the reference emulator. A diff image is written when they differ. One script regenerates goldens when the reference version changes.

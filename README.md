@@ -21,7 +21,8 @@ Machines (each family has its own repository, see Building):
 |---|---|---|
 | Sinclair | ZX81; ZX Spectrum 48K, 128K, +2, +2A, +3 | Z80 |
 | Amstrad | CPC464, CPC664, CPC6128, CPC464+/6128+, GX4000 | Z80 |
-| Commodore | C64, C128 (8502 and Z80, 40/80 columns), 1541/1570/1571/1581 drives | 6510/8502, Z80 |
+| Commodore | Experimental VIC-20; C64, C128 (8502 and Z80, 40/80 columns), 1541/1570/1571/1581 drives | 6502, 6510/8502, Z80 |
+| Atari | Experimental 800/800XL/65XE/130XE; ST first-device bring-up (not a complete ST) | 6502, 68000 |
 
 The CPU cores (Z80, validated with ZEXALL/ZEXDOC; NMOS 6502 with the illegal opcodes, validated with Klaus
 Dormann's and Tom Seddon's suites) and the chips several families share (AY-3-8910, uPD765A) live in
@@ -65,7 +66,8 @@ How the repositories relate (all public, same account):
 | [`retroclawd-crates`](https://github.com/elpapimango/retroclawd-crates) (`shared/`) | the shared crates: `machine`, `plugin-api` (ABI policy), the Z80 and 6502 cores, AY-3-8910, uPD765A, `.dsk`, tape formats |
 | [`retroclawd-sinclair`](https://github.com/elpapimango/retroclawd-sinclair) (`machines/sinclair`) | ZX81, ZX Spectrum 48K/128K/+2/+2A/+3 |
 | [`retroclawd-amstrad`](https://github.com/elpapimango/retroclawd-amstrad) (`machines/amstrad`) | Amstrad CPC464/664/6128, CPC+ and GX4000 |
-| [`retroclawd-commodore`](https://github.com/elpapimango/retroclawd-commodore) (`machines/commodore`) | C64, C128 and the 1541/1570/1571/1581 drives |
+| [`retroclawd-commodore`](https://github.com/elpapimango/retroclawd-commodore) (`machines/commodore`) | Experimental VIC-20, C64, C128 and the 1541/1570/1571/1581 drives |
+| [`retroclawd-atari`](https://github.com/elpapimango/retroclawd-atari) (`machines/atari`) | Experimental 800/800XL/65XE/130XE with ANTIC/GTIA/POKEY; existing bounded ST bring-up |
 
 - The application uses the shared crates **by path** through the `shared/` submodule and contains no machine
   code; it loads the machine libraries (`*_machine_plugin`) at run time. Removing a machine is deleting its library.
@@ -733,11 +735,99 @@ retroclawd cpc6128 --rom machines/amstrad/roms/cpc/cpc6128.rom --ram-banks 3 --r
 ```
 
 
+**Atari 8-bit (`atari-800`, `atari-800xl`, `atari-65xe`, `atari-130xe`, experimental)**
+
+The Atari Family builds `atari_8bit_machine_plugin` alongside its existing ST
+Plugin. Required `--rom-os` is 10240 bytes on 800, 16384 on XL/XE;
+optional `--rom-basic` is 8192 bytes.
+`--region pal|ntsc` and `--execution-mode fast|accurate` select real raster and
+instruction-batched/per-bus-cycle Chip clocks. The Machine reuses the shared NMOS
+6502 Core and MOS 6520 PIA, with ANTIC, GTIA and POKEY.
+
+Explicit Altirra replacement ROMs boot to BASIC and execute `PRINT 12*34` as
+`408` on every profile in both Regions/modes. XL/XE adds stock PORTB ROM/self-test
+selection and independent 130XE CPU/ANTIC bank routing. Keyboard, digital
+joysticks (four on 800, two on XL/XE), debugger and State are wired.
+Raw/XEX Programs, writable ATR/XFD D1:/D2:, standard CAS playback and CAR
+types 1/2/12/13/14 are supported. Real OS tests prove D2 writes/reads,
+cartridge boot and cassette load/execution through CIO. Media uses PIA/POKEY
+serial pins, not CPU loader traps. Game-config Media inference recognizes
+CAS/XFD/CAR; Atari tape/disk dialogs filter CAS and ATR/XFD.
+
+Accurate Acid800 scores 56/1/1 on 800 (only XL-only banking fails) and 57/0/1
+on XL/XE. Fast mode scores 43/14/1 and 44/13/1. PAL/NTSC agree.
+HSCROL feedback, phantom PM DMA, GTIA modes 9/10/11/pseudo-E and PIA control
+history are implemented. Fast mode remains instruction-batched; passing the
+diagnostics is not full hardware or game compatibility.
+State v5 adds explicit profile/MMU/Media/control history and reads v1-v4 on
+800 without changing their serialized layouts or the Plugin ABI.
+Preserve old files for rollback.
+
+Per-Machine manifests pin actual Atari800 7.2.1 reference captures without
+changing existing tolerances: each reports 44 passed, 0 failed and 10 known
+gaps. Reference keyboard/CAS/RMS capture and the
+reference's failing diagnostic screen remain known gaps. Original Atari
+firmware, general games, cassette boot, analogue output and all abnormal DMA
+overlaps remain unverified. See `machines/atari/docs/atari800-gaps.md`.
+
+**Commodore VIC-20 (`vic20`, experimental)**
+
+The Commodore Family builds `vic20_machine_plugin` alongside its existing
+libraries; no machine code is linked into the Host. It provides an NMOS 6502,
+VIC-I video/sound, two VIAs, keyboard/joystick, PAL/NTSC, expansion RAM, raw/PRG
+programs, debugger integration and save states. Required firmware flags are
+`--rom-basic`, `--rom-kernal` and `--rom-char`. `--ram-expansion` selects
+`none|3k|8k|16k|24k|32k|35k`.
+
+`--execution-mode fast|accurate` clocks Chips after instructions or on each
+CPU bus event, respectively. Both modes support PAL and NTSC. Sub-clock VIC-I
+effects, interlace, paddles and light pen
+remain unimplemented. **Real PAL/NTSC boots, BASIC typing, tone pitch, state
+continuation and frame budgets pass in both modes.** Sixty-two scenarios pass,
+with boot/input/program/cassette/disk/cartridge output and external Dead Test memory
+compared against hash-pinned VICE 3.9 captures. There are no known scenario gaps;
+this does not establish full hardware fidelity. `--tape` plays read-only VIC-20 TAP v0/v1
+(platform 1, matching PAL/NTSC header), through the real KERNAL and VIA motor/sense/read pins.
+Tape recording and analogue motor timing are not implemented.
+`--true-drive --disk game.d64` connects the existing real 1541 at IEC device 8;
+supply `--rom-1541` or use `--firmware auto`. Writable D64, disk export/writeback,
+swapping and complete Drive save states work without a loader trap. Drive CPU
+steps remain instruction-granular in both execution modes.
+`--cartridge game.a0` accepts generic read-only ROMs: raw `.20/.40/.60/.a0/.b0`,
+or load-address-prefixed `.prg/.bin/.rom`. Real KERNAL startup, attach/eject reset,
+read-only mapping and ROM-identified Save states work. Overlapping RAM expansion
+is rejected; banking, flash, cartridge RAM, VIC CRT and multi-file assembly are unsupported.
+Calibrated single-voice RMS agrees within 1%;
+see `machines/commodore/docs/vic20-gaps.md`. Do not apply the broader media
+support claims for other machines to this experimental Plugin.
+
+The Family also supplies a shared C16/Plus4 TAP-v2 parser/writer, consumed by
+the `rctape` feature branch for inspection, structural validation and exact
+half-wave normalization. This is a media prerequisite, not a C16/Plus4 Machine
+or cassette playback implementation. See the Family README and tools manual
+for supported headers, size limits and explicit-output behavior.
+
 **Commodore 128 (`c128`)**
 - `--mode c128|c64` (boot into C128 or C64 mode), `--display 40|80` (VIC-IIe or VDC screen), `--vic-accuracy
   line|cycle`, `--run` (auto-type `LOAD`/`RUN` for the attached media), `--drive-type 1541|1570|1571|1581`,
   `--true-drive` (a real drive CPU on the IEC bus), and the ROM options `--rom-kernal`, `--rom-basic`,
   `--rom-char`, `--rom-c64-kernal`, `--rom-c64-basic`. `retroclawd c128 --help` has the full list.
+
+**Commodore execution modes (`c64`, `c128`)**
+
+`--execution-mode fast|accurate` selects the existing instruction-batched or
+per-bus-cycle VIC-II/VIC-IIe engine. Fast is the default. Accurate is PAL-only
+and improves raster effects and BA stalls; it does not change Host pacing.
+The C128 Z80 and 2 MHz CPU paths remain instruction-batched. Media traps and
+true-drive emulation remain independent Options.
+
+Set `execution_mode = "accurate"` under `[machines.c64]` or `[machines.c128]`
+in application configuration, or under `[options]` in a game configuration.
+Normal CLI > game > application > Plugin precedence applies per Option key.
+The older `vic_accuracy = "line"|"cycle"` key remains supported; contradictory
+explicit old/new selections are errors, even across configuration layers.
+Save states retain their existing engine check and reject cross-mode loading.
+See the Commodore Family README for fidelity limits and real-time media settings.
 
 ### Current debugger and plugin status
 

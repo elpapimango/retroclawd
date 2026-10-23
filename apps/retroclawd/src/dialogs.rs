@@ -130,7 +130,12 @@ pub(crate) struct Filter {
 pub(crate) fn extensions_for(kind: FileKind, machine_id: &str) -> &'static [&'static str] {
     let spectrum = machine_id.starts_with("zx-spectrum");
     let cpc = machine_id.starts_with("cpc") || machine_id == "gx4000";
+    let atari8 = matches!(
+        machine_id,
+        "atari-800" | "atari-800xl" | "atari-65xe" | "atari-130xe"
+    );
     match kind {
+        FileKind::Tape if atari8 => &["cas"],
         FileKind::Tape if spectrum => &["tap", "tzx", "pzx", "csw", "voc", "wav"],
         FileKind::Tape if cpc => &["cdt", "tzx", "voc", "wav"],
         FileKind::Tape if machine_id == "c64" => &["tap", "t64"],
@@ -138,6 +143,7 @@ pub(crate) fn extensions_for(kind: FileKind, machine_id: &str) -> &'static [&'st
             &["p", "p81", "81", "tzx", "pzx", "csw", "voc", "wav"]
         }
         FileKind::Disk if spectrum || cpc => &["dsk", "edsk"],
+        FileKind::Disk if atari8 => &["atr", "xfd"],
         FileKind::Disk if machine_id == "c64" || machine_id == "c128" => {
             &["d64", "d71", "d81", "g64", "x64"]
         }
@@ -158,10 +164,11 @@ pub(crate) fn kind_of_extension(path: &str) -> Option<FileKind> {
         .to_string_lossy()
         .to_lowercase();
     match extension.as_str() {
-        "tap" | "tzx" | "cdt" | "pzx" | "csw" | "voc" | "wav" | "t64" => Some(FileKind::Tape),
-        "dsk" | "edsk" | "d64" | "d71" | "d81" | "g64" | "x64" | "nib" | "st" | "msa" => {
-            Some(FileKind::Disk)
+        "tap" | "tzx" | "cdt" | "pzx" | "csw" | "voc" | "wav" | "t64" | "cas" => {
+            Some(FileKind::Tape)
         }
+        "dsk" | "edsk" | "d64" | "d71" | "d81" | "g64" | "x64" | "nib" | "atr" | "xfd" | "st"
+        | "msa" => Some(FileKind::Disk),
         "z80" | "sna" | "szx" | "p" | "p81" | "81" => Some(FileKind::Snapshot),
         "state" => Some(FileKind::State),
         _ => None,

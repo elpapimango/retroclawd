@@ -1036,7 +1036,11 @@ and non-MSX blueMSX targets (SVI/Coleco/SG-1000) as separate roadmap sections.
 Keep an explicit feature-delta checklist against blueMSX/libretro and hardware references. If source
 sets disagree, require executable tests or primary hardware documentation before selecting behavior.
 
-## Atari 400/800 roadmap — PARKED
+## Atari 400/800 roadmap — 800/XL/XE accepted with recorded gaps
+
+Resumed in the dependency-first additional-Machine request. C16/Plus4 are parked
+by the owner; start with Atari 800, then 800XL/65XE/130XE. Reuse the established
+Atari Family repository rather than creating a second Atari repository.
 
 ### TODO (2026-10-15): the Atari 8-bit family as one new family repository
 
@@ -1067,9 +1071,68 @@ disks, `.xex` executables, `.car` / `.rom` cartridges, `.cas` tapes (`rctape`, `
 for the test suite), `.atari800` state is not needed.
 
 
-### DONE: baseline
+### DONE: original baseline (historical)
 
-No Atari 400/800 (or XL/XE) machine is implemented in retroclawd yet.
+Experimental `atari-800` now boots explicit Altirra replacement OS/BASIC ROMs
+through a dynamic Plugin in PAL/NTSC and fast/accurate modes. Initial ANTIC,
+GTIA and POKEY reuse shared NMOS 6502 and MOS 6520 PIA. Keyboard/BASIC execution,
+raw Programs, digital joysticks, tone pitch, State, warm reset, frame budgets and
+the debug contract are wired. This is a working slice, not the complete baseline.
+
+`machines/atari/atari-800.manifest.toml`: **36 passed, 0 failed, 8 known gaps**.
+Raw/XEX Programs and read-only ATR boot have independently captured Atari800
+7.2.1 reference memory. XEX executes ordered INITAD/RUNAD; D1: status/read uses
+actual PIA/POKEY serial pins, not ROM traps. Version 4 State preserves in-flight
+SIO, pending XEX, the IRQ-mask sample and explicit Chip/bus/interrupt pipelines;
+versions 1-3 remain readable
+(eject attached disks before loading version 1).
+S2 reference printable-input automation remains blocked. S7 executes all tests:
+fast 36/21/1, accurate 46/11/1 passed/failed/skipped in both Regions, versus
+reference 25/32/1. No earlier passing case regresses; case-level evidence is
+in the Family gap document.
+POKEY async receive timer hold and shared SHY/SHX/SHA/TAS high-byte stores are
+fixed; the illegal-instruction test now passes. CLI/SEI/PLP mask sampling also
+passes, with explicit State migrations across all affected Machines and Drives.
+Old-file readers remain; keep original files for rollback to older Plugins.
+Accurate DMA HALT now stops writes independently of WSYNC RDY. The apparent
+seven-cycle SLO was lost refresh stalls, not a missing Core cycle or POKEY timer
+bug. Both CPU timing tests and serial-port timing pass in both Regions/modes.
+Accurate BRK now passes: the Core permits mid-sequence NMI vector hijacking,
+and ANTIC raises its nominal edge at cycle 8 rather than 12. Stack frames,
+seven bus cycles, CPU serde, State layouts and the ABI are unchanged.
+The ten-area fidelity increment adds NMIST/NMIRES/NMIEN phases, VCOUNT,
+WSYNC, DLI and blocked-NMI timing, normal DMA/refresh and scrolling, shared
+POKEY polynomial/divider/borrow/two-tone pipelines, and live GTIA PMG,
+priorities and collisions. Accurate-mode IRQ delivery uses the preceding
+clock's pin sample. Fast-mode BRK, abnormal DMA, special graphics modes and
+remaining pipeline edge cases are not closed. Diagnostic totals are not
+acceptance passes.
+S4 checks documented pitch only, not reference RMS calibration.
+Original Atari firmware, general Media, games, GTIA special modes and exact
+timing remain unverified/unimplemented. Evidence and reproduction:
+`machines/atari/docs/atari800-gaps.md`. No XL/XE profile exists yet.
+
+### DONE: XL/XE and Media close-out
+
+The Plugin now exposes 800/800XL/65XE/130XE with profile-specific RAM/OS,
+PORTB/self-test/independent 130XE CPU/ANTIC banks, Help and correct joystick
+counts. Native OS tests cover all profiles, Regions and execution modes for
+BASIC/input/reset/ATR/State; added tests prove D2 writes through SIOV, five CAR
+mappers through OS boot and CAS load/execution through CIO.
+Writable ATR/XFD D1:/D2:, standard CAS playback and supported CAR/raw dumps are
+wired through Plugin and Host Media routing.
+
+Accurate Acid800 scores 56/1/1 on 800 (only XL banking fails) and 57/0/1 on
+XL/XE; fast scores 43/14/1 and 44/13/1. PAL/NTSC agree. State v5 retains
+readers for v1-v4 on 800 and preserves their Core/Chip field layouts.
+Per-profile manifests pin real reference boot and raw/XEX/ATR/XFD/CAR captures.
+Final release acceptance: 44 passed / 0 failed / 10 known gaps per profile
+(176 passes, 40 repeated gap variants total). Tools reproduces CAR and XFD
+fixtures byte for byte; CAS creation remains a tooling gap.
+Reference input/CAS/RMS, diagnostic-screen mismatch, original Atari firmware,
+games, cassette boot and remaining abnormal/analogue hardware remain explicit
+limits. See `machines/atari/docs/atari800-gaps.md#xlxe-and-media-close-out`.
+The playbook permits these recorded gaps; this is not full hardware parity.
 
 ### BACKLOG: external parity execution sequence (PARKED; gap vs Atari800/Altirra/libretro)
 
@@ -1380,4 +1443,3 @@ These are complete and should not reappear as open work:
 - Browser debugger with disassembly, memory view, Bitmap Explorer, breakpoints, pause/step,
   assemble-and-poke, and save/load operations.
 - CPC 464 firmware boot and C64 KERNAL/BASIC boot.
-

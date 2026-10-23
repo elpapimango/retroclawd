@@ -1352,6 +1352,25 @@ impl HostedBackend {
         )
     }
 
+    fn apply_cartridge(
+        &self,
+        instance: MachineInstanceHandle,
+        extension: &str,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        self.expect_ack(
+            instance,
+            MachineCommand::AttachMedia {
+                slot: MediaSlot::Cartridge { slot: 0 },
+                kind: MediaKind::Cartridge,
+                name: Some(format!("cartridge.{}", extension.to_ascii_lowercase())),
+                bytes: bytes.to_vec(),
+                options: Vec::new(),
+            },
+            "cartridge attach",
+        )
+    }
+
     fn apply_media(
         &self,
         instance: MachineInstanceHandle,
@@ -1360,7 +1379,11 @@ impl HostedBackend {
         tape_speed: u32,
     ) -> Result<(), String> {
         let lower = extension.to_ascii_lowercase();
-        if ["tap", "tzx", "cdt", "pzx", "csw", "voc", "wav", "t64"].contains(&lower.as_str()) {
+        if [
+            "tap", "tzx", "cdt", "pzx", "csw", "voc", "wav", "t64", "cas",
+        ]
+        .contains(&lower.as_str())
+        {
             self.apply_tape(instance, &lower, bytes, tape_speed)
         } else if lower == "dsk"
             || lower == "edsk"
@@ -1370,22 +1393,30 @@ impl HostedBackend {
             || lower == "g64"
             || lower == "x64"
             || lower == "nib"
+            || lower == "atr"
+            || lower == "xfd"
             || lower == "st"
             || lower == "msa"
         {
             self.apply_disk(instance, 0, &lower, bytes)
-        } else if lower == "cpr" || lower == "crt" || lower == "stc" {
+        } else if lower == "xex" {
             self.expect_ack(
                 instance,
                 MachineCommand::AttachMedia {
-                    slot: MediaSlot::Cartridge { slot: 0 },
-                    kind: MediaKind::Cartridge,
-                    name: Some(format!("cartridge.{lower}")),
+                    slot: MediaSlot::Other("program".to_string()),
+                    kind: MediaKind::Program,
+                    name: Some("program.xex".to_string()),
                     bytes: bytes.to_vec(),
                     options: Vec::new(),
                 },
-                "cartridge attach",
+                "formatted program attach",
             )
+        } else if [
+            "cpr", "crt", "stc", "car", "20", "40", "60", "a0", "b0", "bin", "rom",
+        ]
+        .contains(&lower.as_str())
+        {
+            self.apply_cartridge(instance, &lower, bytes)
         } else {
             self.apply_snapshot(instance, &lower, bytes)
         }
@@ -1985,6 +2016,11 @@ impl HostedMachine {
             MachineResponse::Ack => Ok(()),
             other => Err(format!("program attach: unexpected response {other:?}")),
         }
+    }
+
+    pub(crate) fn apply_cartridge(&mut self, extension: &str, bytes: &[u8]) -> Result<(), String> {
+        self.backend
+            .apply_cartridge(self.instance, extension, bytes)
     }
 
     pub(crate) fn apply_media(
@@ -2741,6 +2777,65 @@ mod tests {
         );
         let error = machine.apply_media("xyz", b"anything", 1).unwrap_err();
         assert!(!error.contains("Cartridge"), "not a cartridge: {error}");
+    }
+
+    #[test]
+    fn cartridge_routing_preserves_the_explicit_kind_and_effective_extension() {
+        let mut machine = super::create_hosted_machine(plugin_api::MachineCreateRequest {
+            machine_id: "stub-machine".to_string(),
+            region: Some("pal".to_string()),
+            roms: Vec::new(),
+            options: Vec::new(),
+        })
+        .unwrap();
+        // The stub rejects cartridges, so its error proves the selected command and name.
+        for extension in ["prg", "A0", "crt", "cpr"] {
+            let error = machine.apply_cartridge(extension, &[0; 16]).unwrap_err();
+            assert!(
+                error.contains(&format!("Cartridge .{}", extension.to_ascii_lowercase())),
+                "{error}"
+            );
+        }
+        for extension in [
+            "20", "40", "60", "A0", "b0", "bin", "rom", "crt", "cpr", "CAR",
+        ] {
+            let error = machine.apply_media(extension, &[0; 16], 1).unwrap_err();
+            assert!(
+                error.contains(&format!("Cartridge .{}", extension.to_ascii_lowercase())),
+                "{error}"
+            );
+        }
+        let error = machine.apply_media("prg", &[0; 16], 1).unwrap_err();
+        assert!(
+            !error.contains("Cartridge"),
+            "implicit PRG must not be reclassified: {error}"
+        );
+    }
+
+    #[test]
+    fn atari_media_routes_to_disk_tape_and_program_not_snapshot() {
+        let mut machine = super::create_hosted_machine(plugin_api::MachineCreateRequest {
+            machine_id: "stub-machine".to_string(),
+            region: Some("pal".to_string()),
+            roms: Vec::new(),
+            options: Vec::new(),
+        })
+        .unwrap();
+        for extension in ["ATR", "XFD"] {
+            let error = machine
+                .apply_media(extension, b"not a disk", 1)
+                .unwrap_err();
+            assert!(error.contains("not a disk image"), "{error}");
+        }
+        let error = machine.apply_media("CAS", b"not a tape", 1).unwrap_err();
+        assert!(
+            error.contains("unsupported tape format \".cas\""),
+            "{error}"
+        );
+        let error = machine
+            .apply_media("XEX", &[0xff, 0xff, 0, 0x20, 0, 0x20, 0xea], 1)
+            .unwrap_err();
+        assert!(error.contains("Program .xex"), "{error}");
     }
 
     #[test]

@@ -14,7 +14,7 @@ git submodules here, and the three machine repositories depend on the shared cra
 | `elpapimango/retroclawd-crates` (`shared/`) | `machine`, `plugin-api`, the `z80` and `mos6502` cores, `ay-3-8910`, `nec765`, `dsk`, `zx-tape`, the plugin ABI policy. No machine, no app code. |
 | `elpapimango/retroclawd-sinclair` (`machines/sinclair`) | ZX81, ZX Spectrum 48K/128K/+2/+2A/+3, snapshot formats `.z80/.sna/.szx/.p`, Sinclair keyboard |
 | `elpapimango/retroclawd-amstrad` (`machines/amstrad`) | CPC464/664/6128, CPC+ / GX4000, `.cpr` cartridges, SNA snapshots, i8255 |
-| `elpapimango/retroclawd-commodore` (`machines/commodore`) | C64, C128, 1541/1570/1571/1581, VIC-II, SID, CIAs, VIA, WD1770, VDC, CBM disk formats |
+| `elpapimango/retroclawd-commodore` (`machines/commodore`) | Experimental VIC-20/VIC-I; C64, C128, 1541/1570/1571/1581, VIC-II, SID, CIAs, VIA, WD1770, VDC, CBM disk formats |
 | `elpapimango/retroclawd-atari` (`machines/atari`) | Atari ST/STF/STFM (`atari-st`, slice 1 of the 16-bit work: CPU, memory map, scheduler, EmuTOS to its first device) |
 
 Stays here: the app (`apps/retroclawd`, including the debuggers `debug-ui`, `debug-zrcp`, `debug-log`: ordinary
@@ -32,6 +32,48 @@ scenario manifest, the rc-suite cases; `--acid` adds the CPC acid suite) and `to
 Using one machine on its own: build the family repository (`cargo build --release
 --workspace`) and put the resulting libraries in a `plugins/` folder next to the `retroclawd` executable, or point
 `RETROCLAWD_MACHINE_PLUGIN_DIRS` at them. `retroclawd --list-plugins` shows what was found.
+
+**Common execution policy:** `plugin_api::ExecutionMode` declares and parses the
+ordinary `execution_mode` Option (`--execution-mode fast|accurate`). A Plugin
+must wire it to real fidelity differences before declaring it. C64/C128 map
+fast (default) to the line engine and accurate to the PAL cycle engine;
+media traps and true-drive remain independent. Both the common Option and the
+legacy `vic_accuracy` Option omit a wire default so absence cannot override an
+explicit selection through the other key. Contradictory selections are errors;
+configuration precedence applies per key, not across aliases. Existing state
+engine metadata preserves deterministic restoration. No ABI change is involved.
+
+**Experimental VIC-20:** the Commodore submodule supplies `vic20_machine_plugin`,
+with no Host machine-specific code. It uses the common execution Option:
+instruction-batched or per-CPU-bus-cycle peripheral clocks, on PAL and NTSC.
+Raw programs, PRG/P00 Host parsing and read-only VIC-20 TAP-v0/v1 playback work;
+`--true-drive` adds the existing 1541/IEC implementation for writable D64 at
+device 8, with `--rom-1541` or hash-based Firmware sourcing. Disk export,
+writeback, swapping and complete Drive states work; Drive CPU steps remain
+instruction-granular in both modes. Recording does not work.
+Generic read-only cartridges use `--cartridge` with raw `.20/.40/.60/.a0/.b0`
+or addressed `.prg/.bin/.rom`. The Family Format owns parsing; the Machine owns
+read-only mapping, RAM-conflict rejection and attach/eject reset. The Host sends
+explicit cartridge Media without machine-specific extension gating, preserving
+PRG Program semantics. State v4 validates canonical mapped-ROM identity and reads
+old v1/v2/v3 states with no cartridge. Banking/flash/RAM cartridges and VIC CRT are absent.
+Hash-verified RomM firmware boots and types BASIC in both
+modes and regions. `machines/commodore/vic20.manifest.toml` reports 62 passing
+S1-S7 variants and no known scenario gaps. External GPL-3.0 Dead Test v1.1.01
+matches all 1024 VICE memory bytes in both Regions/modes, as a cartridge and
+full-expansion replacement KERNAL. `tools/fetch_diagnostics` fetches its three
+hash-pinned release assets; peripheral/fidelity limits remain documented. Goldens pin
+the installed VICE 3.9 executable and captures. The nonlinear mixer calibration
+fixes the single-voice gain regression: RMS agrees within 1%, including PAL
+volume 7. `docs/vic20-gaps.md` in that Family records commands and proof.
+Uncaptured screen goldens are omitted, never invented; use the matching
+`rc-scenarios` feature branch until its missing-capture support is merged.
+
+**C16/Plus4 media prerequisite:** `c64-tape::ted` in the Commodore Family owns
+the TAP-v2 parser/writer used by `rctape`; there is no duplicate tools parser.
+It keeps exact half-waves in slow TED timer clocks and rejects unsupported or
+malformed headers, inconsistent sizes and oversized payloads. No C16/Plus4
+Machine, Host media route or hardware cassette playback is implemented yet.
 
 ## Scenario manifests (2026-10-18)
 
@@ -52,6 +94,29 @@ fast loader now returns through the KERNAL's own SEARCHING/LOADING routines, and
 frame through `Machine::frame_rate` / `MachineMetadata::frame_rate` (ZX81 312 x 207 T-states, its line corrected from 208 to 207; CPC
 79872; C64/C128 one raster frame, 19656 PAL), and the host paces and budgets by it. Details and the compare options are in `retroclawd-tools/CLAUDE.md`.
 
+## Atari 8-bit experimental support
+
+`machines/atari` also builds `atari_8bit_machine_plugin`, exposing
+`atari-800`/`atari-800xl`/`atari-65xe`/`atari-130xe`.
+`rom_os` is 10240 bytes on 800 or 16384 on XL/XE; optional `rom_basic` is
+8192 bytes. All profiles have PAL/NTSC and
+fast/accurate execution. Shared NMOS 6502 and `pia-6520` are reused; ANTIC,
+GTIA and POKEY live in the Atari Family. No Host machine-specific code or ABI
+change is needed. Explicit Altirra replacements boot and execute BASIC;
+original Atari firmware has not been verified.
+
+Per-profile manifests cover reference boot, raw/XEX/ATR/XFD/CAR execution,
+tone pitch, State and raster timing. Native OS tests also prove D2 writes
+and CAS load/execution through CIO. The sector peripherals use actual
+PIA/POKEY pins. State v5 preserves profile/MMU/Media/control phases and reads
+v1-v4 only on 800; preserve original files for rollback.
+Accurate Acid800 reaches 56/1/1 on 800 (XL-only banking fails) and 57/0/1
+on XL/XE. Reference keyboard/CAS/RMS capture and diagnostic screen parity
+remain explicit gaps; original Atari firmware and general games are not proven.
+Read the Family intakes and
+`machines/atari/docs/atari800-gaps.md` before extending it. C16/Plus4 stay parked.
+
+## Atari ST (slice 1, 2026-10-20)
 ## Atari ST (Phase 1 done: slices 1-6, 2026-10-21)
 
 Design `docs/superpowers/specs/2026-10-19-atari-st-design.md`, plans `docs/superpowers/plans/2026-10-19-atari-st-slice1.md`

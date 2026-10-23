@@ -336,8 +336,9 @@ struct CommonArgs {
     /// Optional standalone program to load instead of booting the ROM. A
     /// `.prg` path (case-insensitive) is auto-detected: its own real
     /// leading 2-byte little-endian load address is used instead of
-    /// --org, and only the bytes after that header are loaded -- every
-    /// other extension is loaded verbatim at --org, unchanged.
+    /// --org, and only the bytes after that header are loaded. Atari `.xex`
+    /// uses the Plugin's segmented INITAD/RUNAD loader, ignoring --org.
+    /// Other extensions are loaded verbatim at --org.
     #[arg(long, conflicts_with_all = ["snapshot", "tape", "load_state"])]
     program: Option<String>,
 
@@ -372,8 +373,8 @@ struct CommonArgs {
     #[arg(long)]
     config: Option<PathBuf>,
 
-    /// Program load address, hex (e.g. 0x4000). Ignored for a `.prg`
-    /// --program file, which supplies its own real load address instead.
+    /// Program load address, hex (e.g. 0x4000). Ignored for `.prg` and `.xex`
+    /// --program files, which supply their own addresses.
     #[arg(long, default_value = "0x4000", value_parser = parse_hex_u16)]
     org: u16,
 
@@ -503,7 +504,8 @@ struct CommonArgs {
     /// KERNAL LOAD request answered directly from the image's own logical
     /// contents, no simulated 1541/1571/1581/IEC-bus bit-banging at all --
     /// see `TODO.md`'s "drives and baseline media" section). Independent
-    /// of snapshot/tape state.
+    /// of snapshot/tape state. Atari 800 accepts a read-only `.atr` on D1:
+    /// through the Machine's PIA/POKEY SIO lines, without a ROM loader trap.
     #[arg(long)]
     disk: Option<String>,
 
@@ -526,7 +528,9 @@ struct CommonArgs {
     /// `--machine c64` (normal 8K/16K and Ultimax, Simons' BASIC, Ocean,
     /// Fun Play, Super Games, Epyx Fastload, System 3, Dinamic, Zaxxon,
     /// Magic Desk and EasyFlash -- anything else is a clear error), or a
-    /// `.cpr` for the CPC Plus family. The machine resets so the cartridge
+    /// `.cpr` for the CPC Plus family, or a VIC-20 generic ROM
+    /// (.20/.40/.60/.a0/.b0, or load-address-prefixed .prg/.bin/.rom).
+    /// The selected Machine validates the format. The machine resets so the cartridge
     /// starts, as when switching a real one on.
     #[arg(long)]
     cartridge: Option<String>,
@@ -2446,7 +2450,14 @@ fn main() -> ExitCode {
             }
             Ok(loaded) => {
                 match resolve_program_load(&loaded.name, loaded.bytes.clone(), args.org) {
-                    Ok(resolved) => Some(resolved),
+                    Ok((org, bytes)) => Some((
+                        org,
+                        bytes,
+                        std::path::Path::new(&loaded.name)
+                            .extension()
+                            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+                            .unwrap_or_default(),
+                    )),
                     Err(e) => {
                         eprintln!("{e}");
                         return ExitCode::FAILURE;
@@ -2631,13 +2642,7 @@ fn main() -> ExitCode {
         } else {
             extension.as_str()
         };
-        if !matches!(media_extension, "crt" | "cpr" | "stc") {
-            eprintln!(
-                "--cartridge expects a .crt (C64), .cpr (CPC Plus) or .stc/.img (Atari ST) file, not .{extension}"
-            );
-            return ExitCode::FAILURE;
-        }
-        if let Err(e) = machine.apply_media(media_extension, &bytes, resolved.tape_speed) {
+        if let Err(e) = machine.apply_cartridge(media_extension, &bytes) {
             eprintln!("{e}");
             return ExitCode::FAILURE;
         }
@@ -2688,7 +2693,7 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    if let Some((org, program)) = program {
+    if let Some((org, program, extension)) = program {
         if program.is_empty() {
             eprintln!(
                 "{} is empty -- refusing to run",
@@ -2696,7 +2701,12 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         }
-        if args.program.is_some() && auto_run_profile.is_some() {
+        if extension == "xex" {
+            if let Err(e) = machine.apply_media(&extension, &program, resolved.tape_speed) {
+                eprintln!("{e}");
+                return ExitCode::FAILURE;
+            }
+        } else if args.program.is_some() && auto_run_profile.is_some() {
             // `--run` with a program: the machine injects it once it has booted
             // (a BASIC program) and the startup profile types `RUN`; it must not
             // be jumped to as machine code.
