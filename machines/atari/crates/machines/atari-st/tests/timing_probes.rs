@@ -1259,3 +1259,191 @@ fn boot_transitions_report() {
         }
     }
 }
+
+/// Runs STE probe `name` (Hatari `--machine ste`, EmuTOS 256K from the cache or `RC_EMUTOS_STE`) and returns `len` bytes.
+pub fn run_probe_ste(name: &str, vbls: u64, len: usize, accuracy: Accuracy) -> Option<Vec<u8>> {
+    let rom = common::emutos_ste()?;
+    let image = floppy(name)?;
+    let mut cfg = config(rom, RamSize::M1);
+    cfg.accuracy = accuracy;
+    let mut m = AtariSt::with_chipset(cfg, atari_st::Chipset::Ste).unwrap();
+    m.insert_disk(0, image).unwrap();
+    while m.io_stop().is_none() && m.vbl_count() < vbls {
+        m.step();
+    }
+    assert!(m.io_stop().is_none(), "{name} stopped: {:?}", m.io_stop());
+    Some((0..len as u32).map(|i| m.bus().peek(RESULT + i)).collect())
+}
+
+fn golden_ste(name: &str) -> Option<Vec<u8>> {
+    let path = PathBuf::from(std::env::var_os("RC_GOLDENS")?)
+        .join("atari-ste/timing")
+        .join(format!("{name}.bin"));
+    std::fs::read(&path).ok()
+}
+
+#[test]
+fn p30_the_microwire_data_register_shifts_out_as_in_hatari() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe_ste("p30", 800, 340, Accuracy::Accurate),
+        golden_ste("p30"),
+    ) else {
+        return;
+    };
+    let words = |b: &[u8]| -> Vec<u16> {
+        b[4..]
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_be_bytes(*c))
+            .collect()
+    };
+    let (o, t) = (words(&ours), words(&theirs));
+    assert_eq!(o.len(), t.len());
+    // Six experiments of 20 data words and 8 mask words. The mask register always reads what was written; the data
+    // register's first two reads and its end (zero) are Hatari's; between them Hatari's shift per read varies (4, 3, 3, 3 bits
+    // in the tightest loop) where ours is one bit per 8 clocks (a known gap, the manifest says so).
+    for e in 0..6 {
+        let (od, td) = (&o[28 * e..28 * e + 20], &t[28 * e..28 * e + 20]);
+        let (om, tm) = (&o[28 * e + 20..28 * e + 28], &t[28 * e + 20..28 * e + 28]);
+        assert_eq!(om, tm, "experiment {e}: the mask register");
+        assert_eq!(od[..2], td[..2], "experiment {e}: the first two reads");
+        assert_eq!(od[19], 0, "experiment {e}: shifted out");
+        assert_eq!(td[19], 0);
+    }
+}
+
+#[test]
+fn p27_the_ste_video_registers_read_back_as_in_hatari() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe_ste("p27", 700, 122, Accuracy::Accurate),
+        golden_ste("p27"),
+    ) else {
+        return;
+    };
+    assert_eq!(&ours[..4], b"P27\0");
+    // 11 byte registers of 8 values each, then 10 palette words and 5 byte writes read as words. The video counter's low
+    // byte (the last register) moves with the beam between the write and the read: it is only checked to be within 16.
+    let counter_low = 4 + 10 * 8..4 + 11 * 8;
+    for i in 4..122 {
+        if counter_low.contains(&i) {
+            let (a, b) = (ours[i] as i32, theirs[i] as i32);
+            assert!(
+                (a - b).rem_euclid(256) <= 16 || (b - a).rem_euclid(256) <= 16,
+                "byte {i}: ours {a:02X} theirs {b:02X}"
+            );
+        } else {
+            assert_eq!(
+                ours[i], theirs[i],
+                "byte {i}: ours {:02X} theirs {:02X}",
+                ours[i], theirs[i]
+            );
+        }
+    }
+}
+
+/// P28: per setting three records of 9 bytes (the registers read back, the counter at line 100 and at line 110): the
+/// median of the three strides, in bytes over the ten lines.
+fn p28_strides(b: &[u8]) -> Vec<(Vec<u8>, i32)> {
+    let rec = |i: usize| &b[4 + 9 * i..4 + 9 * i + 9];
+    (0..21)
+        .map(|k| {
+            let mut s: Vec<i32> = (0..3)
+                .map(|j| {
+                    let r = rec(3 * k + j);
+                    let at = |o: usize| {
+                        (i32::from(r[o]) << 16) | (i32::from(r[o + 1]) << 8) | i32::from(r[o + 2])
+                    };
+                    at(6) - at(3)
+                })
+                .collect();
+            s.sort_unstable();
+            (rec(3 * k + 2)[..3].to_vec(), s[1])
+        })
+        .collect()
+}
+
+#[test]
+fn p28_the_line_offset_and_scroll_change_the_fetch_as_in_hatari() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe_ste("p28", 1100, 580, Accuracy::Accurate),
+        golden_ste("p28"),
+    ) else {
+        return;
+    };
+    let (o, t) = (p28_strides(&ours), p28_strides(&theirs));
+    for (k, (a, b)) in o.iter().zip(&t).enumerate() {
+        assert_eq!(a.0, b.0, "setting {k}: the registers");
+        // The three counter bytes are read one after the other: a read that straddles a carry of the middle byte is off by
+        // 256 (in either emulator, at its own phase), which is not a difference of the fetch.
+        let d = (a.1 - b.1).rem_euclid(256);
+        assert!(
+            d <= 24 || d >= 232,
+            "setting {k} {:?}: ours {} theirs {}",
+            a.0,
+            a.1,
+            b.1
+        );
+    }
+}
+
+#[test]
+#[ignore = "report"]
+fn p28_report() {
+    let Some(ours) = run_probe_ste("p28", 1100, 580, Accuracy::Accurate) else {
+        return;
+    };
+    for k in 0..63 {
+        let r = &ours[4 + 9 * k..13 + 9 * k];
+        let at =
+            |o: usize| (u32::from(r[o]) << 16) | (u32::from(r[o + 1]) << 8) | u32::from(r[o + 2]);
+        println!(
+            "{k}: regs {:?} line100 {:06X} line110 {:06X} stride {}",
+            &r[..3],
+            at(3),
+            at(6),
+            at(6) as i64 - at(3) as i64
+        );
+    }
+}
+
+const P36_NAMES: [&str; 17] = [
+    "nop",
+    "shifter_palette_read",
+    "ste_base_low_read",
+    "ste_hscroll_write",
+    "sound_ctrl_read",
+    "sound_ctrl_write",
+    "microwire_read",
+    "microwire_mask_read",
+    "joy_read",
+    "joy_byte_read",
+    "blitter_read",
+    "blitter_halftone_read",
+    "blitter_halftone_write",
+    "rom_read",
+    "mw_read_to_mem",
+    "mem_read_to_mem",
+    "mw_read_postinc",
+];
+
+#[test]
+fn p36_an_access_to_each_ste_register_costs_the_clocks_hatari_shows() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe_ste("p36", 1000, 208, Accuracy::Accurate),
+        golden_ste("p36"),
+    ) else {
+        return;
+    };
+    let clocks = |b: &[u8]| -> Vec<u32> {
+        b[4..]
+            .as_chunks::<12>()
+            .0
+            .iter()
+            .map(|c| 160_256 / u32::from_be_bytes([c[4], c[5], c[6], c[7]]))
+            .collect()
+    };
+    let (o, t) = (clocks(&ours), clocks(&theirs));
+    let table: Vec<_> = P36_NAMES.iter().zip(o.iter().zip(&t)).collect();
+    assert_eq!(o, t, "clocks an iteration, ours and theirs: {table:?}");
+}

@@ -32,6 +32,14 @@ pub struct StatePayload {
     bus: crate::bus::BusState,
 }
 
+/// What the Mega ST and the STE add to a state, after the common payload (an ST's state has none, so its bytes are as before
+/// the chipsets existed).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct ChipsetExt {
+    video: Option<st_shifter::SteVideo>,
+    regs: crate::ste::SteRegs,
+}
+
 pub struct AtariSt {
     cpu: Cpu,
     bus: StBus,
@@ -400,7 +408,13 @@ impl AtariSt {
 
     /// The state in the `RCST` envelope.
     pub fn save_state_checked(&self) -> Result<Vec<u8>, StateError> {
-        let payload = state::encode_payload(&self.snapshot()?);
+        let mut payload = state::encode_payload(&self.snapshot()?);
+        if self.bus.chipset != Chipset::St {
+            payload.extend(state::encode_payload(&ChipsetExt {
+                video: self.bus.shifter.ste_state().cloned(),
+                regs: self.bus.ste.clone(),
+            }));
+        }
         let header = Header {
             version_tag: self.version_tag.clone(),
             accuracy: self.accuracy_code(),
@@ -415,8 +429,34 @@ impl AtariSt {
     pub fn load_state_checked(&mut self, bytes: &[u8]) -> Result<(), StateError> {
         let (header, payload) =
             state::decode(bytes, self.accuracy_code(), &self.bus.firmware_sha1())?;
-        let p: StatePayload = state::decode_payload(payload)?;
+        let (p, used): (StatePayload, usize) = state::decode_payload_prefix(payload)?;
+        let ext = if self.bus.chipset == Chipset::St {
+            if used != payload.len() {
+                return Err(StateError::Payload("bytes follow the payload".into()));
+            }
+            None
+        } else {
+            let ext: ChipsetExt = state::decode_payload(&payload[used..])?;
+            ext.regs.check()?;
+            if ext
+                .video
+                .as_ref()
+                .is_some_and(|v| v.line_extra.len() > 1024)
+                || ext.video.is_some() != self.bus.shifter.is_ste()
+            {
+                return Err(StateError::Payload(
+                    "the chipset part of the state is not valid".into(),
+                ));
+            }
+            Some(ext)
+        };
         self.restore(p)?;
+        if let Some(ext) = ext {
+            self.bus.ste = ext.regs;
+            if let Some(video) = ext.video {
+                self.bus.shifter.restore_ste_state(video);
+            }
+        }
         self.state_warnings = self.media_notes(&header);
         Ok(())
     }

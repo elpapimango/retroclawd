@@ -169,6 +169,17 @@ pub fn encode_payload<T: Serialize>(payload: &T) -> Vec<u8> {
     .expect("a machine state encodes")
 }
 
+/// Bytes back to a payload, under the size limit, and how many bytes it took (the rest is the caller's).
+pub fn decode_payload_prefix<T: for<'de> Deserialize<'de>>(
+    bytes: &[u8],
+) -> Result<(T, usize), StateError> {
+    bincode::serde::decode_from_slice(
+        bytes,
+        bincode::config::standard().with_limit::<MAX_PAYLOAD>(),
+    )
+    .map_err(|e| StateError::Payload(e.to_string()))
+}
+
 /// Bytes back to a payload, under the size limit; trailing bytes are an error.
 pub fn decode_payload<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T, StateError> {
     let (value, used): (T, usize) = bincode::serde::decode_from_slice(

@@ -89,3 +89,27 @@ fn the_chipset_ids_are_the_machine_ids() {
     }
     assert_eq!(Chipset::from_id("atari-tt"), None);
 }
+
+/// The STE's registers are in its state, an ST's state has no chipset part, and a hostile chipset part is refused.
+#[test]
+fn an_ste_state_carries_the_ste_registers() {
+    let mut image = ste_rom();
+    let program: [u16; 7] = [0x11FC, 0x005A, 0x820D, 0x11FC, 0x0003, 0x820F, 0x60FE];
+    for (i, w) in program.iter().enumerate() {
+        image[0x10 + 2 * i..0x12 + 2 * i].copy_from_slice(&w.to_be_bytes());
+    }
+    let mut a = AtariSt::with_chipset(config(image.clone(), RamSize::M1), Chipset::Ste).unwrap();
+    for _ in 0..50 {
+        a.step();
+    }
+    assert_eq!(a.bus().shifter().ste_state().unwrap().base_low, 0x5A);
+    let state = a.save_state_checked().unwrap();
+    let mut b = AtariSt::with_chipset(config(image.clone(), RamSize::M1), Chipset::Ste).unwrap();
+    b.load_state_checked(&state).unwrap();
+    let ste = b.bus().shifter().ste_state().unwrap();
+    assert_eq!((ste.base_low, ste.line_offset), (0x5A, 3));
+    // Cutting the chipset part short, or adding bytes to an ST's state, is refused.
+    let mut short = state.clone();
+    short.truncate(short.len() - 40);
+    assert!(b.load_state_checked(&short).is_err());
+}

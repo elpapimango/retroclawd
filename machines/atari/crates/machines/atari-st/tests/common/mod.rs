@@ -51,6 +51,28 @@ pub fn emutos() -> Option<Vec<u8>> {
     }
 }
 
+/// EmuTOS 1.4 (256 KB UK, for the STE) from `RC_EMUTOS_STE` or the `--firmware auto` cache.
+pub fn emutos_ste() -> Option<Vec<u8>> {
+    let path = std::env::var_os("RC_EMUTOS_STE")
+        .map(PathBuf::from)
+        .or_else(|| {
+            cache_root().map(|c| {
+                c.join("firmware")
+                    .join("b9dba5346cdd237fe4ba8d89d04bc4d82e4eec72.bin")
+            })
+        })?;
+    match std::fs::read(&path) {
+        Ok(bytes) => Some(bytes),
+        Err(_) => {
+            eprintln!(
+                "EmuTOS 256K not found at {} (set RC_EMUTOS_STE)",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
 /// A golden file under `RC_GOLDENS/atari-st/`, one line per entry.
 pub fn golden(name: &str) -> Option<Vec<String>> {
     let path = std::env::var_os("RC_GOLDENS")

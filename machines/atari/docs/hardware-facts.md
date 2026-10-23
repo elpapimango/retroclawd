@@ -332,3 +332,19 @@ byte-identical results (`timing-oracle.md`). The row names its probe.
 | Keyboard answer latency | the answer to `$0D`, `$16`, `$1C`, `$21` is ready 6500 cycles after the command, to a status inquiry 5000 cycles after; the byte spacing is one character time | `[O]` | P20: means of Hatari's figures, which vary by about 30 loop runs between starts |
 | MFP transmitter | Hatari sends at once with no RS-232 device; ours takes the data sheet's time (10 bits of 16 timer D periods x 2) | `[D]` | P21: Hatari has no byte time to copy |
 | ACSI command | done at once: the completion request is present at the first look | `[O]` | P22: loops 1 for all four commands in both; Hatari leaves the DMA address counter unchanged after a read, ours moves it on as the ACSI notes have it |
+
+## STE and Mega ST (Phase 4)
+
+Every row is `[O]` unless it says otherwise: observed in Hatari 2.6.1 (`--machine ste` with EmuTOS 256K, `--machine megast` with
+EmuTOS 192K) with the probe named, or in its I/O trace (`capture_hatari_trace.py --machine`).
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| STE ROM | 256 KB at `$E00000`, the reset vector read through `$0-$7`; nothing at `$FC0000` | `[O]`/`[H]` | EmuTOS 256K's reset PC `$E00030`; *Internals* "1.4 and above" |
+| Probes that answer with a bus error on the STE | `$FFFA40-$FFFA5F` (coprocessor), `$FF8C80-$FF8C87` (SCC), `$FF8E00-$FF8E0F` (VME), `$FF8926-$FF89FF` (Falcon sound), `$FFFE00-$FFFE3F` | `[O]` | EmuTOS goes on in Hatari without a trace line for them |
+| STE Shifter registers | `$FF820D` video base low, `$FF820F` line offset, `$FF8264` and `$FF8265` pixel scroll: read back as written (bytes); `$FF8201` keeps six bits; `$FF820A` reads with bits 7-2 set, `$FF8260` with them clear | `[O]` | P27 |
+| STE palette | 12 bits, a byte write lands in both bytes of the word; a gun's bit 3 is its least significant bit | `[O]`/`[H]` | P27; *Internals* |
+| STE video counter | `$FF8205/07/09` are writable (high byte six bits, low byte's bit 0 reads 0); the counter runs on from the written value until the frame loads the base | `[O]` | P27 |
+| Line offset and scroll in the fetch | a line fetches `2 x offset` bytes more than 160; with the scroll register `$FF8265` non-zero and `$FF8264` zero it fetches one more 16-pixel group (8 bytes in low resolution); `$FF8264` non-zero gives no extra fetch | `[O]` | P28 |
+| Microwire data register | reads the written word shifted left, one bit per 8 clocks from 8 clocks after the write, zero when out; the mask register reads what was written (Hatari shifts 4, 3, 3, 3 bits per read in the tightest loop: not modelled) | `[O]` | P30 |
+| Register access cost | the STE's registers cost the plain aligned access, like the ST's Shifter | `[O]` | P36 |

@@ -25,6 +25,7 @@ pub use acia::{NullPeer, SerialPeer};
 pub use bus::{
     CARTRIDGE_BYTES, HBL_LEVEL, IoStop, MFP_LEVEL, ROM_BASE, ROM_SIZE, StBus, StopReason, VBL_LEVEL,
 };
+mod ste;
 pub use config::{Accuracy, Chipset, Config, RamSize, Region};
 pub use dma::Dma;
 pub use drive::{Drives, MEDIA_CHANGE_BYTES, StDrive};

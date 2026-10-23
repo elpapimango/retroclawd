@@ -212,6 +212,19 @@ impl Fetch {
         (f & LEFT != 0, f & RIGHT != 0)
     }
 
+    /// The picture lines before `line` (empty before the picture starts).
+    pub fn lines_before(&self, line: u16) -> std::ops::Range<u16> {
+        if !self.started || line <= self.first {
+            return 0..0;
+        }
+        let end = if self.ended {
+            self.last.min(line)
+        } else {
+            line
+        };
+        self.first..end
+    }
+
     /// The bytes fetched on the picture lines before `line` (zero before the picture starts).
     pub fn bytes_before(&self, line: u16) -> u32 {
         if !self.started || line <= self.first {

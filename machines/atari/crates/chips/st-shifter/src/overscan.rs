@@ -57,7 +57,7 @@ impl Shifter {
                 next += 1;
             }
             let mut colours = start;
-            let mut rgb: Vec<[u8; 3]> = colours.iter().map(|&c| to_rgb(c)).collect();
+            let mut rgb: Vec<[u8; 3]> = colours.iter().map(|&c| to_rgb(c, self.is_ste())).collect();
             let mut change_at = 0;
             // The data of this line: where it starts, whether it has a left and a right part.
             let data = if planes == 0 {
@@ -81,7 +81,7 @@ impl Shifter {
                     && at <= x as i32
                 {
                     colours[index] = value;
-                    rgb[index] = to_rgb(value);
+                    rgb[index] = to_rgb(value, self.is_ste());
                     change_at += 1;
                 }
                 let clock = x0 + (x / 2) as i32;

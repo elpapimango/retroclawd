@@ -62,12 +62,30 @@ impl StBus {
     /// line of the picture it holds the frame's base address, inside a line it moves one word every 4 clocks from the
     /// start of the fetch window, after the last line it holds the end of the picture.
     pub(crate) fn video_counter(&self) -> u32 {
+        self.video_counter_unadjusted()
+            .wrapping_add(self.shifter.counter_adjust() as u32)
+            & 0xFF_FFFF
+    }
+
+    /// A byte written to the video counter (STE): the counter takes it now and runs on from there until the frame loads it
+    /// from the base. [O] P27: the high byte keeps six bits, the low byte's bit 0 reads 0.
+    pub(crate) fn write_video_counter(&mut self, addr: u32, value: u8) {
+        let now = self.video_counter();
+        let shift = 8 * ((0xFF_8209 - addr) / 2);
+        let mut new = (now & !(0xFF << shift)) | (u32::from(value) << shift);
+        new &= 0x3F_FFFE;
+        let run = self.video_counter_unadjusted();
+        let adjust = (new.wrapping_sub(run) & 0xFF_FFFF) as i32;
+        self.shifter.set_counter_adjust(adjust);
+    }
+
+    fn video_counter_unadjusted(&self) -> u32 {
         let base = self.shifter.video_base();
         let fetch = self.shifter.fetch();
         let line = self.line as u16;
         if !fetch.fetching(line) {
             // Before the picture: the base; after it: past its last line.
-            return base.wrapping_add(fetch.bytes_before(u16::MAX));
+            return base.wrapping_add(self.shifter.bytes_before(u16::MAX));
         }
         let mono = self.monitor == st_shifter::Monitor::Mono;
         let (left, right) = self.shifter.current_borders();
@@ -86,14 +104,14 @@ impl StBus {
         };
         let words = (into.saturating_sub(start) / CLOCKS_PER_WORD)
             .min(line_words + if left { 13 } else { 0 } + if right { 22 } else { 0 });
-        base.wrapping_add(fetch.bytes_before(line) + 2 * words as u32)
+        base.wrapping_add(self.shifter.bytes_before(line) + 2 * words as u32)
     }
 
     /// The clocks a bus cycle that would start now at `addr` waits first (`write`: the CPU writes).
     pub(crate) fn wait_clocks(&self, addr: u32, size: Size, write: bool) -> u32 {
         let t = self.now;
         match self.region(addr) {
-            Region::Io => match io::decode(addr & 0xFF_FFFF, size) {
+            Region::Io => match io::decode_for(self.chipset, addr & 0xFF_FFFF, size) {
                 Decode::Device(Device::Mfp | Device::Psg) => align4(t) + PERIPHERAL_EXTRA,
                 Decode::Device(Device::Acia) => {
                     let a = align4(t);

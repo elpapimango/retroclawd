@@ -87,6 +87,8 @@ pub struct StBus {
     rom: Vec<u8>,
     /// What is fitted (`Config`'s ROM is checked against it).
     pub(crate) chipset: Chipset,
+    /// The registers of the STE and Mega ST (see `ste.rs`).
+    pub(crate) ste: crate::ste::SteRegs,
     stop: Option<IoStop>,
     /// Emulated time in CPU clocks. `fast`: the start of the running instruction; `accurate`: the cycle being run.
     pub(crate) now: u64,
@@ -231,12 +233,14 @@ impl StBus {
         }
         let mut shifter = Shifter::new(cfg.region == crate::config::Region::Pal);
         shifter.set_mono(cfg.monitor == Monitor::Mono);
+        shifter.set_ste(chipset == Chipset::Ste);
         let geometry = scheduler::geometry(shifter.sync_50hz(), cfg.monitor)?;
         let mut bus = Self {
             ram: vec![0; mmu.ram_bytes()],
             mmu,
             rom: cfg.rom.clone(),
             chipset,
+            ste: crate::ste::SteRegs::default(),
             stop: None,
             now: 0,
             sched: scheduler::Scheduler::new(),
@@ -338,6 +342,7 @@ impl StBus {
         self.shifter = s.shifter;
         // The monitor is configuration, not state: the picture window of the restored frame follows it.
         self.shifter.set_mono(self.monitor == Monitor::Mono);
+        self.shifter.set_ste(self.chipset == Chipset::Ste);
         self.psg.restore(s.psg);
         let [kbd, midi] = s.acias;
         self.acias.ports[0].restore(kbd);
@@ -749,7 +754,7 @@ impl StBus {
         if self.stop.is_some() {
             return Ok(ff);
         }
-        let reason = match io::decode(addr, size) {
+        let reason = match io::decode_for(self.chipset, addr, size) {
             Decode::BusError => return Err(BusFault),
             Decode::Device(Device::Mfp) => {
                 self.catch_up_mfp(self.now);
@@ -771,7 +776,13 @@ impl StBus {
             }
             Decode::Device(Device::Shifter) => {
                 let word = size == Size::Word;
-                let v = if write {
+                let v = if write
+                    && self.shifter.is_ste()
+                    && matches!(addr, 0xFF_8205 | 0xFF_8207 | 0xFF_8209)
+                {
+                    self.write_video_counter(addr, value as u8);
+                    value
+                } else if write {
                     self.shifter.write_at(addr, word, value as u16, self.now);
                     value
                 } else if matches!(addr, 0xFF_8205 | 0xFF_8207 | 0xFF_8209) {
@@ -866,6 +877,29 @@ impl StBus {
                 } else {
                     self.mmu.read_config() as u32
                 };
+                self.log_io(addr, size, write, v);
+                return Ok(v);
+            }
+            Decode::Device(Device::SteSound) => {
+                let word = size == Size::Word;
+                let v = self.ste.sound(addr, word, write.then_some(value), self.now);
+                self.log_io(addr, size, write, v);
+                return Ok(v);
+            }
+            Decode::Device(Device::SteJoy) => {
+                let word = size == Size::Word;
+                let v = self.ste.joy(addr, word, write.then_some(value));
+                self.log_io(addr, size, write, v);
+                return Ok(v);
+            }
+            Decode::Device(Device::Blitter) => {
+                let word = size == Size::Word;
+                let v = self.ste.blitter(addr, word, write.then_some(value));
+                self.log_io(addr, size, write, v);
+                return Ok(v);
+            }
+            Decode::Device(Device::Rtc) => {
+                let v = self.ste.rtc(addr, write.then_some(value));
                 self.log_io(addr, size, write, v);
                 return Ok(v);
             }

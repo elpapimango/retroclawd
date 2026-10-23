@@ -79,6 +79,25 @@ pub struct PaletteChange {
     pub value: u16,
 }
 
+/// The registers only the STE's Shifter has ([O] Hatari 2.6.1 `--machine ste`, probe P27: the values read back as written, but
+/// the video base high byte keeps its low six bits). The video counter's three bytes are writable on the STE: the written
+/// counter runs on from there until the next frame loads it from the base.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SteVideo {
+    /// `$FF820D`: the video base's low byte.
+    pub base_low: u8,
+    /// `$FF820F`: words skipped at the end of every line.
+    pub line_offset: u8,
+    /// `$FF8265` and `$FF8264`: the pixel scroll (the second one without the extra fetch).
+    pub hscroll: u8,
+    pub hscroll_np: u8,
+    /// What the counter has been moved by (bytes, wrapping at 24 bits).
+    pub counter_adjust: i32,
+    /// For each picture line of the frame so far, in order: the bytes its fetch adds to the 160 (the line offset, and the
+    /// extra 16-pixel group the scroll prefetches) and the pixel scroll it was drawn with ([O] P28).
+    pub line_extra: Vec<(u16, u8)>,
+}
+
 /// A picture line's palette at its start and the changes made on it: the canvas pixel each reaches, the colour index
 /// and the value, in time order.
 type LinePalette = ([u16; 16], Vec<(i32, usize, u16)>);
@@ -103,6 +122,9 @@ pub struct Shifter {
     cycle: u16,
     /// The picture window of the frame and the borders of its lines (`fetch.rs`).
     fetch: Fetch,
+    /// The STE's registers (not part of the shared state: see `ste_state`).
+    #[serde(skip)]
+    ste: Option<SteVideo>,
     /// The resolution and sync mode registers as the current raster line began.
     line_res: u8,
     line_sync: u8,
@@ -125,6 +147,7 @@ impl Shifter {
             sync_log: VecDeque::new(),
             cycle: 0,
             fetch: Fetch::default(),
+            ste: None,
             line_res: 0,
             line_sync: if pal { 0x02 } else { 0x00 },
         }
@@ -171,6 +194,7 @@ impl Shifter {
     /// The current raster line ends and `new_line` begins: the finished line's borders are decided from its register
     /// writes, the registers as they now stand are the new line's, and the new line may start or end the picture.
     pub fn line_boundary(&mut self, new_line: u16) {
+        self.record_ste_line(self.line);
         self.fetch.end_line(
             self.line,
             self.line_res,
@@ -181,6 +205,37 @@ impl Shifter {
         self.line_sync = self.sync;
         self.line = new_line;
         self.fetch.start_line(new_line, self.sync & 2 == 0);
+    }
+
+    /// This is an STE's Shifter: 4096 colours and the extra registers.
+    pub fn set_ste(&mut self, ste: bool) {
+        self.ste = ste.then(SteVideo::default);
+    }
+
+    pub fn is_ste(&self) -> bool {
+        self.ste.is_some()
+    }
+
+    /// The STE registers as data, for a state (`None` on an ST).
+    pub fn ste_state(&self) -> Option<&SteVideo> {
+        self.ste.as_ref()
+    }
+
+    pub fn restore_ste_state(&mut self, state: SteVideo) {
+        if self.ste.is_some() {
+            self.ste = Some(state);
+        }
+    }
+
+    /// The video counter's movement since the frame began (STE).
+    pub fn counter_adjust(&self) -> i32 {
+        self.ste.as_ref().map_or(0, |s| s.counter_adjust)
+    }
+
+    pub fn set_counter_adjust(&mut self, by: i32) {
+        if let Some(s) = self.ste.as_mut() {
+            s.counter_adjust = by;
+        }
     }
 
     /// The monitor is monochrome (at power-on).
@@ -213,7 +268,86 @@ impl Shifter {
             return None;
         }
         let (left, _) = self.fetch.borders(line);
-        Some((self.fetch.bytes_before(line), left))
+        Some((self.bytes_before(line), left))
+    }
+
+    /// The bytes fetched on the picture lines before `line`: the 160 of each, the border bytes and, on an STE, the line
+    /// offset and the scroll's extra group.
+    pub fn bytes_before(&self, line: u16) -> u32 {
+        let mut bytes = self.fetch.bytes_before(line);
+        if let Some(ste) = &self.ste {
+            let first = self.fetch.lines_before(line);
+            bytes += ste
+                .line_extra
+                .iter()
+                .take(first.len())
+                .map(|&(extra, _)| u32::from(extra))
+                .sum::<u32>();
+        }
+        bytes
+    }
+
+    /// The pixel scroll picture raster line `line` was drawn with (STE; 0 on an ST).
+    pub fn line_scroll(&self, line: u16) -> u32 {
+        let (Some(ste), true) = (&self.ste, self.fetch.fetching(line)) else {
+            return 0;
+        };
+        let index = self
+            .fetch
+            .lines_before(line.saturating_add(1))
+            .len()
+            .saturating_sub(1);
+        match ste.line_extra.get(index) {
+            Some(&(_, scroll)) => u32::from(scroll),
+            // The line being drawn now: the registers as they are.
+            None => u32::from(self.ste_scroll()),
+        }
+    }
+
+    /// The scroll the registers give: the no-prefetch register when it is set, else the other.
+    fn ste_scroll(&self) -> u8 {
+        self.ste.as_ref().map_or(0, |s| {
+            if s.hscroll_np & 15 != 0 {
+                s.hscroll_np & 15
+            } else {
+                s.hscroll & 15
+            }
+        })
+    }
+
+    /// Bytes of one 16-pixel group in the resolution now selected.
+    fn group_bytes(&self) -> u16 {
+        match self.resolution() {
+            Resolution::Low => 8,
+            Resolution::Medium => 4,
+            Resolution::High => 2,
+            Resolution::Reserved => 0,
+        }
+    }
+
+    /// What the finished picture line `line` added to its fetch and how it was scrolled, from the STE registers.
+    fn record_ste_line(&mut self, line: u16) {
+        if self.ste.is_none() || !self.fetch.fetching(line) {
+            return;
+        }
+        let Some(first) = self.fetch.first_line() else {
+            return;
+        };
+        let index = (line - first) as usize;
+        let scroll = self.ste_scroll();
+        let group = self.group_bytes();
+        let Some(ste) = self.ste.as_mut() else {
+            return;
+        };
+        // [O] P28: 2 bytes a word of line offset, and one more group when the scroll register with prefetch is non-zero
+        // and the no-prefetch one is not.
+        let prefetch = ste.hscroll & 15 != 0 && ste.hscroll_np & 15 == 0;
+        let extra = u16::from(ste.line_offset) * 2 + if prefetch { group } else { 0 };
+        if ste.line_extra.len() > index {
+            return;
+        }
+        ste.line_extra.resize(index + 1, (0, 0));
+        ste.line_extra[index] = (extra, scroll);
     }
 
     /// A new frame starts: the palette as it now is becomes the frame's first, and the change log empties.
@@ -222,6 +356,10 @@ impl Shifter {
         self.changes.clear();
         self.sync_log.clear();
         self.fetch.reset();
+        self.set_counter_adjust(0);
+        if let Some(s) = self.ste.as_mut() {
+            s.line_extra.clear();
+        }
     }
 
     /// The palette writes of the frame so far, in time order.
@@ -232,6 +370,18 @@ impl Shifter {
     /// A register read; `None` when `addr` is not one of the Shifter's. `word` is a 16-bit access (palette only);
     /// otherwise the byte at `addr`. [H?] unused bits read 0.
     pub fn read(&self, addr: u32, word: bool) -> Option<u16> {
+        if let Some(ste) = &self.ste {
+            match (addr & 0xFF_FFFF, word) {
+                (0xFF_820D, false) => return Some(ste.base_low as u16),
+                (0xFF_820F, false) => return Some(ste.line_offset as u16),
+                (0xFF_8264, false) => return Some(ste.hscroll_np as u16),
+                (0xFF_8265, false) => return Some(ste.hscroll as u16),
+                // [O] P27: the sync mode reads with its unused bits set, the resolution without.
+                (0xFF_820A, false) => return Some(0xFC | self.sync as u16),
+                (0xFF_8260, false) => return Some(self.resolution as u16),
+                _ => {}
+            }
+        }
         Some(match (addr & 0xFF_FFFF, word) {
             (0xFF_8201, false) => self.base_high as u16,
             (0xFF_8203, false) => self.base_mid as u16,
@@ -252,6 +402,32 @@ impl Shifter {
 
     /// A register write; ignored when `addr` is not one of the Shifter's.
     pub fn write(&mut self, addr: u32, word: bool, value: u16) {
+        if let Some(ste) = self.ste.as_mut() {
+            match (addr & 0xFF_FFFF, word) {
+                (0xFF_820D, false) => {
+                    ste.base_low = value as u8;
+                    return;
+                }
+                (0xFF_820F, false) => {
+                    ste.line_offset = value as u8;
+                    return;
+                }
+                (0xFF_8264, false) => {
+                    ste.hscroll_np = value as u8;
+                    return;
+                }
+                (0xFF_8265, false) => {
+                    ste.hscroll = value as u8;
+                    return;
+                }
+                // [O] P27: the video base's high byte keeps six bits (a 4 MB address space).
+                (0xFF_8201, false) => {
+                    self.base_high = value as u8 & 0x3F;
+                    return;
+                }
+                _ => {}
+            }
+        }
         match (addr & 0xFF_FFFF, word) {
             // p.56: the video base, high and mid bytes, read/write.
             (0xFF_8201, false) => self.base_high = value as u8,
@@ -262,13 +438,16 @@ impl Shifter {
             (0xFF_8260, false) => self.resolution = value as u8 & 0x03,
             // p.57: 3 bits per gun, `$0RGB`.
             (a @ 0xFF_8240..=0xFF_825F, w) => {
+                let ste = self.ste.is_some();
                 let slot = &mut self.palette[((a - 0xFF_8240) / 2) as usize];
-                let merged = match (w, a & 1) {
-                    (true, _) => value,
-                    (false, 0) => (*slot & 0x00FF) | (value << 8),
-                    (false, _) => (*slot & 0xFF00) | (value & 0xFF),
+                let merged = match (w, a & 1, ste) {
+                    (true, _, _) => value,
+                    // [O] P27: on the STE a byte write lands in both halves of the register.
+                    (false, _, true) => (value & 0xFF) | (value & 0xFF) << 8,
+                    (false, 0, false) => (*slot & 0x00FF) | (value << 8),
+                    (false, _, false) => (*slot & 0xFF00) | (value & 0xFF),
                 };
-                let value = merged & 0x0777;
+                let value = merged & if ste { 0x0FFF } else { 0x0777 };
                 if *slot != value {
                     *slot = value;
                     if self.changes.len() < MAX_PALETTE_CHANGES {
@@ -287,7 +466,9 @@ impl Shifter {
 
     /// The screen's start address: `$FF8201` bits 23-16, `$FF8203` bits 15-8 (p.56, 256-byte steps).
     pub fn video_base(&self) -> u32 {
-        (self.base_high as u32) << 16 | (self.base_mid as u32) << 8
+        (self.base_high as u32) << 16
+            | (self.base_mid as u32) << 8
+            | self.ste.as_ref().map_or(0, |s| (s.base_low & 0xFE) as u32)
     }
 
     /// `$FF820A` bit 1: 1 = 50 Hz (p.57).
@@ -320,9 +501,14 @@ impl Shifter {
         let palette = self.palette;
         let base = self.video_base();
         let bytes_per_line = self.bytes_per_line(monitor);
-        self.draw(monitor, ram, out, &mut |_| (palette, Vec::new()), &|line| {
-            Some(base + line * bytes_per_line)
-        });
+        self.draw(
+            monitor,
+            ram,
+            out,
+            &mut |_| (palette, Vec::new()),
+            &|line| Some(base + line * bytes_per_line),
+            &|_| 0,
+        );
     }
 
     /// The frame with the palette followed down the screen: picture line `y` (0 at the top, 0-199 in low and medium
@@ -353,6 +539,7 @@ impl Shifter {
                 (palette, Vec::new())
             },
             &|line| Some(base + line * bytes_per_line),
+            &|_| 0,
         );
     }
 
@@ -402,6 +589,7 @@ impl Shifter {
                 self.picture_line((first_line + y) as u16)
                     .map(|(offset, left)| base + offset + if left { LEFT_BYTES } else { 0 })
             },
+            &|y| self.line_scroll((first_line + y) as u16),
         );
     }
 
@@ -424,6 +612,7 @@ impl Shifter {
         out: &mut Vec<u8>,
         palette_at: &mut dyn FnMut(u32) -> LinePalette,
         row_at: &dyn Fn(u32) -> Option<u32>,
+        scroll_at: &dyn Fn(u32) -> u32,
     ) {
         out.clear();
         out.resize((WIDTH * HEIGHT * 3) as usize, 0);
@@ -435,6 +624,7 @@ impl Shifter {
         };
         let x_scale = WIDTH / width;
         let y_scale = HEIGHT / lines;
+        let ste = self.ste.is_some();
         let rgb_of = |palette: &[u16; 16]| -> Vec<[u8; 3]> {
             if planes == 1 {
                 let (dark, light) = ([0, 0, 0], [255, 255, 255]);
@@ -445,7 +635,7 @@ impl Shifter {
                     vec![dark, light]
                 }
             } else {
-                palette.iter().map(|&c| to_rgb(c)).collect()
+                palette.iter().map(|&c| to_rgb(c, ste)).collect()
             }
         };
         let mut words = [0u16; 4];
@@ -457,13 +647,21 @@ impl Shifter {
             let Some(row) = row_at(line) else {
                 continue;
             };
+            let scroll = scroll_at(line);
+            let mut loaded = u32::MAX;
             for group in 0..width / 16 {
-                let at = row + group * planes * 2;
-                for (p, w) in words.iter_mut().enumerate().take(planes as usize) {
-                    let a = at + p as u32 * 2;
-                    *w = u16::from_be_bytes([ram(a), ram(a + 1)]);
-                }
                 for bit in 0..16u32 {
+                    // The STE's pixel scroll moves the picture left: pixel `x` shows the data `scroll` pixels on.
+                    let source = group * 16 + bit + scroll;
+                    let (src_group, bit_in) = (source / 16, source % 16);
+                    if src_group != loaded {
+                        loaded = src_group;
+                        let at = row + src_group * planes * 2;
+                        for (p, w) in words.iter_mut().enumerate().take(planes as usize) {
+                            let a = at + p as u32 * 2;
+                            *w = u16::from_be_bytes([ram(a), ram(a + 1)]);
+                        }
+                    }
                     let x = (group * 16 + bit) * x_scale;
                     // The palette changes that have reached the beam by this pixel.
                     let mut changed = false;
@@ -479,7 +677,7 @@ impl Shifter {
                     }
                     let mut index = 0usize;
                     for (p, w) in words.iter().enumerate().take(planes as usize) {
-                        index |= (((w >> (15 - bit)) & 1) as usize) << p;
+                        index |= (((w >> (15 - bit_in)) & 1) as usize) << p;
                     }
                     let colour = rgb[index];
                     for dy in 0..y_scale {
@@ -496,7 +694,15 @@ impl Shifter {
 }
 
 /// `$0RGB`, 3 bits per gun, to 8 bits per channel: `level * 255 / 7` (a display choice, not a hardware fact).
-fn to_rgb(colour: u16) -> [u8; 3] {
+fn to_rgb(colour: u16, ste: bool) -> [u8; 3] {
+    if ste {
+        // Four bits a gun: bits 2-0 are the high bits and bit 3 the low bit ([H] Internals, STE palette).
+        let level = |shift: u16| {
+            let v = (colour >> shift) & 0xF;
+            ((((v & 7) << 1) | (v >> 3)) as u32 * 17) as u8
+        };
+        return [level(8), level(4), level(0)];
+    }
     let level = |shift: u16| (((colour >> shift) & 7) as u32 * 255 / 7) as u8;
     [level(8), level(4), level(0)]
 }
