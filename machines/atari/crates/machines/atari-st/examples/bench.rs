@@ -54,18 +54,37 @@ fn desktop_fps(rom: &[u8], accuracy: Accuracy) -> f64 {
     (m.vbl_count() - start) as f64 / t.elapsed().as_secs_f64()
 }
 
+fn median(v: &mut [f64]) -> (f64, f64, f64) {
+    v.sort_by(|a, b| a.total_cmp(b));
+    (v[v.len() / 2], v[0], v[v.len() - 1])
+}
+
 fn main() {
     let path = std::env::args()
         .nth(1)
         .or_else(|| std::env::var("RC_EMUTOS").ok());
+    let runs: usize = std::env::var("RC_BENCH_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5);
+    println!(
+        "{} runs each; rustc {}",
+        runs,
+        option_env!("RUSTC_VERSION").unwrap_or("(set RUSTC_VERSION at build time to record it)")
+    );
     for accuracy in [Accuracy::Fast, Accuracy::Accurate] {
-        print!("{accuracy:?}: {:.1} MIPS (NOP/ALU mix)", mips(accuracy));
+        let (m, lo, hi) = median(&mut (0..runs).map(|_| mips(accuracy)).collect::<Vec<_>>());
+        print!("{accuracy:?}: {m:.1} MIPS median ({lo:.1}-{hi:.1}) on the NOP/ALU mix");
         match path.as_ref().and_then(|p| std::fs::read(p).ok()) {
             Some(rom) => {
-                let fps = desktop_fps(&rom, accuracy);
+                let (m, lo, hi) = median(
+                    &mut (0..runs)
+                        .map(|_| desktop_fps(&rom, accuracy))
+                        .collect::<Vec<_>>(),
+                );
                 println!(
-                    ", idle desktop {fps:.0} frames/s = {:.1}x real time",
-                    fps / 50.0
+                    ", idle desktop {m:.0} frames/s median ({lo:.0}-{hi:.0}) = {:.1}x real time",
+                    m / 50.0
                 );
             }
             None => println!(", no EmuTOS (RC_EMUTOS or an argument) for the desktop figure"),

@@ -17,6 +17,27 @@ opt-level = 3
 [profile.release.package.machine]
 opt-level = 3
 
+[profile.release.package.atari-st]
+opt-level = 3
+
+[profile.release.package.st-shifter]
+opt-level = 3
+
+[profile.release.package.mc68901]
+opt-level = 3
+
+[profile.release.package.ikbd]
+opt-level = 3
+
+[profile.release.package.wd1770]
+opt-level = 3
+
+[profile.release.package.mc6850]
+opt-level = 3
+
+[profile.release.package.ay-3-8910]
+opt-level = 3
+
 [profile.release.package.atari-st-machine-plugin]
 strip = false
 
