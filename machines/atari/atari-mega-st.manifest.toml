@@ -1,0 +1,23 @@
+machine = "atari-mega-st"
+# EmuTOS 1.4 (192 KB UK) from `--firmware auto`; goldens are Hatari 2.6.1 `--machine megast` dumps (never committed).
+args = ["--firmware", "auto"]
+
+[reference]
+emulator = "hatari"
+version = "2.6.1"
+command = "retroclawd-tools/scripts/capture_hatari_mem.py ROM FLOPPY VBLS ADDR LEN OUT --machine megast"
+
+# P32: the real-time clock's registers in both banks.
+[[scenario]]
+id = "P32"
+kind = "memory"
+frames = 600
+files = { disk = "atari/software/scenarios/timing/p32.st" }
+start = 49152
+len = 116
+golden = "atari-megast/timing/p32.bin"
+golden_sha256 = "ca4e50d488dab70268a74d0c2c4dfef838167002291cb154bcc30f880b81d234"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "Hatari's time registers follow the host clock and its bank 1 has no alarm registers but 2 and 3; ours counts machine time from rtc_time", evidence = "timing_probes p32_the_clock_registers_that_do_not_follow_the_host_read_back_as_in_hatari (mode, test, reset and alarm registers 2 and 3 equal)" }
+

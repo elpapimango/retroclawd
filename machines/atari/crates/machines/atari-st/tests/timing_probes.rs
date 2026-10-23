@@ -863,6 +863,12 @@ fn p19_the_step_rates_take_the_times_hatari_shows() {
         return;
     };
     let (o, t) = (p19_values(&ours), p19_values(&theirs));
+    if std::env::var_os("RC_REPORT").is_some() {
+        eprintln!(
+            "p19 ours {o:?}
+    theirs {t:?}"
+        );
+    }
     // 20 steps at 6, 12, 2 and 3 ms: the data sheet's times at the FDC's 8 MHz; the two emulators place the controller's
     // internal delays (settle, verify setup) a few hundred clocks apart, 0.25% at most.
     for (i, (a, b)) in o.iter().zip(&t).enumerate() {

@@ -483,7 +483,7 @@ golden = "atari-st/timing/p19.bin"
 golden_sha256 = "b315e7055f896453bb4e22b45c2fd2e9563c7c36ab1904a2ccc0a86333585c52"
 compare = { mode = "exact" }
 status = "known-gap"
-gap = { reason = "the data sheet's step times agree to 0.25%: the controller's settle and command set-up are a few hundred clocks apart in the two emulators", evidence = "timing_probes p19_the_step_rates_take_the_times_hatari_shows passes (0.25% limit)" }
+gap = { reason = "the step times agree to 0.25%; second look (Phase 4): Hatari is a constant 10-16 loop iterations (a few hundred clocks) later at every one of the four step rates (21835/43654/7290/10926/10926 against ours 21825/43643/7279/10910/10916), so it is a fixed start-up delay of the command, not a rate error; moving it would change the shared wd1770 for every other floppy probe, with no hardware fact behind the figure", evidence = "timing_probes p19_the_step_rates_take_the_times_hatari_shows passes (0.25% limit)" }
 
 # P20 (keyboard controller answer latencies)
 [[scenario]]
