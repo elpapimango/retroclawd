@@ -685,3 +685,84 @@ fn p15_the_mono_picture_window_and_fetch_rate_match_hatari() {
     let worst = o.iter().zip(&t).map(|(a, b)| a.abs_diff(*b)).max().unwrap();
     assert!(worst <= 24, "the counters differ by up to {worst} bytes");
 }
+
+/// P16: 30 records of 8 bytes: the frame's loop count, the GPIP byte, the DMA status, the DMA address (mid, low).
+fn p16_records(b: &[u8]) -> Vec<(u32, u8, u16)> {
+    b[4..]
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|r| {
+            (
+                u32::from_be_bytes([r[0], r[1], r[2], r[3]]),
+                r[5],
+                u16::from_be_bytes([r[6], r[7]]),
+            )
+        })
+        .collect()
+}
+
+#[test]
+#[ignore = "report"]
+fn p16_report() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p16", 700, 244, Accuracy::Accurate),
+        golden_bytes("p16"),
+    ) else {
+        return;
+    };
+    for (i, (o, t)) in p16_records(&ours)
+        .iter()
+        .zip(p16_records(&theirs))
+        .enumerate()
+    {
+        println!("frame {}: ours {:?}  theirs {:?}", i + 2, o, t);
+    }
+}
+
+/// The clocks a counted loop (20 clocks an iteration, 8002 an undisturbed frame) loses in a frame per 16-byte burst the DMA
+/// moved in it, over the frames that are inside a transfer (the address moved before and after them).
+fn p16_clocks_per_burst(records: &[(u32, u8, u16)]) -> Vec<u32> {
+    let mut out = Vec::new();
+    for w in records.windows(3) {
+        let moved = |a: u16, b: u16| b.wrapping_sub(a) as u32;
+        let (before, now) = (moved(w[0].2, w[1].2), moved(w[1].2, w[2].2));
+        if before > 0 && now > 0 && w[1].2 != 0x1200 {
+            let bursts = now / 16;
+            out.push((8002u32.saturating_sub(w[2].0)) * 20 / bursts.max(1));
+        }
+    }
+    out
+}
+
+#[test]
+fn p16_a_dma_burst_holds_the_cpu_for_the_clocks_hatari_shows() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p16", 700, 244, Accuracy::Accurate),
+        golden_bytes("p16"),
+    ) else {
+        return;
+    };
+    let (o, t) = (
+        p16_clocks_per_burst(&p16_records(&ours)),
+        p16_clocks_per_burst(&p16_records(&theirs)),
+    );
+    assert!(
+        o.len() >= 5 && t.len() >= 5,
+        "frames inside a transfer: {o:?} {t:?}"
+    );
+    let mean = |v: &[u32]| v.iter().sum::<u32>() as f64 / v.len() as f64;
+    assert!(
+        (mean(&o) - mean(&t)).abs() <= 3.0,
+        "clocks per burst ours {o:?} theirs {t:?}"
+    );
+}
+
+#[test]
+fn p16_in_fast_mode_the_dma_does_not_slow_the_loop() {
+    let Some(ours) = run_probe("p16", 700, 244, Accuracy::Fast) else {
+        return;
+    };
+    let loops: Vec<u32> = p16_records(&ours).iter().skip(3).map(|r| r.0).collect();
+    assert!(loops.iter().all(|&l| l >= 7995), "{loops:?}");
+}

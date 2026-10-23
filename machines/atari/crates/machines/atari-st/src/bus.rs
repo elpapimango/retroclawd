@@ -103,6 +103,8 @@ pub struct StBus {
     pub(crate) accurate: bool,
     /// `borders = on`: the picture is drawn with its borders (`st_shifter::OVERSCAN_WIDTH` x `OVERSCAN_HEIGHT`).
     pub(crate) borders: bool,
+    /// `accurate`: clocks the CPU is held off the bus by DMA bursts that came due while events ran (taken by the cycle).
+    pub(crate) stall: u64,
     /// The GLUE's interrupt latches, cleared by their acknowledge cycles.
     hbl_pending: bool,
     vbl_pending: bool,
@@ -233,6 +235,7 @@ impl StBus {
             frame: vec![0; (st_shifter::WIDTH * st_shifter::HEIGHT * 3) as usize],
             accurate: cfg.accuracy == crate::config::Accuracy::Accurate,
             borders: false,
+            stall: 0,
             hbl_pending: false,
             vbl_pending: false,
             mfp,
@@ -441,6 +444,7 @@ impl StBus {
             }
             self.dma.address = (self.dma.address + 1) & 0xFF_FFFF;
         }
+        self.dma_burst_stall();
         out
     }
 
@@ -467,6 +471,14 @@ impl StBus {
                 }
             }
             self.dma.address = (self.dma.address + 1) & 0xFF_FFFF;
+        }
+        self.dma_burst_stall();
+    }
+
+    /// `accurate`: a 16-byte DMA burst holds the bus, and the CPU with it, for `DMA_BURST_STALL` clocks.
+    fn dma_burst_stall(&mut self) {
+        if self.accurate {
+            self.stall += crate::waits::DMA_BURST_STALL;
         }
     }
 

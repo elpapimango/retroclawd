@@ -31,6 +31,10 @@ pub(crate) const E_PHASE: u64 = 6;
 /// Hatari does (probes P02 and P04: with no delay HBL number n came one line early).
 pub(crate) const VBL_DELAY: u64 = 64;
 
+/// Clocks a 16-byte floppy DMA burst holds the CPU off the bus: 8 words at 4 clocks. [O] Hatari 2.6.1, probe P16: a counted
+/// loop loses 1060 clocks in a frame in which the DMA moved 528 bytes (33 bursts), 32 clocks a burst.
+pub(crate) const DMA_BURST_STALL: u64 = 32;
+
 /// The clocks into a line at which the Shifter starts fetching the picture: a fit to probe P04 (Hatari), within
 /// one word.
 pub(crate) const WINDOW_START: u64 = 56;

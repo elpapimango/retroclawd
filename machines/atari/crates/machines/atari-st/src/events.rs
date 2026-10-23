@@ -101,8 +101,10 @@ impl StBus {
                 scheduler::READ_POINT
             };
         self.run_events(seen);
-        self.now = seen;
-        start
+        // A DMA burst that came due holds the cycle back.
+        let held = std::mem::take(&mut self.stall);
+        self.now = seen + held;
+        start + held
     }
 
     /// `accurate`: the cycle that started at `start` ends (4 clocks and the wait states `extra` after it began);
@@ -111,6 +113,7 @@ impl StBus {
         self.flush_dirty(self.now);
         self.now = start + 4 + extra as u64;
         self.run_events(self.now);
+        self.now += std::mem::take(&mut self.stall);
     }
 
     /// `accurate`: `clocks` internal clocks with no bus cycle.
@@ -118,6 +121,7 @@ impl StBus {
         self.flush_dirty(self.now);
         self.now += clocks as u64;
         self.run_events(self.now);
+        self.now += std::mem::take(&mut self.stall);
     }
 
     /// The end of a line: the HBL; after the frame's last line the VBL, the picture, and the next frame's shape
