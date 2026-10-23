@@ -132,6 +132,8 @@ pub struct StBus {
     /// An ACIA register was accessed: its service events may have moved.
     pub(crate) acia_dirty: bool,
     pub(crate) monitor: Monitor,
+    /// The CPU clock in Hz (the DMA sound's frames are timed against it).
+    cpu_hz: u64,
     clock: MfpClock,
     /// MFP ticks the MFP has been advanced by.
     mfp_ticks: u64,
@@ -271,6 +273,7 @@ impl StBus {
             acia_dirty: false,
             psg: Psg::new(cpu_hz),
             monitor: cfg.monitor,
+            cpu_hz,
             clock: MfpClock::new(scheduler::crystal_hz(cfg.region)),
             mfp_ticks: 0,
             mfp_dirty: false,
@@ -620,6 +623,46 @@ impl StBus {
 
     /// Advances the MFP to CPU clock `cycle` (never backwards).
     pub(crate) fn catch_up_mfp(&mut self, cycle: u64) {
+        self.run_dma(cycle);
+        self.advance_mfp(cycle);
+    }
+
+    /// Advances the DMA sound to `cycle` (STE): audio samples are taken, frames played, and frame ends reach the MFP.
+    pub(crate) fn run_dma(&mut self, cycle: u64) {
+        if !self.chipset.is_ste() {
+            return;
+        }
+        let mut dma = std::mem::take(&mut self.ste.dma);
+        let mut events = Vec::new();
+        dma.advance(cycle, self.cpu_hz, &|a| self.peek(a), &mut events);
+        self.ste.dma = dma;
+        self.deliver_sound_events(events);
+    }
+
+    /// Frame ends pulse timer A's input; the end of playing moves GPIP line 7.
+    fn deliver_sound_events(&mut self, events: Vec<(u64, crate::dmasound::SoundEvent)>) {
+        use crate::dmasound::SoundEvent;
+        for (at, event) in events {
+            self.advance_mfp(at);
+            match event {
+                SoundEvent::FrameEnd => {
+                    self.mfp.timer_input(mc68901::TimerAb::A, true);
+                    self.mfp.timer_input(mc68901::TimerAb::A, false);
+                    self.mfp_dirty = true;
+                }
+                SoundEvent::Stopped => self.update_gpip7(),
+            }
+        }
+    }
+
+    /// [O] P29: GPIP line 7 is the monitor detect, inverted while the DMA sound plays.
+    fn update_gpip7(&mut self) {
+        let idle = self.monitor == Monitor::Colour;
+        self.mfp.set_input(7, idle != self.ste.dma.playing());
+        self.mfp_dirty = true;
+    }
+
+    fn advance_mfp(&mut self, cycle: u64) {
         let target = self.clock.ticks_at(cycle);
         if target > self.mfp_ticks {
             self.mfp.tick(target - self.mfp_ticks);
@@ -910,7 +953,14 @@ impl StBus {
             }
             Decode::Device(Device::SteSound) => {
                 let word = size == Size::Word;
+                self.run_dma(self.now);
                 let v = self.ste.sound(addr, word, write.then_some(value), self.now);
+                if write {
+                    let mut events = Vec::new();
+                    self.ste.dma.prefetch(self.now, &mut events);
+                    self.deliver_sound_events(events);
+                    self.update_gpip7();
+                }
                 self.log_io(addr, size, write, v);
                 return Ok(v);
             }

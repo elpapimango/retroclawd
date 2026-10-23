@@ -1496,3 +1496,89 @@ fn p39_a_blit_right_to_left_matches_hatari() {
 fn p40_a_restart_with_the_y_count_at_zero_moves_nothing_as_in_hatari() {
     blitter_dump_matches("p40", 4 + 5 * 10, "5");
 }
+
+/// P29's records, decoded: (counter, control, gpip) per sample, eleven sets of 32 after the 48 bytes of read-back.
+fn p29_records(b: &[u8]) -> Vec<Vec<(u32, u8, u8, u8)>> {
+    (0..11)
+        .map(|set| {
+            (0..32)
+                .map(|i| {
+                    let o = 52 + set * 192 + i * 6;
+                    let c = u32::from_be_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]);
+                    (c >> 8, c as u8, b[o + 4], b[o + 5])
+                })
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn p29_the_dma_sound_registers_and_counter_move_as_in_hatari() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe_ste("p29", 1500, 2165, Accuracy::Accurate),
+        golden_ste("p29"),
+    ) else {
+        return;
+    };
+    assert_eq!(&ours[..52], &theirs[..52], "register read-back");
+    let (o, t) = (p29_records(&ours), p29_records(&theirs));
+    for set in 0..11 {
+        if std::env::var_os("RC_P29_REPORT").is_some() && o[set] != t[set] {
+            eprintln!(
+                "set {set}\n ours   {:x?}\n theirs {:x?}",
+                &o[set][..14],
+                &t[set][..14]
+            );
+        }
+    }
+    // Exact: the control register and GPIP line 7 at every record (when play stops, and that it does) and the frame ends
+    // timer A counted. Known gap (`docs/hardware-facts.md`): Hatari moves the counter in lumps at scan lines with a start-up
+    // ramp that differs per rate; ours is the bytes fetched ahead of the sample played, so the counter is compared within one
+    // FIFO (16 bytes), circularly in the frame.
+    let frame_len = [
+        0x10000, 0x10000, 0x10000, 0x10000, 0x10000, 0x10000, 0x10000, 0x10000, 0x40, 0x40, 0x10,
+    ];
+    for set in 0..11 {
+        for i in 0..32 {
+            let (a, b) = (o[set][i], t[set][i]);
+            assert_eq!(
+                (a.2, a.3),
+                (b.2, b.3),
+                "set {set} record {i}: control and GPIP"
+            );
+            let d = a.0.abs_diff(b.0);
+            let d = d.min(frame_len[set] - d.min(frame_len[set]));
+            assert!(
+                d <= 16,
+                "set {set} record {i}: counter {:x} against Hatari's {:x}",
+                a.0,
+                b.0
+            );
+        }
+    }
+    assert_eq!(ours[2164], theirs[2164], "timer A data after the loop");
+}
+
+#[test]
+fn p41_the_dma_sound_plays_bytes_at_hatari_s_rate_over_a_long_run() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe_ste("p41", 600, 24, Accuracy::Accurate),
+        golden_ste("p41"),
+    ) else {
+        return;
+    };
+    for mode in 0..5 {
+        let at = |b: &[u8]| {
+            i64::from(u32::from_be_bytes([
+                0,
+                b[4 + 4 * mode],
+                b[5 + 4 * mode],
+                b[6 + 4 * mode],
+            ]))
+        };
+        let (a, b) = (at(&ours), at(&theirs));
+        let d = (a - b).rem_euclid(0x10000);
+        let d = d.min(0x10000 - d);
+        assert!(d <= 16, "mode {mode}: counter {a:x} against Hatari's {b:x}");
+    }
+}

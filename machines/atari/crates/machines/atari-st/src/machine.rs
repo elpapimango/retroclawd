@@ -662,10 +662,33 @@ impl Machine for AtariSt {
         regs
     }
 
-    /// The YM2149's output, mono at 44 100 Hz, up to now.
+    /// The YM2149's output, mono at 44 100 Hz, up to now; on an STE the YM and the DMA sound mixed as the volume control
+    /// says, interleaved left and right.
     fn drain_audio(&mut self) -> Vec<f32> {
         self.bus.psg.catch_up(self.bus.now);
-        self.bus.psg.drain()
+        let ym = self.bus.psg.drain();
+        if !self.bus.chipset.is_ste() {
+            return ym;
+        }
+        self.bus.run_dma(self.bus.now);
+        let dma = self.bus.ste.dma.drain();
+        ym.iter()
+            .zip(dma)
+            .flat_map(|(&y, [l, r, gl, gr])| {
+                [(l + y * gl).clamp(-1.0, 1.0), (r + y * gr).clamp(-1.0, 1.0)]
+            })
+            .collect()
+    }
+
+    fn audio_format(&self) -> machine::AudioFormat {
+        if self.bus.chipset.is_ste() {
+            machine::AudioFormat {
+                channels: 2,
+                sample_rate: machine::AUDIO_SAMPLE_RATE,
+            }
+        } else {
+            machine::AudioFormat::MONO
+        }
     }
 
     fn render_frame(&self) -> Option<(u32, u32, Vec<u8>)> {

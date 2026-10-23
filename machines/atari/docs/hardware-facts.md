@@ -371,3 +371,23 @@ word of those dumps (`tests/timing_probes.rs`).
 | Address registers | bit 0 is not stored | `[H?]` | |
 | Memory the Blitter cannot reach | the I/O area and nonexistent memory stop the machine (no fact), as for the DMA; writes to ROM and the cartridge are ignored | `[H?]` | |
 | Timing | not yet: a blit runs at once when started (a very long one in bursts of 2^20 words, one per VBL) | | Task 57 |
+
+### STE DMA sound and the volume control (Phase 4)
+
+Register map `[H]` *Atari ST Internals* (the STE chapter); the behaviour is `[O]`, Hatari 2.6.1 `--machine ste`, probes P29
+(registers and the counter's steps, 11 sets of 32 records) and P41 (the byte rate over 6 million clocks).
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| Register masks | `$FF8901` keeps bits 1-0; the frame base and end registers keep 6 bits of the high byte and all of the middle byte, bit 0 of the low byte reads 0; `$FF8921` keeps bits 7 and 3-0; the counter (`$FF8909/0B/0D`) is read only and reads the base while stopped | `[O]` | P29 |
+| Even addresses | `$FF8900` reads 0, the other even addresses `$FF` | `[O]` | P29 |
+| Mode | `$FF8921` bit 7 is 1 for mono (one byte a frame), 0 for stereo (left byte then right byte); bits 1-0 select 6258, 12517, 25033, 50066 Hz | `[H]`/`[O]` | P29 (the book's table) |
+| Rate | a frame every `N * 8010613 / 8021247` PAL CPU clocks (N = 1280, 640, 320, 160), i.e. the NTSC crystal's 8010613 Hz over N whatever the CPU clock | `[O]` | P41: over 6 million clocks the counters agree to 16 bytes |
+| Fetch ahead | after `c` bytes were played the DMA has fetched `8 + 2 * ceil(c / 2)` bytes; the first frame is played 640 clocks after the start | `[O]` | P29 (rate 3 within 6 bytes; Hatari moves the visible counter in lumps at scan lines, ours at scan lines with the same rule, within 16 bytes: `known-gap` for byte equality) |
+| Frame end | when the fetch reaches the end: play once stops at once (the play bit clears, the counter reads the base again, GPIP line 7 rises); loop goes on from the base; each frame end is a falling edge on timer A's input (23 events in 32 records of 16-byte frames at 50 kHz, as Hatari) | `[O]` | P29 |
+| GPIP line 7 | the monitor detect (1 for colour), inverted while playing | `[O]` | P29 |
+| Empty frame | with the end not past the base the play bit stays set in loop mode and clears at once for play once; nothing is played | `[O]`/`[H?]` | P29 (register read-back), the rest is the choice |
+| Writes while playing | a change of base or end acts at once; a change of the mode restarts the frame timer | `[H?]` | |
+| Memory | the DMA reads RAM, ROM and the cartridge; the I/O area and nothing-fitted read `$FF`; no stop, no write | `[H?]` | |
+| Volume control | the Microwire word shifted out through the mask's set bits, eleven of them, device `%10` then command: mixer, bass, treble, master volume (0-40), right and left volume (0-20); applied when the data is written; 2 dB a step; the YM at full level for mixer 1, 12 dB down for 0, off for 2-3; bass and treble not modelled | `[H]`/`[H?]` | Internals' table; the dB steps and the mixer meaning are the LM1992 data sheet from memory: not verified |
+| Audio | 44 100 Hz stereo: a zero-order hold of the frame last played, plus the YM through the volume control; the queue keeps two seconds | | |

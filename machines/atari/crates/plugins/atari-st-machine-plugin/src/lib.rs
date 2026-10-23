@@ -12,7 +12,7 @@ use std::sync::{Mutex, OnceLock};
 
 use atari_st::serial::{FileSink, FileSource, LinePeer, MIDI_FRAME_CYCLES};
 use atari_st::{Accuracy, AtariSt, Chipset, Config, Monitor, RamSize, Region};
-use machine::{AUDIO_SAMPLE_RATE, Machine};
+use machine::Machine;
 use plugin_api::{
     ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, BinaryBlob, CartridgeStatus, ChipSnapshot,
     CodecError, CpuFamily, CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine,
@@ -1211,11 +1211,14 @@ fn handle_machine_command(
                 .ok_or_else(|| "render_frame unavailable".to_string())?;
             Ok(MachineResponse::Frame { width, height, rgb })
         }
-        MachineCommand::DrainAudio => Ok(MachineResponse::AudioPcm {
-            channels: 1,
-            sample_rate: AUDIO_SAMPLE_RATE,
-            samples: record.machine.drain_audio(),
-        }),
+        MachineCommand::DrainAudio => {
+            let format = record.machine.audio_format();
+            Ok(MachineResponse::AudioPcm {
+                channels: format.channels,
+                sample_rate: format.sample_rate,
+                samples: record.machine.drain_audio(),
+            })
+        }
         MachineCommand::Debug(command) => Ok(MachineResponse::Debug(handle_debug_command(
             record, command,
         )?)),
@@ -1379,6 +1382,7 @@ pub unsafe extern "C" fn entry_v1() -> *const PluginDescriptorV1 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use machine::AUDIO_SAMPLE_RATE;
     use plugin_api::NamedValue;
 
     fn rom(program: &[u16]) -> Vec<u8> {

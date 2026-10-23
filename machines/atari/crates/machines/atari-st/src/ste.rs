@@ -8,13 +8,15 @@ pub const MICROWIRE_BIT_CLOCKS: u64 = 8;
 pub const MICROWIRE_START_DELAY: u64 = 8;
 
 /// The STE and Mega ST's added registers.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SteRegs {
     pub sound: Vec<u8>,
     /// The clock at which the Microwire data register was last written (the shift runs from then).
     pub microwire_start: Option<u64>,
     pub joy: Vec<u8>,
     pub blitter: blitter::Blitter,
+    /// The DMA sound and the volume control behind the Microwire interface.
+    pub dma: crate::dmasound::DmaSound,
     pub rtc: Vec<u8>,
 }
 
@@ -25,6 +27,7 @@ impl Default for SteRegs {
             microwire_start: None,
             joy: vec![0xFF; 0x24],
             blitter: blitter::Blitter::new(),
+            dma: crate::dmasound::DmaSound::default(),
             rtc: vec![0; 0x20],
         }
     }
@@ -55,6 +58,7 @@ impl SteRegs {
         let ok = self.sound.len() == 0x26
             && self.joy.len() == 0x24
             && self.blitter.is_consistent()
+            && self.dma.is_consistent()
             && self.rtc.len() == 0x20;
         if ok {
             Ok(())
@@ -67,16 +71,46 @@ impl SteRegs {
 
     pub fn sound(&mut self, addr: u32, word: bool, write_value: Option<u32>, now: u64) -> u32 {
         let at = (addr - 0xFF_8900) as usize;
+        if at < 0x22 {
+            return self.dma_register(at, word, write_value, now);
+        }
         match write_value {
             Some(v) => {
                 write(&mut self.sound, at, word, v);
                 if (0x22..0x24).contains(&at) {
                     self.microwire_start = Some(now);
+                    // The volume control takes the command when the data is written.
+                    let data = read(&self.sound, 0x22, true) as u16;
+                    let mask = read(&self.sound, 0x24, true) as u16;
+                    self.dma.lmc.microwire(data, mask);
                 }
                 v
             }
             None if word && at == 0x22 => self.microwire_data(now),
             None => read(&self.sound, at, word),
+        }
+    }
+
+    /// A DMA sound register (`$FF8900-$FF8921`) as a byte or a word.
+    fn dma_register(&mut self, at: usize, word: bool, write_value: Option<u32>, now: u64) -> u32 {
+        match write_value {
+            Some(v) => {
+                if word {
+                    self.dma.write_byte(at, (v >> 8) as u8, now);
+                    self.dma.write_byte(at + 1, v as u8, now);
+                } else {
+                    self.dma.write_byte(at, v as u8, now);
+                }
+                v
+            }
+            None => {
+                let byte = |o: usize| u32::from(self.dma.read_byte(o).unwrap_or(0xFF));
+                if word {
+                    byte(at) << 8 | byte(at + 1)
+                } else {
+                    byte(at)
+                }
+            }
         }
     }
 

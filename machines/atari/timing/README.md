@@ -38,7 +38,9 @@ manifest's comparison, the tests next to it check the property each probe is abo
 |---|---|---|---|
 | P27 `gen_p27.py` | the STE Shifter registers: read-back, masks, palette, the video counter written | | `p27_*` |
 | P28 `gen_p28.py` | line offset and pixel scroll in the fetch: the counter's stride per line | | `p28_*` |
+| P29 `gen_p29.py` | the DMA sound: register read-back, the counter at each rate in stereo and mono, a frame end (play once, loop), timer A counting the frame ends, GPIP line 7 | 4 + 48 + 11 x 192 + 1, 1500 | `p29_*` (counter within 16 bytes) |
 | P30 `gen_p30.py` | the Microwire data register's shifting | 340, 800 | `p30_*` (known gap: the shift per read) |
+| P41 `gen_p41.py` | the DMA sound's byte rate over 6 million clocks at each rate | 4 + 5 x 4, 600 | `p41_*` |
 | P33 `gen_p33.py` | the Blitter for 174 settings: HOP x OP, end masks, skew with FXSR/NFSR, backwards, increments, halftone line, smudge, overlap; a checksum of the area and the registers after | 4 + 174 x 20, 1500 | `p33_*` |
 | P36 `gen_p36.py` | what an access to each STE register costs | 208, 1000 | `p36_*` |
 | P37 `gen_p37.py` | the Blitter's skew with FXSR and NFSR, raw destination words | 4 + 64 x 80, 1500 | `p37_*` |
