@@ -159,3 +159,35 @@ frames = 300
 args = ["--org", "0x8000"]
 files = { program = "atari/software/scenarios/ste_tone.bin" }
 audio = { from_s = 1.0, to_s = 5.0, tone_hz = 1564.6, tone_tolerance_pct = 1.0, min_amplitude = 0.4, channel = 0, other_channel_below_rms = 0.001 }
+
+# S19: a picture made by the Blitter: a halftone fill (HOP 1) of plane 0, a skewed copy with FXSR and end masks to plane 1, an XOR of halftone and source with NFSR to plane 2 (timing/p42_blit_picture.s). Hatari 2.6.1 draws the same picture pixel for pixel.
+[[scenario]]
+id = "S19"
+kind = "screen"
+frames = 700
+files = { disk = "atari/software/scenarios/timing/p42.st" }
+golden = "atari-ste/S-p42.png"
+golden_sha256 = "5fbc789469ed6b1c28ac5637b737a027c34af347a8cee4aaff63950092b2fc6f"
+compare = { mode = "exact" }
+
+# S17: the STE's colours: 16 greys (the guns' bit 3 is their least significant bit) as 16 bars (timing/p43_ste_colours.s). Hatari 2.6.1 draws the same picture pixel for pixel.
+[[scenario]]
+id = "S17"
+kind = "screen"
+frames = 700
+files = { disk = "atari/software/scenarios/timing/p43.st" }
+golden = "atari-ste/S-p43.png"
+golden_sha256 = "b3188bf3822013e7050a1a6d99ad88caad76980827b52e2982e8cf84d2914d8a"
+compare = { mode = "exact" }
+
+# S17S: the STE's pixel scroll: the same bars in rows of 168 bytes with $FF8265 at 5, so the picture is 5 pixels left and the extra group is fetched; in accurate mode (timing/p44_ste_scroll.s). Hatari 2.6.1 draws the same picture pixel for pixel.
+[[scenario]]
+id = "S17S"
+kind = "screen"
+frames = 700
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p44.st" }
+golden = "atari-ste/S-p44.png"
+golden_sha256 = "23aa34b0d6576057d08e2db5a95d9e2fdaf82a5fb3453f89196f10e9e9dde8fd"
+compare = { mode = "exact" }
+

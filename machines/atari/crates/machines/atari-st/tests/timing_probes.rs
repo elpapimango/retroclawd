@@ -1718,3 +1718,37 @@ fn p34_a_running_blitter_costs_the_cpu_what_it_does_in_hatari_accurate() {
 fn p34_a_running_blitter_costs_the_cpu_what_it_does_in_hatari_fast() {
     p34_check(Accuracy::Fast);
 }
+
+/// The STE's pixel scroll shows in both modes (`fast` once ignored it): probe P44 draws 16-pixel bars in rows of 168 bytes and
+/// sets the scroll register to 5, so the first bar (black) is 11 pixels wide and the next (grey $111, 34 a gun) starts at
+/// pixel 11, canvas pixel 22.
+#[test]
+fn p44_the_ste_scroll_moves_the_picture_in_both_modes() {
+    for accuracy in [Accuracy::Fast, Accuracy::Accurate] {
+        let (Some(rom), Some(image)) = (common::emutos_ste(), floppy("p44")) else {
+            return;
+        };
+        let mut cfg = config(rom, RamSize::M1);
+        cfg.accuracy = accuracy;
+        let mut m = AtariSt::with_chipset(cfg, atari_st::Chipset::Ste).unwrap();
+        m.insert_disk(0, image).unwrap();
+        while m.io_stop().is_none() && m.vbl_count() < 700 {
+            m.step();
+        }
+        let (w, _h, rgb) = m.render_frame().unwrap();
+        let at = |x: usize| {
+            let o = (100 * w as usize + x) * 3;
+            [rgb[o], rgb[o + 1], rgb[o + 2]]
+        };
+        assert_eq!(
+            at(21),
+            [0, 0, 0],
+            "{accuracy:?}: the first bar ends at canvas pixel 21"
+        );
+        assert_eq!(
+            at(22),
+            [34, 34, 34],
+            "{accuracy:?}: the second bar starts at 22"
+        );
+    }
+}

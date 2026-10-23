@@ -500,14 +500,15 @@ impl Shifter {
     pub fn render(&self, monitor: Monitor, ram: &dyn Fn(u32) -> u8, out: &mut Vec<u8>) {
         let palette = self.palette;
         let base = self.video_base();
-        let bytes_per_line = self.bytes_per_line(monitor);
+        let (extra, scroll) = self.ste_line_extra();
+        let bytes_per_line = self.bytes_per_line(monitor) + extra;
         self.draw(
             monitor,
             ram,
             out,
             &mut |_| (palette, Vec::new()),
             &|line| Some(base + line * bytes_per_line),
-            &|_| 0,
+            &|_| scroll,
         );
     }
 
@@ -524,7 +525,8 @@ impl Shifter {
         let mut palette = self.frame_palette;
         let mut next = 0;
         let base = self.video_base();
-        let bytes_per_line = self.bytes_per_line(monitor);
+        let (extra, scroll) = self.ste_line_extra();
+        let bytes_per_line = self.bytes_per_line(monitor) + extra;
         self.draw(
             monitor,
             ram,
@@ -539,7 +541,7 @@ impl Shifter {
                 (palette, Vec::new())
             },
             &|line| Some(base + line * bytes_per_line),
-            &|_| 0,
+            &|_| scroll,
         );
     }
 
@@ -591,6 +593,23 @@ impl Shifter {
             },
             &|y| self.line_scroll((first_line + y) as u16),
         );
+    }
+
+    /// The STE's registers as the `fast` render sees them (whole frame, as they are at its end): the bytes a line fetches
+    /// beyond its own (the line offset in words, and a group more with the scroll register that prefetches) and the pixel
+    /// scroll. An ST has neither.
+    fn ste_line_extra(&self) -> (u32, u32) {
+        let Some(ste) = &self.ste else {
+            return (0, 0);
+        };
+        let prefetch = ste.hscroll & 15 != 0 && ste.hscroll_np & 15 == 0;
+        let extra = u32::from(ste.line_offset) * 2
+            + if prefetch {
+                u32::from(self.group_bytes())
+            } else {
+                0
+            };
+        (extra, u32::from(self.ste_scroll()))
     }
 
     /// Bytes of picture data on a line in the resolution now selected.
