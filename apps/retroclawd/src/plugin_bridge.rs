@@ -136,6 +136,8 @@ pub(crate) struct HostedMachine {
     /// (end of a headless run, or when the GUI's emulation thread ends).
     /// Never cloned: a run-ahead clone must not write the user's file.
     disk_exit: [Option<DiskExitPolicy>; 2],
+    /// Where each ACSI hard disk (target, file) goes at exit (`--acsi-save`); never cloned either.
+    acsi_exit: Vec<(u8, PathBuf)>,
     /// Like `disk_exit`, for a cassette recording; never cloned either.
     tape_exit: Option<TapeExitPolicy>,
     /// Like `disk_exit`, for a flashed cartridge; never cloned either.
@@ -156,6 +158,7 @@ impl Clone for HostedMachine {
             machine_id: self.machine_id.clone(),
             metadata: self.metadata.clone(),
             disk_exit: [None, None],
+            acsi_exit: Vec::new(),
             tape_exit: None,
             cartridge_exit: None,
             printer_out: None,
@@ -1024,6 +1027,7 @@ pub(crate) fn create_hosted_machine(
         machine_id,
         metadata: create.metadata,
         disk_exit: [None, None],
+        acsi_exit: Vec::new(),
         tape_exit: None,
         cartridge_exit: None,
         printer_out: None,
@@ -1391,6 +1395,8 @@ impl HostedBackend {
             || lower == "nib"
             || lower == "atr"
             || lower == "xfd"
+            || lower == "st"
+            || lower == "msa"
         {
             self.apply_disk(instance, 0, &lower, bytes)
         } else if lower == "xex" {
@@ -1406,7 +1412,7 @@ impl HostedBackend {
                 "formatted program attach",
             )
         } else if [
-            "cpr", "crt", "car", "20", "40", "60", "a0", "b0", "bin", "rom",
+            "cpr", "crt", "stc", "car", "20", "40", "60", "a0", "b0", "bin", "rom",
         ]
         .contains(&lower.as_str())
         {
@@ -1618,6 +1624,14 @@ impl HostedMachine {
         self.backend.key_event(self.instance, key, pressed)
     }
 
+    /// A mouse event with the plugin's answer (`mouse_event` drops it, for the window's input path).
+    pub(crate) fn try_mouse_event(
+        &mut self,
+        event: crate::emu_thread::MouseEvent,
+    ) -> Result<(), String> {
+        self.backend.mouse_event(self.instance, event)
+    }
+
     pub(crate) fn key_event_name(&mut self, key: &str, pressed: bool) {
         match self.backend.key_event(self.instance, key, pressed) {
             Ok(()) => {
@@ -1762,6 +1776,44 @@ impl HostedMachine {
     fn finish_disk_on_exit(&mut self) {
         for drive in 0..2u8 {
             self.finish_drive_on_exit(drive);
+        }
+        self.finish_acsi_on_exit();
+    }
+
+    /// The drive number the machine plugin gives the ACSI hard disk behind `target` (`ExportDisk`, `MarkDiskSaved`).
+    pub(crate) const ACSI_DRIVE_BASE: u8 = 8;
+
+    /// `--acsi-save N=FILE`: a hard disk the guest wrote to is written to `file` when the session ends.
+    pub(crate) fn set_acsi_save(&mut self, target: u8, path: PathBuf) {
+        self.acsi_exit.retain(|(t, _)| *t != target);
+        self.acsi_exit.push((target, path));
+    }
+
+    /// Writes the hard disks that were modified; silent for one that was not.
+    pub(crate) fn finish_acsi_on_exit(&mut self) {
+        for (target, path) in std::mem::take(&mut self.acsi_exit) {
+            let drive = Self::ACSI_DRIVE_BASE + target;
+            let image = match self.export_disk(drive, true) {
+                Ok(Some(image)) => image,
+                Ok(None) => continue,
+                Err(e) => {
+                    eprintln!("could not read back the ACSI {target} hard disk image: {e}");
+                    continue;
+                }
+            };
+            match write_file_atomically(&path, &image) {
+                Ok(()) => {
+                    let _ = self.mark_disk_saved(drive);
+                    eprintln!(
+                        "saved modified ACSI {target} hard disk image to {}",
+                        path.display()
+                    );
+                }
+                Err(e) => eprintln!(
+                    "FAILED to save the modified ACSI {target} hard disk image to {}: {e}",
+                    path.display()
+                ),
+            }
         }
     }
 
@@ -1929,6 +1981,21 @@ impl HostedMachine {
                 policy.save_to.display()
             ),
             Err(e) => eprintln!("could not read back the cassette recording: {e}"),
+        }
+    }
+
+    /// Hands a program file to a machine plugin that declares `MediaKind::Program` and runs executables itself (the
+    /// Atari ST builds a boot floppy around a GEMDOS `.PRG`); `name` is the file's own, for the name on that floppy.
+    pub(crate) fn attach_program_file(&mut self, name: &str, bytes: &[u8]) -> Result<(), String> {
+        match self.call_machine(MachineCommand::AttachMedia {
+            slot: MediaSlot::Other("program".to_string()),
+            kind: MediaKind::Program,
+            name: Some(name.to_string()),
+            bytes: bytes.to_vec(),
+            options: Vec::new(),
+        })? {
+            MachineResponse::Ack => Ok(()),
+            other => Err(format!("program attach: unexpected response {other:?}")),
         }
     }
 
@@ -2656,6 +2723,60 @@ mod tests {
             "the plugin's own explanation: {error}"
         );
         assert!(!error.contains("machine plugin call failed"), "{error}");
+    }
+
+    /// An Atari ST `.st` image is a disk: `--game-config` media and the extension routing hand it to the disk slot.
+    #[test]
+    fn st_extension_is_a_disk() {
+        use plugin_api::MachineCreateRequest;
+        let mut machine = super::create_hosted_machine(MachineCreateRequest {
+            machine_id: "stub-machine".to_string(),
+            region: Some("pal".to_string()),
+            roms: Vec::new(),
+            options: Vec::new(),
+        })
+        .expect("the bundled stub machine");
+        let error = machine.apply_media("st", b"anything", 1).unwrap_err();
+        assert!(
+            error.contains("not a disk image"),
+            "went to the disk slot: {error}"
+        );
+    }
+
+    #[test]
+    fn msa_extension_is_a_disk() {
+        use plugin_api::MachineCreateRequest;
+        let mut machine = super::create_hosted_machine(MachineCreateRequest {
+            machine_id: "stub-machine".to_string(),
+            region: Some("pal".to_string()),
+            roms: Vec::new(),
+            options: Vec::new(),
+        })
+        .expect("the bundled stub machine");
+        let error = machine.apply_media("msa", b"anything", 1).unwrap_err();
+        assert!(
+            error.contains("not a disk image"),
+            "went to the disk slot: {error}"
+        );
+    }
+
+    #[test]
+    fn stc_extension_is_a_cartridge() {
+        use plugin_api::MachineCreateRequest;
+        let mut machine = super::create_hosted_machine(MachineCreateRequest {
+            machine_id: "stub-machine".to_string(),
+            region: Some("pal".to_string()),
+            roms: Vec::new(),
+            options: Vec::new(),
+        })
+        .expect("the bundled stub machine");
+        let error = machine.apply_media("stc", b"anything", 1).unwrap_err();
+        assert!(
+            error.contains("Cartridge"),
+            "went to the cartridge slot: {error}"
+        );
+        let error = machine.apply_media("xyz", b"anything", 1).unwrap_err();
+        assert!(!error.contains("Cartridge"), "not a cartridge: {error}");
     }
 
     #[test]

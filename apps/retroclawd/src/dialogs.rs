@@ -147,6 +147,7 @@ pub(crate) fn extensions_for(kind: FileKind, machine_id: &str) -> &'static [&'st
         FileKind::Disk if machine_id == "c64" || machine_id == "c128" => {
             &["d64", "d71", "d81", "g64", "x64"]
         }
+        FileKind::Disk if machine_id.starts_with("atari-") => &["st", "msa"],
         FileKind::Snapshot if spectrum => &["z80", "sna", "szx"],
         FileKind::Snapshot if machine_id == "zx81" => &["p", "p81", "81"],
         FileKind::Snapshot if cpc => &["sna"],
@@ -166,9 +167,8 @@ pub(crate) fn kind_of_extension(path: &str) -> Option<FileKind> {
         "tap" | "tzx" | "cdt" | "pzx" | "csw" | "voc" | "wav" | "t64" | "cas" => {
             Some(FileKind::Tape)
         }
-        "dsk" | "edsk" | "d64" | "d71" | "d81" | "g64" | "x64" | "nib" | "atr" | "xfd" => {
-            Some(FileKind::Disk)
-        }
+        "dsk" | "edsk" | "d64" | "d71" | "d81" | "g64" | "x64" | "nib" | "atr" | "xfd" | "st"
+        | "msa" => Some(FileKind::Disk),
         "z80" | "sna" | "szx" | "p" | "p81" | "81" => Some(FileKind::Snapshot),
         "state" => Some(FileKind::State),
         _ => None,
@@ -1067,6 +1067,13 @@ mod tests {
     }
 
     const ALL_MEDIA: &[MediaKind] = &[MediaKind::Tape, MediaKind::Disk, MediaKind::Snapshot];
+
+    #[test]
+    fn st_images_are_disks_for_the_atari() {
+        assert_eq!(extensions_for(FileKind::Disk, "atari-st"), &["st", "msa"]);
+        assert_eq!(kind_of_extension("game.st"), Some(FileKind::Disk));
+        assert_eq!(kind_of_extension("GAME.ST"), Some(FileKind::Disk));
+    }
 
     #[test]
     fn loading_a_tape_attaches_it_and_remembers_the_folder() {

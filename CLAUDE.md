@@ -117,16 +117,69 @@ Read the Family intakes and
 `machines/atari/docs/atari800-gaps.md` before extending it. C16/Plus4 stay parked.
 
 ## Atari ST (slice 1, 2026-10-20)
+## Atari ST (Phase 1 done: slices 1-6, 2026-10-21)
 
-Design `docs/superpowers/specs/2026-10-19-atari-st-design.md`, plan `docs/superpowers/plans/2026-10-19-atari-st-slice1.md`.
+Design `docs/superpowers/specs/2026-10-19-atari-st-design.md`, plans `docs/superpowers/plans/2026-10-19-atari-st-slice1.md`
+`docs/superpowers/plans/2026-10-20-atari-st-slice2.md`, `docs/superpowers/plans/2026-10-21-atari-st-slices3-5.md` and
+`docs/superpowers/plans/2026-10-21-atari-st-slice6.md`. Every hardware fact used is listed with its source in
+`machines/atari/docs/hardware-facts.md` (`[D]` datasheet, `[H]` documentation, `[O]` observed in Hatari, `[H?]`
+unresolved); an I/O address without a fact stops the machine instead of returning an invented value.
 The 68000 is `mc68000` in `shared/` (SingleStepTests 68000/v1: 996 322 of 1 000 060 cases exact, the rest an ASR carry
-disagreement with the PRM and two bad upstream cases; `scripts/fetch_singlesteptests.sh` fetches the suite, never committed).
-`atari-st` maps the 192 KB TOS at `$FC0000` (mirrored at `$0-$7`), RAM, bus errors, and a deterministic event scheduler
-(VBL autovector, 160256 clocks per PAL frame); EmuTOS 1.4 runs until its first access to a device that is not emulated
-yet (the MMU at `$FF8001`, after 3 instructions) and stops there with a bounded report (`--diag-file`, `--trace-file`).
+disagreement with the PRM and two bad upstream cases, an explicit list in `tests/singlestep.rs` with its sources in
+`tests/singlestep-expected.md`; `scripts/fetch_singlesteptests.sh` fetches the suite, never committed).
+`atari-st` maps the 192 KB TOS at `$FC0000` (mirrored at `$0-$7`), RAM through the memory controller (`$FF8001`, DRAM
+row/column aliasing so TOS sizes every `--ram` like Hatari), the Shifter (`st-shifter`: video base, sync mode, palette,
+resolution, a frame-based 640x400 picture), the MC68901 MFP (`mc68901`: GPIP, interrupt controller, timers; USART
+registers only), HBL/VBL/MFP interrupts (levels 2/4/6) and the MFP's 2.4576 MHz clock as an exact ratio of the CPU
+clock. Slices 3-5 (2026-10-21) added the YM2149 (the shared `ay-3-8910`'s YM variant: sound, port A drive select), the
+keyboard and MIDI ACIAs (shared `mc6850`), the IKBD (`ikbd`: keys by the host's key names, mouse, `Joy1*`/`Joy2*`,
+clock), and floppies: the DMA chip, the shared `wd1770` as a WD1772, two drives (`--drives`), `.st` images (`st-floppy`;
+the host routes `.st` to the disk slot); writing to a disk stops the machine until Phase 2. Every I/O device is now
+emulated. EmuTOS 1.4 boots to its desktop, boots an executable floppy, and sees keys; over 1500 frames its I/O
+accesses agree with Hatari 2.6.1's (`--io-trace-file`, Hatari's `--trace io_all` format; `capture_hatari_trace.py
+--kind io`, `--disk-a`, `--trace-extra`) under the comparison rules in `machines/atari/crates/machines/atari-st/tests/
+common/mod.rs`. A stop has a bounded report (`--diag-file`, `--trace-file`). `--monitor mono` is refused until the
+mono frame's line count is sourced.
 Firmware: `--firmware auto` now also downloads from a `firmware.toml` `url` (zip SHA-1 `archive_sha1`, file `entry`,
 both hashes checked) and caches it under `<cache>/firmware/<sha1>.bin`; lookup order cache, RomM, URL; `when = { region =
 ... }` matches `--region`. Reference emulator: Hatari 2.6.1 (black box; `retroclawd-tools/scripts/capture_hatari_trace.py`).
+Slice 6 (the Phase 1 exit): `machines/atari/atari-st.manifest.toml` (S1 desktop against Hatari's picture by
+similarity, `retroclawd-tools/scripts/capture_hatari_screen.py`; S2/S2J/S2M/S3 keys, joystick, mouse and a floppy made
+by `rcdisk` (`.st`, FAT12, `rcdisk boot`) as exact goldens made by retroclawd, since headless Hatari takes no input;
+S4 YM2149 tone; S6 frame length), media from `machines/atari/scenarios/build.sh`. `--at mouse_move=DX,DY` (split into
+steps of at most 127) and `--at mouse_down|mouse_up=left|right|middle` drive the mouse in batch runs (`scripted.rs`).
+`rc-scenarios` reports a scenario as `SKIP` when `--firmware auto` finds no EmuTOS (no cache, RomM or network).
+
+**Phase 2 (2026-10-22, slices 7-12; plan `docs/superpowers/plans/2026-10-22-atari-st-phase2.md`, spec Status 2026-10-22).**
+Floppies can be written (WD1772 write sector / write track decode into the image; `.msa` images; `write_protect`; dirty
+export and `--disk-save` through the plugin), the machine has save states (`RCST` envelope: id, schema, TOS and accuracy
+checks, CRC, 64 MiB cap, bincode payload; clean disks stay the user's file), the MFP USART (timer D) with RS-232 peers,
+MIDI and Centronics ports (options `serial_out/in/loopback`, `midi_*`, `centronics_out`, `overwrite_outputs`: a sink never
+replaces a file unasked), the full IKBD command set, a read-only cartridge at `$FA0000` (`--cartridge x.stc`, a write is a
+bus error), a raster palette by line and a log of sync/resolution writes, and ACSI hard disks (`--acsi0 ... --acsi7` raw
+images, AHDI/FAT16 made by `rcdisk hd`, EmuTOS shows drive C). A `.prg` given to `--program` goes to the plugin as
+`MediaKind::Program` when the machine declares it (`program_goes_to_plugin`): the plugin builds a 720K floppy holding
+`AUTO\NAME.PRG` (`st_floppy::boot`) and EmuTOS runs it. `retroclawd-tools` gained the 68000 toolchain: `rcasm --cpu 68000`
+(`-f gemdos` for a relocatable `.PRG`), `rcdis --cpu 68000`, `rcld` with `machine = "atari-st"`, `rc_common::prg` (the GEMDOS
+executable format) and `rcdisk hd`. The manifest now has S3W, S5, S8P, S9S, S10 and S11 as well. Scenario media build: `machines/atari/scenarios/build.sh`.
+**Phase 3 (2026-10-23, slices 13-17; plan `docs/superpowers/plans/2026-10-22-atari-st-phase3.md`, spec Status 2026-10-23).**
+`--accuracy accurate` follows every bus cycle: the 68000 (`mc68000`, bus transactions now equal SingleStepTests', 996 322 of
+1 000 060 cases, interrupt timing pinned to UM Table 8-14) takes 4-clock aligned cycles with wait states, devices are brought up
+to date at the cycle of the access (`events.rs`, `waits.rs`), the Shifter keeps the clock of every palette/resolution/sync write
+(`fetch.rs`: picture window and left/right/top/bottom borders; `render_exact`, `render_overscan`: the `borders = on` option's
+832 x 552 canvas) and the mono monitor works (`--monitor mono`: 501 lines of 224 clocks). Every timing fact was observed with
+a probe, a 68000 program in `machines/atari/timing/` that runs in Hatari 2.6.1 (a black box, memory dumped with the debugger's
+`savebin` by `retroclawd-tools/scripts/capture_hatari_mem.py`) and here; `machines/atari/docs/timing-oracle.md`,
+`timing/README.md`, `docs/hardware-facts.md` "Timing (Phase 3)". The probes found a real defect (the FDC was not ticked until it
+set Busy, so completion came at frame boundaries and EmuTOS lost a revolution per sector: boot 137 frames slower than Hatari;
+fixed in the shared `wd1770`), the floppy rotation facts (6267-byte revolution, 116-byte index pulse, 614-byte sector pitch,
+exact six-revolution spin-up), the IKBD answer delays and the register access costs. Fourteen probes stay `known-gap` in the
+manifest with the measured difference (interrupt placement jitter, Hatari's lost lines, its instant USART and unchanged ACSI DMA
+address); the exit table is in the spec. `accurate` runs the idle desktop at 12.8x real time and `fast` at 13.8x
+(`docs/benchmarks.md`); both modes boot the three RomM games to the same frames. Pins: crates `cdc4417`.
+Unfinished and unsourced items are the `[H?]` rows of `machines/atari/docs/hardware-facts.md` and TODO.md "Atari ST: Phase 2 done, Phase 3 next".
+
+**Phase 4 (2026-10-23, slices 18-20; plan `docs/superpowers/plans/2026-10-23-atari-st-phase4.md`, spec Status 2026-10-23).** Two more machine ids in the Atari plugin, `atari-mega-st` (192K ROM at `$FC0000`, the Blitter, the RP5C15 clock at `$FFFC20`, options `rtc_time`/`rtc_mode`) and `atari-ste` (256K ROM at `$E00000`, the STE Shifter with 4096 colours, scroll, line offset and writable counter, DMA sound with the LMC1992 volume control and stereo output, enhanced joystick ports with `Joy1Pad*`/`Joy2Pad*` keys, the Blitter); `--firmware auto` finds EmuTOS 256K for the STE. The Blitter (`crates/chips/blitter`) is checked word for word against Hatari's P33 and P37-P40 dumps, shares the bus as P34 shows (HOG stalls the CPU, else 64 clocks of words against 96 of CPU) and raises GPIP 3's edge. The option `watch` (`$1000-$10FF:w,$400`) stops the machine at the first data access with a report; the host has `--acsi-save N=FILE`. Manifests `machines/atari/atari-ste.manifest.toml` and `atari-mega-st.manifest.toml` (S16 and P31/P33/P37-P40 exact; P29/P30/P32/P34/P41 `known-gap` with their reasons). The fuzz targets ran 60 s each with no finding. Left open: see TODO.md "Atari ST: Phase 4".
 
 ## What this is
 
@@ -937,7 +990,9 @@ guessing.
   and URLs work) and written where the command line says; actions are sorted by frame (stable), run before that frame executes
   (`frames` itself = after the last frame), their toasts are printed as `frame N: ...`, and a failure message (or an unreadable /
   empty export) makes the exit code 1. `key_down=NAME`/`key_up=NAME` press or release a machine key by its `--list-keys` name (`HostedMachine::try_key_event`, so a name the plugin
-  refuses fails the run instead of being logged and ignored). Window-only actions are refused by name. Tested with the stub machine (order, file round trip,
+  refuses fails the run instead of being logged and ignored). `mouse_move=DX,DY` (host pixels, right/down positive, sent as relative
+  steps of at most 127 that sum to the move), `mouse_down=left|right|middle` and `mouse_up=...` drive the mouse the same way
+  (`HostedMachine::try_mouse_event`). Window-only actions are refused by name. Tested with the stub machine (order, file round trip,
   failure) and live on a Spectrum 48K. `SymbolTable::substitute` (shared) also folds a constant offset after a known name
   (`CHROUT+1`, `BORDER - $10`, decimal/`$`/`0x`/`h`, chained, wrapping at 64K) and `#<NAME`/`#>NAME` (6502 low/high byte, applied after
   the offset); a register's displacement (`(IX+5)`) and an unknown name are untouched. No general expressions (`*`, parentheses).

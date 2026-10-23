@@ -31,7 +31,7 @@ use game_config::GameConfig;
 use machine::Region;
 use plugin_api::{
     BinaryBlob, DebugValue, MachineCreateRequest, MachineOptionInfo, MachineOptionKind,
-    MachineProfile, NamedValue,
+    MachineProfile, MediaKind, NamedValue,
 };
 
 /// `--firmware`: where ROM options nothing else names come from.
@@ -131,6 +131,17 @@ fn resolve_program_load(path: &str, bytes: Vec<u8>, org: u16) -> Result<(u16, Ve
     }
     let real_org = u16::from_le_bytes([bytes[0], bytes[1]]);
     Ok((real_org, bytes[2..].to_vec()))
+}
+
+/// Whether `--program name` goes to the machine plugin as `MediaKind::Program`: the machine declares it and the file is a
+/// GEMDOS program by its extension.
+fn program_goes_to_plugin(name: &str, media_kinds: &[MediaKind]) -> bool {
+    let extension = Path::new(name)
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    media_kinds.contains(&MediaKind::Program) && matches!(extension.as_str(), "prg" | "tos" | "ttp")
 }
 
 fn normalize_cli_args() -> Vec<OsString> {
@@ -548,6 +559,11 @@ struct CommonArgs {
         conflicts_with = "disk_writeback"
     )]
     disk_save: Option<String>,
+
+    /// Write the hard disk behind ACSI target N (the `--acsiN` image), with everything the guest wrote to it, to FILE when the
+    /// session ends: `--acsi-save 0=hd-copy.img`, repeatable. Only written if the guest modified the disk.
+    #[arg(long, value_name = "N=FILE")]
+    acsi_save: Vec<String>,
 
     /// Write the modified disk image back over the `--disk` file itself
     /// when the session ends (atomically: temp file + rename). Without
@@ -2423,8 +2439,15 @@ fn main() -> ExitCode {
         }
     };
 
+    // A machine that declares `MediaKind::Program` takes a `.prg` (`.tos`, `.ttp`) as media and decides how to run it
+    // (the Atari ST builds a boot floppy around it); the C64 header path stays for every machine that does not.
+    let mut program_media: Option<(String, Vec<u8>)> = None;
     let program = match &args.program {
         Some(path) => match inputs::load(path) {
+            Ok(loaded) if program_goes_to_plugin(&loaded.name, &selected_media_kinds) => {
+                program_media = Some((loaded.name.clone(), loaded.bytes.clone()));
+                None
+            }
             Ok(loaded) => {
                 match resolve_program_load(&loaded.name, loaded.bytes.clone(), args.org) {
                     Ok((org, bytes)) => Some((
@@ -2592,6 +2615,18 @@ fn main() -> ExitCode {
         );
     }
 
+    match parse_acsi_save(&args.acsi_save) {
+        Ok(saves) => {
+            for (target, path) in saves {
+                machine.set_acsi_save(target, path);
+            }
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(2);
+        }
+    }
+
     if let Some(path) = &args.cartridge {
         let bytes = match inputs::load(path) {
             Ok(loaded) => loaded.bytes.clone(),
@@ -2601,7 +2636,13 @@ fn main() -> ExitCode {
             }
         };
         let extension = inputs::extension(path);
-        if let Err(e) = machine.apply_cartridge(&extension, &bytes) {
+        // `.img` is the Atari ST's other cartridge extension; it is only taken here, where the flag says what it is.
+        let media_extension = if extension == "img" {
+            "stc"
+        } else {
+            extension.as_str()
+        };
+        if let Err(e) = machine.apply_cartridge(media_extension, &bytes) {
             eprintln!("{e}");
             return ExitCode::FAILURE;
         }
@@ -2643,6 +2684,13 @@ fn main() -> ExitCode {
             eprintln!("{e}");
             return ExitCode::FAILURE;
         }
+    }
+
+    if let Some((name, bytes)) = &program_media
+        && let Err(e) = machine.attach_program_file(name, bytes)
+    {
+        eprintln!("{e}");
+        return ExitCode::FAILURE;
     }
 
     if let Some((org, program, extension)) = program {
@@ -2863,6 +2911,28 @@ fn disk_writeback_needs_a_disk(args: &CommonArgs) -> Result<(), String> {
 }
 
 /// Where a modified `--disk` image should be written when the session ends:
+/// `--acsi-save N=FILE` (repeatable): the ACSI target (0 to 7) and where its modified hard disk goes.
+fn parse_acsi_save(specs: &[String]) -> Result<Vec<(u8, std::path::PathBuf)>, String> {
+    specs
+        .iter()
+        .map(|spec| {
+            let (n, file) = spec
+                .split_once('=')
+                .ok_or_else(|| format!("--acsi-save {spec:?}: expected N=FILE, N being 0 to 7"))?;
+            let target: u8 = n
+                .trim()
+                .parse()
+                .ok()
+                .filter(|t| *t < 8)
+                .ok_or_else(|| format!("--acsi-save {spec:?}: the target must be 0 to 7"))?;
+            if file.is_empty() {
+                return Err(format!("--acsi-save {spec:?}: no file after ="));
+            }
+            Ok((target, std::path::PathBuf::from(file)))
+        })
+        .collect()
+}
+
 /// `--disk-save`'s path, or the `--disk` file itself under
 /// `--disk-writeback`; `None` (discard, with a warning) otherwise.
 fn disk_save_target(args: &CommonArgs, disk_path: &str) -> Option<std::path::PathBuf> {
@@ -3550,6 +3620,16 @@ mod tests {
     }
 
     #[test]
+    fn acsi_save_takes_a_target_and_a_file() {
+        let ok = parse_acsi_save(&["0=a.img".to_string(), "7=dir/b.img".to_string()]).unwrap();
+        assert_eq!(ok.len(), 2);
+        assert_eq!(ok[1].0, 7);
+        for bad in ["8=a.img", "x=a.img", "a.img", "0=", "-1=a"] {
+            assert!(parse_acsi_save(&[bad.to_string()]).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
     fn disk_save_target_prefers_disk_save_then_writeback_then_nothing() {
         let a = args_with(&["--disk", "g.dsk", "--disk-save", "out.dsk"]);
         assert_eq!(
@@ -4206,6 +4286,31 @@ mod tests {
             resolved.values.get("turbosound"),
             Some(&DebugValue::Bool(true))
         );
+    }
+
+    #[test]
+    fn prg_goes_to_the_plugin_when_the_profile_declares_program() {
+        let kinds = [MediaKind::Disk, MediaKind::Program];
+        assert!(program_goes_to_plugin("hello.prg", &kinds));
+        assert!(program_goes_to_plugin("HELLO.PRG", &kinds));
+        assert!(program_goes_to_plugin("a/b/tool.ttp", &kinds));
+        assert!(program_goes_to_plugin("x.tos", &kinds));
+        assert!(
+            !program_goes_to_plugin("blob.bin", &kinds),
+            "only GEMDOS programs"
+        );
+        assert!(!program_goes_to_plugin("noextension", &kinds));
+    }
+
+    #[test]
+    fn prg_keeps_the_c64_path_when_it_does_not() {
+        let kinds = [MediaKind::Disk, MediaKind::Tape];
+        assert!(!program_goes_to_plugin("hello.prg", &kinds));
+        assert!(!program_goes_to_plugin("hello.prg", &[]));
+        // And the C64 path still reads the load address from the header.
+        let (org, loaded) =
+            resolve_program_load("game.prg", vec![0x01, 0x08, 0xAA], 0x4000).unwrap();
+        assert_eq!((org, loaded), (0x0801, vec![0xAA]));
     }
 
     fn resolve_program_load_uses_org_verbatim_for_a_non_prg_extension() {

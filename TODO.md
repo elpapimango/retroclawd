@@ -106,14 +106,30 @@ No real hardware is available, so these stay parked until someone has it; everyt
   entities; gilrs itself was never exercised. To check: a physical pad, bind `reset = ["f12", "pad:select+start"]`, hold Select then
   press Start, and confirm Select alone does not reach the machine as a joystick button once it is part of a chord.
 
-## Atari ST: next slices (after slice 1, 2026-10-20)
+## Atari ST: Phase 4 done except the items below (2026-10-23)
 
-Spec section 23 order. Next: GLUE/MMU registers (`$FF8001` memory configuration; EmuTOS then probes MOVEC as
-illegal and `$FF8006` with a bus error, see the Hatari trace), then the Shifter (video base, palette, resolution,
-frame render), the MFP, ACIA + IKBD, the YM2149 on `ay-3-8910`, `wd1770` moved to retroclawd-crates with the
-DMA chip and `.st` images. Open hardware facts to source (Atari's hardware specification is behind Cloudflare
-from here; download it by hand): RAM above the configured top, ROM writes, the NTSC crystal (32.0424 vs
-32.04245 MHz), MFP and ACIA clocks.
+Phase 4 (spec Status 2026-10-23): the Blitter, the STE (Shifter, DMA sound, ports), the Mega ST clock, watchpoints, fuzz runs, ACSI `--disk-save`.
+Open: second attempts at 13 `known-gap` probes (P02 P04 P06 P09 P10 P12 P14 P16 P17 P18 P20 P21 P22) and P35 (mid-line resolution picture); scenarios S17 (4096 colours), S18 (DMA tone), S19 (blitted picture); USART break/parity/frame error flags; an ACSI save action beside the exit save; the RomM games on the new models; the real RP5C15 and LMC1992 data sheets (their `[H?]` rows); Hatari's other wake-up states.
+
+### Atari ST: Phase 3 done (kept for the record, 2026-10-23)
+
+Phases 1 to 3 are done (spec section 24, Status 2026-10-21, 2026-10-22 and 2026-10-23). Phase 3 gave `--accuracy accurate` (every bus
+cycle, wait states, cycle-exact Shifter with borders and mid-line palette, exact MFP/ACIA/IKBD/DMA/FDC timing, the mono monitor, the
+`borders = on` canvas) and a timing oracle (probes run in Hatari 2.6.1 and here, `machines/atari/docs/timing-oracle.md`). Next: Phase 4
+(spec section 5): the Blitter, the STE (its Shifter, DMA sound, joystick ports), the Mega ST clock, memory watchpoints (decision 1 of
+Phase 2: wait for a need), `.stx` once a specification with a usable licence exists.
+Deferred from Phase 3 (ledger, `Deferred minors`; the exit table with every `known-gap` probe is in the spec Status): the libFuzzer
+targets were never run (nightly + cargo-fuzz: `msa`, `state_decode`, `prg`, `ahdi_fat16`, `rcasm68k`, `rcdis68k`, `accurate_regs`,
+60 s each); Hatari's other wake-up states (only `ws3`); the YM2149's audio phase against the register write (no black-box reading);
+picture-level comparisons of the border tricks and of mid-line resolution switches (P08 not probed on its own; Hatari's lost and
+cut lines, P09/P10/P12); the 14 `known-gap` probes (interrupt placement to a few clocks, Hatari's own jitter and its instant USART and
+unchanged ACSI DMA address); the host has no `--disk-save` for ACSI hard disks; the numbering of the probes follows the order written,
+not the plan's table.
+Open hardware facts (`machines/atari/docs/hardware-facts.md`, `[H?]` and `[O]` rows; Atari's hardware specification
+is behind Cloudflare from here, download it by hand): the MMU's address multiplexing (modelled as DRAM row/column,
+checked only through EmuTOS's sizing), RAM above the configured top, unused register bits, display-enable timing (Timer B input not connected; the video address counter stops the
+machine), plane-to-colour bit order, the GPIP idle levels, the NTSC crystal (32.0424 vs 32.04245 MHz), the ACIA
+clock. Known limit: fast mode advances the MFP to an instruction's start time on access.
 
 ## Current direction
 

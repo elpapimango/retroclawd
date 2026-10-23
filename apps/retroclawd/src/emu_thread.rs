@@ -1799,6 +1799,35 @@ mod tests {
     }
 
     #[test]
+    fn an_acsi_hard_disk_is_saved_at_exit_only_when_the_guest_wrote_to_it() {
+        let dir = std::env::temp_dir().join(format!("rc-emu-acsi-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let save = dir.join("hd-copy.img");
+        let mut rig = Rig::new(MediaSettings::default());
+        let drive = crate::plugin_bridge::HostedMachine::ACSI_DRIVE_BASE;
+        rig.machine
+            .apply_disk_in(drive, "dsk", &blank_disk())
+            .unwrap();
+        rig.machine.set_acsi_save(0, save.clone());
+        // Untouched: nothing is written.
+        rig.machine.finish_acsi_on_exit();
+        assert!(!save.exists());
+        // The guest writes: the image goes to the file, atomically, and counts as saved.
+        rig.machine.set_acsi_save(0, save.clone());
+        rig.machine
+            .try_key_event(test_machine_plugin_impl::DIRTY_HARD_DISK_KEY, true)
+            .unwrap();
+        rig.machine.finish_acsi_on_exit();
+        assert_eq!(std::fs::read(&save).unwrap(), blank_disk());
+        assert_eq!(
+            rig.machine.export_disk(drive, true),
+            Ok(None),
+            "marked saved"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn drive_b_takes_its_own_disk_and_guards_unsaved_changes() {
         let dir = std::env::temp_dir().join(format!("rc-emu-driveb-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();

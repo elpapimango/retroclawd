@@ -927,3 +927,132 @@ tools.
   exception frames (UM 6.2-6.3); PAL frame 512 x 313 clocks and 8.021247 MHz (two atari-forum threads).
 - **Still [H?]**: NTSC crystal, RAM above the configured top, ROM and `$0-$7` writes, the empty cartridge port.
 - **Deviations**: see the slice ledger summary in the final report (rulings).
+
+## Status (2026-10-20): slice 2 done
+
+Plan `docs/superpowers/plans/2026-10-20-atari-st-slice2.md`.
+
+- **Devices**: MMU (`$FF8001`, row/column bank mapping), Shifter (`st-shifter`, frame-based render), MFP (`mc68901`,
+  from the Motorola datasheet), HBL/VBL/MFP interrupts, exact MFP clock domain.
+- **Decode policy**: `io.rs` lists every I/O address with a fact; any other address stops the machine ("no hardware
+  fact"). Hatari-observed (`[O]`) rows cover single addresses only.
+- **EmuTOS 1.4**: runs to its first YM2149 write; all 106 I/O accesses equal Hatari 2.6.1's; the RAM sizing writes
+  Hatari's `$FF8001` values for all six `--ram` sizes; the first 5000 PCs agree.
+- **Facts now sourced**: MFP register map, reset, interrupts and timers `[D]` (MC68901 datasheet, 1984); `$FF8001`,
+  Shifter registers, GPIP wiring `[H]` (*Atari ST Internals*, Abacus 1985); interrupt levels and MFP channels `[H]`
+  (TOS documentation); MFP clock 2.4576 MHz `[H]` (ST-Log 34).
+- **Still open**: see `machines/atari/docs/hardware-facts.md` (`[H?]`), and TODO.md "Atari ST: next slices".
+
+## Status (2026-10-21): slices 3-5 done
+
+Plan `docs/superpowers/plans/2026-10-21-atari-st-slices3-5.md`.
+
+- **Devices**: YM2149 (`ay-3-8910` YM variant: Table 4 envelopes, Fig. 1 DAC), keyboard and MIDI ACIAs (`mc6850`), IKBD
+  (`ikbd`, from Atari's 1985 protocol document), DMA chip, WD1772 (`wd1770`, moved to retroclawd-crates), two drives,
+  `.st` images (`st-floppy`). Every I/O device is emulated; writing to a floppy stops the machine (Phase 2).
+- **EmuTOS 1.4**: boots to the desktop (same picture in three runs), boots an executable floppy built by the tests,
+  reads a key; over 1500 frames its I/O agrees with Hatari 2.6.1's: exactly for the first 110 accesses, under the
+  polling rule up to the first DMA access (six RAM sizes), and per code location (streams over 50 frames; sets plus
+  exact IKBD and FDC command sequences over 1500).
+- **Conflicts recorded**: DMA status bit 0 (the book says 0 = no error; Hatari and EmuTOS show 1), `$FF8604` upper
+  byte (book: 1s; Hatari: 0s), IKBD version (`$F0` first release; `$F1` observed).
+- **Still open**: `machines/atari/docs/hardware-facts.md` (`[H?]` rows) and TODO.md "Atari ST: next slices".
+
+## Status (2026-10-21): slice 6 done, Phase 1 done
+
+Plan `docs/superpowers/plans/2026-10-21-atari-st-slice6.md`. The section 24 exit criteria:
+
+- **SingleStepTests**: every case exact except an explicit list, each entry justified
+  (`shared/crates/core/68000/tests/singlestep-expected.md`): 3 736 ASR carry cases where the data disagrees with the PRM,
+  2 bad upstream cases (issue #4). The test fails on any other failure and when a listed case starts passing.
+- **Exception, STOP and IRQ tests**: green (slice 1).
+- **Desktop**: reached headless, identical in three runs; scenario S1 compares it with Hatari 2.6.1's picture.
+- **Keyboard, mouse, joystick**: scenarios S2, S2M, S2J through `--at key_down`, `--at mouse_move/mouse_down/mouse_up`.
+  Headless Hatari takes no input, so these goldens are retroclawd's own, each deterministic over three runs.
+- **PSG tone**: S4, 441.31 Hz from the YM2149 catalog formula.
+- **`.st` read**: S3, a floppy made by `rcdisk` (FAT12) lists both files in the desktop window.
+- **Injected fault**: `emutos_with_an_injected_fault_reports_it` (atari `tests/diagnostics.rs`).
+- **`check_all.sh`**: runs `scenarios-atari-st`; without EmuTOS (no cache, RomM or network) the scenarios are `SKIP`,
+  a firmware hash mismatch still fails.
+
+Not in the manifest: S5 (save states, Phase 2), S7 (no ST test program shipped), S8 (no kind yet). Next: Phase 2,
+TODO.md "Atari ST: Phase 2 next".
+
+## Status (2026-10-22): Phase 2 done (slices 7-12)
+
+Plan `docs/superpowers/plans/2026-10-22-atari-st-phase2.md`. The decisions taken: no memory watchpoints; `.stx` and `.dim`
+get a provenance note only (`machines/atari/docs/stx-and-dim-provenance.md`, recommendation no-go); a `.PRG` runs from a floppy
+the plugin builds around it (`AUTO\PROG.PRG`).
+
+| Exit criterion | Where |
+|---|---|
+| A guest write is visible in `rcdisk st list` | S3W (`write.st`: BIOS Rwabs writes a sector); `--disk-save` leaves exactly one sector changed; the shared `wd1770` needed a fix (a new command resets INTRQ at once, `retroclawd-crates` `fc671b3`) |
+| A state saved at frame N and loaded into a fresh machine matches a straight run | S5 (`kind = "state"`), `tests/state_roundtrip.rs`, `tests/state_envelope.rs` (hostile states: CRC, length bomb, mutated payloads, drive and image fields validated) |
+| IKBD full command set | `crates/chips/ikbd/tests/{protocol,mouse,commands}.rs`, one test per command, plus joystick monitoring, fire button monitoring and key code repeats woken through `SerialPeer::next_wake` |
+| A `.PRG` made by `rcasm` + `rcld` runs from a generated floppy | S8P (`hello.s`); `rcasm --cpu 68000` round-trips all 65 536 opcode words against the CPU crate's disassembler, `rcdis` reassembles the whole EmuTOS image byte for byte |
+| EmuTOS sees an AHDI hard disk as drive C: | S11 (`rcdisk hd new/add`, ACSI target 0 through the DMA chip) |
+| `check_all` includes the new scenarios and passes | the manifest has S1-S4, S5, S6, S2J/S2M, S3, S3W, S8P, S9S, S10, S11 |
+
+Also done: MFP USART with RS-232 peers (files, loopback), MIDI and Centronics ports (S9S), cartridge window at `$FA0000`
+(read only, a write is a bus error), a raster palette by line and a sync/resolution write log (S10 against Hatari: band
+edges within one line), `.msa` images, floppy write protection, dirty-disk export through the plugin.
+
+Limits that remain (all recorded as `[H?]` rows in `machines/atari/docs/hardware-facts.md`): Atari's hardware specification
+was still unreachable, so no further I/O region moved from "stop" to "bus error"; the INQUIRY / REQUEST SENSE / MODE SENSE
+/ READ CAPACITY answers are SCSI-2 layouts (the 1985 ACSI notes list only TEST UNIT READY, READ, WRITE, SEEK and MODE
+SENSE); an ACSI command finishes at its last byte with no timing; hard disk contents are not in a save state; the libFuzzer
+targets (`msa`, `state_decode`, `prg`, `ahdi_fat16`, `rcasm68k`, `rcdis68k`) are written but were not run (no nightly
+toolchain here), the same inputs were swept as mutation loops (`RC_SWEEP=40`). Phase 3 (cycle-exact video, overscan,
+Blitter, STE) is untouched.
+
+## Status (2026-10-23): Phase 3 done (slices 13-17)
+
+Plan `docs/superpowers/plans/2026-10-22-atari-st-phase3.md`, one push at the end (crates `cdc4417`). The decisions taken: `fast`
+stays the default and `accurate` is opt-in; "exact" means agreement with Hatari 2.6.1 on the probes (Atari's hardware
+specification was still unreachable, so every timing fact is `[O]` with its probe: `machines/atari/docs/timing-oracle.md`);
+only Hatari's default wake-up state `ws3` is modelled; the default canvas stays 640 x 400 and `borders = on` (accurate mode)
+draws the 832 x 552 overscan canvas; the mono monitor is in; the probe numbers follow the order they were written in.
+
+| Exit criterion | Status and where |
+|---|---|
+| 1. `mc68000` SingleStepTests pass with the bus transaction comparison on | **Met.** 996 322 of 1 000 060 cases exact with the comparison on (equal to the functional pass); the rest is the documented ASR carry disagreement and two bad upstream cases (`tests/singlestep-expected.md`); interrupt and exception timing is pinned to UM Table 8-14 (`tests/interrupt_timing.rs`) |
+| 2. every probe byte-identical in Hatari and here (`accurate`) | **Not met.** Property-level tests pass for all of them (`tests/timing_probes.rs`), and P01, P15 (edges), P18 (clocks an iteration), P22 (completion), the mono frame (P14), the DMA burst stall (P16), the floppy index, pitch, steps, turnaround and spin-up (P17, P19, P23-P26) and the palette strips (S12) agree; but the dumps differ byte for byte for **fourteen** probes, each a `known-gap` in the manifest with the measured difference: P02 (interrupt placement to the nearest few clocks, means within 0.035 runs a line), P04 (counter inside a line within one word), P06 (2 of 256 timer reads off by one), P09 and P10 (Hatari cuts and loses lines on some frames, jitter of 2 to 4 bytes), P12 (the picture ends 5 lines early on line 257), P14 (first HBL count), P16 and P17 (the revolution phase has Hatari's own origin), P18 (loop counts +-1), P19 (0.25%), P20 (Hatari's own latency varies by 30 runs), P21 (Hatari sends USART bytes at once, ours takes the data sheet's time), P22 (Hatari leaves the DMA address unchanged after an ACSI read, ours follows the ACSI notes) |
+| 3. mid-line palette and border pictures match Hatari's `--borders on` screenshots | **Partly met.** S12 (palette strips: all 122 rows start and end on the same pixel) and S13 (the canvas: size and picture position measured, similarity as S1) pass; the border-opening effects (right +44, left +26 bytes, top, bottom) happen on the frames Hatari's do (P09, P10, P12 effect-frame tests) but their pictures are compared only through the video counter, not as screenshots: HBL-timed tricks are not reproducible line by line because of interrupt jitter |
+| 4. the mono monitor works | **Met.** S15 (EmuTOS mono desktop against Hatari, similarity), `tests/mono.rs` (both modes), P14 and P15 (501 lines of 224 clocks, picture on lines 34 to 433) |
+| 5. `accurate`: identical frame hashes on 3 runs, state round trip, speed budget | **Met.** `tests/accurate_determinism.rs` (3 runs, states at frames 1, 37, 120 inside a line, host interleavings), `tests/state_accurate.rs`; `docs/benchmarks.md`: `fast` 13.8x and `accurate` 12.8x real time on the idle desktop (budget 10x and 2x) |
+| 6. the owner's RomM games boot without a stop in both modes | **Met** for the three images available (1943, Alien Syndrome, Defender of the Crown): no stop, the same frame in both modes and on two runs (`tests/romm_games.rs`) |
+| 7. `check_all` includes the new scenarios in both modes and passes; every new parser or log has a bound and a hostile-input test | **Met.** `tools/check_all.sh` (the app, every family, their unit tests, the smoke test, every manifest through `rc-scenarios` including the atari manifest with 30 passing scenarios and 14 known gaps and the accurate variants, and the rc-suite cases) ends with "all checks passed" on 2026-10-23; `tests/hostile_video.rs` (a write to every Shifter register on every cycle, random sequences, mutated states, `RC_SWEEP=40`); the capped logs are the palette change log (16 384) and the sync log (256); `tests/hostile_video.rs` (a write to every Shifter register on every cycle, random sequences, mutated states, `RC_SWEEP=40`); the capped logs are the palette change log (16 384) and the sync log (256) |
+
+Found by the probes and fixed (both modes): the FDC was not ticked between a command's write and Busy, so INTRQ came at frame
+boundaries and a floppy boot took 137 frames more than Hatari's (`wd1770::command_pending`); the spin-up is six whole revolutions
+(`Floppy::revolution_bytes`); the motor-off countdown follows the drive that was selected when the count restarted, so commands to
+the empty drive B never stop the motor. Other device facts: a floppy revolution is 6267 byte times and the headers are 614 bytes
+apart, the index pulse lasts 116 bytes, the IKBD answers to a query 6 500 and to a status inquiry 5 000 cycles after the command,
+the FDC data register and the DMA mode write cost 4 more clocks, an ACIA access waits for the E clock (+8), a floppy DMA burst holds
+the CPU 32 clocks. The mono polarity follows Hatari (palette 0 bit 0 set = black on white; the book says the opposite).
+
+Limits that remain: Hatari's other wake-up states; the YM2149's audio phase against the write that changes it (Hatari offers no
+black-box audio reading in this harness) stays `[H?]`; the picture-level border comparisons above; mid-line resolution pictures
+(P08 was not probed on its own); the libFuzzer targets (including the new `accurate_regs`) compile but were not run (no nightly
+toolchain); the ACSI `--disk-save` flag of the host; Phase 4 (Blitter, STE, Mega ST clock, the STE Shifter) is untouched.
+
+## Status (2026-10-23): Phase 4 (slices 18-20), what is done
+
+Plan `docs/superpowers/plans/2026-10-23-atari-st-phase4.md`. Decisions: the models are the Mega ST and the STE (the Mega STE, TT
+and Falcon stay out); `.stx` stays out (no usable specification); watchpoints are in; the second attempt at the Phase 3 gaps was
+limited (below). Not pushed at the time of writing.
+
+| Exit criterion | Status and where |
+|---|---|
+| 1. EmuTOS boots on `atari-ste` (256K) and `atari-mega-st` (192K) | **Met for the STE:** the desktop at 1500 frames is pixel-identical to Hatari's (`atari-ste.manifest.toml` S16, exact); the Mega ST boots and reads its clock (`tests/rtc.rs`); both models run EmuTOS deterministically in both accuracy modes (`tests/phase4_models.rs`). No Hatari picture of the Mega ST desktop was captured. |
+| 2. the Blitter: memory identical to Hatari's, bus sharing | **Met.** `crates/chips/blitter` against P33 (174 settings), P37-P39 (skew, FXSR/NFSR, masks, right to left, raw) and P40 (restart) word for word; P34: loop counts within 0.2 %, busy frames, control byte and GPIP equal in all 105 records, `fast` and `accurate` (`tests/timing_probes.rs`, `tests/blitter*.rs`). |
+| 3. the STE Shifter: registers, scroll, offset, counter; 4096-colour and fine-scrolled pictures | **Partly met.** P27 (read-back, masks, palette, counter) and P28 (stride per line, scroll) are in `timing_probes.rs`; the desktop picture is exact. S17 (a 4096-colour strip picture) was not made. |
+| 4. STE DMA sound: registers, frame end, MFP wiring, rate; stereo with the volume control | **Partly met.** Registers, control, GPIP 7 and timer A records exact (P29), the rate within 16 bytes over 6 million clocks (P41); the counter's lumps are a `known-gap` (P29); stereo tone and the Microwire master volume by `tests/ste_sound.rs`. The LMC1992's dB steps and mixer meanings are `[H?]` (no data sheet to hand); S18 (a manifest tone scenario) was not made. P30 (Microwire shift) stays a `known-gap`. |
+| 5. the Mega ST RTC | **Met as far as Hatari shows it:** mode, test, reset and alarm registers 2 and 3 equal P32; EmuTOS finds the clock (it writes and reads back alarm registers 2 and 3 in bank 1), reads the time given, `tests/rtc.rs`. Hatari's time follows the host and ours counts machine time (`rtc_time`, `rtc_mode`). |
+| 6. watchpoints | **Met.** `tests/watch.rs`, option `watch`: a stop naming access, address, value, PC and cycle; one flag checked with none set. |
+| 7. carry-overs | **Partly met.** Fuzz: every target ran 60 s with no finding (msa 5.7M runs, ahdi_fat16 4.0M, prg 3.0M, rcasm68k 189k, rcdis68k 37k, state_decode 29k, accurate_regs 337: a slow target); `--acsi-save N=FILE` writes a modified hard disk at exit (host); Phase 3's gaps were **not** all retried: only P19 (a constant start-up offset of the command in Hatari at every step rate, documented), the other 13 and P35 remain as they were. IKBD key code mode already follows the document (cursor keys from joystick 0, fire pseudo keys for both); USART break/parity/frame error flags were not implemented. |
+| 8. speed, determinism, hostile input | **Met.** The STE desktop runs `fast` at 10.6x and `accurate` at 9.3x real time (`docs/benchmarks.md`); two runs and a continued state are identical on both models; flipped state bytes and random Blitter/DMA-sound register writes never panic (`tests/phase4_models.rs`, `RC_SWEEP=40`). |
+
+Facts found by the probes: the Blitter's source shifter is 32 bits wide and persists between lines and blits, NFSR takes the last word that crossed the data bus (the destination word read for a partial mask), a negative destination x increment puts the newest word in the upper half, a start with the Y count left at zero by the last blit moves nothing (EmuTOS restarts blits with `TAS`), a shared bus gives the Blitter 64 clocks of words and 2 of handover against 96 for the CPU, GPIP 3 is high while it is busy; the DMA sound's counter is the bytes fetched ahead of the sample played (`8 + 2 ceil(c/2)`), the DMA clock is the NTSC 8 010 613 Hz whatever the CPU runs at, bit 7 of `$FF8921` is 1 for mono; the STE's joystick area bus-errors in the gap between the paddles and the light pen.
+
+Limits that remain (also the ledger's deferred minors): the 13 `known-gap` probes and P35; scenarios S17, S18, S19; USART break/parity/frame error flags; the ACSI save action (exit only); the three RomM games on the new models; the watch list is configuration, not state; the real data sheets of the RP5C15 and the LMC1992.

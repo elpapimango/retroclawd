@@ -71,8 +71,8 @@ struct StubMachine {
     pc: u16,
     ram: Vec<u8>,
     /// Drive A and drive B.
-    disks: [Option<Vec<u8>>; 2],
-    disk_modified: [bool; 2],
+    disks: [Option<Vec<u8>>; 3],
+    disk_modified: [bool; 3],
     tape: bool,
 }
 
@@ -81,8 +81,8 @@ impl StubMachine {
         StubMachine {
             pc: 0x0100,
             ram: vec![0; 0x10000],
-            disks: [None, None],
-            disk_modified: [false; 2],
+            disks: [None, None, None],
+            disk_modified: [false; 3],
             tape: false,
         }
     }
@@ -260,13 +260,19 @@ fn extension(name: Option<&str>) -> String {
 /// A key event with this name marks the disk in drive A / drive B as written to.
 pub const DIRTY_DISK_A_KEY: &str = "dirty-disk-a";
 pub const DIRTY_DISK_B_KEY: &str = "dirty-disk-b";
+/// The same for the hard disk behind ACSI target 0 (drive 8, as the Atari plugin numbers it).
+pub const DIRTY_HARD_DISK_KEY: &str = "dirty-hard-disk";
 
 /// The stub has the two drives of a CPC or +3 interface.
 fn stub_drive(drive: u8) -> Result<usize, String> {
     if drive < 2 {
         Ok(usize::from(drive))
+    } else if drive == 8 {
+        Ok(2)
     } else {
-        Err(format!("drive {drive} does not exist (drives 0 and 1)"))
+        Err(format!(
+            "drive {drive} does not exist (drives 0 and 1, and 8 for the hard disk)"
+        ))
     }
 }
 
@@ -294,11 +300,36 @@ fn handle_machine_command(
             m.disk_modified[1] = m.disks[1].is_some();
             Ok(MachineResponse::Ack)
         }
+        MachineCommand::KeyEvent { key, .. } if key == DIRTY_HARD_DISK_KEY => {
+            m.disk_modified[2] = m.disks[2].is_some();
+            Ok(MachineResponse::Ack)
+        }
         MachineCommand::KeyEvent { .. } => Ok(MachineResponse::Ack),
+        // Lets a test see the mouse: the motion received is added to RAM $FF00/$FF02 (little-endian), the buttons
+        // held are bits 0-2 (left, right, middle) of $FF04.
+        MachineCommand::MouseMotion { dx, dy } => {
+            for (at, d) in [(0xFF00usize, dx), (0xFF02, dy)] {
+                let v = i16::from_le_bytes([m.ram[at], m.ram[at + 1]]).wrapping_add(d as i16);
+                m.ram[at..at + 2].copy_from_slice(&v.to_le_bytes());
+            }
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::MouseButton { button, pressed } => {
+            let bit = match button {
+                plugin_api::HostMouseButton::Left => 1,
+                plugin_api::HostMouseButton::Right => 2,
+                plugin_api::HostMouseButton::Middle => 4,
+                plugin_api::HostMouseButton::Other(_) => 0,
+            };
+            m.ram[0xFF04] = if pressed {
+                m.ram[0xFF04] | bit
+            } else {
+                m.ram[0xFF04] & !bit
+            };
+            Ok(MachineResponse::Ack)
+        }
         MachineCommand::RequestInterrupt
         | MachineCommand::SetBorder { .. }
-        | MachineCommand::MouseMotion { .. }
-        | MachineCommand::MouseButton { .. }
         | MachineCommand::MouseWheel { .. }
         | MachineCommand::WriteIo { .. }
         | MachineCommand::SetPortWatches { .. } => Ok(MachineResponse::Ack),
