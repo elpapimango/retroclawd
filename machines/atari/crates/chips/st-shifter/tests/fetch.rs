@@ -164,3 +164,26 @@ fn a_hostile_register_storm_stays_bounded() {
     }
     assert!(s.fetch().bytes_before(312) < 313 * 400);
 }
+
+/// The mono monitor's picture is 400 lines of 80 bytes from line 34 whatever the sync mode and resolution writes say: it has
+/// no borders to open and no 50/60 Hz choice.
+#[test]
+fn the_mono_picture_is_a_fixed_window_without_borders() {
+    let mut s = Shifter::new(true);
+    s.set_mono(true);
+    s.begin_frame();
+    lines_to(&mut s, 33);
+    assert!(!s.fetch().fetching(33));
+    s.line_boundary(34);
+    // The sequences that open the colour borders do nothing here.
+    write(&mut s, 34, 4, RES, 0);
+    write(&mut s, 34, 8, RES, 2);
+    write(&mut s, 34, 100, SYNC, 0);
+    assert!(s.fetch().fetching(34));
+    assert_eq!(s.current_borders(), (false, false));
+    lines_to_from(&mut s, 35, 433);
+    assert!(s.fetch().fetching(433));
+    s.line_boundary(434);
+    assert!(!s.fetch().fetching(434));
+    assert_eq!(s.fetch().bytes_before(434), 400 * 80);
+}

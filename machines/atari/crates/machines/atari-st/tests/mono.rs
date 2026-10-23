@@ -40,3 +40,39 @@ fn emutos_mono_desktop_is_reached() {
         );
     }
 }
+
+/// A state saved on the mono monitor and loaded into a fresh mono machine continues like the straight run (the Shifter's
+/// monitor is configuration, not part of a state, and has to be set again on load).
+#[test]
+fn a_mono_state_resumes_into_the_straight_run() {
+    let Some(rom) = emutos() else {
+        return;
+    };
+    let machine = |accuracy| {
+        let mut cfg = config(rom.clone(), RamSize::M1);
+        cfg.monitor = st_shifter::Monitor::Mono;
+        cfg.accuracy = accuracy;
+        AtariSt::new(cfg).unwrap()
+    };
+    for accuracy in [Accuracy::Fast, Accuracy::Accurate] {
+        let mut a = machine(accuracy);
+        while a.io_stop().is_none() && a.vbl_count() < 1100 {
+            a.step();
+        }
+        let state = a.save_state_checked().unwrap();
+        let mut b = machine(accuracy);
+        b.load_state_checked(&state).unwrap();
+        for m in [&mut a, &mut b] {
+            let target = 1450;
+            while m.io_stop().is_none() && m.vbl_count() < target {
+                m.step();
+            }
+        }
+        assert_eq!(a.now(), b.now(), "{accuracy:?}");
+        assert_eq!(
+            a.render_frame(),
+            b.render_frame(),
+            "{accuracy:?}: the same picture"
+        );
+    }
+}

@@ -368,10 +368,6 @@ impl Drives {
         self.drives.iter().any(StDrive::has_pending_track)
     }
 
-    pub fn debug_pos(&self) -> usize {
-        self.sel().map_or(0, |d| d.pos)
-    }
-
     fn sel(&self) -> Option<&StDrive> {
         self.selected.map(|n| &self.drives[n])
     }
