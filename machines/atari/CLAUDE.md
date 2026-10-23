@@ -30,16 +30,20 @@ Rules from the design that apply to every change:
 
 ```
 crates/chips/mc68901/                MC68901 MFP: GPIP, interrupt controller, timers, USART (timer D clocked)
-crates/chips/st-shifter/             Shifter registers and the frame render
+crates/chips/st-shifter/             Shifter registers and the frame render (fetch.rs: picture window and borders; overscan.rs: the
+                                     832 x 552 canvas)
 crates/chips/ikbd/                   the keyboard controller, behavioural, from Atari's ikbd protocol document
 crates/formats/st-floppy/            .st and .msa images: geometry, sectors, MFM tracks for the WD1772, written-track decode, boot.rs
                                      (a 720K floppy around a GEMDOS program)
-crates/machines/atari-st/            the machine: config, bus, I/O decode (io.rs), MMU, MFP clock, scheduler, PSG
+crates/machines/atari-st/            the machine: config, bus, I/O decode (io.rs), events.rs (time and events: `accurate` mode's
+                                     per-cycle clock), waits.rs (wait-state, E-clock and DMA constants with their probes), MMU, MFP clock,
+                                     scheduler, PSG
                                      (psg.rs), ACIAs + serial peers (acia.rs), DMA + FDC (dma.rs), drives (drive.rs),
                                      I/O log (Hatari format), diagnostics, Machine impl, state.rs (RCST save states), serial.rs
                                      (file/echo peers for RS-232 and MIDI), acsi.rs (hard disks behind the DMA chip)
 crates/plugins/atari-st-machine-plugin/  profile, options, commands (lib `atari_st_machine_plugin_impl`)
 crates/plugin-dlls/atari-st/         the cdylib (`atari_st_machine_plugin`), only `export_plugin!`
+timing/                              the probes (68000 programs run in Hatari and here), build.sh, README.md
 firmware.toml                        EmuTOS by URL and hash
 ```
 
@@ -69,3 +73,23 @@ modified by being read. Never committed; without the variable the tests pass and
 - `tests/prg.rs` runs a hand-made GEMDOS program from `AUTO\PROG.PRG` (EmuTOS needed; `RC_DUMP_AUTO_FLOPPY=<file>` writes the
   floppy it builds). A program from AUTO runs in user mode: it must not write below `$800`.
 - The fuzz targets (`crates/machines/atari-st/fuzz`, `crates/formats/st-floppy/fuzz`) need `cargo +nightly fuzz`; not run here.
+
+## Phase 3 notes (2026-10-23)
+
+- `--accuracy accurate` follows every bus cycle (`StBus::begin_cycle/end_cycle`, `waits.rs`): a device sees a read 3 clocks and
+  a write 0 clocks into its 4-clock cycle, the bus is aligned to 4 clocks, the MFP, PSG, FDC data register and `$FF8606` writes
+  cost 4 more, the ACIAs wait for the E clock (+8), an interrupt acknowledge likewise, a 16-byte floppy DMA burst holds the
+  CPU for 32 clocks. The VBL request comes 64 clocks into a frame. `fast` mode keeps its byte-exact states (`tests/fast_identity.rs`,
+  `RC_RECORD_IDENTITY=1` re-records the table after an intended change); both modes share the device facts (floppy rotation, IKBD
+  answer delays), so those changes re-record it.
+- The Shifter records palette, resolution and sync writes with their clock (`PaletteChange.cycle`, `SyncWrite`); `Fetch`
+  turns them into the picture window and the left/right/top/bottom borders; `render_exact` draws mid-line palette changes;
+  `borders = on` (accurate only) draws the 832 x 552 canvas (`render_overscan`); the mono monitor is 501 lines of 224 clocks.
+- Every timing fact has a probe in `timing/` (`timing/README.md`, `docs/timing-oracle.md`), a test in
+  `tests/timing_probes.rs` and, where the dump is compared byte for byte, a manifest scenario; the ones that differ from Hatari
+  are `known-gap`s with the reason. `RC_GOLDENS` holds Hatari's dumps (never committed). `docs/benchmarks.md`: `fast` 13.8x and
+  `accurate` 12.8x real time on the idle desktop.
+- States: `accuracy` in the header is a bit set (1 accurate, 2 borders, 4 mono); a state loads only into the same canvas and
+  mode. `mfp_clock` is schema 2.
+- Fuzz targets (`crates/*/fuzz`, `crates/machines/atari-st/fuzz/accurate_regs.rs`) compile but need `cargo +nightly fuzz`; the
+  stable `tests/hostile_video.rs` covers the same ground (`RC_SWEEP=<n>`).

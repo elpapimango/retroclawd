@@ -85,3 +85,11 @@ A blank 720K disk with an executable boot sector (`rcdisk boot`) holding `write-
 Logical sector 30 of the 720K disk is cylinder 1, side 1, sector 4. `tests/scenarios.rs` checks that the image holds
 the pattern there and nowhere near it, and that the disk is marked modified; the manifest's S3W checks the picture.
 The branch displacements are worked out from labels by `assemble` in `make_scenarios.py`.
+
+## Timing probes and Phase 3 scenarios
+
+`timing/build.sh` (see `timing/README.md`) builds the probes `software/scenarios/timing/pNN.st` and `blank-hd.img`. The
+manifest's Phase 3 scenarios use them: P01 to P26 (memory dumps compared with Hatari's, exact or a documented
+known gap), S12 (the palette strips of P07 against Hatari's picture), S13 (the same with `--borders on`, the 832 x 552
+canvas), S15 (the EmuTOS desktop on the mono monitor, `--monitor mono`), and the accurate variants S1A to S6A, S8PA to S11A
+of the older scenarios (the same media and goldens with `--accuracy accurate`).

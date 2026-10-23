@@ -31,3 +31,15 @@
   - TOS documentation, "The system vectors", https://freemint.github.io/tos.hyp/en/the_system_vectors.html.
   - "A millisecond timer", ST-Log 34 (July 1989), https://www.atarimagazines.com/st-log/issue34/60_1_A_MILLISECOND_TIMER.php
     (the MFP timer clock).
+
+- **Phase 3 oracle** (Hatari 2.6.1 again, still a black box): `capture_hatari_mem.py` runs it with `--machine st --memsize 1
+  --cpu-exact true --video-timing ws3 --monitor rgb|mono --sound off --fast-forward on --confirm-quit off --statusbar off
+  --drive-led off`, an empty `--configfile` and a debugger script (`--parse`) with a VBL breakpoint and `savebin` (Hatari
+  manual, "Debug options" and the debugger's `savebin`); `capture_hatari_screen.py` adds `--borders on|off`;
+  `capture_hatari_trace.py --trace-extra fdc` takes its controller log; `--acsi 0=file` gives probe P22 a disk. Every
+  timing fact found this way is labelled `[O]` in `docs/hardware-facts.md` with its probe (`docs/timing-oracle.md`).
+- **MC68000 User's Manual** (Motorola), Table 8-14, exception and interrupt processing times: the figures
+  `retroclawd-crates`' `tests/interrupt_timing.rs` pins (document SHA-256
+  `89b690b1923f8a3cff508567090bcab0bcd07511c2deff8ffa393a08efda18e1`, never committed).
+- **SingleStepTests 68000/v1** (https://github.com/SingleStepTests/68000, MIT): bus transactions of every instruction;
+  `scripts/fetch_singlesteptests.sh` in `retroclawd-crates` fetches it, never committed.

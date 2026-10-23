@@ -46,3 +46,16 @@ Then put the dump's SHA-256 in the manifest.
 - A boot sector is at most 480 bytes (`rcdisk boot`), hence the stub and the body on the following tracks.
 - The first version read the body with `Rwabs` from logical sector 20 and got zeros in both emulators: EmuTOS seeks to
   the track `sector / 9`, not the cylinder, for that call. Explicit geometry (`Floprd`) removes the question.
+
+## Later findings (Tasks 38 to 46)
+
+- `--monitor mono` boots EmuTOS to a mono desktop; its frame is 501 lines of 224 clocks (P14, P15).
+- A probe that needs an ACSI disk (P22) cannot boot from the hard disk: EmuTOS, in Hatari and in retroclawd alike, boots the
+  hard disk's partitions when there are any and never runs boot code from it, and it then skips the floppy. The probe is
+  a floppy probe with a blank disk (no partitions) on target 0: `--extra "--acsi 0=blank-hd.img"` in Hatari,
+  `attach_hard_disk` in the tests, `files = { acsi0 = ... }` in the manifest.
+- `capture_hatari_screen.py` takes `--borders on` (the 832 x 552 canvas of S13), `--video-timing` and `--monitor`.
+- `capture_hatari_trace.py --kind io --trace-extra fdc` also gives Hatari's controller log with VBL numbers
+  (`OUT.extra.txt`), which showed when EmuTOS issues each floppy command (Task 46, P23).
+- Hatari's results vary a little from one start to another where it places an interrupt against a 6301 loop or a
+  wake-up phase; the tests state their tolerance and the manifest explains each known gap.
