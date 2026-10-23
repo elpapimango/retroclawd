@@ -158,3 +158,36 @@ fn games_are_not_modified_by_reading_in_accurate_mode() {
         );
     }
 }
+
+/// The same games on the Mega ST (192K EmuTOS) and the STE (256K): no stop, the same frame on two runs, in both modes.
+#[test]
+fn games_boot_on_the_mega_st_and_the_ste_too() {
+    for (chipset, rom) in [
+        (atari_st::Chipset::MegaSt, common::emutos()),
+        (atari_st::Chipset::Ste, common::emutos_ste()),
+    ] {
+        let Some(rom) = rom else { continue };
+        for (name, bytes) in games() {
+            for accuracy in [Accuracy::Fast, Accuracy::Accurate] {
+                let mut hashes = Vec::new();
+                for _ in 0..2 {
+                    let mut cfg = common::config(rom.clone(), RamSize::M1);
+                    cfg.accuracy = accuracy;
+                    let mut m = AtariSt::with_chipset(cfg, chipset).unwrap();
+                    m.insert_disk(0, Image::parse(&bytes).expect("parses"))
+                        .unwrap();
+                    while m.vbl_count() < FRAMES && m.io_stop().is_none() {
+                        m.step();
+                    }
+                    assert!(
+                        m.io_stop().is_none(),
+                        "{name} on {chipset:?} {accuracy:?}: {:?}",
+                        m.io_stop()
+                    );
+                    hashes.push(fnv(&m.render_frame().unwrap().2));
+                }
+                assert_eq!(hashes[0], hashes[1], "{name} on {chipset:?} {accuracy:?}");
+            }
+        }
+    }
+}
