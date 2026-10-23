@@ -988,7 +988,11 @@ impl StBus {
                 return Ok(v);
             }
             Decode::Device(Device::Rtc) => {
-                let v = self.ste.rtc(addr, write.then_some(value));
+                let word = size == Size::Word;
+                let v =
+                    self.ste
+                        .rtc
+                        .access(addr, word, write.then_some(value), self.now, self.cpu_hz);
                 self.log_io(addr, size, write, v);
                 return Ok(v);
             }

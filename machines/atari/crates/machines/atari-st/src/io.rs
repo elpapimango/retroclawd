@@ -72,7 +72,7 @@ pub fn decode_for(chipset: Chipset, addr: u32, size: Size) -> Decode {
         Chipset::St => {}
         Chipset::MegaSt => match a {
             0xFF_8A00..=0xFF_8A3F => return Decode::Device(Device::Blitter),
-            0xFF_FC20..=0xFF_FC3F if byte => return Decode::Device(Device::Rtc),
+            0xFF_FC20..=0xFF_FC3F => return Decode::Device(Device::Rtc),
             _ => {}
         },
         Chipset::Ste => match a {

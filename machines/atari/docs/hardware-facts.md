@@ -404,3 +404,22 @@ so only the rest state and the write behaviour are observed; the bits a held but
 | Bus errors | `$FF9218-$FF921F`, a byte read of `$FF9221` or `$FF9223`, and everything from `$FF9224` | `[O]` | scan_p31.py (the last through the decode table: nothing answers) |
 | Pad buttons | active low as at rest: up, down, left, right are bits 0-3 of the pad's nibble of `$FF9202`'s low byte (pad 1 low nibble, pad 2 high); A and B of pad 1 are bits 0 and 2 of `$FF9201`, of pad 2 bits 1 and 3 (*Internals*: Fire 0, 2, 1, 3 from bit 0); C, Option and Pause are bits 0-2 (pad 1) and 4-6 (pad 2) of `$FF9200`'s high byte | `[H?]` | *Internals* register table; the scan matrix of the real ports is not modelled |
 | Key names | `Joy1PadUp`...`Joy2PadPause` on the STE only | | |
+
+### Mega ST real-time clock (Phase 4)
+
+An RP5C15 at `$FFFC20-$FFFC3F`; `[O]` Hatari 2.6.1 `--machine megast` (probe P32, a scan of the area, and EmuTOS's own accesses
+in the I/O log). Hatari's time registers follow the host clock, so only the other registers are compared; here the time is
+the plugin option `rtc_time` counted in machine time (`rtc_mode = stopped` freezes it). No data sheet was to hand: what Hatari
+does not show is `[H?]`.
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| Access | the even addresses read `$FF`, nothing bus-errors, words read `$FF` then the odd register; a register sits at `$FFFC21 + 2n` | `[O]` | scan |
+| Time registers | 0-12 (bank 0): seconds, minutes, hours, weekday, day, month, year since 1980, ones digit then tens digit, upper nibble 0; EmuTOS reads them twelve at a time and got `2001-02-03 04:05:06` as digits `6 0 5 0 4 0 / 6 / 3 0 / 2 0 / 1 2` | `[O]` | the host scan, EmuTOS's reads |
+| Mode register 13 | keeps four bits, reads with the upper nibble `$F` | `[O]` | P32 |
+| Test and reset registers 14, 15 | keep four bits, read with the upper nibble 0 | `[O]` | P32 |
+| Alarm bank | bit 0 of the mode register selects bank 1; its registers 2 and 3 read back what was written with the upper nibble `$F` (`$FF`, `$F0`, `$F5`): EmuTOS writes `$0A` and `$05` there and reads them back to find the clock | `[O]` | P32, the I/O log |
+| Alarm registers 4-8, 12/24 hour select (register 10 bit 0, 1 = 24 hours), leap-year counter (register 11) | stored in bank 1, read with the upper nibble `$F`; the alarm does nothing (not wired on the ST) | `[H?]` | the chip's layout as remembered; Hatari returns the time there |
+| Writes to the time | a digit write takes effect when it makes a valid field, else it is ignored; the weekday follows the date | `[H?]` | Hatari ignores all time writes |
+| 12 hour mode | the hour shows 1-12 with bit 1 of the tens digit set for PM | `[H?]` | |
+| Range | 1980 to 2079 | `[H]` | the year register is two digits since 1980 |

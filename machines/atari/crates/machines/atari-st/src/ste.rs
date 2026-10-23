@@ -47,7 +47,7 @@ pub struct SteRegs {
     pub blitter: blitter::Blitter,
     /// The DMA sound and the volume control behind the Microwire interface.
     pub dma: crate::dmasound::DmaSound,
-    pub rtc: Vec<u8>,
+    pub rtc: crate::rtc::Rtc,
 }
 
 impl Default for SteRegs {
@@ -58,7 +58,7 @@ impl Default for SteRegs {
             pads: [0; 2],
             blitter: blitter::Blitter::new(),
             dma: crate::dmasound::DmaSound::default(),
-            rtc: vec![0; 0x20],
+            rtc: crate::rtc::Rtc::default(),
         }
     }
 }
@@ -89,7 +89,7 @@ impl SteRegs {
             && self.pads.iter().all(|p| p >> 9 == 0)
             && self.blitter.is_consistent()
             && self.dma.is_consistent()
-            && self.rtc.len() == 0x20;
+            && self.rtc.is_consistent();
         if ok {
             Ok(())
         } else {
@@ -214,16 +214,5 @@ impl SteRegs {
         } else {
             u32::from(byte(at))
         })
-    }
-
-    pub fn rtc(&mut self, addr: u32, write_value: Option<u32>) -> u32 {
-        let at = (addr - 0xFF_FC20) as usize;
-        match write_value {
-            Some(v) => {
-                self.rtc[at] = v as u8;
-                v
-            }
-            None => u32::from(self.rtc[at]),
-        }
     }
 }

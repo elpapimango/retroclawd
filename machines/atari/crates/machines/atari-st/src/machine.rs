@@ -580,6 +580,16 @@ impl AtariSt {
         self.with_ikbd(|k, now| k.joystick(port, bits, now));
     }
 
+    /// Sets the Mega ST's clock to `secs` seconds after 1980-01-01 00:00:00 now; `running` false freezes it there.
+    pub fn set_rtc(&mut self, secs: u64, running: bool) -> Result<(), String> {
+        if !self.bus.chipset.has_rtc() {
+            return Err("only the Mega ST has a real-time clock".to_string());
+        }
+        let now = self.bus.now;
+        self.bus.ste.rtc.set_time(secs, now, running);
+        Ok(())
+    }
+
     /// A button of an STE enhanced-port pad (`pad` 0 or 1) went down or up.
     pub fn pad_button(
         &mut self,

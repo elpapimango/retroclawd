@@ -1593,3 +1593,52 @@ fn p31_the_ste_ports_read_and_ignore_writes_as_in_hatari() {
     };
     assert_eq!(ours, theirs);
 }
+
+/// Runs a Mega ST probe (EmuTOS 192K) and returns `len` bytes.
+fn run_probe_megast(name: &str, vbls: u64, len: usize) -> Option<Vec<u8>> {
+    let rom = common::emutos()?;
+    let image = floppy(name)?;
+    let mut m = AtariSt::with_chipset(config(rom, RamSize::M1), atari_st::Chipset::MegaSt).unwrap();
+    m.insert_disk(0, image).unwrap();
+    while m.io_stop().is_none() && m.vbl_count() < vbls {
+        m.step();
+    }
+    assert!(m.io_stop().is_none(), "{name} stopped: {:?}", m.io_stop());
+    Some((0..len as u32).map(|i| m.bus().peek(RESULT + i)).collect())
+}
+
+#[test]
+fn p32_the_clock_registers_that_do_not_follow_the_host_read_back_as_in_hatari() {
+    let Some(ours) = run_probe_megast("p32", 600, 116) else {
+        return;
+    };
+    let Some(theirs) = std::fs::read(
+        PathBuf::from(std::env::var_os("RC_GOLDENS").unwrap_or_default())
+            .join("atari-megast/timing/p32.bin"),
+    )
+    .ok() else {
+        return;
+    };
+    // The probe's registers 0 to 12 and 14, 15 for banks 0 and 1, three bytes each (F, 0, 5 written) from 4 + 48 * bank;
+    // registers 0-12 of bank 0 are the host's time in Hatari. Compared: the mode register's read-back, the test and reset
+    // registers (13 and 14 of the list) in both banks, and the alarm minutes (registers 2 and 3) in bank 1.
+    for bank in 0..2usize {
+        let at =
+            |b: &[u8], reg: usize| b[4 + 48 * bank + 3 * reg..4 + 48 * bank + 3 * reg + 3].to_vec();
+        assert_eq!(at(&ours, 13), at(&theirs, 13), "bank {bank}: test register");
+        assert_eq!(
+            at(&ours, 14),
+            at(&theirs, 14),
+            "bank {bank}: reset register"
+        );
+    }
+    for reg in [2usize, 3] {
+        let at = |b: &[u8]| b[4 + 48 + 3 * reg..4 + 48 + 3 * reg + 3].to_vec();
+        assert_eq!(at(&ours), at(&theirs), "bank 1: alarm register {reg}");
+    }
+    assert_eq!(
+        &ours[100..116],
+        &theirs[100..116],
+        "the mode register's read-back"
+    );
+}

@@ -441,6 +441,28 @@ fn machine_profile_for(chipset: Chipset) -> MachineProfile {
                 ),
             )
         }))
+        .chain(
+            chipset
+                .has_rtc()
+                .then(|| {
+                    [
+                        option(
+                            "rtc_time",
+                            MachineOptionKind::Text,
+                            text("1980-01-01 00:00:00"),
+                            "The real-time clock's time at power-on, YYYY-MM-DD HH:MM:SS (1980 to 2079); the clock counts machine time from it",
+                        ),
+                        option(
+                            "rtc_mode",
+                            text_choices(&["running", "stopped"]),
+                            text("running"),
+                            "running: the clock counts machine time from rtc_time; stopped: it stands still there",
+                        ),
+                    ]
+                })
+                .into_iter()
+                .flatten(),
+        )
         .collect(),
         key_names: key_names(chipset),
         cpus: vec![CpuInfo {
@@ -681,6 +703,8 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let mut drives = 2u8;
     let mut write_protect = false;
     let mut lines = LineOptions::default();
+    let mut rtc_time = None;
+    let mut rtc_running = true;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
             ("ram", DebugValue::Text(v)) => {
@@ -715,6 +739,19 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             ("write_protect", DebugValue::Bool(v)) => write_protect = *v,
             ("drives", other) => return Err(format!("option \"drives\": 1 or 2, not {other:?}")),
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(PathBuf::from(v)),
+            ("rtc_time", DebugValue::Text(v)) if chipset.has_rtc() => {
+                rtc_time = Some(
+                    atari_st::rtc::parse_time(v)
+                        .map_err(|e| format!("option \"rtc_time\": {e}"))?,
+                );
+            }
+            ("rtc_mode", DebugValue::Text(v)) if chipset.has_rtc() => {
+                rtc_running = match v.as_str() {
+                    "running" => true,
+                    "stopped" => false,
+                    other => return Err(format!("option \"rtc_mode\": unknown value \"{other}\"")),
+                };
+            }
             (key, value) if lines.accept(key, value) => {}
             ("io_trace_file", DebugValue::Text(v)) => io_trace_file = Some(PathBuf::from(v)),
             (key, _) => {
@@ -766,6 +803,9 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
                 .attach_hard_disk(id, image.to_vec())
                 .map_err(|e| format!("option \"acsi{id}\": {e}"))?;
         }
+    }
+    if chipset.has_rtc() {
+        machine.set_rtc(rtc_time.unwrap_or(0), rtc_running)?;
     }
     machine.set_drives(drives);
     machine.set_version_tag(std::str::from_utf8(PLUGIN_VERSION).unwrap_or("dev"));
@@ -1993,6 +2033,20 @@ mod tests {
         let err = command(id, MachineCommand::LoadState { bytes: bad }).unwrap_err();
         assert!(err.contains("RCST"), "{err}");
         state().lock().unwrap().instances.remove(&id);
+    }
+
+    #[test]
+    fn only_the_mega_st_has_the_clock_options() {
+        let has = |chipset: Chipset, key: &str| {
+            machine_profile_for(chipset)
+                .options
+                .iter()
+                .any(|o| o.key == key)
+        };
+        for key in ["rtc_time", "rtc_mode"] {
+            assert!(has(Chipset::MegaSt, key), "{key}");
+            assert!(!has(Chipset::St, key) && !has(Chipset::Ste, key), "{key}");
+        }
     }
 
     #[test]
