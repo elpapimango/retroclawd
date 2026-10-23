@@ -189,5 +189,108 @@ fn p02_report() {
         println!("ours   {:?}", &ours[v * P02_LINES..(v + 1) * P02_LINES]);
         println!("theirs {:?}", &theirs[v * P02_LINES..(v + 1) * P02_LINES]);
     }
-    println!("SCORE equal {equal} abs_diff {total} mean_score {mean_score:.0}");
+    let first: u64 = (0..P02_VARIANTS)
+        .map(|v| {
+            (0..3)
+                .map(|i| {
+                    (ours[v * P02_LINES + i] as i64 - theirs[v * P02_LINES + i] as i64)
+                        .unsigned_abs()
+                })
+                .sum::<u64>()
+        })
+        .sum();
+    println!("SCORE equal {equal} abs_diff {total} mean_score {mean_score:.0} first3 {first}");
+}
+
+/// P04: five-byte samples (frame, line, counter high, mid, low) after the 4-byte header, up to a line of 0.
+const P04_BYTES: usize = 4 + 5 * 800;
+
+fn p04_samples(bytes: &[u8]) -> Vec<(u8, u8, u32)> {
+    bytes[4..]
+        .as_chunks::<5>()
+        .0
+        .iter()
+        .take_while(|s| s[1] != 0)
+        .map(|s| {
+            (
+                s[0],
+                s[1],
+                (s[2] as u32) << 16 | (s[3] as u32) << 8 | s[4] as u32,
+            )
+        })
+        .collect()
+}
+
+/// The video address counter against Hatari's, sampled at four target lines along the frame (probe P04): above and below
+/// the picture and on a line before its first row it holds the same address exactly; inside the picture it is within
+/// one word (2 bytes) of Hatari's, for every one of the 128 starting points in the line.
+#[test]
+fn p04_video_counter_agrees_with_hatari() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p04", 700, P04_BYTES, Accuracy::Accurate),
+        golden_bytes("p04"),
+    ) else {
+        return;
+    };
+    let (ours, theirs) = (p04_samples(&ours), p04_samples(&theirs));
+    for line in [10u8, 34, 40, 100, 250] {
+        let pick = |v: &[(u8, u8, u32)]| -> Vec<(u8, u32)> {
+            v.iter()
+                .filter(|s| s.1 == line && (1..=128).contains(&s.0))
+                .map(|s| (s.0, s.2))
+                .collect()
+        };
+        let (a, b) = (pick(&ours), pick(&theirs));
+        assert_eq!(a.len(), 128, "line {line}: our samples");
+        assert_eq!(b.len(), 128, "line {line}: Hatari's samples");
+        let tolerance = if line >= 100 { 2 } else { 0 };
+        for (x, y) in a.iter().zip(&b) {
+            let d = (x.1 as i64 - y.1 as i64).abs();
+            assert!(
+                d <= tolerance,
+                "line {line}, frame {}: counter {:06X} here, {:06X} in Hatari",
+                x.0,
+                x.1,
+                y.1
+            );
+        }
+    }
+}
+
+/// `cargo test ... p04_report -- --ignored --nocapture`: per sampled line, how the counter we read differs from Hatari's.
+#[test]
+#[ignore]
+fn p04_report() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p04", 700, P04_BYTES, Accuracy::Accurate),
+        golden_bytes("p04"),
+    ) else {
+        return;
+    };
+    let (ours, theirs) = (p04_samples(&ours), p04_samples(&theirs));
+    let mut total = 0u64;
+    for line in [10u8, 40, 100, 250, 34] {
+        let pick = |v: &[(u8, u8, u32)]| -> Vec<(u8, u32)> {
+            v.iter()
+                .filter(|s| s.1 == line && (1..=128).contains(&s.0))
+                .map(|s| (s.0, s.2))
+                .collect()
+        };
+        let (a, b) = (pick(&ours), pick(&theirs));
+        let n = a.len().min(b.len());
+        let diffs: Vec<i64> = (0..n).map(|i| a[i].1 as i64 - b[i].1 as i64).collect();
+        let abs: i64 = diffs.iter().map(|d| d.abs()).sum();
+        total += abs as u64;
+        if std::env::var_os("RC_SHOW").is_some() {
+            println!("ours   {line}: {:X?}", a.iter().take(8).collect::<Vec<_>>());
+            println!("theirs {line}: {:X?}", b.iter().take(8).collect::<Vec<_>>());
+        }
+        println!(
+            "line {line}: {} of {} samples, sum |d| {abs}, first diffs {:?}",
+            n,
+            b.len(),
+            &diffs[..diffs.len().min(12)]
+        );
+    }
+    println!("SCORE equal 0 abs_diff {total} mean_score {total}");
 }

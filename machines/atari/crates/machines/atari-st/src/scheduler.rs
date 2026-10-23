@@ -59,6 +59,9 @@ pub enum Event {
     AciaService { port: u8, generation: u64 },
     /// The floppy controller's next byte time while it works; the generation tells a stale event apart.
     FdcTick(u64),
+    /// `accurate` mode: the VBL request, a fixed time after the frame ends (last, so the states of `fast` mode keep
+    /// their bytes).
+    Vbl,
 }
 
 /// The shape of one frame in CPU clocks.

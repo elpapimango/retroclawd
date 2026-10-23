@@ -59,6 +59,8 @@ pub fn decode(addr: u32, size: Size) -> Decode {
         0xFF_8006 | 0xFF_8A3C => Decode::BusError,
         // [H] Internals pp.56-58: video base high/mid, sync mode, resolution (bytes); palette (bytes or words).
         0xFF_8201 | 0xFF_8203 | 0xFF_820A | 0xFF_8260 if byte => Decode::Device(Dev::Shifter),
+        // [O] the video address counter, read only (docs/hardware-facts.md, "Timing (Phase 3)").
+        0xFF_8205 | 0xFF_8207 | 0xFF_8209 if byte => Decode::Device(Dev::Shifter),
         0xFF_8240..=0xFF_825F => Decode::Device(Dev::Shifter),
         // [H] Internals pp.58-59: FDC access/sector count and mode (words), DMA address (bytes).
         0xFF_8604 | 0xFF_8606 if !byte => Decode::Device(Dev::Dma),

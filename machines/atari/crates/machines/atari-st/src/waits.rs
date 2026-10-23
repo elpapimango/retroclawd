@@ -22,7 +22,46 @@ pub(crate) const E_PERIOD: u64 = 10;
 /// P02: the mean number of loop runs a line fits Hatari's to 0.01 with this value).
 pub(crate) const IACK_EXTRA: u32 = 8;
 
+/// The E clock's phase against the start of the frame: its edges fall at this many clocks past a multiple of 10 (probe
+/// P02, fitted together with the VBL delay below).
+pub(crate) const E_PHASE: u64 = 6;
+
+/// Clocks between the end of a frame (the line-0 HBL) and the VBL request: the GLUE raises the VBL a little into the
+/// first line, so the HBL of the line boundary is served first and an HBL counted from the VBL numbers the lines as
+/// Hatari does (probes P02 and P04: with no delay HBL number n came one line early).
+pub(crate) const VBL_DELAY: u64 = 64;
+
+/// The clocks into a line at which the Shifter starts fetching the picture: a fit to probe P04 (Hatari), within
+/// one word.
+pub(crate) const WINDOW_START: u64 = 56;
+
+/// The Shifter fetches one word of the picture every 4 clocks inside its window (160 bytes a line in the colour
+/// resolutions).
+pub(crate) const CLOCKS_PER_WORD: u64 = 4;
+pub(crate) const WORDS_PER_LINE: u64 = 80;
+/// The picture's lines (colour monitor).
+pub(crate) const PICTURE_LINES: u32 = 200;
+
 impl StBus {
+    /// The video address counter at the current time: the address of the next word the Shifter reads. Before the first
+    /// line of the picture it holds the frame's base address, inside a line it moves one word every 4 clocks from the
+    /// start of the fetch window, after the last line it holds the end of the picture.
+    pub(crate) fn video_counter(&self) -> u32 {
+        let first = crate::scheduler::first_display_line(self.geometry.lines);
+        let base = self.shifter.video_base();
+        if self.line < first {
+            return base;
+        }
+        let n = self.line - first;
+        if n >= PICTURE_LINES {
+            return base.wrapping_add(PICTURE_LINES * 160);
+        }
+        let line_start = self.last_vbl_at + self.line as u64 * self.geometry.clocks_per_line as u64;
+        let into = self.now.saturating_sub(line_start);
+        let words = (into.saturating_sub(WINDOW_START) / CLOCKS_PER_WORD).min(WORDS_PER_LINE);
+        base.wrapping_add(n * 160 + 2 * words as u32)
+    }
+
     /// The clocks a bus cycle that would start now at `addr` waits first.
     pub(crate) fn wait_clocks(&self, addr: u32, size: Size) -> u32 {
         let t = self.now;
@@ -40,7 +79,7 @@ impl StBus {
     /// The clocks the interrupt acknowledge that would start now waits: for the next E clock edge, counted from the
     /// frame start, and then `IACK_EXTRA`.
     pub(crate) fn iack_wait_clocks(&self) -> u32 {
-        let phase = (self.now - self.last_vbl_at) % E_PERIOD;
+        let phase = (self.now + E_PERIOD - E_PHASE - self.last_vbl_at % E_PERIOD) % E_PERIOD;
         ((E_PERIOD - phase) % E_PERIOD) as u32 + IACK_EXTRA
     }
 }

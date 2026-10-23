@@ -56,6 +56,7 @@ impl StBus {
         while let Some((at, _, event)) = self.sched.pop_due(upto) {
             match event {
                 Event::LineEnd => self.line_end(at),
+                Event::Vbl => self.raise_vbl(),
                 Event::MfpTimeout(n) if n == self.mfp_event => {
                     self.catch_up_mfp(at);
                     self.schedule_mfp(at);
@@ -124,7 +125,14 @@ impl StBus {
             self.line = 0;
             self.vbl_count += 1;
             self.last_vbl_at = at;
-            self.raise_vbl();
+            // `fast` mode raises it with the line-end HBL (its picture and its Hatari I/O trace were made so); `accurate`
+            // mode puts it a little into the first line, where the hardware has it.
+            if self.accurate {
+                self.sched
+                    .schedule(at + crate::waits::VBL_DELAY, CLASS_VIDEO, Event::Vbl);
+            } else {
+                self.raise_vbl();
+            }
             self.catch_up_mfp(at);
             self.psg.catch_up(at);
             self.catch_up_fdc(at);

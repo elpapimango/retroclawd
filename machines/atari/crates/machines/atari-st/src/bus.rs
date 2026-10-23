@@ -734,6 +734,9 @@ impl StBus {
                 let v = if write {
                     self.shifter.write_at(addr, word, value as u16, self.now);
                     value
+                } else if matches!(addr, 0xFF_8205 | 0xFF_8207 | 0xFF_8209) {
+                    let counter = self.video_counter();
+                    (counter >> (8 * ((0xFF_8209 - addr) / 2))) & 0xFF
                 } else {
                     self.shifter.read(addr, word).unwrap_or(0xFFFF) as u32
                 };

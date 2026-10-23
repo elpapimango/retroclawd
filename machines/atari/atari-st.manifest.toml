@@ -192,7 +192,24 @@ files = { disk = "atari/software/scenarios/timing/p02.st" }
 start = 49152
 len = 6148
 golden = "atari-st/timing/p02.bin"
-golden_sha256 = "2f315d8f18747534c24e87838d03ae1732f6c7eb9cbc0204ed3532d1fe76c3b3"
+golden_sha256 = "7d7d209a6fdd439706781bed68b387e940743064b063228f32169edf37876a23"
 compare = { mode = "exact" }
 status = "known-gap"
 gap = { reason = "the line-by-line counts differ from Hatari's by one run on about a third of the lines: where inside an instruction an interrupt is taken, and the clocks of its acknowledge, are modelled to the nearest few clocks only", evidence = "per-variant mean difference at most 0.035 runs a line (2 runs in 58); the exact sequences differ (RC_SHOW=<variant> cargo test --release -p atari-st --test timing_probes p02_report -- --ignored --nocapture); model fitted in a small simulation: the 4 and 12-clock loops fit exactly, the 8-clock ones to within 4 runs in 61" }
+
+# P04: the video address counter ($FF8205/07/09) read at 128 points along a line, on five lines of the frame
+# (timing/p04_video_counter.s). Hatari's dump is the golden. Border lines agree exactly; inside the picture the counter agrees
+# to one word (tests/timing_probes.rs, p04_video_counter_agrees_with_hatari).
+[[scenario]]
+id = "P04"
+kind = "memory"
+frames = 700
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p04.st" }
+start = 49152
+len = 4004
+golden = "atari-st/timing/p04.bin"
+golden_sha256 = "ae3e92a52a27f7067920a32e2fcbfd9af867f5a8466107466a978c6053927733"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "inside the picture Hatari's counter differs from ours by one word on about half of the samples: the reads of the three counter bytes take clock-exact slots that the model of the wait states does not reproduce, and the interrupt that starts the sample is placed to a few clocks only", evidence = "sum of the absolute differences 94 bytes over 128 samples a line (RC_SHOW=1 cargo test --release -p atari-st --test timing_probes p04_report -- --ignored --nocapture)" }
