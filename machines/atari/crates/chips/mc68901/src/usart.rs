@@ -6,8 +6,10 @@
 //! sends the timing signal for the MFP's built-in serial interface"). The timer output toggles on every time-out
 //! (§5.1.1), so one clock period is two time-outs; a bit is one clock period, or sixteen in divide-by-16 mode (UCR
 //! CLK, §6.1). The chip holds no peer: finished characters wait for the machine in a queue, and the machine hands
-//! received characters in with [`Usart::rx_begin`]. The peers deliver whole, clean frames, so the parity error, frame
-//! error and break flags never rise.
+//! received characters in with [`Usart::rx_begin`]. A peer may mark a character faulty ([`RxFault`]): the parity error, frame
+//! error and break flags of the RSR then describe the character in the receive buffer ([H?]: no data sheet text was to
+//! hand for their clearing, so each flag is rewritten with every character that reaches the buffer) and the receive
+//! error interrupt is raised as for an overrun.
 
 use std::collections::VecDeque;
 
@@ -25,6 +27,10 @@ pub(crate) const EV_RX_FULL: u8 = 8;
 // RSR bits (Figure 6-3).
 const RSR_BF: u8 = 0x80;
 const RSR_OE: u8 = 0x40;
+const RSR_PE: u8 = 0x20;
+const RSR_FE: u8 = 0x10;
+/// Found/search in a synchronous format; in an asynchronous one it flags a break (all zeros through the stop bit).
+const RSR_B: u8 = 0x08;
 const RSR_CIP: u8 = 0x04;
 const RSR_SS: u8 = 0x02;
 const RSR_RE: u8 = 0x01;
@@ -43,6 +49,27 @@ struct Shift {
     byte: u8,
     /// Timer D time-outs until the character is out (or in).
     left: u64,
+    /// A received character's fault (`RxFault::code`); 0 for a clean one and for everything transmitted.
+    fault: u8,
+}
+
+/// What is wrong with a character a peer sends.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RxFault {
+    /// A clean frame.
+    None,
+    /// The parity bit disagrees (shows only when the UCR enables parity).
+    Parity,
+    /// The stop bit is not a stop bit.
+    Frame,
+    /// The line was held low for the whole frame: the data is 0, with a frame error and the break flag.
+    Break,
+}
+
+impl RxFault {
+    fn code(self) -> u8 {
+        self as u8
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -207,9 +234,13 @@ impl Usart {
     }
 
     /// A character from the line starts coming in.
-    pub(crate) fn rx_begin(&mut self, byte: u8) {
+    pub(crate) fn rx_begin(&mut self, byte: u8, fault: RxFault) {
         if let Some(left) = self.char_timeouts() {
-            self.rx_shift = Some(Shift { byte, left });
+            self.rx_shift = Some(Shift {
+                byte,
+                left,
+                fault: fault.code(),
+            });
             self.rsr |= RSR_CIP;
         }
     }
@@ -226,7 +257,11 @@ impl Usart {
             && let Some(left) = self.char_timeouts()
             && let Some(byte) = self.tx_buf.take()
         {
-            self.tx_shift = Some(Shift { byte, left });
+            self.tx_shift = Some(Shift {
+                byte,
+                left,
+                fault: 0,
+            });
             self.tsr |= TSR_BE;
             *ev |= EV_TX_EMPTY;
         }
@@ -248,15 +283,31 @@ impl Usart {
         *ev |= EV_TX_ERROR;
     }
 
-    fn rx_complete(&mut self, byte: u8, ev: &mut u8) {
+    fn rx_complete(&mut self, byte: u8, fault: u8, ev: &mut u8) {
         self.rsr &= !RSR_CIP;
         if self.rsr & RSR_BF != 0 {
             // §6.2.2: neither the buffer nor the RSR is overwritten; OE shows once the buffer has been read.
             self.overrun_pending = true;
         } else {
-            self.rx_buf = byte & self.word_mask();
+            let fault = match fault {
+                1 if self.ucr & 0x04 != 0 => RxFault::Parity,
+                2 => RxFault::Frame,
+                3 => RxFault::Break,
+                _ => RxFault::None,
+            };
+            self.rx_buf = if fault == RxFault::Break { 0 } else { byte } & self.word_mask();
+            self.rsr &= !(RSR_PE | RSR_FE | RSR_B);
+            match fault {
+                RxFault::Parity => self.rsr |= RSR_PE,
+                RxFault::Frame => self.rsr |= RSR_FE,
+                RxFault::Break => self.rsr |= RSR_FE | RSR_B,
+                RxFault::None => {}
+            }
             self.rsr |= RSR_BF;
             *ev |= EV_RX_FULL;
+            if fault != RxFault::None {
+                *ev |= EV_RX_ERROR;
+            }
         }
     }
 
@@ -280,7 +331,7 @@ impl Usart {
                     self.tx_shift = None;
                     self.tx_done.push_back(byte);
                     if self.loopback() {
-                        self.rx_complete(byte, &mut ev);
+                        self.rx_complete(byte, 0, &mut ev);
                     }
                     self.load_shifter(&mut ev);
                     if self.tx_shift.is_none() {
@@ -291,9 +342,9 @@ impl Usart {
             if let Some(s) = &mut self.rx_shift {
                 s.left -= step;
                 if s.left == 0 {
-                    let byte = s.byte;
+                    let (byte, fault) = (s.byte, s.fault);
                     self.rx_shift = None;
-                    self.rx_complete(byte, &mut ev);
+                    self.rx_complete(byte, fault, &mut ev);
                 }
             }
         }

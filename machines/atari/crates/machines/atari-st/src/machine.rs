@@ -604,6 +604,19 @@ impl AtariSt {
         Ok(())
     }
 
+    /// A character with a fault in its frame arrives on the RS-232 line (a test or a scripted peer): the USART takes it when
+    /// it is enabled, idle and in an asynchronous format. Returns whether it did.
+    pub fn rs232_receive_fault(&mut self, byte: u8, fault: mc68901::RxFault) -> bool {
+        let now = self.bus.now;
+        self.bus.catch_up_mfp(now);
+        if !self.bus.mfp().usart_can_receive() {
+            return false;
+        }
+        self.bus.mfp_mut().usart_rx_begin_fault(byte, fault);
+        self.bus.mfp_changed();
+        true
+    }
+
     /// Whether a blit is running (Mega ST and STE).
     pub fn blitter_busy(&self) -> bool {
         self.bus.ste.blitter.busy()

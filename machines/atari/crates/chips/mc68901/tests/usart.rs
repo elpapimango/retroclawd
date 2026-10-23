@@ -261,6 +261,40 @@ fn a_character_from_the_line_arrives_after_one_character_time() {
     assert_eq!(m.read(UDR), 0xA5);
 }
 
+/// A peer's faulty frames ([H?]: no data sheet text to hand): parity shows only when the UCR enables it, a framing error sets
+/// FE, a break sets FE and B with the data 0, each describes the character in the buffer, and all of them raise the receive error.
+#[test]
+fn faulty_frames_set_the_error_flags_of_the_character_in_the_buffer() {
+    use mc68901::RxFault;
+    const PE: u8 = 0x20;
+    const FE: u8 = 0x10;
+    const B: u8 = 0x08;
+    let mut m = running();
+    m.write(UCR, FORMAT_8N1_16 | 0x04);
+    m.write(RSR, RE);
+    for (fault, flags, sent, got) in [
+        (RxFault::Parity, PE, 0x55u8, 0x55u8),
+        (RxFault::Frame, FE, 0x66, 0x66),
+        (RxFault::Break, FE | B, 0x55, 0x00),
+        (RxFault::None, 0, 0x77, 0x77),
+    ] {
+        assert!(m.usart_can_receive());
+        m.usart_rx_begin_fault(sent, fault);
+        m.tick(4 * 400);
+        assert_eq!(m.read(RSR) & (PE | FE | B), flags, "{fault:?}");
+        assert_eq!(m.read(RSR) & BF, BF);
+        assert_eq!(m.read(UDR), got, "{fault:?}");
+    }
+    // without parity enabled a parity fault is not seen
+    let mut m = running();
+    m.write(UCR, FORMAT_8N1_16);
+    m.write(RSR, RE);
+    m.usart_rx_begin_fault(0x31, RxFault::Parity);
+    m.tick(4 * 400);
+    assert_eq!(m.read(RSR) & PE, 0);
+    assert_eq!(m.read(UDR), 0x31);
+}
+
 /// §6.3.2 AT: after the transmitter is disabled and its last word is out, the receiver is enabled.
 #[test]
 fn auto_turnaround_enables_the_receiver() {

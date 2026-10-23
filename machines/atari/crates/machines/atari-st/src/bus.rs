@@ -480,6 +480,11 @@ impl StBus {
         }
     }
 
+    /// The MFP was changed from outside a bus cycle: its next timeout is worked out again.
+    pub(crate) fn mfp_changed(&mut self) {
+        self.mfp_dirty = true;
+    }
+
     pub fn mfp_mut(&mut self) -> &mut Mfp {
         &mut self.mfp
     }

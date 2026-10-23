@@ -11,6 +11,7 @@ mod usart;
 use serde::{Deserialize, Serialize};
 
 use timer::{Mode, Timer};
+pub use usart::RxFault;
 use usart::{EV_RX_ERROR, EV_RX_FULL, EV_TX_EMPTY, EV_TX_ERROR, Usart};
 
 /// The timer with an auxiliary input (TAI / TBI, §5.1.2-5.1.3).
@@ -250,7 +251,12 @@ impl Mfp {
 
     /// A character from the line starts coming into the receiver (see [`Mfp::usart_can_receive`]).
     pub fn usart_rx_begin(&mut self, byte: u8) {
-        self.usart.rx_begin(byte);
+        self.usart.rx_begin(byte, RxFault::None);
+    }
+
+    /// A character with a fault in its frame starts coming in (parity, framing, break).
+    pub fn usart_rx_begin_fault(&mut self, byte: u8, fault: RxFault) {
+        self.usart.rx_begin(byte, fault);
     }
 
     /// The oldest character the transmitter has finished, for whatever is on the other end of the line.
