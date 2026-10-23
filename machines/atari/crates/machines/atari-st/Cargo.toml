@@ -14,6 +14,7 @@ crc32fast = "1"
 sha1 = "0.10"
 mc68901 = { path = "../../chips/mc68901" }
 st-shifter = { path = "../../chips/st-shifter" }
+blitter = { path = "../../chips/blitter" }
 ay-3-8910 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "cdc441725cce3ae9771876eede52023f71f6edcd" }
 mc6850 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "cdc441725cce3ae9771876eede52023f71f6edcd" }
 ikbd = { path = "../../chips/ikbd" }

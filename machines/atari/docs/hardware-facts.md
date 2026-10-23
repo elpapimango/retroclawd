@@ -348,3 +348,26 @@ EmuTOS 192K) with the probe named, or in its I/O trace (`capture_hatari_trace.py
 | Line offset and scroll in the fetch | a line fetches `2 x offset` bytes more than 160; with the scroll register `$FF8265` non-zero and `$FF8264` zero it fetches one more 16-pixel group (8 bytes in low resolution); `$FF8264` non-zero gives no extra fetch | `[O]` | P28 |
 | Microwire data register | reads the written word shifted left, one bit per 8 clocks from 8 clocks after the write, zero when out; the mask register reads what was written (Hatari shifts 4, 3, 3, 3 bits per read in the tightest loop: not modelled) | `[O]` | P30 |
 | Register access cost | the STE's registers cost the plain aligned access, like the ST's Shifter | `[O]` | P36 |
+
+### Blitter (Mega ST and STE, Phase 4)
+
+Register map `[H]` *Atari ST Internals*, the Blitter chapter (transcribed in the Phase 4 ledger): halftone RAM `$FF8A00-1F`,
+source x/y increments `$20/$22`, source address `$24` (24 bits), end masks `$28/$2A/$2C`, destination increments `$2E/$30`,
+destination address `$32`, counts `$36/$38`, HOP `$3A`, OP `$3B`, control `$3C`, skew `$3D`. The behaviour is `[O]`: Hatari
+2.6.1 `--machine ste` with the probes P33 and P37 to P40; the engine (`crates/chips/blitter`) is checked against every
+word of those dumps (`tests/timing_probes.rs`).
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| Source read | the source is read only when HOP is 2 or 3 and OP is not 0, 5, 10 or 15, or when smudge is set (also with HOP 1) | `[O]` | P33 |
+| Source address per line | a line's source reads advance by the x increment between reads and not after the last; the y increment is added at the line's end only when the line read; the destination likewise (no x increment after the last word) | `[O]` | P33 |
+| Counts | the X count reads back as written, the Y count runs down to 0; a count of 0 written means 65536; a start with the Y count left at 0 by the last blit moves nothing and leaves the control register as written | `[O]` | P33, P40 |
+| Control register | after a blit the line number has advanced once a line (down when the destination y increment is negative), busy and HOG read clear; smudge stays | `[O]` | P33 |
+| Source shifter | 32 bits wide, the older word above the newer, `(older << 16 | newer) >> skew`; it persists between lines and between blits; FXSR reads one word before a line | `[O]` | P33, P37 |
+| NFSR | the last word of a line is not read; the shifter takes the last word that crossed the data bus: the destination word read for a partial mask or an operation that uses it, else the word written before; afterwards the shifter's newer word is the word written | `[O]` | P37, P38 |
+| Right to left | a negative destination x increment: the newest word enters the upper half, `(newer << 16 | older) >> skew`; masks keep their roles (the first mask on the first word processed) | `[O]` | P39 |
+| Smudge | the halftone line is the source word's low four bits | `[O]` | P33 |
+| Start | a write of the control register with bit 7 set starts the blit; a write while busy changes nothing | `[O]`/`[H?]` | the busy write is not probed |
+| Address registers | bit 0 is not stored | `[H?]` | |
+| Memory the Blitter cannot reach | the I/O area and nonexistent memory stop the machine (no fact), as for the DMA; writes to ROM and the cartridge are ignored | `[H?]` | |
+| Timing | not yet: a blit runs at once when started (a very long one in bursts of 2^20 words, one per VBL) | | Task 57 |

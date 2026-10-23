@@ -31,3 +31,20 @@ others or renumbered, see the ledger in the plan's workspace and `docs/hardware-
 
 `known-gap` rows say in the manifest what differs and where the evidence is: the probes' exact byte equality is the
 manifest's comparison, the tests next to it check the property each probe is about.
+
+## Phase 4 probes (STE and Mega ST; run with `--machine ste|megast`, goldens in `atari-ste/timing/`)
+
+| Probe | Measures | Result (bytes), VBLs | Test in `tests/timing_probes.rs` |
+|---|---|---|---|
+| P27 `gen_p27.py` | the STE Shifter registers: read-back, masks, palette, the video counter written | | `p27_*` |
+| P28 `gen_p28.py` | line offset and pixel scroll in the fetch: the counter's stride per line | | `p28_*` |
+| P30 `gen_p30.py` | the Microwire data register's shifting | 340, 800 | `p30_*` (known gap: the shift per read) |
+| P33 `gen_p33.py` | the Blitter for 174 settings: HOP x OP, end masks, skew with FXSR/NFSR, backwards, increments, halftone line, smudge, overlap; a checksum of the area and the registers after | 4 + 174 x 20, 1500 | `p33_*` |
+| P36 `gen_p36.py` | what an access to each STE register costs | 208, 1000 | `p36_*` |
+| P37 `gen_p37.py` | the Blitter's skew with FXSR and NFSR, raw destination words | 4 + 64 x 80, 1500 | `p37_*` |
+| P38 `gen_p38.py` | end masks together with the skew flags, raw | 4 + 27 x 80, 1500 | `p38_*` |
+| P39 `gen_p39.py` | blits right to left (negative x increments), raw | 4 + 18 x 80, 1500 | `p39_*` |
+| P40 `gen_p40.py` | a restart with the Y count at zero (EmuTOS's `TAS`), a written zero Y or X count | 4 + 5 x 10, 1500 | `p40_*` |
+
+`gen_p33.py` holds the shared program (`source(cases, raw, name)`); `gen_p37` to `gen_p39` change the case list and ask for a
+raw dump of 40 destination words from a word offset.

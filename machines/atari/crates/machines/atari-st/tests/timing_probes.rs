@@ -1447,3 +1447,52 @@ fn p36_an_access_to_each_ste_register_costs_the_clocks_hatari_shows() {
     let table: Vec<_> = P36_NAMES.iter().zip(o.iter().zip(&t)).collect();
     assert_eq!(o, t, "clocks an iteration, ours and theirs: {table:?}");
 }
+
+/// The Blitter's dumps (P33 a checksum and the registers per setting, P37 to P39 raw destination words) must be Hatari's,
+/// word for word: the engine's rules are all [O] (`docs/hardware-facts.md`, "Blitter").
+fn blitter_dump_matches(name: &str, len: usize, what: &str) {
+    let (Some(ours), Some(theirs)) = (
+        run_probe_ste(name, 1500, len, Accuracy::Fast),
+        golden_ste(name),
+    ) else {
+        return;
+    };
+    assert_eq!(theirs.len(), len, "{name} golden length");
+    assert_eq!(&ours[..4], &theirs[..4], "{name} header");
+    let record = (len - 4) / what.parse::<usize>().unwrap();
+    let wrong: Vec<usize> = (0..what.parse().unwrap())
+        .filter(|&i| {
+            ours[4 + i * record..4 + (i + 1) * record]
+                != theirs[4 + i * record..4 + (i + 1) * record]
+        })
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "{name}: settings that differ from Hatari: {wrong:?}"
+    );
+}
+
+#[test]
+fn p33_the_blitter_leaves_the_memory_and_registers_hatari_does_for_174_settings() {
+    blitter_dump_matches("p33", 4 + 174 * 20, "174");
+}
+
+#[test]
+fn p37_the_skew_and_its_flags_feed_the_destination_as_in_hatari() {
+    blitter_dump_matches("p37", 4 + 64 * 80, "64");
+}
+
+#[test]
+fn p38_end_masks_with_the_skew_flags_match_hatari() {
+    blitter_dump_matches("p38", 4 + 27 * 80, "27");
+}
+
+#[test]
+fn p39_a_blit_right_to_left_matches_hatari() {
+    blitter_dump_matches("p39", 4 + 18 * 80, "18");
+}
+
+#[test]
+fn p40_a_restart_with_the_y_count_at_zero_moves_nothing_as_in_hatari() {
+    blitter_dump_matches("p40", 4 + 5 * 10, "5");
+}

@@ -1,5 +1,5 @@
-//! The registers the STE and Mega ST add, as plain register files until their devices exist (Tasks 53 to 56 replace each
-//! file by its device). The reads are what Hatari 2.6.1 returned for EmuTOS's accesses.
+//! The registers the STE and Mega ST add: the Blitter is a device (`blitter`), the others plain register files until their
+//! devices exist (Tasks 53 to 55 replace each file by its device). The reads are what Hatari 2.6.1 returned for EmuTOS's accesses.
 
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +14,7 @@ pub struct SteRegs {
     /// The clock at which the Microwire data register was last written (the shift runs from then).
     pub microwire_start: Option<u64>,
     pub joy: Vec<u8>,
-    pub blitter: Vec<u8>,
+    pub blitter: blitter::Blitter,
     pub rtc: Vec<u8>,
 }
 
@@ -24,7 +24,7 @@ impl Default for SteRegs {
             sound: vec![0; 0x26],
             microwire_start: None,
             joy: vec![0xFF; 0x24],
-            blitter: vec![0; 0x40],
+            blitter: blitter::Blitter::new(),
             rtc: vec![0; 0x20],
         }
     }
@@ -54,7 +54,7 @@ impl SteRegs {
     pub fn check(&self) -> Result<(), crate::state::StateError> {
         let ok = self.sound.len() == 0x26
             && self.joy.len() == 0x24
-            && self.blitter.len() == 0x40
+            && self.blitter.is_consistent()
             && self.rtc.len() == 0x20;
         if ok {
             Ok(())
@@ -103,17 +103,6 @@ impl SteRegs {
                 v
             }
             None => read(&self.joy, at, word),
-        }
-    }
-
-    pub fn blitter(&mut self, addr: u32, word: bool, write_value: Option<u32>) -> u32 {
-        let at = (addr - 0xFF_8A00) as usize;
-        match write_value {
-            Some(v) => {
-                write(&mut self.blitter, at, word, v);
-                v
-            }
-            None => read(&self.blitter, at, word),
         }
     }
 

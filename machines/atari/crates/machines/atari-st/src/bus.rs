@@ -41,6 +41,8 @@ pub const ROM_BASE: u32 = 0xFC_0000;
 /// TOS 1.0x and the EmuTOS 192 KB images.
 pub const ROM_SIZE: usize = 196_608;
 const RAM_DECODE_END: u32 = 0x40_0000;
+/// Destination words one run of the Blitter moves before the machine goes on (a longer blit continues at each VBL).
+const BLIT_WORDS_PER_BURST: u32 = 1 << 20;
 const CARTRIDGE: std::ops::Range<u32> = 0xFA_0000..0xFC_0000;
 /// [H] *Internals* p.96: "Up to 128K in the address space $FA0000 to $FBFFFF can be addressed."
 pub const CARTRIDGE_BYTES: usize = 128 * 1024;
@@ -377,6 +379,32 @@ impl StBus {
 
     pub fn raise_vbl(&mut self) {
         self.vbl_pending = true;
+        // A blit longer than one burst goes on (Task 57 gives it its real speed).
+        if self.ste.blitter.busy() {
+            self.run_blitter(BLIT_WORDS_PER_BURST);
+        }
+    }
+
+    /// Runs up to `words` destination words of the busy Blitter over the machine's memory.
+    fn run_blitter(&mut self, words: u32) {
+        let mut blitter = std::mem::take(&mut self.ste.blitter);
+        blitter.run(&mut BlitPort(self), words);
+        self.ste.blitter = blitter;
+    }
+
+    /// The Blitter reached memory that has no fact (the I/O area, nothing fitted): the machine stops, as for the DMA.
+    fn blitter_stop(&mut self, addr: u32, write: bool, value: u16) {
+        if self.stop.is_none() {
+            self.stop = Some(IoStop {
+                reason: StopReason::NoFact,
+                addr,
+                size: Size::Word,
+                write,
+                value: u32::from(value),
+                fc: FunctionCode::SUPERVISOR_DATA,
+                at_cycle: self.now,
+            });
+        }
     }
 
     pub fn mfp_mut(&mut self) -> &mut Mfp {
@@ -894,7 +922,15 @@ impl StBus {
             }
             Decode::Device(Device::Blitter) => {
                 let word = size == Size::Word;
-                let v = self.ste.blitter(addr, word, write.then_some(value));
+                let off = (addr - 0xFF_8A00) as usize;
+                let v = if write {
+                    if self.ste.blitter.write(off, word, value as u16) {
+                        self.run_blitter(BLIT_WORDS_PER_BURST);
+                    }
+                    value
+                } else {
+                    u32::from(self.ste.blitter.read(off, word))
+                };
                 self.log_io(addr, size, write, v);
                 return Ok(v);
             }
@@ -948,6 +984,38 @@ impl StBus {
     fn user_refused(addr: u32, fc: FunctionCode) -> bool {
         let addr = addr & 0xFF_FFFF;
         !fc.is_supervisor() && !(SUPERVISOR_ONLY_BELOW..IO_BASE).contains(&addr)
+    }
+}
+
+/// The Blitter's view of memory: RAM, ROM and the cartridge are read, RAM is written, ROM and the cartridge ignore a write
+/// ([H?] as for the CPU), the I/O area and nonexistent memory stop the machine.
+struct BlitPort<'a>(&'a mut StBus);
+
+impl blitter::BlitBus for BlitPort<'_> {
+    fn read_word(&mut self, addr: u32) -> u16 {
+        let addr = addr & 0xFF_FFFE;
+        let (hi, lo) = (self.0.region(addr), self.0.region(addr + 1));
+        if matches!(hi, Region::Io | Region::None) {
+            self.0.blitter_stop(addr, false, 0);
+            return 0;
+        }
+        u16::from_be_bytes([self.0.byte(&hi), self.0.byte(&lo)])
+    }
+
+    fn write_word(&mut self, addr: u32, value: u16) {
+        let addr = addr & 0xFF_FFFE;
+        match self.0.region(addr) {
+            Region::Ram(_) if self.0.stop.is_some() => {}
+            Region::Ram(i) => {
+                let [a, b] = value.to_be_bytes();
+                self.0.ram[i] = a;
+                if let Some(slot) = self.0.ram.get_mut(i + 1) {
+                    *slot = b;
+                }
+            }
+            Region::Rom(_) | Region::Cartridge(_) | Region::UnfittedRam => {}
+            Region::Io | Region::None => self.0.blitter_stop(addr, true, value),
+        }
     }
 }
 
