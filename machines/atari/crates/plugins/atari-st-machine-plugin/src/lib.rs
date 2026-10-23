@@ -567,6 +567,9 @@ fn metadata(machine: &AtariSt, region: &str, model: &str) -> MachineMetadata {
             "slice 1: CPU, memory map and VBL; stops at the first unemulated device".to_string(),
         ],
         frame_rate: (rate.num, rate.den),
+        // The host labels the audio it drains by what the metadata says: an STE is stereo.
+        audio_channels: machine.audio_format().channels,
+        audio_sample_rate: machine.audio_format().sample_rate,
         ..MachineMetadata::default()
     }
 }
@@ -2046,6 +2049,33 @@ mod tests {
         let err = command(id, MachineCommand::LoadState { bytes: bad }).unwrap_err();
         assert!(err.contains("RCST"), "{err}");
         state().lock().unwrap().instances.remove(&id);
+    }
+
+    #[test]
+    fn the_ste_reports_stereo_audio_and_the_others_mono() {
+        for (id, channels) in [("atari-st", 1u8), ("atari-mega-st", 1), ("atari-ste", 2)] {
+            let rom_len = if id == "atari-ste" { 262_144 } else { 196_608 };
+            let base = if id == "atari-ste" {
+                0x00E0_0010u32
+            } else {
+                0x00FC_0030
+            };
+            let mut rom = vec![0u8; rom_len];
+            rom[0..4].copy_from_slice(&0x8000u32.to_be_bytes());
+            rom[4..8].copy_from_slice(&base.to_be_bytes());
+            let created = create_machine(MachineCreateRequest {
+                machine_id: id.to_string(),
+                region: Some("pal".to_string()),
+                roms: vec![BinaryBlob {
+                    key: "rom".to_string(),
+                    bytes: rom,
+                }],
+                options: Vec::new(),
+            })
+            .unwrap_or_else(|e| panic!("{id}: {e}"));
+            assert_eq!(created.metadata.audio_channels, channels, "{id}");
+            state().lock().unwrap().instances.remove(&created.instance);
+        }
     }
 
     #[test]

@@ -35,6 +35,9 @@ printf 'Hello from a hard disk made by rcdisk.
 "$tools/rcdisk" hd add "$out/hd.img" "$out/HELLO.TXT"
 rm "$out/HELLO.TXT"
 
+# ste_tone.bin: the STE DMA sound plays a stereo square wave on the left channel (S18).
+"$tools/rcasm" --cpu 68000 -f bin "$here/ste_tone.s" -o "$out/ste_tone.bin" --force
+
 # hello.prg: a GEMDOS program made by rcasm's 68000 back end and rcld (S8P).
 "$tools/rcld" build "$here/hello.layout.toml" -o "$out/hello.prg" --force
 

@@ -149,3 +149,13 @@ compare = { mode = "exact" }
 status = "known-gap"
 gap = { reason = "the first two reads and the end match; between them Hatari shifts 4, 3, 3, 3 bits a read in the tightest loop where the hardware shifts one bit in 8 clocks", evidence = "timing_probes p30_the_microwire_data_register_shifts_out_as_in_hatari" }
 
+
+# S18: ste_tone.bin (--program at $8000, scenarios/ste_tone.s) loops a 32-frame stereo buffer by DMA at 50066 Hz: the left channel
+# a square wave of 50066 / 32 = 1564.6 Hz (+-64), the right channel silent. The fundamental of a +-0.5 square is 0.64.
+[[scenario]]
+id = "S18"
+kind = "audio"
+frames = 300
+args = ["--org", "0x8000"]
+files = { program = "atari/software/scenarios/ste_tone.bin" }
+audio = { from_s = 1.0, to_s = 5.0, tone_hz = 1564.6, tone_tolerance_pct = 1.0, min_amplitude = 0.4, channel = 0, other_channel_below_rms = 0.001 }
