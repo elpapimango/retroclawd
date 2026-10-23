@@ -442,7 +442,7 @@ fn machine_profile_for(chipset: Chipset) -> MachineProfile {
             )
         }))
         .collect(),
-        key_names: key_names(),
+        key_names: key_names(chipset),
         cpus: vec![CpuInfo {
             id: "main".to_string(),
             name: "MC68000".to_string(),
@@ -485,7 +485,23 @@ const KEY_CHARS: &[(&str, &str)] = &[
     ("Space", " "),
 ];
 
-fn key_names() -> Vec<MachineKeyInfo> {
+/// The STE's enhanced-port pad key names: `Joy1PadUp` ... `Joy2PadPause` (`Joy1Pad*` is pad 1, `Joy2Pad*` pad 2).
+fn pad_key(name: &str) -> Option<(usize, atari_st::ste::PadButton)> {
+    let rest = name
+        .get(..4)
+        .filter(|p| p.eq_ignore_ascii_case("joy1") || p.eq_ignore_ascii_case("joy2"))?;
+    let pad = usize::from(rest.as_bytes()[3] == b'2');
+    let suffix = name
+        .get(4..)?
+        .strip_prefix("Pad")
+        .or_else(|| name.get(4..)?.strip_prefix("pad"))?;
+    atari_st::ste::PadButton::ALL
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case(suffix))
+        .map(|&(_, b)| (pad, b))
+}
+
+fn key_names(chipset: Chipset) -> Vec<MachineKeyInfo> {
     let mut keys: Vec<MachineKeyInfo> = atari_st::ikbd::SCANCODES
         .iter()
         .map(|(name, _)| MachineKeyInfo::new(name))
@@ -495,6 +511,13 @@ fn key_names() -> Vec<MachineKeyInfo> {
                 .map(|(name, ..)| MachineKeyInfo::new(name)),
         )
         .collect();
+    if chipset == Chipset::Ste {
+        for pad in [1, 2] {
+            for (suffix, _) in atari_st::ste::PadButton::ALL {
+                keys.push(MachineKeyInfo::new(&format!("Joy{pad}Pad{suffix}")));
+            }
+        }
+    }
     let missing = plugin_api::set_key_chars(&mut keys, KEY_CHARS);
     debug_assert!(missing.is_empty(), "{missing:?}");
     keys
@@ -1178,6 +1201,8 @@ fn handle_machine_command(
                     record.joy[p] & !bit
                 };
                 record.machine.joystick(port, record.joy[p]);
+            } else if let Some((pad, button)) = pad_key(&key) {
+                record.machine.pad_button(pad, button, pressed)?;
             } else {
                 record.machine.key_event(&key, pressed)?;
             }
@@ -1968,6 +1993,26 @@ mod tests {
         let err = command(id, MachineCommand::LoadState { bytes: bad }).unwrap_err();
         assert!(err.contains("RCST"), "{err}");
         state().lock().unwrap().instances.remove(&id);
+    }
+
+    #[test]
+    fn only_the_ste_lists_the_pad_keys() {
+        let has = |chipset: Chipset, name: &str| {
+            machine_profile_for(chipset)
+                .key_names
+                .iter()
+                .any(|k| k.name == name)
+        };
+        for name in ["Joy1PadUp", "Joy1PadA", "Joy2PadPause", "Joy2PadOption"] {
+            assert!(has(Chipset::Ste, name), "{name}");
+            assert!(
+                !has(Chipset::St, name) && !has(Chipset::MegaSt, name),
+                "{name}"
+            );
+        }
+        assert!(has(Chipset::St, "Joy1Up") && has(Chipset::Ste, "Joy1Up"));
+        assert_eq!(pad_key("Joy2PadLeft").map(|(p, _)| p), Some(1));
+        assert!(pad_key("Joy1Up").is_none() && pad_key("KeyA").is_none());
     }
 
     #[test]

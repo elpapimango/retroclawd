@@ -391,3 +391,16 @@ Register map `[H]` *Atari ST Internals* (the STE chapter); the behaviour is `[O]
 | Memory | the DMA reads RAM, ROM and the cartridge; the I/O area and nothing-fitted read `$FF`; no stop, no write | `[H?]` | |
 | Volume control | the Microwire word shifted out through the mask's set bits, eleven of them, device `%10` then command: mixer, bass, treble, master volume (0-40), right and left volume (0-20); applied when the data is written; 2 dB a step; the YM at full level for mixer 1, 12 dB down for 0, off for 2-3; bass and treble not modelled | `[H]`/`[H?]` | Internals' table; the dB steps and the mixer meaning are the LM1992 data sheet from memory: not verified |
 | Audio | 44 100 Hz stereo: a zero-order hold of the frame last played, plus the YM through the volume control; the queue keeps two seconds | | |
+
+### STE enhanced joystick ports (Phase 4)
+
+`[O]` Hatari 2.6.1 `--machine ste`, probe P31 and `timing/scan_p31.py` (which addresses answer). Headless Hatari takes no input,
+so only the rest state and the write behaviour are observed; the bits a held button clears are `[H?]`.
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| Rest | `$FF9200` and `$FF9202` read `$FFFF`, `$FF9201` and `$FF9203` `$FF`; the paddles `$FF9210-$FF9217` read `$FF` at even and `$24` at odd addresses; the light pen words `$FF9220/22` read 0 | `[O]` | P31 |
+| Writes | accepted and ignored: the reads do not change after writing `$FFFF`, 0 or `$A5A5` to `$FF9200` and `$FF9202` | `[O]` | P31 |
+| Bus errors | `$FF9218-$FF921F`, a byte read of `$FF9221` or `$FF9223`, and everything from `$FF9224` | `[O]` | scan_p31.py (the last through the decode table: nothing answers) |
+| Pad buttons | active low as at rest: up, down, left, right are bits 0-3 of the pad's nibble of `$FF9202`'s low byte (pad 1 low nibble, pad 2 high); A and B of pad 1 are bits 0 and 2 of `$FF9201`, of pad 2 bits 1 and 3 (*Internals*: Fire 0, 2, 1, 3 from bit 0); C, Option and Pause are bits 0-2 (pad 1) and 4-6 (pad 2) of `$FF9200`'s high byte | `[H?]` | *Internals* register table; the scan matrix of the real ports is not modelled |
+| Key names | `Joy1PadUp`...`Joy2PadPause` on the STE only | | |

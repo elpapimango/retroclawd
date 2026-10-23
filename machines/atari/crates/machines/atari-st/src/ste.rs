@@ -7,13 +7,43 @@ use serde::{Deserialize, Serialize};
 pub const MICROWIRE_BIT_CLOCKS: u64 = 8;
 pub const MICROWIRE_START_DELAY: u64 = 8;
 
+/// A button of an STE enhanced-port pad; the value is its bit in `SteRegs::pads`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PadButton {
+    Up = 0,
+    Down = 1,
+    Left = 2,
+    Right = 3,
+    A = 4,
+    B = 5,
+    C = 6,
+    Option = 7,
+    Pause = 8,
+}
+
+impl PadButton {
+    /// The key-name suffix of the button (`Joy1PadUp`).
+    pub const ALL: [(&'static str, PadButton); 9] = [
+        ("Up", PadButton::Up),
+        ("Down", PadButton::Down),
+        ("Left", PadButton::Left),
+        ("Right", PadButton::Right),
+        ("A", PadButton::A),
+        ("B", PadButton::B),
+        ("C", PadButton::C),
+        ("Option", PadButton::Option),
+        ("Pause", PadButton::Pause),
+    ];
+}
+
 /// The STE and Mega ST's added registers.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SteRegs {
     pub sound: Vec<u8>,
     /// The clock at which the Microwire data register was last written (the shift runs from then).
     pub microwire_start: Option<u64>,
-    pub joy: Vec<u8>,
+    /// The two enhanced-port pads as buttons held (see `PadButton`).
+    pub pads: [u16; 2],
     pub blitter: blitter::Blitter,
     /// The DMA sound and the volume control behind the Microwire interface.
     pub dma: crate::dmasound::DmaSound,
@@ -25,7 +55,7 @@ impl Default for SteRegs {
         Self {
             sound: vec![0; 0x26],
             microwire_start: None,
-            joy: vec![0xFF; 0x24],
+            pads: [0; 2],
             blitter: blitter::Blitter::new(),
             dma: crate::dmasound::DmaSound::default(),
             rtc: vec![0; 0x20],
@@ -56,7 +86,7 @@ impl SteRegs {
     /// Whether a state's register files have the lengths of the real ones (a state is untrusted).
     pub fn check(&self) -> Result<(), crate::state::StateError> {
         let ok = self.sound.len() == 0x26
-            && self.joy.len() == 0x24
+            && self.pads.iter().all(|p| p >> 9 == 0)
             && self.blitter.is_consistent()
             && self.dma.is_consistent()
             && self.rtc.len() == 0x20;
@@ -129,15 +159,61 @@ impl SteRegs {
         }
     }
 
-    pub fn joy(&mut self, addr: u32, word: bool, write_value: Option<u32>) -> u32 {
-        let at = (addr - 0xFF_9200) as usize;
-        match write_value {
-            Some(v) => {
-                write(&mut self.joy, at, word, v);
-                v
-            }
-            None => read(&self.joy, at, word),
+    /// A pad button went down or up.
+    pub fn set_pad(&mut self, pad: usize, button: PadButton, down: bool) {
+        let bit = 1 << button as u16;
+        if down {
+            self.pads[pad & 1] |= bit;
+        } else {
+            self.pads[pad & 1] &= !bit;
         }
+    }
+
+    /// The enhanced joystick ports (`$FF9200-$FF9223`): `None` is a bus error. [O] Hatari 2.6.1, P31: at rest `$FF9200` and
+    /// `$FF9202` read `$FFFF`, `$FF9201` and `$FF9203` `$FF`, the paddles `$FF9210-$FF9217` read `$FF` at even addresses and
+    /// `$24` at odd ones, the light pen words `$FF9220/22` read 0; writes change nothing; `$FF9218-$FF921F`, and a byte read
+    /// of `$FF9221` or `$FF9223`, are bus errors. [H?] which bit a held pad button clears (active low, as at rest): the
+    /// directions are the four nibbles of `$FF9202` (up, down, left, right from bit 0; pad 1 the low nibble, pad 2 the
+    /// next), the fire buttons the bits of `$FF9201` (Internals: Fire 0, 2, 1, 3 from bit 0, taken as pad 1 A, pad 2 A,
+    /// pad 1 B, pad 2 B), C, Option and Pause bits 0-2 (pad 1) and 4-6 (pad 2) of `$FF9200`.
+    pub fn joy(&mut self, addr: u32, word: bool, write_value: Option<u32>) -> Option<u32> {
+        let at = addr - 0xFF_9200;
+        if (0x18..0x20).contains(&at) || (!word && (at == 0x21 || at == 0x23)) {
+            return None;
+        }
+        if let Some(v) = write_value {
+            return Some(v);
+        }
+        let pad = |n: usize, bit: PadButton| u8::from(self.pads[n] >> bit as u16 & 1 != 0);
+        let nibble = |n: usize| {
+            pad(n, PadButton::Up)
+                | pad(n, PadButton::Down) << 1
+                | pad(n, PadButton::Left) << 2
+                | pad(n, PadButton::Right) << 3
+        };
+        let misc = |n: usize| {
+            pad(n, PadButton::C) | pad(n, PadButton::Option) << 1 | pad(n, PadButton::Pause) << 2
+        };
+        let byte = |o: u32| -> u8 {
+            match o {
+                0x00 => !(misc(0) | misc(1) << 4),
+                0x01 => {
+                    !(pad(0, PadButton::A)
+                        | pad(1, PadButton::A) << 1
+                        | pad(0, PadButton::B) << 2
+                        | pad(1, PadButton::B) << 3)
+                }
+                0x03 => !(nibble(0) | nibble(1) << 4),
+                0x11 | 0x13 | 0x15 | 0x17 => 0x24,
+                0x20..=0x23 => 0,
+                _ => 0xFF,
+            }
+        };
+        Some(if word {
+            u32::from(byte(at)) << 8 | u32::from(byte(at + 1))
+        } else {
+            u32::from(byte(at))
+        })
     }
 
     pub fn rtc(&mut self, addr: u32, write_value: Option<u32>) -> u32 {

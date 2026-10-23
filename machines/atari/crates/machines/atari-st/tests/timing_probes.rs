@@ -1582,3 +1582,14 @@ fn p41_the_dma_sound_plays_bytes_at_hatari_s_rate_over_a_long_run() {
         assert!(d <= 16, "mode {mode}: counter {a:x} against Hatari's {b:x}");
     }
 }
+
+#[test]
+fn p31_the_ste_ports_read_and_ignore_writes_as_in_hatari() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe_ste("p31", 600, 92, Accuracy::Fast),
+        golden_ste("p31"),
+    ) else {
+        return;
+    };
+    assert_eq!(ours, theirs);
+}

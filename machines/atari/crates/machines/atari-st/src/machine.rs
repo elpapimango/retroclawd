@@ -580,6 +580,20 @@ impl AtariSt {
         self.with_ikbd(|k, now| k.joystick(port, bits, now));
     }
 
+    /// A button of an STE enhanced-port pad (`pad` 0 or 1) went down or up.
+    pub fn pad_button(
+        &mut self,
+        pad: usize,
+        button: crate::ste::PadButton,
+        down: bool,
+    ) -> Result<(), String> {
+        if !self.bus.chipset.is_ste() {
+            return Err("only the STE has the enhanced joystick ports".to_string());
+        }
+        self.bus.ste.set_pad(pad, button, down);
+        Ok(())
+    }
+
     /// When ACIA `port`'s transmitter last took a character into its shift register.
     pub fn serial_tx_started_at(&self, port: usize) -> Option<u64> {
         self.bus.acias.tx_started_at(port)

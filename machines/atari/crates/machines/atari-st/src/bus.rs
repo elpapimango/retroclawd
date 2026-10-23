@@ -966,7 +966,10 @@ impl StBus {
             }
             Decode::Device(Device::SteJoy) => {
                 let word = size == Size::Word;
-                let v = self.ste.joy(addr, word, write.then_some(value));
+                // [O] P31: some addresses of the area bus-error.
+                let Some(v) = self.ste.joy(addr, word, write.then_some(value)) else {
+                    return Err(BusFault);
+                };
                 self.log_io(addr, size, write, v);
                 return Ok(v);
             }
