@@ -93,3 +93,19 @@ modified by being read. Never committed; without the variable the tests pass and
   mode. `mfp_clock` is schema 2.
 - Fuzz targets (`crates/*/fuzz`, `crates/machines/atari-st/fuzz/accurate_regs.rs`) compile but need `cargo +nightly fuzz`; the
   stable `tests/hostile_video.rs` covers the same ground (`RC_SWEEP=<n>`).
+
+
+## Phase 4 notes (2026-10-23)
+
+- Chipsets: `Chipset::{St, MegaSt, Ste}` (`AtariSt::with_chipset`; `new` is the ST); the plugin has three profiles. ST states stay byte-identical: the
+  chipset part (`ChipsetExt`: STE video registers and `SteRegs`) is appended to the payload for the other two only, the header's accuracy byte
+  has the chipset in bits 3-4.
+- New code: `crates/chips/blitter` (register file and word engine over `BlitBus`), `src/ste.rs` (STE registers, pads, Blitter timing state),
+  `src/dmasound.rs` (DMA sound, LMC1992), `src/rtc.rs` (RP5C15), `src/watch.rs`; the Blitter's turns with the CPU are `StBus::start_blit/blit_burst/
+  blit_tick` (`bus.rs`); the DMA sound is brought up to date by `run_dma` (only while playing at MFP catch-ups, always at its registers and when
+  audio is drained).
+- Probes P27-P41 (`timing/README.md`); goldens in `RC_GOLDENS/atari-ste/timing/` and `atari-megast/timing/` (`capture_hatari_mem.py --machine ste|megast`).
+  `timing/scan_p31.py` and `scan_p32.py` find which addresses of an area answer. Fuzz: `cargo +nightly fuzz run <target>` needs the MSVC ASan
+  runtime directory on PATH on Windows; corpora, artifacts and `fuzz/target` are git-ignored.
+- Tests: `tests/blitter.rs`, `blitter_timing.rs`, `ste_sound.rs`, `ste_ports.rs`, `rtc.rs`, `watch.rs`, `phase4_models.rs`, and the Hatari comparisons
+  in `timing_probes.rs` (p27-p41; the DMA counter and P34 loops compare within a tolerance, their manifest rows are `known-gap`).
