@@ -11,7 +11,7 @@ fn screen() -> (Shifter, Vec<u8>) {
     s.write(0xFF_8242, true, 0x777);
     s.begin_frame();
     let mut ram = vec![0u8; 0x10000];
-    for chunk in ram[..32000].chunks_exact_mut(8) {
+    for chunk in ram[..32000].as_chunks_mut::<8>().0 {
         chunk[0] = 0xFF;
         chunk[1] = 0xFF;
     }
