@@ -101,6 +101,8 @@ pub struct StBus {
     pub(crate) frame: Vec<u8>,
     /// `--accuracy accurate`: time passes with every bus cycle.
     pub(crate) accurate: bool,
+    /// `borders = on`: the picture is drawn with its borders (`st_shifter::OVERSCAN_WIDTH` x `OVERSCAN_HEIGHT`).
+    pub(crate) borders: bool,
     /// The GLUE's interrupt latches, cleared by their acknowledge cycles.
     hbl_pending: bool,
     vbl_pending: bool,
@@ -229,6 +231,7 @@ impl StBus {
             mfp_event: 0,
             frame: vec![0; (st_shifter::WIDTH * st_shifter::HEIGHT * 3) as usize],
             accurate: cfg.accuracy == crate::config::Accuracy::Accurate,
+            borders: false,
             hbl_pending: false,
             vbl_pending: false,
             mfp,

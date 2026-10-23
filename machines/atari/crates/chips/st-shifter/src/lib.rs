@@ -9,7 +9,9 @@
 #![forbid(unsafe_code)]
 
 mod fetch;
+mod overscan;
 pub use fetch::{Fetch, LEFT_BYTES, LINE_BYTES, RIGHT_BYTES};
+pub use overscan::{OVERSCAN_FIRST_LINE, OVERSCAN_HEIGHT, OVERSCAN_WIDTH};
 
 use std::collections::VecDeque;
 

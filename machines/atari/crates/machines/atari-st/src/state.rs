@@ -122,6 +122,8 @@ fn accuracy_name(code: u8) -> &'static str {
     match code {
         0 => "fast",
         1 => "accurate",
+        2 => "fast with borders",
+        3 => "accurate with borders",
         _ => "unknown",
     }
 }

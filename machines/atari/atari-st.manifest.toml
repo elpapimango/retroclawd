@@ -244,6 +244,18 @@ golden = "atari-st/S12-palette-strips.png"
 golden_sha256 = "647134a3830d0468e1fa54e89efa7b24bd31eec7fadc29738d9c7f38cc9fee00"
 compare = { mode = "similarity", max_mad = 1.0, normalize = true, reason = "another emulator's picture: its colour shades differ from ours; the strips themselves start and end on the same pixels on all 122 rows" }
 
+# S13 (probe P07 with the borders): Hatari 2.6.1 with --borders on draws the 832x552 canvas; ours with borders=on. Same strips as S12, now
+# also in the border colour; the 640x400 picture sits at (96, 58) in both. Similarity for the grey levels only.
+[[scenario]]
+id = "S13"
+kind = "screen"
+frames = 700
+args = ["--accuracy", "accurate", "--borders", "on"]
+files = { disk = "atari/software/scenarios/timing/p07.st" }
+golden = "atari-st/S13-borders.png"
+golden_sha256 = "f78ae0d58627ae93fc7f23ed34448301898fd1570116204a96fed8851cc1b951"
+compare = { mode = "similarity", max_mad = 1.0, normalize = true, reason = "another emulator's picture: its colour shades differ from ours; the picture and the border sit on the same pixels" }
+
 # P09 (timing/gen_p09.py): a high-then-low resolution write pair swept along line 100 (4 clocks a frame); the golden is the video address
 # counter at the entry of line 102 in Hatari. The model reproduces the frames where the right border (+44 bytes) and the left border (+26)
 # open (tests/timing_probes.rs, p09_and_p10_open_the_borders_on_the_frames_hatari_does); Hatari also cuts lines short and loses whole lines

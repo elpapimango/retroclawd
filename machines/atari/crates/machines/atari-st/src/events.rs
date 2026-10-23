@@ -207,7 +207,14 @@ impl StBus {
     pub(crate) fn render(&mut self) {
         let mut frame = std::mem::take(&mut self.frame);
         let first = scheduler::first_display_line(self.geometry.lines);
-        if self.accurate {
+        if self.accurate && self.borders {
+            self.shifter.render_overscan(
+                self.monitor,
+                crate::waits::PIXEL_START,
+                &|a| self.peek(a),
+                &mut frame,
+            );
+        } else if self.accurate {
             self.shifter.render_exact(
                 self.monitor,
                 first,

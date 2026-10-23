@@ -314,6 +314,12 @@ fn machine_profile() -> MachineProfile {
                 "Emulation granularity: fast batches whole instructions, accurate follows every bus cycle",
             ),
             option(
+                "borders",
+                text_choices(&["off", "on"]),
+                text("off"),
+                "Draw the picture with its borders (832x552; needs accuracy = accurate)",
+            ),
+            option(
                 "trace_file",
                 MachineOptionKind::Text,
                 None,
@@ -623,6 +629,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let mut ram = RamSize::M1;
     let mut accuracy = Accuracy::Fast;
     let mut monitor = Monitor::Colour;
+    let mut borders = false;
     let mut model = "stfm".to_string();
     let mut trace_file = None;
     let mut trace_limit = DEFAULT_TRACE_LIMIT;
@@ -642,6 +649,13 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
                     "fast" => Accuracy::Fast,
                     "accurate" => Accuracy::Accurate,
                     other => return Err(format!("option \"accuracy\": unknown value \"{other}\"")),
+                };
+            }
+            ("borders", DebugValue::Text(v)) => {
+                borders = match v.as_str() {
+                    "off" => false,
+                    "on" => true,
+                    other => return Err(format!("option \"borders\": unknown value \"{other}\"")),
                 };
             }
             ("model", DebugValue::Text(v)) => model = v.clone(),
@@ -696,6 +710,9 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         },
     })?;
     let mut machine = machine;
+    machine
+        .set_borders(borders)
+        .map_err(|e| format!("option \"borders\": {e}"))?;
     lines.connect(&mut machine)?;
     for id in 0..8u8 {
         if let Some(image) = blob(&req.roms, &format!("acsi{id}")) {

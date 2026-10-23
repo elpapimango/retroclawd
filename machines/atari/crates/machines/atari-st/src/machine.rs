@@ -281,10 +281,32 @@ impl AtariSt {
         std::mem::take(&mut self.state_warnings)
     }
 
+    /// The accuracy in the state header: bit 0 accurate, bit 1 borders (a state is only loaded by the same canvas).
     fn accuracy_code(&self) -> u8 {
-        match self.accuracy {
+        let accuracy = match self.accuracy {
             Accuracy::Fast => 0,
             Accuracy::Accurate => 1,
+        };
+        accuracy | if self.bus.borders { 2 } else { 0 }
+    }
+
+    /// Draws the picture with its borders (`borders = on`), which needs `Accuracy::Accurate`.
+    pub fn set_borders(&mut self, on: bool) -> Result<(), String> {
+        if on && self.accuracy != Accuracy::Accurate {
+            return Err("borders need accuracy = accurate".to_string());
+        }
+        self.bus.borders = on;
+        let (w, h) = self.canvas();
+        self.bus.frame = vec![0; (w * h * 3) as usize];
+        Ok(())
+    }
+
+    /// The size of the picture `render_frame` returns.
+    pub fn canvas(&self) -> (u32, u32) {
+        if self.bus.borders {
+            (st_shifter::OVERSCAN_WIDTH, st_shifter::OVERSCAN_HEIGHT)
+        } else {
+            (st_shifter::WIDTH, st_shifter::HEIGHT)
         }
     }
 
@@ -584,11 +606,8 @@ impl Machine for AtariSt {
     }
 
     fn render_frame(&self) -> Option<(u32, u32, Vec<u8>)> {
-        Some((
-            st_shifter::WIDTH,
-            st_shifter::HEIGHT,
-            self.bus.frame.clone(),
-        ))
+        let (w, h) = self.canvas();
+        Some((w, h, self.bus.frame.clone()))
     }
 
     fn read_memory(&self, addr: Addr) -> u8 {
