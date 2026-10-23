@@ -83,13 +83,14 @@ impl Diag {
         };
         let direction = if stop.write { "write" } else { "read" };
         let ms = stop.at_cycle as f64 * 1000.0 / clock_hz.max(1) as f64;
-        let value = if stop.write {
+        let value = if stop.write || stop.reason == StopReason::Watch {
             format!(" = ${:X}", stop.value)
         } else {
             String::new()
         };
         let why = match stop.reason {
             StopReason::NotEmulated(d) => format!("{} is not emulated yet", d.name()),
+            StopReason::Watch => format!("watchpoint: {size} {direction} of ${:06X}", stop.addr),
             StopReason::NoFact => format!(
                 "no hardware fact for ${:06X} ({size} {direction})",
                 stop.addr

@@ -60,6 +60,8 @@ pub enum StopReason {
     NotEmulated(Device),
     /// No hardware fact covers the access (see `io.rs`).
     NoFact,
+    /// The CPU touched a watched range (the plugin option `watch`).
+    Watch,
 }
 
 /// The first I/O access the machine cannot answer: the machine stops there (spec section 16).
@@ -136,6 +138,8 @@ pub struct StBus {
     /// An ACIA register was accessed: its service events may have moved.
     pub(crate) acia_dirty: bool,
     pub(crate) monitor: Monitor,
+    /// The memory watchpoints (configuration, not state).
+    watch: crate::watch::WatchList,
     /// The CPU clock in Hz (the DMA sound's frames are timed against it).
     cpu_hz: u64,
     clock: MfpClock,
@@ -277,6 +281,7 @@ impl StBus {
             acia_dirty: false,
             psg: Psg::new(cpu_hz),
             monitor: cfg.monitor,
+            watch: crate::watch::WatchList::default(),
             cpu_hz,
             clock: MfpClock::new(scheduler::crystal_hz(cfg.region)),
             mfp_ticks: 0,
@@ -1139,13 +1144,12 @@ impl blitter::BlitBus for BlitPort<'_> {
 
 impl M68kBus for StBus {
     fn read(&mut self, addr: u32, size: Size, fc: FunctionCode) -> Result<u32, BusFault> {
-        if !self.accurate {
-            return self.read_cycle(addr, size, fc);
+        let result = self.read_access(addr, size, fc);
+        if !self.watch.is_empty()
+            && let Ok(v) = result
+        {
+            self.watch_check(addr, size, false, v, fc);
         }
-        let wait = self.wait_clocks(addr, size, false);
-        let start = self.begin_cycle(wait, false);
-        let result = self.read_cycle(addr, size, fc);
-        self.end_cycle(start, 0);
         result
     }
 
@@ -1156,13 +1160,10 @@ impl M68kBus for StBus {
         value: u32,
         fc: FunctionCode,
     ) -> Result<(), BusFault> {
-        if !self.accurate {
-            return self.write_cycle(addr, size, value, fc);
+        let result = self.write_access(addr, size, value, fc);
+        if !self.watch.is_empty() && result.is_ok() {
+            self.watch_check(addr, size, true, value, fc);
         }
-        let wait = self.wait_clocks(addr, size, true);
-        let start = self.begin_cycle(wait, true);
-        let result = self.write_cycle(addr, size, value, fc);
-        self.end_cycle(start, 0);
         result
     }
 
@@ -1193,6 +1194,59 @@ impl M68kBus for StBus {
 }
 
 impl StBus {
+    /// Sets the memory watchpoints.
+    pub fn set_watch(&mut self, list: crate::watch::WatchList) {
+        self.watch = list;
+    }
+
+    /// A watched access ended: the machine stops with it as its report (the first stop stays).
+    fn watch_check(&mut self, addr: u32, size: Size, write: bool, value: u32, fc: FunctionCode) {
+        let bytes = if size == Size::Word { 2 } else { 1 };
+        // Instruction fetches (function codes 2 and 6) are not data accesses: a watch on code does not trip on running it.
+        if fc.0 & 3 == 2 {
+            return;
+        }
+        if self.stop.is_none() && self.watch.hit(addr, bytes, write).is_some() {
+            self.stop = Some(IoStop {
+                reason: StopReason::Watch,
+                addr: addr & 0xFF_FFFF,
+                size,
+                write,
+                value,
+                fc,
+                at_cycle: self.now,
+            });
+        }
+    }
+
+    fn read_access(&mut self, addr: u32, size: Size, fc: FunctionCode) -> Result<u32, BusFault> {
+        if !self.accurate {
+            return self.read_cycle(addr, size, fc);
+        }
+        let wait = self.wait_clocks(addr, size, false);
+        let start = self.begin_cycle(wait, false);
+        let result = self.read_cycle(addr, size, fc);
+        self.end_cycle(start, 0);
+        result
+    }
+
+    fn write_access(
+        &mut self,
+        addr: u32,
+        size: Size,
+        value: u32,
+        fc: FunctionCode,
+    ) -> Result<(), BusFault> {
+        if !self.accurate {
+            return self.write_cycle(addr, size, value, fc);
+        }
+        let wait = self.wait_clocks(addr, size, true);
+        let start = self.begin_cycle(wait, true);
+        let result = self.write_cycle(addr, size, value, fc);
+        self.end_cycle(start, 0);
+        result
+    }
+
     fn read_cycle(&mut self, addr: u32, size: Size, fc: FunctionCode) -> Result<u32, BusFault> {
         if Self::user_refused(addr, fc) {
             return Err(BusFault);

@@ -438,3 +438,11 @@ P34 for (HOP, OP) = (0, 0), (2, 3), (3, 1), (1, 5): 1, 2, 3 and 2 nops of 4 cloc
 | GPIP line 3 | high while the Blitter is busy; the falling edge at the end is the "blitter done" interrupt (channel 3 of the B registers) | `[O]` | P34 (`$FFFA01` reads `$B9` while busy, `$B1` after) |
 | Bounds | a hogging blit runs in bursts of at most a frame of clocks with a CPU slice between them, so a hostile count costs bounded host time a frame; words past the address space stop the machine | | the choice |
 | `fast` mode | the same turns, taken between instructions (the CPU is charged a hogging blit with the instruction that starts it) | | the choice |
+
+### Memory watchpoints (Phase 4, a debugging aid: no hardware fact)
+
+The plugin option `watch` (`$1000-$10FF:w,$400:rw`, up to 16 comma separated entries, `ADDR` or `ADDR-ADDR` inclusive, `r`, `w`
+or `rw`) stops the machine after the first *data* access that touches a watched byte (a word access touches two); instruction
+fetches (function codes 2 and 6) and the Blitter and DMA do not trip it. The stop is the machine's ordinary one (`StopReason::Watch`):
+the access is made, the report names the access, address, value, PC and cycle. The list is configuration, not state: a loaded
+state keeps the list of the machine it is loaded into. With no watch the bus checks one flag.

@@ -346,6 +346,12 @@ fn machine_profile_for(chipset: Chipset) -> MachineProfile {
                 "Write the PC of every instruction to this file",
             ),
             option(
+                "watch",
+                MachineOptionKind::Text,
+                None,
+                "Stop the machine at the first access to a watched range: comma separated ADDR or ADDR-ADDR (inclusive, $hex, 0xhex or decimal), each with an optional :r, :w or :rw (default), at most 16, e.g. $1000-$10FF:w,$400",
+            ),
+            option(
                 "drives",
                 MachineOptionKind::Int {
                     min: Some(1),
@@ -704,6 +710,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let mut write_protect = false;
     let mut lines = LineOptions::default();
     let mut rtc_time = None;
+    let mut watch = None;
     let mut rtc_running = true;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
@@ -734,6 +741,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
                 };
             }
             ("trace_file", DebugValue::Text(v)) => trace_file = Some(PathBuf::from(v)),
+            ("watch", DebugValue::Text(v)) => watch = Some(v.clone()),
             ("trace_limit", DebugValue::U64(v)) => trace_limit = *v,
             ("drives", DebugValue::U64(v @ 1..=2)) => drives = *v as u8,
             ("write_protect", DebugValue::Bool(v)) => write_protect = *v,
@@ -806,6 +814,11 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     }
     if chipset.has_rtc() {
         machine.set_rtc(rtc_time.unwrap_or(0), rtc_running)?;
+    }
+    if let Some(text) = watch {
+        machine
+            .set_watch(&text)
+            .map_err(|e| format!("option \"watch\": {e}"))?;
     }
     machine.set_drives(drives);
     machine.set_version_tag(std::str::from_utf8(PLUGIN_VERSION).unwrap_or("dev"));
@@ -2033,6 +2046,19 @@ mod tests {
         let err = command(id, MachineCommand::LoadState { bytes: bad }).unwrap_err();
         assert!(err.contains("RCST"), "{err}");
         state().lock().unwrap().instances.remove(&id);
+    }
+
+    #[test]
+    fn every_machine_has_the_watch_option() {
+        for chipset in [Chipset::St, Chipset::MegaSt, Chipset::Ste] {
+            assert!(
+                machine_profile_for(chipset)
+                    .options
+                    .iter()
+                    .any(|o| o.key == "watch"),
+                "{chipset:?}"
+            );
+        }
     }
 
     #[test]

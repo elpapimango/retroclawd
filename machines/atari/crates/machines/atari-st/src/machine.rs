@@ -597,6 +597,13 @@ impl AtariSt {
         Ok(())
     }
 
+    /// Sets the memory watchpoints from `text` (`$1000-$10FF:w,$400:rw`, up to 16); the machine stops at the first access
+    /// to one, with the access in its report.
+    pub fn set_watch(&mut self, text: &str) -> Result<(), String> {
+        self.bus.set_watch(crate::watch::WatchList::parse(text)?);
+        Ok(())
+    }
+
     /// Whether a blit is running (Mega ST and STE).
     pub fn blitter_busy(&self) -> bool {
         self.bus.ste.blitter.busy()
