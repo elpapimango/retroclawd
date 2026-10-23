@@ -41,8 +41,12 @@ pub const ROM_BASE: u32 = 0xFC_0000;
 /// TOS 1.0x and the EmuTOS 192 KB images.
 pub const ROM_SIZE: usize = 196_608;
 const RAM_DECODE_END: u32 = 0x40_0000;
-/// Destination words one run of the Blitter moves before the machine goes on (a longer blit continues at each VBL).
-const BLIT_WORDS_PER_BURST: u32 = 1 << 20;
+/// [O] P34 (Hatari 2.6.1): a Blitter that does not hog the bus takes the bus for 64 clocks of words and 2 clocks to hand it over,
+/// then the CPU runs 96 clocks: the CPU keeps 96/162 of the time (59.3%; Hatari's loops: 59.2%).
+const BLIT_BURST_CLOCKS: u32 = 64;
+const BLIT_CPU_SLICE: u64 = 96;
+/// A blit that hogs the bus runs in bursts of at most a frame, with a CPU slice between them (hostile counts).
+const BLIT_HOG_BURST_CLOCKS: u32 = 160_256;
 const CARTRIDGE: std::ops::Range<u32> = 0xFA_0000..0xFC_0000;
 /// [H] *Internals* p.96: "Up to 128K in the address space $FA0000 to $FBFFFF can be addressed."
 pub const CARTRIDGE_BYTES: usize = 128 * 1024;
@@ -382,17 +386,74 @@ impl StBus {
 
     pub fn raise_vbl(&mut self) {
         self.vbl_pending = true;
-        // A blit longer than one burst goes on (Task 57 gives it its real speed).
-        if self.ste.blitter.busy() {
-            self.run_blitter(BLIT_WORDS_PER_BURST);
+    }
+
+    /// The Blitter was started: a blit that hogs the bus runs a burst now and the CPU waits for it; one that shares the bus
+    /// takes its turns as the CPU's clocks pass (`blit_tick`, after every bus cycle in `accurate` mode, after every
+    /// instruction in `fast`).
+    fn start_blit(&mut self) {
+        self.ste.blit_timing = crate::ste::BlitTiming {
+            credit: 0,
+            cpu: 0,
+            mark: self.now + self.stall,
+        };
+        self.update_gpip3();
+        if self.ste.blitter.hog() {
+            self.blit_burst();
         }
     }
 
-    /// Runs up to `words` destination words of the busy Blitter over the machine's memory.
-    fn run_blitter(&mut self, words: u32) {
+    /// One burst of the busy Blitter: words are run against a credit of bus clocks and the CPU is stalled for what they cost.
+    fn blit_burst(&mut self) {
+        let hog = self.ste.blitter.hog();
+        let wc = self.ste.blitter.word_clocks();
+        let budget = if hog {
+            BLIT_HOG_BURST_CLOCKS
+        } else {
+            BLIT_BURST_CLOCKS
+        };
+        let timing = &mut self.ste.blit_timing;
+        timing.credit = timing.credit.saturating_add(budget);
+        let words = timing.credit / wc;
         let mut blitter = std::mem::take(&mut self.ste.blitter);
-        blitter.run(&mut BlitPort(self), words);
+        let moved = blitter.run(&mut BlitPort(self), words);
+        let busy = blitter.busy();
         self.ste.blitter = blitter;
+        let work = if busy {
+            self.ste.blit_timing.credit -= moved * wc;
+            budget
+        } else {
+            self.ste.blit_timing.credit = 0;
+            moved * wc
+        };
+        // [O] P34: handing the bus over costs 2 clocks in 64.
+        let spent = u64::from(work) + if hog { 0 } else { u64::from(work / 32) };
+        self.stall += spent;
+        self.update_gpip3();
+    }
+
+    /// The CPU's clocks pass; a Blitter that shares the bus takes its burst each time the CPU has had its slice (a hogging
+    /// one that outlasts its burst of a frame takes the next the same way).
+    pub(crate) fn blit_tick(&mut self) {
+        if !self.ste.blitter.busy() {
+            return;
+        }
+        let timing = &mut self.ste.blit_timing;
+        timing.cpu += self.now.saturating_sub(timing.mark);
+        while self.ste.blit_timing.cpu >= BLIT_CPU_SLICE && self.ste.blitter.busy() {
+            self.ste.blit_timing.cpu -= BLIT_CPU_SLICE;
+            self.blit_burst();
+        }
+        self.ste.blit_timing.mark = self.now + self.stall;
+    }
+
+    /// [O] P34: GPIP line 3 is high while the Blitter is busy; its falling edge is the end of the blit (the "blitter done"
+    /// interrupt of channel 3 of the B registers).
+    fn update_gpip3(&mut self) {
+        let busy = self.ste.blitter.busy();
+        self.catch_up_mfp(self.now);
+        self.mfp.set_input(3, busy);
+        self.mfp_dirty = true;
     }
 
     /// The Blitter reached memory that has no fact (the I/O area, nothing fitted): the machine stops, as for the DMA.
@@ -978,7 +1039,7 @@ impl StBus {
                 let off = (addr - 0xFF_8A00) as usize;
                 let v = if write {
                     if self.ste.blitter.write(off, word, value as u16) {
-                        self.run_blitter(BLIT_WORDS_PER_BURST);
+                        self.start_blit();
                     }
                     value
                 } else {

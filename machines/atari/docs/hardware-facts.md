@@ -370,7 +370,6 @@ word of those dumps (`tests/timing_probes.rs`).
 | Start | a write of the control register with bit 7 set starts the blit; a write while busy changes nothing | `[O]`/`[H?]` | the busy write is not probed |
 | Address registers | bit 0 is not stored | `[H?]` | |
 | Memory the Blitter cannot reach | the I/O area and nonexistent memory stop the machine (no fact), as for the DMA; writes to ROM and the cartridge are ignored | `[H?]` | |
-| Timing | not yet: a blit runs at once when started (a very long one in bursts of 2^20 words, one per VBL) | | Task 57 |
 
 ### STE DMA sound and the volume control (Phase 4)
 
@@ -423,3 +422,19 @@ does not show is `[H?]`.
 | Writes to the time | a digit write takes effect when it makes a valid field, else it is ignored; the weekday follows the date | `[H?]` | Hatari ignores all time writes |
 | 12 hour mode | the hour shows 1-12 with bit 1 of the tens digit set for PM | `[H?]` | |
 | Range | 1980 to 2079 | `[H]` | the year register is two digits since 1980 |
+
+### Blitter on the bus (Phase 4)
+
+`[O]` Hatari 2.6.1 `--machine ste`, probe P34 (a counted loop's iterations per frame while blits of known size run, six blits;
+control byte and GPIP at every VBL). The count of nops a word takes is `[H]` *Internals* ("Blitter Execution Times"), checked by
+P34 for (HOP, OP) = (0, 0), (2, 3), (3, 1), (1, 5): 1, 2, 3 and 2 nops of 4 clocks.
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| Clocks a word costs | 4 times the nops of the (OP, HOP) table: 1 for OP 0 and 15 and for OP 3 and 12 with HOP 0-1; 2 for OP 5 and 10, for HOP 0-1 with the others, and for OP 3 and 12 with HOP 2-3; 3 for the other operations with HOP 2-3 | `[H]`/`[O]` | Internals; P34 |
+| HOG set | the CPU is stopped for the blit's words (20000 words took 80000, 160000 or 240000 clocks); nothing else runs, interrupts wait | `[O]` | P34 (frames of 6669 iterations lost to within the setup instructions) |
+| HOG clear | the Blitter takes the bus for 64 clocks of words and 2 clocks to hand it over, then the CPU runs 96 clocks: the CPU keeps 59.2 % (Hatari's loop counts 3942-3953 of 6669 a frame; ours 3947-3949); a blit of 100000 words at 8 clocks took 12.6 frames, as ours | `[O]` | P34 |
+| Busy and the line number while it runs | the control byte reads busy and the line number as it advances, the same value at every VBL as ours | `[O]` | P34 (all 105 records equal) |
+| GPIP line 3 | high while the Blitter is busy; the falling edge at the end is the "blitter done" interrupt (channel 3 of the B registers) | `[O]` | P34 (`$FFFA01` reads `$B9` while busy, `$B1` after) |
+| Bounds | a hogging blit runs in bursts of at most a frame of clocks with a CPU slice between them, so a hostile count costs bounded host time a frame; words past the address space stop the machine | | the choice |
+| `fast` mode | the same turns, taken between instructions (the CPU is charged a hogging blit with the instruction that starts it) | | the choice |

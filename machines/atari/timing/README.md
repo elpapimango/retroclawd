@@ -44,6 +44,7 @@ manifest's comparison, the tests next to it check the property each probe is abo
 | P31 `gen_p31.py` (`scan_p31.py` finds the answering addresses) | the enhanced ports at rest and after writes | 4 + 4 x 22, 600 | `p31_*` |
 | P32 `gen_p32.py` (`scan_p32.py` scans the area; Mega ST, EmuTOS 192K, goldens in `atari-megast/timing/`) | the clock registers in both banks and the mode register | 4 + 2 x 48 + 16, 600 | `p32_*` (the registers Hatari does not take from the host) |
 | P33 `gen_p33.py` | the Blitter for 174 settings: HOP x OP, end masks, skew with FXSR/NFSR, backwards, increments, halftone line, smudge, overlap; a checksum of the area and the registers after | 4 + 174 x 20, 1500 | `p33_*` |
+| P34 `gen_p34.py` | a counted loop's iterations per frame and the Blitter's control byte and GPIP while six blits run (HOG set and clear) | 4 + 105 x 8, 700 | `p34_*` (loops within 0.2 %, busy frames, control byte) |
 | P36 `gen_p36.py` | what an access to each STE register costs | 208, 1000 | `p36_*` |
 | P37 `gen_p37.py` | the Blitter's skew with FXSR and NFSR, raw destination words | 4 + 64 x 80, 1500 | `p37_*` |
 | P38 `gen_p38.py` | end masks together with the skew flags, raw | 4 + 27 x 80, 1500 | `p38_*` |

@@ -1642,3 +1642,73 @@ fn p32_the_clock_registers_that_do_not_follow_the_host_read_back_as_in_hatari() 
         "the mode register's read-back"
     );
 }
+
+/// P34's records: (iterations, control byte, GPIP) for frames 2 to 106.
+fn p34_records(b: &[u8]) -> Vec<(i64, u8, u8)> {
+    (0..105)
+        .map(|i| {
+            let o = 4 + 8 * i;
+            (
+                i64::from(u32::from_be_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])),
+                b[o + 4],
+                b[o + 5],
+            )
+        })
+        .collect()
+}
+
+fn p34_check(accuracy: Accuracy) {
+    let (Some(ours), Some(theirs)) = (run_probe_ste("p34", 700, 844, accuracy), golden_ste("p34"))
+    else {
+        return;
+    };
+    let (o, t) = (p34_records(&ours), p34_records(&theirs));
+    if std::env::var_os("RC_P34_REPORT").is_some() {
+        for (i, (a, b)) in o.iter().zip(&t).enumerate() {
+            eprintln!(
+                "frame {:3}: ours {:5} {:02x} {:02x}  theirs {:5} {:02x} {:02x}",
+                i + 2,
+                a.0,
+                a.1,
+                a.2,
+                b.0,
+                b.1,
+                b.2
+            );
+        }
+    }
+    // Each experiment's window (16 frames from its start): the clocks the CPU lost against its own baseline (frames 3 and 4),
+    // to 1.5 %, and in `accurate` mode the frames the busy bit is set in, to one. (`fast` counts an instruction's clocks
+    // without the bus alignment, so its loop is faster, and it charges a blit in one lump at its start: no busy frames.)
+    let baseline = |r: &[(i64, u8, u8)]| r[1].0;
+    for (e, start) in [4usize, 20, 36, 52, 68, 84].into_iter().enumerate() {
+        let window = |r: &[(i64, u8, u8)]| {
+            let base = baseline(r);
+            let frames = &r[start - 1..start + 15];
+            let lost: i64 = frames.iter().map(|f| base - f.0).sum();
+            let busy = frames.iter().filter(|f| f.1 & 0x80 != 0).count() as i64;
+            (lost * 160_256 / base, busy)
+        };
+        let ((lo, bo), (lt, bt)) = (window(&o), window(&t));
+        assert!(
+            (lo - lt).abs() * 200 <= lt.abs() * 3 + 20_000,
+            "experiment {e}: clocks lost {lo} against Hatari's {lt}"
+        );
+        if accuracy == Accuracy::Accurate {
+            assert!(
+                (bo - bt).abs() <= 1,
+                "experiment {e}: busy in {bo} frames against Hatari's {bt}"
+            );
+        }
+    }
+}
+
+#[test]
+fn p34_a_running_blitter_costs_the_cpu_what_it_does_in_hatari_accurate() {
+    p34_check(Accuracy::Accurate);
+}
+
+#[test]
+fn p34_a_running_blitter_costs_the_cpu_what_it_does_in_hatari_fast() {
+    p34_check(Accuracy::Fast);
+}

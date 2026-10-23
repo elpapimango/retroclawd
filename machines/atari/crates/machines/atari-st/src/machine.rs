@@ -101,8 +101,15 @@ impl AtariSt {
             self.cpu.set_ipl(self.bus.ipl());
             (self.bus.now - start) as u32
         } else {
+            // `fast`: a Blitter takes its turns between instructions, and what a hogging blit cost is charged with the
+            // instruction that started it.
             self.advance(clocks);
-            clocks
+            self.bus.blit_tick();
+            let extra = u32::try_from(std::mem::take(&mut self.bus.stall)).unwrap_or(u32::MAX);
+            if extra > 0 {
+                self.advance(extra);
+            }
+            clocks.saturating_add(extra)
         }
     }
 
@@ -588,6 +595,11 @@ impl AtariSt {
         let now = self.bus.now;
         self.bus.ste.rtc.set_time(secs, now, running);
         Ok(())
+    }
+
+    /// Whether a blit is running (Mega ST and STE).
+    pub fn blitter_busy(&self) -> bool {
+        self.bus.ste.blitter.busy()
     }
 
     /// A button of an STE enhanced-port pad (`pad` 0 or 1) went down or up.

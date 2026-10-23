@@ -141,6 +141,31 @@ impl Blitter {
         }
     }
 
+    /// CPU clocks the bus takes for one destination word of the blit as programmed: the number of NOPs a word takes
+    /// ([H] *Internals*, "Blitter Execution Times", rows OP, columns HOP; [O] P34 agrees for four of them) times four.
+    pub fn word_clocks(&self) -> u32 {
+        // Rows are the logical operation, columns the halftone operation.
+        const NOPS: [[u8; 4]; 16] = [
+            [1, 1, 1, 1],
+            [2, 2, 3, 3],
+            [2, 2, 3, 3],
+            [1, 1, 2, 2],
+            [2, 2, 3, 3],
+            [2, 2, 2, 2],
+            [2, 2, 3, 3],
+            [2, 2, 3, 3],
+            [2, 2, 3, 3],
+            [2, 2, 3, 3],
+            [2, 2, 2, 2],
+            [2, 2, 3, 3],
+            [1, 1, 2, 2],
+            [2, 2, 3, 3],
+            [2, 2, 3, 3],
+            [1, 1, 1, 1],
+        ];
+        4 * u32::from(NOPS[usize::from(self.op & 15)][usize::from(self.hop & 3)])
+    }
+
     /// Whether the blit that is busy runs with HOG set (the CPU gets no bus cycles until it ends).
     pub fn hog(&self) -> bool {
         self.control & 0x40 != 0

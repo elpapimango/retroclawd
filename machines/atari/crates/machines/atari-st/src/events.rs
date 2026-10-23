@@ -113,6 +113,7 @@ impl StBus {
         self.flush_dirty(self.now);
         self.now = start + 4 + extra as u64;
         self.run_events(self.now);
+        self.blit_tick();
         self.now += std::mem::take(&mut self.stall);
     }
 
@@ -121,6 +122,7 @@ impl StBus {
         self.flush_dirty(self.now);
         self.now += clocks as u64;
         self.run_events(self.now);
+        self.blit_tick();
         self.now += std::mem::take(&mut self.stall);
     }
 

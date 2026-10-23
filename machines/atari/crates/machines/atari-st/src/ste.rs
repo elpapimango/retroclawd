@@ -7,6 +7,15 @@ use serde::{Deserialize, Serialize};
 pub const MICROWIRE_BIT_CLOCKS: u64 = 8;
 pub const MICROWIRE_START_DELAY: u64 = 8;
 
+/// The Blitter's turn-taking: clock credit not yet spent on a word, CPU clocks run since its last burst, and the clock the
+/// count began at.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlitTiming {
+    pub credit: u32,
+    pub cpu: u64,
+    pub mark: u64,
+}
+
 /// A button of an STE enhanced-port pad; the value is its bit in `SteRegs::pads`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PadButton {
@@ -45,6 +54,8 @@ pub struct SteRegs {
     /// The two enhanced-port pads as buttons held (see `PadButton`).
     pub pads: [u16; 2],
     pub blitter: blitter::Blitter,
+    /// Where a Blitter that shares the bus is in its turn-taking with the CPU.
+    pub blit_timing: BlitTiming,
     /// The DMA sound and the volume control behind the Microwire interface.
     pub dma: crate::dmasound::DmaSound,
     pub rtc: crate::rtc::Rtc,
@@ -57,6 +68,7 @@ impl Default for SteRegs {
             microwire_start: None,
             pads: [0; 2],
             blitter: blitter::Blitter::new(),
+            blit_timing: BlitTiming::default(),
             dma: crate::dmasound::DmaSound::default(),
             rtc: crate::rtc::Rtc::default(),
         }
