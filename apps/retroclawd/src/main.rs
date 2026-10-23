@@ -556,6 +556,11 @@ struct CommonArgs {
     )]
     disk_save: Option<String>,
 
+    /// Write the hard disk behind ACSI target N (the `--acsiN` image), with everything the guest wrote to it, to FILE when the
+    /// session ends: `--acsi-save 0=hd-copy.img`, repeatable. Only written if the guest modified the disk.
+    #[arg(long, value_name = "N=FILE")]
+    acsi_save: Vec<String>,
+
     /// Write the modified disk image back over the `--disk` file itself
     /// when the session ends (atomically: temp file + rename). Without
     /// this or `--disk-save`, guest disk writes are discarded, with a
@@ -2599,6 +2604,18 @@ fn main() -> ExitCode {
         );
     }
 
+    match parse_acsi_save(&args.acsi_save) {
+        Ok(saves) => {
+            for (target, path) in saves {
+                machine.set_acsi_save(target, path);
+            }
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(2);
+        }
+    }
+
     if let Some(path) = &args.cartridge {
         let bytes = match inputs::load(path) {
             Ok(loaded) => loaded.bytes.clone(),
@@ -2664,11 +2681,11 @@ fn main() -> ExitCode {
         }
     }
 
-    if let Some((name, bytes)) = &program_media {
-        if let Err(e) = machine.attach_program_file(name, bytes) {
-            eprintln!("{e}");
-            return ExitCode::FAILURE;
-        }
+    if let Some((name, bytes)) = &program_media
+        && let Err(e) = machine.attach_program_file(name, bytes)
+    {
+        eprintln!("{e}");
+        return ExitCode::FAILURE;
     }
 
     if let Some((org, program)) = program {
@@ -2884,6 +2901,28 @@ fn disk_writeback_needs_a_disk(args: &CommonArgs) -> Result<(), String> {
 }
 
 /// Where a modified `--disk` image should be written when the session ends:
+/// `--acsi-save N=FILE` (repeatable): the ACSI target (0 to 7) and where its modified hard disk goes.
+fn parse_acsi_save(specs: &[String]) -> Result<Vec<(u8, std::path::PathBuf)>, String> {
+    specs
+        .iter()
+        .map(|spec| {
+            let (n, file) = spec
+                .split_once('=')
+                .ok_or_else(|| format!("--acsi-save {spec:?}: expected N=FILE, N being 0 to 7"))?;
+            let target: u8 = n
+                .trim()
+                .parse()
+                .ok()
+                .filter(|t| *t < 8)
+                .ok_or_else(|| format!("--acsi-save {spec:?}: the target must be 0 to 7"))?;
+            if file.is_empty() {
+                return Err(format!("--acsi-save {spec:?}: no file after ="));
+            }
+            Ok((target, std::path::PathBuf::from(file)))
+        })
+        .collect()
+}
+
 /// `--disk-save`'s path, or the `--disk` file itself under
 /// `--disk-writeback`; `None` (discard, with a warning) otherwise.
 fn disk_save_target(args: &CommonArgs, disk_path: &str) -> Option<std::path::PathBuf> {
@@ -3568,6 +3607,16 @@ mod tests {
     fn debug_log_shorthand() {
         debug_log_shorthand_maps_output_then_level();
         windows_drive_letters_stay_attached_to_their_path();
+    }
+
+    #[test]
+    fn acsi_save_takes_a_target_and_a_file() {
+        let ok = parse_acsi_save(&["0=a.img".to_string(), "7=dir/b.img".to_string()]).unwrap();
+        assert_eq!(ok.len(), 2);
+        assert_eq!(ok[1].0, 7);
+        for bad in ["8=a.img", "x=a.img", "a.img", "0=", "-1=a"] {
+            assert!(parse_acsi_save(&[bad.to_string()]).is_err(), "{bad}");
+        }
     }
 
     #[test]

@@ -136,6 +136,8 @@ pub(crate) struct HostedMachine {
     /// (end of a headless run, or when the GUI's emulation thread ends).
     /// Never cloned: a run-ahead clone must not write the user's file.
     disk_exit: [Option<DiskExitPolicy>; 2],
+    /// Where each ACSI hard disk (target, file) goes at exit (`--acsi-save`); never cloned either.
+    acsi_exit: Vec<(u8, PathBuf)>,
     /// Like `disk_exit`, for a cassette recording; never cloned either.
     tape_exit: Option<TapeExitPolicy>,
     /// Like `disk_exit`, for a flashed cartridge; never cloned either.
@@ -156,6 +158,7 @@ impl Clone for HostedMachine {
             machine_id: self.machine_id.clone(),
             metadata: self.metadata.clone(),
             disk_exit: [None, None],
+            acsi_exit: Vec::new(),
             tape_exit: None,
             cartridge_exit: None,
             printer_out: None,
@@ -1024,6 +1027,7 @@ pub(crate) fn create_hosted_machine(
         machine_id,
         metadata: create.metadata,
         disk_exit: [None, None],
+        acsi_exit: Vec::new(),
         tape_exit: None,
         cartridge_exit: None,
         printer_out: None,
@@ -1741,6 +1745,44 @@ impl HostedMachine {
     fn finish_disk_on_exit(&mut self) {
         for drive in 0..2u8 {
             self.finish_drive_on_exit(drive);
+        }
+        self.finish_acsi_on_exit();
+    }
+
+    /// The drive number the machine plugin gives the ACSI hard disk behind `target` (`ExportDisk`, `MarkDiskSaved`).
+    pub(crate) const ACSI_DRIVE_BASE: u8 = 8;
+
+    /// `--acsi-save N=FILE`: a hard disk the guest wrote to is written to `file` when the session ends.
+    pub(crate) fn set_acsi_save(&mut self, target: u8, path: PathBuf) {
+        self.acsi_exit.retain(|(t, _)| *t != target);
+        self.acsi_exit.push((target, path));
+    }
+
+    /// Writes the hard disks that were modified; silent for one that was not.
+    pub(crate) fn finish_acsi_on_exit(&mut self) {
+        for (target, path) in std::mem::take(&mut self.acsi_exit) {
+            let drive = Self::ACSI_DRIVE_BASE + target;
+            let image = match self.export_disk(drive, true) {
+                Ok(Some(image)) => image,
+                Ok(None) => continue,
+                Err(e) => {
+                    eprintln!("could not read back the ACSI {target} hard disk image: {e}");
+                    continue;
+                }
+            };
+            match write_file_atomically(&path, &image) {
+                Ok(()) => {
+                    let _ = self.mark_disk_saved(drive);
+                    eprintln!(
+                        "saved modified ACSI {target} hard disk image to {}",
+                        path.display()
+                    );
+                }
+                Err(e) => eprintln!(
+                    "FAILED to save the modified ACSI {target} hard disk image to {}: {e}",
+                    path.display()
+                ),
+            }
         }
     }
 

@@ -71,8 +71,8 @@ struct StubMachine {
     pc: u16,
     ram: Vec<u8>,
     /// Drive A and drive B.
-    disks: [Option<Vec<u8>>; 2],
-    disk_modified: [bool; 2],
+    disks: [Option<Vec<u8>>; 3],
+    disk_modified: [bool; 3],
     tape: bool,
 }
 
@@ -81,8 +81,8 @@ impl StubMachine {
         StubMachine {
             pc: 0x0100,
             ram: vec![0; 0x10000],
-            disks: [None, None],
-            disk_modified: [false; 2],
+            disks: [None, None, None],
+            disk_modified: [false; 3],
             tape: false,
         }
     }
@@ -260,13 +260,19 @@ fn extension(name: Option<&str>) -> String {
 /// A key event with this name marks the disk in drive A / drive B as written to.
 pub const DIRTY_DISK_A_KEY: &str = "dirty-disk-a";
 pub const DIRTY_DISK_B_KEY: &str = "dirty-disk-b";
+/// The same for the hard disk behind ACSI target 0 (drive 8, as the Atari plugin numbers it).
+pub const DIRTY_HARD_DISK_KEY: &str = "dirty-hard-disk";
 
 /// The stub has the two drives of a CPC or +3 interface.
 fn stub_drive(drive: u8) -> Result<usize, String> {
     if drive < 2 {
         Ok(usize::from(drive))
+    } else if drive == 8 {
+        Ok(2)
     } else {
-        Err(format!("drive {drive} does not exist (drives 0 and 1)"))
+        Err(format!(
+            "drive {drive} does not exist (drives 0 and 1, and 8 for the hard disk)"
+        ))
     }
 }
 
@@ -292,6 +298,10 @@ fn handle_machine_command(
         }
         MachineCommand::KeyEvent { key, .. } if key == DIRTY_DISK_B_KEY => {
             m.disk_modified[1] = m.disks[1].is_some();
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::KeyEvent { key, .. } if key == DIRTY_HARD_DISK_KEY => {
+            m.disk_modified[2] = m.disks[2].is_some();
             Ok(MachineResponse::Ack)
         }
         MachineCommand::KeyEvent { .. } => Ok(MachineResponse::Ack),
