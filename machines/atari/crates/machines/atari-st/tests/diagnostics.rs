@@ -1,6 +1,8 @@
 //! The bounded bring-up diagnostics: the I/O stop report and the PC trace.
 
-use atari_st::{Accuracy, AtariSt, Config, RamSize, Region};
+mod common;
+
+use atari_st::{Accuracy, AtariSt, Config, Monitor, RamSize, Region};
 use machine::Machine;
 
 /// A 192 KB ROM: SSP `$8000`, reset PC `$FC0030`, then `program`.
@@ -19,16 +21,18 @@ fn machine(program: &[u16], trace_limit: u32) -> AtariSt {
         ram: RamSize::M1,
         region: Region::Pal,
         accuracy: Accuracy::Fast,
+        monitor: Monitor::Colour,
         rom: rom(program),
         trace_limit,
+        io_log_limit: 0,
     })
     .unwrap()
 }
 
 #[test]
 fn the_io_stop_holds_the_machine_and_reports_once() {
-    // MOVEQ #1,D1; MOVE.B $FF8001,D0
-    let mut m = machine(&[0x7201, 0x1039, 0x00FF, 0x8001], 0);
+    // MOVEQ #1,D1; MOVE.B $FF9000,D0
+    let mut m = machine(&[0x7201, 0x1039, 0x00FF, 0x9000], 0);
     let mut reports = Vec::new();
     for _ in 0..(50 * 160_256 / 4) {
         m.step();
@@ -39,9 +43,9 @@ fn the_io_stop_holds_the_machine_and_reports_once() {
     assert!(m.halted());
     assert_eq!(reports.len(), 1);
     let r = &reports[0];
-    assert!(r.contains("stop: read byte $FF8001"), "{r}");
+    assert!(r.contains("stop: read byte $FF9000"), "{r}");
     assert!(r.contains("D1=00000001"), "{r}");
-    assert!(r.contains("move.b $ff8001,d0"), "{r}");
+    assert!(r.contains("move.b $ff9000,d0"), "{r}");
     assert!(
         r.contains("$FC0030"),
         "the history lists the instructions: {r}"
@@ -64,15 +68,17 @@ fn trace_lists_pcs_up_to_the_limit() {
 
 #[test]
 fn exceptions_appear_in_the_report() {
-    // ILLEGAL; vector 4 (in RAM at $10) points at $FC0040, whose MOVE.B $FF8001,D0 stops the machine.
+    // ILLEGAL; vector 4 (in RAM at $10) points at $FC0040, whose MOVE.B $FF9000,D0 stops the machine.
     let mut rom = rom(&[0x4AFC]);
-    rom[0x40..0x46].copy_from_slice(&[0x10, 0x39, 0x00, 0xFF, 0x80, 0x01]);
+    rom[0x40..0x46].copy_from_slice(&[0x10, 0x39, 0x00, 0xFF, 0x90, 0x00]);
     let mut m = AtariSt::new(Config {
         ram: RamSize::M1,
         region: Region::Pal,
         accuracy: Accuracy::Fast,
+        monitor: Monitor::Colour,
         rom,
         trace_limit: 0,
+        io_log_limit: 0,
     })
     .unwrap();
     m.load(0x10, &0x00FC_0040u32.to_be_bytes());
@@ -94,8 +100,10 @@ fn a_halted_cpu_is_reported_once() {
         ram: RamSize::M1,
         region: Region::Pal,
         accuracy: Accuracy::Fast,
+        monitor: Monitor::Colour,
         rom,
         trace_limit: 0,
+        io_log_limit: 0,
     })
     .unwrap();
     let mut reports = Vec::new();
@@ -111,4 +119,48 @@ fn a_halted_cpu_is_reported_once() {
         "the faulting address: {}",
         reports[0]
     );
+}
+
+/// EmuTOS with one boot-path instruction (the 50th the CPU runs, long before the MFP set-up) replaced by
+/// `MOVE.B $FF9000,D0`: the machine stops there with a full, bounded report, and the same one every run.
+#[test]
+fn emutos_with_an_injected_fault_reports_it() {
+    let Some(tos) = common::emutos() else { return };
+    let mut probe = AtariSt::new(Config {
+        trace_limit: 50,
+        ..common::config(tos.clone(), RamSize::M1)
+    })
+    .unwrap();
+    while probe.trace().len() < 50 {
+        probe.step();
+    }
+    let pc = probe.trace()[49];
+    assert!((0xFC_0000..0xFF_0000).contains(&pc), "in ROM: ${pc:06X}");
+    let at = (pc - 0xFC_0000) as usize;
+    let mut rom = tos;
+    rom[at..at + 6].copy_from_slice(&[0x10, 0x39, 0x00, 0xFF, 0x90, 0x00]);
+    let run = || {
+        let mut m = AtariSt::new(common::config(rom.clone(), RamSize::M1)).unwrap();
+        for _ in 0..1_000_000 {
+            m.step();
+            if let Some(r) = m.take_stop_report() {
+                assert!(m.halted());
+                return r;
+            }
+        }
+        panic!("no stop");
+    };
+    let r = run();
+    assert!(r.contains("no hardware fact for $FF9000"), "{r}");
+    assert!(
+        r.contains(&format!("instruction: ${pc:06X} move.b $ff9000,d0")),
+        "{r}"
+    );
+    assert!(
+        r.contains("D0=") && r.contains("A7=") && r.contains("SR=$"),
+        "{r}"
+    );
+    assert!(r.contains("history (last"), "{r}");
+    assert!(r.lines().count() < 400, "bounded");
+    assert_eq!(r, run(), "deterministic");
 }

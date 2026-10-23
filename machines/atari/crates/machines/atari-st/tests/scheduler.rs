@@ -1,19 +1,21 @@
 //! The event scheduler and the frame timing built on it.
 
-use atari_st::{Accuracy, AtariSt, CLASS_VIDEO, Config, Event, RamSize, Region, Scheduler};
+use atari_st::{
+    Accuracy, AtariSt, CLASS_VIDEO, Config, Event, Monitor, RamSize, Region, Scheduler,
+};
 use machine::Machine;
 
 #[test]
 fn simultaneous_events_pop_in_class_then_insertion_order() {
     let mut s = Scheduler::new();
-    s.schedule(100, 3, Event::Vbl);
-    s.schedule(100, CLASS_VIDEO, Event::Vbl);
-    s.schedule(50, 5, Event::Vbl);
+    s.schedule(100, 3, Event::LineEnd);
+    s.schedule(100, CLASS_VIDEO, Event::LineEnd);
+    s.schedule(50, 5, Event::LineEnd);
     assert_eq!(s.next_at(), Some(50));
     assert_eq!(s.pop_due(49), None);
-    assert_eq!(s.pop_due(100), Some((50, 5, Event::Vbl)));
-    assert_eq!(s.pop_due(100), Some((100, CLASS_VIDEO, Event::Vbl)));
-    assert_eq!(s.pop_due(100), Some((100, 3, Event::Vbl)));
+    assert_eq!(s.pop_due(100), Some((50, 5, Event::LineEnd)));
+    assert_eq!(s.pop_due(100), Some((100, CLASS_VIDEO, Event::LineEnd)));
+    assert_eq!(s.pop_due(100), Some((100, 3, Event::LineEnd)));
     assert_eq!(s.pop_due(1000), None);
 }
 
@@ -36,8 +38,10 @@ fn machine(rom: Vec<u8>, region: Region) -> AtariSt {
         ram: RamSize::M1,
         region,
         accuracy: Accuracy::Fast,
+        monitor: Monitor::Colour,
         rom,
         trace_limit: 0,
+        io_log_limit: 0,
     })
     .unwrap()
 }

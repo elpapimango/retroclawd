@@ -1,0 +1,151 @@
+machine = "atari-ste"
+# EmuTOS 1.4 (256 KB UK) from `--firmware auto` (firmware.toml, by hash). The probe media come from timing/build.sh
+# (software/scenarios/timing/, not committed); goldens are Hatari 2.6.1 `--machine ste` dumps (never committed).
+args = ["--firmware", "auto"]
+
+[reference]
+emulator = "hatari"
+version = "2.6.1"
+command = "retroclawd-tools/scripts/capture_hatari_mem.py ROM FLOPPY VBLS ADDR LEN OUT --machine ste; capture_hatari_screen.py --machine ste"
+
+# S16: the EmuTOS STE desktop after 1500 frames: the Blitter draws the menu text and the pointer; pixel for pixel Hatari's picture.
+[[scenario]]
+id = "S16"
+kind = "screen"
+frames = 1500
+golden = "atari-ste/S16-desktop.png"
+golden_sha256 = "9f8733f50237c2157b91cf9ef1f5d645fd641f219e214980a5391b182a897a84"
+compare = { mode = "exact" }
+
+# P31: the enhanced joystick ports at rest and after writes.
+[[scenario]]
+id = "P31"
+kind = "memory"
+frames = 600
+files = { disk = "atari/software/scenarios/timing/p31.st" }
+start = 49152
+len = 92
+golden = "atari-ste/timing/p31.bin"
+golden_sha256 = "520b14ffaeb1ce251c89254a3848471373e4737b52ead2457ca89d1c2a4f3d1d"
+compare = { mode = "exact" }
+
+# P33: the Blitter's memory and registers for 174 settings.
+[[scenario]]
+id = "P33"
+kind = "memory"
+frames = 1500
+files = { disk = "atari/software/scenarios/timing/p33.st" }
+start = 49152
+len = 3484
+golden = "atari-ste/timing/p33.bin"
+golden_sha256 = "7ce9a262f35abc8ab5b481c199ceb89ee434c21961624b93669c335bfa15db87"
+compare = { mode = "exact" }
+
+# P37: the skew and its flags, raw.
+[[scenario]]
+id = "P37"
+kind = "memory"
+frames = 1500
+files = { disk = "atari/software/scenarios/timing/p37.st" }
+start = 49152
+len = 5124
+golden = "atari-ste/timing/p37.bin"
+golden_sha256 = "5bcadba8645144ea63cf62baebdb3c3815a91deda5feb55842c1911ac81be940"
+compare = { mode = "exact" }
+
+# P38: end masks with the skew flags.
+[[scenario]]
+id = "P38"
+kind = "memory"
+frames = 1500
+files = { disk = "atari/software/scenarios/timing/p38.st" }
+start = 49152
+len = 2164
+golden = "atari-ste/timing/p38.bin"
+golden_sha256 = "cd1fe2a995930a5f9ee49c859f7e6f3a3e59930d9b287f858b3539cf0406e572"
+compare = { mode = "exact" }
+
+# P39: blits right to left.
+[[scenario]]
+id = "P39"
+kind = "memory"
+frames = 1500
+files = { disk = "atari/software/scenarios/timing/p39.st" }
+start = 49152
+len = 1444
+golden = "atari-ste/timing/p39.bin"
+golden_sha256 = "6032e0084cf156ec0058ff85ce4bb7c8aff61cbf50983f094a6e12bdaf82132d"
+compare = { mode = "exact" }
+
+# P40: a restart with the Y count at zero.
+[[scenario]]
+id = "P40"
+kind = "memory"
+frames = 1500
+files = { disk = "atari/software/scenarios/timing/p40.st" }
+start = 49152
+len = 54
+golden = "atari-ste/timing/p40.bin"
+golden_sha256 = "d52d1eab3c558fc86b799ccde73c35e45257bbdfc78b9deb63de78bfb5ee84b0"
+compare = { mode = "exact" }
+
+# P29: the DMA sound's registers and counter.
+[[scenario]]
+id = "P29"
+kind = "memory"
+frames = 1500
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p29.st" }
+start = 49152
+len = 2165
+golden = "atari-ste/timing/p29.bin"
+golden_sha256 = "2407bc9e6eee9a754489c4853cbcbec5c2f7b4840b2507922f52e47191b77278"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the control, GPIP, timer A and stop records are exact; the counter register differs by up to 16 bytes: Hatari moves it in lumps at scan lines with a per-rate start-up ramp, ours is the bytes fetched ahead of the sample played", evidence = "timing_probes p29_the_dma_sound_registers_and_counter_move_as_in_hatari (counter within 16 bytes)" }
+
+# P41: the DMA sound's byte rate over 6 million clocks.
+[[scenario]]
+id = "P41"
+kind = "memory"
+frames = 600
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p41.st" }
+start = 49152
+len = 24
+golden = "atari-ste/timing/p41.bin"
+golden_sha256 = "c99935a196415de0a95f8cda57cf1a84b1003448422b2e191ca8ce0e94e40609"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the counters agree to 16 bytes in 40000 (the rate matches; the lumpiness of Hatari's counter is the difference)", evidence = "timing_probes p41_the_dma_sound_plays_bytes_at_hatari_s_rate_over_a_long_run" }
+
+# P34: a counted loop's iterations while six blits run.
+[[scenario]]
+id = "P34"
+kind = "memory"
+frames = 700
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p34.st" }
+start = 49152
+len = 844
+golden = "atari-ste/timing/p34.bin"
+golden_sha256 = "37c9b4a3febb009550cf650eb419548da2b2c3dfa96840ceefdaf67f0172acd9"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the loop counts differ by up to 6 iterations of about 6669 a frame (0.1%): the CPU's slice between two Blitter bursts ends on an instruction boundary in both, at slightly different places; the busy frames, control byte and GPIP are equal in all 105 records", evidence = "timing_probes p34_a_running_blitter_costs_the_cpu_what_it_does_in_hatari_accurate" }
+
+# P30: the Microwire data register's shift.
+[[scenario]]
+id = "P30"
+kind = "memory"
+frames = 800
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p30.st" }
+start = 49152
+len = 340
+golden = "atari-ste/timing/p30.bin"
+golden_sha256 = "dcfca2634610563ab90b303bbe4201d829a40dea39098f263db5fea02ca21409"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the first two reads and the end match; between them Hatari shifts 4, 3, 3, 3 bits a read in the tightest loop where the hardware shifts one bit in 8 clocks", evidence = "timing_probes p30_the_microwire_data_register_shifts_out_as_in_hatari" }
+

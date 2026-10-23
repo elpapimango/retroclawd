@@ -55,9 +55,20 @@ version = "0.1.0"
 name = "atari-st"
 version = "0.1.0"
 dependencies = [
+ "ay-3-8910",
+ "bincode",
+ "blitter",
+ "crc32fast",
+ "ikbd",
  "machine",
  "mc68000",
+ "mc6850",
+ "mc68901",
  "serde",
+ "sha1",
+ "st-floppy",
+ "st-shifter",
+ "wd1770",
 ]
 
 [[package]]
@@ -81,6 +92,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ay-3-8910"
+version = "0.1.0"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac#0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "bincode"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -101,6 +120,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "blitter"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -112,7 +138,7 @@ dependencies = [
 [[package]]
 name = "build-info"
 version = "0.1.0"
-source = "git+https://github.com/elpapimango/retroclawd-crates?rev=6aad1a0af5fb820b85bc085e8b6d9cc017316c38#6aad1a0af5fb820b85bc085e8b6d9cc017316c38"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac#0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac"
 
 [[package]]
 name = "cfg-if"
@@ -127,6 +153,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "crc32fast"
+version = "1.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ba106e844045ddc02c20768ac4b0b7cb45f2cc2ecbd833ac9f5dacb183c2055"
+dependencies = [
+ "cfg-if",
 ]
 
 [[package]]
@@ -167,6 +202,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ikbd"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -175,12 +217,27 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 [[package]]
 name = "machine"
 version = "0.1.0"
-source = "git+https://github.com/elpapimango/retroclawd-crates?rev=6aad1a0af5fb820b85bc085e8b6d9cc017316c38#6aad1a0af5fb820b85bc085e8b6d9cc017316c38"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac#0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac"
 
 [[package]]
 name = "mc68000"
 version = "0.1.0"
-source = "git+https://github.com/elpapimango/retroclawd-crates?rev=6aad1a0af5fb820b85bc085e8b6d9cc017316c38#6aad1a0af5fb820b85bc085e8b6d9cc017316c38"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac#0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "mc6850"
+version = "0.1.0"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac#0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "mc68901"
+version = "0.1.0"
 dependencies = [
  "serde",
 ]
@@ -188,7 +245,7 @@ dependencies = [
 [[package]]
 name = "mos6502"
 version = "0.1.0"
-source = "git+https://github.com/elpapimango/retroclawd-crates?rev=6aad1a0af5fb820b85bc085e8b6d9cc017316c38#6aad1a0af5fb820b85bc085e8b6d9cc017316c38"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac#0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac"
 dependencies = [
  "machine",
  "serde",
@@ -197,7 +254,7 @@ dependencies = [
 [[package]]
 name = "pia-6520"
 version = "0.1.0"
-source = "git+https://github.com/elpapimango/retroclawd-crates?rev=6aad1a0af5fb820b85bc085e8b6d9cc017316c38#6aad1a0af5fb820b85bc085e8b6d9cc017316c38"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac#0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac"
 dependencies = [
  "serde",
 ]
@@ -205,7 +262,7 @@ dependencies = [
 [[package]]
 name = "plugin-api"
 version = "0.1.0"
-source = "git+https://github.com/elpapimango/retroclawd-crates?rev=6aad1a0af5fb820b85bc085e8b6d9cc017316c38#6aad1a0af5fb820b85bc085e8b6d9cc017316c38"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac#0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac"
 dependencies = [
  "bincode",
  "serde",
@@ -278,6 +335,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "st-floppy"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "serde",
+ "wd1770",
+]
+
+[[package]]
+name = "st-shifter"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "syn"
 version = "3.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -317,3 +390,11 @@ name = "virtue"
 version = "0.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "051eb1abcf10076295e815102942cc58f9d5e3b4560e46e53c21e8ff6f3af7b1"
+
+[[package]]
+name = "wd1770"
+version = "0.1.0"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac#0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac"
+dependencies = [
+ "serde",
+]

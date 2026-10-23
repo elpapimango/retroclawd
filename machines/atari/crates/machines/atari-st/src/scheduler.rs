@@ -15,6 +15,8 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::config::Region;
 
 pub const PAL_CRYSTAL_HZ: u32 = 32_084_988;
@@ -37,13 +39,77 @@ pub fn crystal_hz(region: Region) -> u32 {
     }
 }
 
+/// `accurate` mode: the clock of a 4-clock bus cycle at which a device sees a read, and a write (0 = at the start of the
+/// cycle). Fitted with probe P06 (the MFP timer A data register read after the control register started the timer): the
+/// write at the start of its cycle, the read 3 clocks in.
+pub const READ_POINT: u64 = 3;
+pub const WRITE_POINT: u64 = 0;
+
 /// Classes order events on the same clock: video, then the MFP, ACIA, FDC, DMA, then CPU interrupt sampling.
 pub const CLASS_VIDEO: u8 = 0;
+pub const CLASS_MFP: u8 = 1;
+pub const CLASS_ACIA: u8 = 2;
+pub const CLASS_FDC: u8 = 3;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Event {
-    /// Start of vertical blank: the GLUE requests interrupt level 4.
+    /// The end of a line: the GLUE requests the HBL; after the frame's last line also the VBL.
+    LineEnd,
+    /// The MFP's next timer timeout; the number tells a stale event (one scheduled before a later MFP write) apart.
+    MfpTimeout(u64),
+    /// ACIA `port` has a character starting or completing; the generation tells a stale event apart.
+    AciaService { port: u8, generation: u64 },
+    /// The floppy controller's next byte time while it works; the generation tells a stale event apart.
+    FdcTick(u64),
+    /// `accurate` mode: the VBL request, a fixed time after the frame ends (last, so the states of `fast` mode keep
+    /// their bytes).
     Vbl,
+}
+
+/// The shape of one frame in CPU clocks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FrameGeometry {
+    pub clocks_per_line: u32,
+    pub lines: u32,
+}
+
+impl FrameGeometry {
+    pub fn clocks(&self) -> u64 {
+        self.clocks_per_line as u64 * self.lines as u64
+    }
+}
+
+/// The frame for the sync mode (`$FF820A` bit 1) and the monitor. [H] colour 512 x 313 at 50 Hz, 508 x 263 at 60 Hz
+/// (sources above). A mono monitor's line is 224 clocks (same thread) and its frame 501 lines ([O], probe P14).
+pub fn geometry(sync_50hz: bool, monitor: st_shifter::Monitor) -> Result<FrameGeometry, String> {
+    match monitor {
+        st_shifter::Monitor::Colour if sync_50hz => Ok(FrameGeometry {
+            clocks_per_line: 512,
+            lines: 313,
+        }),
+        st_shifter::Monitor::Colour => Ok(FrameGeometry {
+            clocks_per_line: 508,
+            lines: 263,
+        }),
+        // [O] Hatari 2.6.1 (probe P14): 501 HBLs between two VBLs and a counted loop that fills 112 224 clocks.
+        st_shifter::Monitor::Mono => Ok(FrameGeometry {
+            clocks_per_line: 224,
+            lines: 501,
+        }),
+    }
+}
+
+/// The raster line of a frame of `lines` lines on which the picture's first line is drawn. [H?] 63 in the 313-line
+/// 50 Hz frame and 34 in the 263-line 60 Hz frame: provisional, to be measured against the reference emulator's
+/// picture (`docs/hardware-facts.md`, "Raster palette").
+pub fn first_display_line(lines: u32) -> u32 {
+    if lines == 501 {
+        st_shifter::MONO_START as u32
+    } else if lines >= 313 {
+        63
+    } else {
+        34
+    }
 }
 
 #[derive(Debug, Default)]
@@ -52,9 +118,42 @@ pub struct Scheduler {
     seq: u64,
 }
 
+/// The queue as data: every pending event with its time, class and insertion number.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SchedulerState {
+    events: Vec<(u64, u8, u64, Event)>,
+    seq: u64,
+}
+
+impl SchedulerState {
+    /// Whether an ACIA event names a port that does not exist (a state from elsewhere).
+    pub fn has_bad_port(&self) -> bool {
+        self.events
+            .iter()
+            .any(|(_, _, _, e)| matches!(e, Event::AciaService { port, .. } if *port >= 2))
+    }
+}
+
 impl Scheduler {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The pending events, in time order, so equal queues give equal bytes.
+    pub fn snapshot(&self) -> SchedulerState {
+        let mut events: Vec<_> = self.heap.iter().map(|Reverse(e)| *e).collect();
+        events.sort_unstable();
+        SchedulerState {
+            events,
+            seq: self.seq,
+        }
+    }
+
+    pub fn restore(state: SchedulerState) -> Self {
+        Self {
+            heap: state.events.into_iter().map(Reverse).collect(),
+            seq: state.seq,
+        }
     }
 
     pub fn schedule(&mut self, at: u64, class: u8, event: Event) {

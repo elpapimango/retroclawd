@@ -6,6 +6,17 @@ license = "GPL-3.0-or-later"
 description = "Atari ST/STF/STFM: memory map, event scheduler and the Machine implementation"
 
 [dependencies]
-machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "6aad1a0af5fb820b85bc085e8b6d9cc017316c38" }
-mc68000 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "6aad1a0af5fb820b85bc085e8b6d9cc017316c38" }
+machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
+mc68000 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
 serde = { version = "1", features = ["derive"] }
+bincode = { version = "2", features = ["serde"] }
+crc32fast = "1"
+sha1 = "0.10"
+mc68901 = { path = "../../chips/mc68901" }
+st-shifter = { path = "../../chips/st-shifter" }
+blitter = { path = "../../chips/blitter" }
+ay-3-8910 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
+mc6850 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
+ikbd = { path = "../../chips/ikbd" }
+st-floppy = { path = "../../formats/st-floppy" }
+wd1770 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }

@@ -8,12 +8,12 @@ license = "GPL-3.0-or-later"
 name = "atari_st_machine_plugin_impl"
 
 [dependencies]
-build-info = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "6aad1a0af5fb820b85bc085e8b6d9cc017316c38" }
-machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "6aad1a0af5fb820b85bc085e8b6d9cc017316c38" }
-mc68000 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "6aad1a0af5fb820b85bc085e8b6d9cc017316c38" }
-plugin-api = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "6aad1a0af5fb820b85bc085e8b6d9cc017316c38" }
+build-info = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
+machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
+mc68000 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
+plugin-api = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
 serde = { version = "1", features = ["derive"] }
 atari-st = { path = "../../machines/atari-st" }
 
 [build-dependencies]
-build-info = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "6aad1a0af5fb820b85bc085e8b6d9cc017316c38" }
+build-info = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }

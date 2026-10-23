@@ -1,0 +1,582 @@
+machine = "atari-st"
+# EmuTOS 1.4 (192 KB UK) from `--firmware auto`: the on-disk cache, else the download by hash in firmware.toml. Nothing
+# proprietary. The scenario media come from scenarios/build.sh (software/scenarios/, not committed).
+args = ["--firmware", "auto"]
+
+# S7 (hardware test programs): none is shipped for the ST. S8 has no
+# kind yet. Hatari runs headless as a black box but cannot be given keys, mouse or joystick input there, so the input
+# scenarios (S2, S2J, S2M, S3) have `exact` goldens made by retroclawd. Each was made three times, came out
+# byte-identical, and was looked at; its comment says what it shows.
+
+[reference]
+emulator = "hatari"
+version = "2.6.1"
+command = "retroclawd-tools/scripts/capture_hatari_screen.py etos192uk.img VBLS OUT.png   (hatari --machine st --memsize 1 --borders off --statusbar off; a debugger breakpoint at the VBL takes the screenshot)"
+
+# S1: the EmuTOS desktop after 1500 frames. Hatari 2.6.1 draws the same 640x400 picture (capture_hatari_screen.py 1500).
+[[scenario]]
+id = "S1"
+kind = "screen"
+frames = 1500
+golden = "atari-st/S1-desktop.png"
+golden_sha256 = "73765474b9c26d5113947d4fd20a61def826fd42ef109b48795752cb8e6126ae"
+compare = { mode = "similarity", max_mad = 2.0, normalize = true, crop = [0.0, 0.0, 0.45, 1.0], reason = "another emulator's picture, and its palette (normalize: Hatari's green is a different shade); the crop is the left part (menu bar, both drive icons, the trash) and leaves out the mouse pointer, which Hatari draws at its own start position" }
+
+# S2: keys.st's boot program echoes typed keys through BIOS Bconin/Bconout (scenarios/README.md); H and I typed show "hi"
+# at the top left of the console.
+[[scenario]]
+id = "S2"
+kind = "screen"
+frames = 600
+files = { disk = "atari/software/scenarios/keys.st" }
+actions = ["450:key_down=KeyH", "455:key_up=KeyH", "460:key_down=KeyI", "465:key_up=KeyI"]
+golden = "atari-st/S2-keys.png"
+golden_sha256 = "c1ba46e89bec835dc131035f29a396ee9b15a77206b86c3ee219d83ec3864d2c"
+compare = { mode = "exact" }
+
+# S2J: joystick 1's fire button reaches keys.st's joyvec routine, which turns palette 0 green ($040): the whole screen.
+[[scenario]]
+id = "S2J"
+kind = "screen"
+frames = 520
+files = { disk = "atari/software/scenarios/keys.st" }
+actions = ["450:key_down=Joy1Fire1"]
+golden = "atari-st/S2J-joystick.png"
+golden_sha256 = "8158ff4f26d0b25c4e0c618cd9735043871a0e3bc4a8f79659aaa10ae6fc4596"
+compare = { mode = "exact" }
+
+# S2M: the desktop with the mouse pushed into the top-left corner and moved back by (100, 60): the pointer away from
+# its start in the middle.
+[[scenario]]
+id = "S2M"
+kind = "screen"
+frames = 1330
+actions = ["1300:mouse_move=-1000,-1000", "1310:mouse_move=100,60"]
+golden = "atari-st/S2M-mouse.png"
+golden_sha256 = "9b06188f11acc45b7ddd7e054f9a1071a525253dd009d6fd6ed2393564e4a422"
+compare = { mode = "exact" }
+
+# S3: files.st, made by rcdisk with HELLO.TXT (20 bytes) and README.TXT (56 bytes), in drive A; the pointer goes to the
+# drive A icon and double-clicks it; the window "A:\*.*" lists both files and "76 bytes used in 2 items".
+[[scenario]]
+id = "S3"
+kind = "screen"
+frames = 1420
+files = { disk = "atari/software/scenarios/files.st" }
+actions = ["1300:mouse_move=-1000,-1000", "1310:mouse_move=30,20", "1320:mouse_down=left", "1321:mouse_up=left", "1323:mouse_down=left", "1324:mouse_up=left"]
+golden = "atari-st/S3-floppy.png"
+golden_sha256 = "15a7d1a15e50fa85f5d5fc6e704a70182b98d9a2233addd1bc1f0371d92bb8de"
+compare = { mode = "exact" }
+
+# S3W: write.st's boot program writes logical sector 30 through BIOS Rwabs, reads it back, compares and prints WRITE OK
+# (scenarios/README.md). The same run with --disk-save leaves exactly one changed sector in the saved image, with the
+# pattern in it (checked once by hand, and by tests/scenarios.rs).
+[[scenario]]
+id = "S3W"
+kind = "screen"
+frames = 400
+files = { disk = "atari/software/scenarios/write.st" }
+golden = "atari-st/S3W-write.png"
+golden_sha256 = "bb9dbcce4e814124187770c4dfefc39c4f9f5091aee91c194fda1d2294048f87"
+compare = { mode = "exact" }
+
+# S4: tone.bin (--program at $8000) plays YM2149 tone A at period 284. Yamaha's YM2149 catalog, section (1):
+# fT = fMaster / (16 TP), with the master clock the CPU clock / 4 (machines/atari/docs/hardware-facts.md, PSG) and the PAL
+# CPU clock 32 084 988 / 4 = 8 021 247 Hz: 8 021 247 / 4 / (16 x 284) = 441.31 Hz.
+[[scenario]]
+id = "S4"
+kind = "audio"
+frames = 300
+args = ["--org", "0x8000"]
+files = { program = "atari/software/scenarios/tone.bin" }
+audio = { from_s = 1.0, to_s = 5.0, tone_hz = 441.31, tone_tolerance_pct = 1.0, min_amplitude = 0.05 }
+
+# S8P: hello.prg, made by rcasm's 68000 back end and rcld from scenarios/hello.s, is the AUTO program of a floppy the machine
+# builds around it (the host hands a .prg to the plugin as program media); EmuTOS runs it before the desktop and GEMDOS
+# Cconws writes "HELLO FROM RCASM" at the top left of the console. Made three times, identical, looked at.
+[[scenario]]
+id = "S8P"
+kind = "screen"
+frames = 1200
+files = { program = "atari/software/scenarios/hello.prg" }
+golden = "atari-st/S8P-hello.png"
+golden_sha256 = "4d7538b8d3fb45efdece06febad3b1b77e8f5d508a3b1aa09b8ff8a9fe4fd790"
+compare = { mode = "exact" }
+
+# S11: hd.img, made by rcdisk hd (an AHDI root sector, one GEM partition, FAT16, HELLO.TXT), is ACSI target 0. EmuTOS probes the
+# targets (TEST UNIT READY, INQUIRY, READ CAPACITY, READ), shows DISK C, and a double click on its icon (the pointer positions
+# measured on this desktop, as S3 did) lists C:\*.* with HELLO.TXT: "39 bytes used in 1 items" (the file
+# is 39 bytes). Made three times, identical, looked at.
+[[scenario]]
+id = "S11"
+kind = "screen"
+frames = 1420
+files = { acsi0 = "atari/software/scenarios/hd.img" }
+actions = ["1300:mouse_move=-1000,-1000", "1310:mouse_move=195,30", "1320:mouse_down=left", "1321:mouse_up=left", "1323:mouse_down=left", "1324:mouse_up=left"]
+golden = "atari-st/S11-harddisk.png"
+golden_sha256 = "3544dcff368b3b57415a3df27c054fc044c4243eb1f03c975de30efa9794bf2f"
+compare = { mode = "exact" }
+
+# S9S: serial.bin sends SERIAL through the MFP USART (timer D) and MIDI through the MIDI ACIA, each looped back by the
+# host (`--serial-loopback`, `--midi-loopback`), and stores what it reads at $0600 and $0610 (scenarios/README.md). The
+# golden is the 32 bytes made by retroclawd, checked by hand against the program's characters; three runs identical.
+[[scenario]]
+id = "S9S"
+kind = "memory"
+frames = 30
+args = ["--org", "0x8000", "--serial-loopback", "--midi-loopback"]
+files = { program = "atari/software/scenarios/serial.bin" }
+start = 1536
+len = 32
+golden = "atari-st/S9S-serial.bin"
+golden_sha256 = "b0c5faa1d0f430113cf62160a35fe13c412f188fe8cc21205a6c2aa2b9c1d81f"
+
+# S10: raster.st's boot program changes palette entry 0 from an HBL handler on every 20th line (scenarios/README.md): bands
+# of 20 lines, each a step lighter than the one above. Hatari 2.6.1 draws the same bands (capture_hatari_screen.py 400 with
+# --disk-a). Measured against it: the band edges are the same rows or one line (2 rows) off (ours at rows 32, 72, ... 272 and
+# then 314, 354, 394, Hatari's at 34, 74, ... 394), and Hatari's palette change lands part way along its line (a strip about
+# 58 pixels wide on the left keeps the old colour) where ours changes the whole line. The crop leaves that strip out and
+# normalize takes Hatari's different grey levels (102 against 109 for the same palette value) out. Measured difference 2.55; the limit is set just above it.
+[[scenario]]
+id = "S10"
+kind = "screen"
+frames = 400
+files = { disk = "atari/software/scenarios/raster.st" }
+golden = "atari-st/S10-raster.png"
+golden_sha256 = "d7e07e77440ce585e893b20ce59594f5e5c5f0ce691934170013f9e21066456a"
+compare = { mode = "similarity", max_mad = 3.0, normalize = true, crop = [0.15, 0.0, 1.0, 1.0], reason = "another emulator's picture: its band edges are up to one line (2 rows of 400) away from ours and its grey levels differ; the measured difference is in this scenario's comment" }
+
+# S5: the EmuTOS desktop after 1400 frames: two fresh runs save the same state, and a run that loads that state and
+# goes on for 100 frames ends in the same state as a fresh run of 1500 frames (every device, RAM and the CPU are in it).
+[[scenario]]
+id = "S5"
+kind = "state"
+frames = 1400
+more_frames = 100
+
+# S6: a PAL colour frame is 512 x 313 = 160 256 CPU clocks (hardware-facts.md, timing). The machine runs whole instructions, so
+# a frame ends up to one instruction late: at most 170 clocks, the longest 68000 instruction (MC68000 User's Manual Table 8-7:
+# DIVS, worst case 158; Table 8-1: an absolute long word operand, 12 more). Measured: 160 263.
+[[scenario]]
+id = "S6"
+kind = "timing"
+frames = 100
+cycles_per_frame = 160256
+cycles_tolerance = 170
+
+# Accurate-mode variants of the Phase 1 and 2 scenarios (the same media, actions and goldens with --accuracy accurate): the machine
+# is the same in both modes, so every picture, sound and result agrees with the fast one (Task 44). Each passed three runs.
+
+# S1A: S1 in accurate mode
+[[scenario]]
+id = "S1A"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 1500
+golden = "atari-st/S1-desktop.png"
+golden_sha256 = "73765474b9c26d5113947d4fd20a61def826fd42ef109b48795752cb8e6126ae"
+compare = { mode = "similarity", max_mad = 2.0, normalize = true, crop = [0.0, 0.0, 0.45, 1.0], reason = "another emulator's picture, and its palette (normalize: Hatari's green is a different shade); the crop is the left part (menu bar, both drive icons, the trash) and leaves out the mouse pointer, which Hatari draws at its own start position" }
+
+# S2A: S2 in accurate mode
+[[scenario]]
+id = "S2A"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 600
+files = { disk = "atari/software/scenarios/keys.st" }
+actions = ["450:key_down=KeyH", "455:key_up=KeyH", "460:key_down=KeyI", "465:key_up=KeyI"]
+golden = "atari-st/S2-keys.png"
+golden_sha256 = "c1ba46e89bec835dc131035f29a396ee9b15a77206b86c3ee219d83ec3864d2c"
+compare = { mode = "exact" }
+
+# S2JA: S2J in accurate mode
+[[scenario]]
+id = "S2JA"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 520
+files = { disk = "atari/software/scenarios/keys.st" }
+actions = ["450:key_down=Joy1Fire1"]
+golden = "atari-st/S2J-joystick.png"
+golden_sha256 = "8158ff4f26d0b25c4e0c618cd9735043871a0e3bc4a8f79659aaa10ae6fc4596"
+compare = { mode = "exact" }
+
+# S2MA: S2M in accurate mode
+[[scenario]]
+id = "S2MA"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 1330
+actions = ["1300:mouse_move=-1000,-1000", "1310:mouse_move=100,60"]
+golden = "atari-st/S2M-mouse.png"
+golden_sha256 = "9b06188f11acc45b7ddd7e054f9a1071a525253dd009d6fd6ed2393564e4a422"
+compare = { mode = "exact" }
+
+# S3A: S3 in accurate mode
+[[scenario]]
+id = "S3A"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 1420
+files = { disk = "atari/software/scenarios/files.st" }
+actions = ["1300:mouse_move=-1000,-1000", "1310:mouse_move=30,20", "1320:mouse_down=left", "1321:mouse_up=left", "1323:mouse_down=left", "1324:mouse_up=left"]
+golden = "atari-st/S3-floppy.png"
+golden_sha256 = "15a7d1a15e50fa85f5d5fc6e704a70182b98d9a2233addd1bc1f0371d92bb8de"
+compare = { mode = "exact" }
+
+# S3WA: S3W in accurate mode
+[[scenario]]
+id = "S3WA"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 400
+files = { disk = "atari/software/scenarios/write.st" }
+golden = "atari-st/S3W-write.png"
+golden_sha256 = "bb9dbcce4e814124187770c4dfefc39c4f9f5091aee91c194fda1d2294048f87"
+compare = { mode = "exact" }
+
+# S4A: S4 in accurate mode
+[[scenario]]
+id = "S4A"
+kind = "audio"
+frames = 300
+args = ["--org", "0x8000", "--accuracy", "accurate"]
+files = { program = "atari/software/scenarios/tone.bin" }
+audio = { from_s = 1.0, to_s = 5.0, tone_hz = 441.31, tone_tolerance_pct = 1.0, min_amplitude = 0.05 }
+
+# S8PA: S8P in accurate mode
+[[scenario]]
+id = "S8PA"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 1200
+files = { program = "atari/software/scenarios/hello.prg" }
+golden = "atari-st/S8P-hello.png"
+golden_sha256 = "4d7538b8d3fb45efdece06febad3b1b77e8f5d508a3b1aa09b8ff8a9fe4fd790"
+compare = { mode = "exact" }
+
+# S11A: S11 in accurate mode
+[[scenario]]
+id = "S11A"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 1420
+files = { acsi0 = "atari/software/scenarios/hd.img" }
+actions = ["1300:mouse_move=-1000,-1000", "1310:mouse_move=195,30", "1320:mouse_down=left", "1321:mouse_up=left", "1323:mouse_down=left", "1324:mouse_up=left"]
+golden = "atari-st/S11-harddisk.png"
+golden_sha256 = "3544dcff368b3b57415a3df27c054fc044c4243eb1f03c975de30efa9794bf2f"
+compare = { mode = "exact" }
+
+# S9SA: S9S in accurate mode
+[[scenario]]
+id = "S9SA"
+kind = "memory"
+frames = 30
+args = ["--org", "0x8000", "--serial-loopback", "--midi-loopback", "--accuracy", "accurate"]
+files = { program = "atari/software/scenarios/serial.bin" }
+start = 1536
+len = 32
+golden = "atari-st/S9S-serial.bin"
+golden_sha256 = "b0c5faa1d0f430113cf62160a35fe13c412f188fe8cc21205a6c2aa2b9c1d81f"
+
+# S10A: S10 in accurate mode
+[[scenario]]
+id = "S10A"
+args = ["--accuracy", "accurate"]
+kind = "screen"
+frames = 400
+files = { disk = "atari/software/scenarios/raster.st" }
+golden = "atari-st/S10-raster.png"
+golden_sha256 = "d7e07e77440ce585e893b20ce59594f5e5c5f0ce691934170013f9e21066456a"
+compare = { mode = "similarity", max_mad = 3.5, normalize = true, crop = [0.15, 0.0, 1.0, 1.0], reason = "another emulator's picture: the band edges depend on the HBL phase the program starts at (the boot time to its floppy: 5 frames from Hatari's, in accurate mode the edges are rows 36, 76, ... against Hatari's 34, 74, ...) and its grey levels differ; the measured difference is 3.24" }
+
+# S5A: S5 in accurate mode
+[[scenario]]
+id = "S5A"
+args = ["--accuracy", "accurate"]
+kind = "state"
+frames = 1400
+more_frames = 100
+
+# S6A: S6 in accurate mode
+[[scenario]]
+id = "S6A"
+args = ["--accuracy", "accurate"]
+kind = "timing"
+frames = 100
+cycles_per_frame = 160256
+cycles_tolerance = 170
+
+# P01 (Phase 3 timing probes, machines/atari/timing/): the harness smoke test. The probe floppy boots through a shared
+# stub (stub.s), writes 16 bytes at $C000 and loops; the golden is Hatari 2.6.1's dump of the same memory
+# (retroclawd-tools/scripts/capture_hatari_mem.py ... 600 0xC000 16): the same bytes, exactly. Later probes (P02-P20)
+# compare timing the same way; docs/timing-oracle.md.
+[[scenario]]
+id = "P01"
+kind = "memory"
+frames = 600
+files = { disk = "atari/software/scenarios/timing/p01.st" }
+start = 49152
+len = 16
+golden = "atari-st/timing/p01.bin"
+golden_sha256 = "2540ccda0a84c47dd18883dbb4cf499d3f604ac69f9ec15c8fe9949ecba868fd"
+compare = { mode = "exact" }
+
+# P02: how long 48 instruction forms take on the ST, wait states included (timing/gen_p02.py). One frame a form: a loop of
+# four copies runs while the HBL handler stores, for the first 64 lines after the VBL, how many times it ran since the last
+# HBL. Hatari's dump is the golden. The mean counts agree to 0.035 (tests/timing_probes.rs, p02_instruction_timing_agrees_
+# with_hatari_on_the_mean) but the sequences do not: see the gap.
+[[scenario]]
+id = "P02"
+kind = "memory"
+frames = 1200
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p02.st" }
+start = 49152
+len = 6148
+golden = "atari-st/timing/p02.bin"
+golden_sha256 = "7d7d209a6fdd439706781bed68b387e940743064b063228f32169edf37876a23"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the line-by-line counts differ from Hatari's by one run on about a third of the lines: where inside an instruction an interrupt is taken, and the clocks of its acknowledge, are modelled to the nearest few clocks only", evidence = "per-variant mean difference at most 0.035 runs a line (2 runs in 58); the exact sequences differ (RC_SHOW=<variant> cargo test --release -p atari-st --test timing_probes p02_report -- --ignored --nocapture); model fitted in a small simulation: the 4 and 12-clock loops fit exactly, the 8-clock ones to within 4 runs in 61" }
+
+# P04: the video address counter ($FF8205/07/09) read at 128 points along a line, on five lines of the frame
+# (timing/p04_video_counter.s). Hatari's dump is the golden. Border lines agree exactly; inside the picture the counter agrees
+# to one word (tests/timing_probes.rs, p04_video_counter_agrees_with_hatari).
+[[scenario]]
+id = "P04"
+kind = "memory"
+frames = 700
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p04.st" }
+start = 49152
+len = 4004
+golden = "atari-st/timing/p04.bin"
+golden_sha256 = "ae3e92a52a27f7067920a32e2fcbfd9af867f5a8466107466a978c6053927733"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "inside the picture Hatari's counter differs from ours by one word on about half of the samples: the reads of the three counter bytes take clock-exact slots that the model of the wait states does not reproduce, and the interrupt that starts the sample is placed to a few clocks only", evidence = "sum of the absolute differences 94 bytes over 128 samples a line (RC_SHOW=1 cargo test --release -p atari-st --test timing_probes p04_report -- --ignored --nocapture)" }
+
+# P06: the MFP timer A data register against the time since the control register started the timer (timing/p06_mfp_timer.s): four
+# prescalers, 64 starting points each. Hatari's dump is the golden: all but two reads equal, two off by one.
+[[scenario]]
+id = "P06"
+kind = "memory"
+frames = 700
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p06.st" }
+start = 49152
+len = 260
+golden = "atari-st/timing/p06.bin"
+golden_sha256 = "3cc16ecb34395c87a8d14b1202d225e722086aa9822f4c6c231a50482378c68d"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "two of the 256 timer reads differ from Hatari's by one count: the timer's first count after the control write is placed to the clock in Hatari and to the nearest MFP tick here", evidence = "ours-minus-theirs over the 256 reads has two entries of 1 and none else (cargo test --release -p atari-st --test timing_probes p06_report -- --ignored --nocapture)" }
+
+# S12 (probe P07, timing/p07_palette_strip.s): on 64 lines the HBL handler writes palette entry 1 red part way along the line and
+# white again 100 clocks later, a red strip on each line that starts one clock later than the line above. Hatari 2.6.1's picture is the
+# golden; measured by hand (a PNG reader): all 122 rows of red start and end on exactly the same pixel as ours. The similarity limit is
+# for its grey levels, not for the strips.
+[[scenario]]
+id = "S12"
+kind = "screen"
+frames = 700
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p07.st" }
+golden = "atari-st/S12-palette-strips.png"
+golden_sha256 = "647134a3830d0468e1fa54e89efa7b24bd31eec7fadc29738d9c7f38cc9fee00"
+compare = { mode = "similarity", max_mad = 1.0, normalize = true, reason = "another emulator's picture: its colour shades differ from ours; the strips themselves start and end on the same pixels on all 122 rows" }
+
+# S13 (probe P07 with the borders): Hatari 2.6.1 with --borders on draws the 832x552 canvas; ours with borders=on. Same strips as S12, now
+# also in the border colour; the 640x400 picture sits at (96, 58) in both. Similarity for the grey levels only.
+[[scenario]]
+id = "S13"
+kind = "screen"
+frames = 700
+args = ["--accuracy", "accurate", "--borders", "on"]
+files = { disk = "atari/software/scenarios/timing/p07.st" }
+golden = "atari-st/S13-borders.png"
+golden_sha256 = "f78ae0d58627ae93fc7f23ed34448301898fd1570116204a96fed8851cc1b951"
+compare = { mode = "similarity", max_mad = 1.0, normalize = true, reason = "another emulator's picture: its colour shades differ from ours; the picture and the border sit on the same pixels" }
+
+# S15: the EmuTOS desktop on the monochrome monitor after 1500 frames (probe P14 and P15 give its frame: 501 lines of 224 clocks, the
+# picture on lines 34 to 433). Hatari 2.6.1 with --monitor mono draws the same 640x400 picture.
+[[scenario]]
+id = "S15"
+kind = "screen"
+frames = 1500
+args = ["--monitor", "mono"]
+golden = "atari-st/S15-mono-desktop.png"
+golden_sha256 = "df6f0b0f3d9fdc7893ca94a8fa9ee28e56076810591e0c1c00f478d0e264dd27"
+compare = { mode = "similarity", max_mad = 2.0, normalize = true, crop = [0.0, 0.0, 0.45, 1.0], reason = "another emulator's picture; the crop leaves out the mouse pointer, which Hatari draws at its own start position" }
+
+# P14 (timing/p14_mono_frame.s): the mono frame, ten loop counts with the HBL masked and eleven HBL counts.
+[[scenario]]
+id = "P14"
+kind = "memory"
+frames = 700
+args = ["--monitor", "mono", "--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p14.st" }
+start = 49152
+len = 66
+golden = "atari-st/timing/p14.bin"
+golden_sha256 = "d50216e0ec2d26066880ddbdb85d0662dedb425a1e110f4885f8397d9f361c96"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the first HBL count is 500 here and 501 in Hatari (the HBL pending when the mask came off), and the loop counts differ by the placement of the VBL handler by up to a count", evidence = "cargo test --release -p atari-st --test timing_probes p14 (the test compares lines per frame from the second interval and the loop counts' mean within 1)" }
+
+# P16 (floppy DMA stall: a counted loop while nine sectors are read)
+[[scenario]]
+id = "P16"
+kind = "memory"
+frames = 800
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p16.st" }
+start = 49152
+len = 244
+golden = "atari-st/timing/p16.bin"
+golden_sha256 = "3d07951976138a4b7e6a123a0cc2c6f71986dcf3de85dbe293885169b55ccf5c"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the transfer starts at another frame: where the head and the disk are when the command is given differs (rotation phase is not modelled to Hatari's origin); the loss per burst and the frames inside a transfer agree", evidence = "timing_probes p16_a_dma_burst_holds_the_cpu_for_the_clocks_hatari_shows passes; p16_report lists both" }
+
+# P17 (floppy index pulse and sector pitch)
+[[scenario]]
+id = "P17"
+kind = "memory"
+frames = 800
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p17.st" }
+start = 49152
+len = 196
+golden = "atari-st/timing/p17.bin"
+golden_sha256 = "b9e3e660656329917c8181da183e2dd94e0c313a2c598ef9e488481cbae50ab0"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the index pulse and the header pitch agree to a few loop runs, but the phase of the revolution at the start is Hatari's own (its origin is the motor start), so the first stretch and the first header time differ", evidence = "timing_probes p17_the_index_pulse_and_the_sector_pitch_are_hatari_s passes; p17_report lists both" }
+
+# P18 (what an access to each I/O register costs)
+[[scenario]]
+id = "P18"
+kind = "memory"
+frames = 800
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p18.st" }
+start = 49152
+len = 196
+golden = "atari-st/timing/p18.bin"
+golden_sha256 = "4c5fc266e8675af8fd14850b814fdbd7b017193ca6c062dd147ed7b863840679"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the loop counts of a frame differ by one here and there (where the VBL handler falls in the loop); the clocks an iteration take, which the test compares, are equal for all 16 variants", evidence = "timing_probes p18_an_access_to_each_register_costs_the_clocks_hatari_shows passes" }
+
+# P19 (floppy step rates)
+[[scenario]]
+id = "P19"
+kind = "memory"
+frames = 800
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p19.st" }
+start = 49152
+len = 24
+golden = "atari-st/timing/p19.bin"
+golden_sha256 = "b315e7055f896453bb4e22b45c2fd2e9563c7c36ab1904a2ccc0a86333585c52"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the step times agree to 0.25%; second look (Phase 4): Hatari is a constant 10-16 loop iterations (a few hundred clocks) later at every one of the four step rates (21835/43654/7290/10926/10926 against ours 21825/43643/7279/10910/10916), so it is a fixed start-up delay of the command, not a rate error; moving it would change the shared wd1770 for every other floppy probe, with no hardware fact behind the figure", evidence = "timing_probes p19_the_step_rates_take_the_times_hatari_shows passes (0.25% limit)" }
+
+# P20 (keyboard controller answer latencies)
+[[scenario]]
+id = "P20"
+kind = "memory"
+frames = 3000
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p20.st" }
+start = 49152
+len = 484
+golden = "atari-st/timing/p20.bin"
+golden_sha256 = "f4ccc0e37dfee69206ca6ac3264a772c2417efeee393fcdd45b1ab2cd2e514a2"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "Hatari's first-answer latency varies by about 30 loop runs from one start to another (the 6301's loop position); ours is the mean of its figures per class of command, so single loop counts differ, the byte spacing and the answers equal", evidence = "timing_probes p20_the_keyboard_answers_with_the_latencies_and_byte_spacing_hatari_shows passes (40 runs for the reset, 70 for the rest)" }
+
+# P21 (MFP transmitter byte time)
+[[scenario]]
+id = "P21"
+kind = "memory"
+frames = 1500
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p21.st" }
+start = 49152
+len = 68
+golden = "atari-st/timing/p21.bin"
+golden_sha256 = "f694e0ead47ba40e140982d240a44e84a2879540c15cbcebf8e46748bd772212"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "Hatari 2.6.1 transmits at once with no RS-232 device attached (the buffer is empty after every write), so it has no byte time to match; ours follows the MC68901 data sheet", evidence = "timing_probes p21_the_transmitter_follows_the_baud_rate_the_data_sheet_gives" }
+
+# P22 (timing/p22_acsi_timing.s): an ACSI command done at once, TEST UNIT READY and READ(6) of 1, 8 and 32 blocks, from a floppy probe with a
+# blank disk on target 0
+[[scenario]]
+id = "P22"
+kind = "memory"
+frames = 1500
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p22.st", acsi0 = "atari/software/scenarios/timing/blank-hd.img" }
+start = 49152
+len = 36
+golden = "atari-st/timing/p22.bin"
+golden_sha256 = "4505fd9827fd845c2f51c456c2af657bc2630a7c69d2131bd2615f98cf639eba"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the completion is as immediate as Hatari's (loops equal), but Hatari leaves the DMA address counter at $020000 after a read where the ACSI notes move it on by the blocks read, as ours does", evidence = "timing_probes p22_an_acsi_command_is_done_at_once_as_in_hatari passes" }
+
+# P09 (timing/gen_p09.py): a high-then-low resolution write pair swept along line 100 (4 clocks a frame); the golden is the video address
+# counter at the entry of line 102 in Hatari. The model reproduces the frames where the right border (+44 bytes) and the left border (+26)
+# open (tests/timing_probes.rs, p09_and_p10_open_the_borders_on_the_frames_hatari_does); Hatari also cuts lines short and loses whole lines
+# there, which is not modelled.
+[[scenario]]
+id = "P09"
+kind = "memory"
+frames = 700
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p09.st" }
+start = 49152
+len = 516
+golden = "atari-st/timing/p09.bin"
+golden_sha256 = "d7c60e3f824088a4fc9f159974c7e54510a840bba5024d807c9e65dd615915f6"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "Hatari also shows lines cut short (-106 bytes) and lost (-160 bytes) on about a dozen frames of this sweep, and the +-2..4 jitter of its interrupt timing; the model has the borders only", evidence = "sets of frames with +44 and +26 equal; -106 and -160 frames missing (cargo test --release -p atari-st --test timing_probes border_report -- --ignored --nocapture with RC_PROBE=p09)" }
+
+# P10: the same sweep with the sync mode written 60 Hz then 50 Hz; the right border (+44) opens on the frame Hatari's does.
+[[scenario]]
+id = "P10"
+kind = "memory"
+frames = 700
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p10.st" }
+start = 49152
+len = 516
+golden = "atari-st/timing/p10.bin"
+golden_sha256 = "030af85ce7d085eaa11ebba2004a386c359af44c0a25ef2166b82d99f3f7e96e"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the sweep shows the +44 frame as Hatari does, but one more effect of Hatari (a lost line, -158 bytes, at the end of the sweep) is not modelled and the interrupt jitter makes the counters differ by 2 to 4 bytes", evidence = "p09_and_p10_open_the_borders_on_the_frames_hatari_does passes; border_report with RC_PROBE=p10 lists both sweeps" }
+
+# P12 (timing/gen_p12.py): the sync mode written 60 Hz on line 10 + frame and 50 Hz on the next line, 256 frames; the golden holds the video address
+# counter at the entry of lines 120 and 300 in Hatari. The top border (60 Hz on line 33), the missed picture (line 62), the early end (line 233) and the
+# bottom border (line 262) are reproduced; Hatari also shortens the picture by 5 lines at line 257, which is not modelled.
+[[scenario]]
+id = "P12"
+kind = "memory"
+frames = 900
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p12.st" }
+start = 49152
+len = 1796
+golden = "atari-st/timing/p12.bin"
+golden_sha256 = "c1122cfed51ef8b3927d0fe0bd8327a66a789d1a71feb40e3250c2712d1bfbae"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "one effect of Hatari (the picture ends 5 lines early when 60 Hz is written on line 257) is not modelled; the counter at line 120 after the top border differs by 250 bytes", evidence = "p12_moves_the_picture_window_on_the_lines_hatari_does passes for lines 33, 62, 233 and 262 (vertical_report lists both)" }

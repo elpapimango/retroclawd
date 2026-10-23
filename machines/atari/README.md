@@ -4,11 +4,25 @@ Atari family emulation for [retroclawd](https://github.com/elpapimango/retroclaw
 `atari_st_machine_plugin` and `atari_8bit_machine_plugin` shared libraries the application loads at run time. The application links none of it;
 removing the library removes the machine.
 
-State: slice 1 of the plan in the application repository
-(`docs/superpowers/plans/2026-10-19-atari-st-slice1.md`, design in
-`docs/superpowers/specs/2026-10-19-atari-st-design.md`): the MC68000 (from `retroclawd-crates`), the ST bus with
-the ROM at `$FC0000`, a deterministic event scheduler, and EmuTOS 1.4 running until its first access to a device
-that is not emulated yet, where it stops with a diagnostic.
+State: Phase 1 done, slices 1-6 of the plans in the application repository
+(`docs/superpowers/plans/2026-10-21-atari-st-slice6.md` and earlier; design in `docs/superpowers/specs/2026-10-19-atari-st-design.md`). Emulated:
+- the MC68000 (from `retroclawd-crates`) and the ST bus, ROM at `$FC0000`, the memory controller (every `--ram` size);
+- the Shifter (registers, a frame-based picture), the MC68901 MFP, HBL/VBL/MFP interrupts;
+- the YM2149 (sound, port A drive select), the keyboard and MIDI ACIAs, the IKBD (keyboard, mouse, joysticks, clock);
+- the DMA chip, the WD1772 and two floppy drives with `.st` images (reading; writing stops the machine until Phase 2).
+
+EmuTOS 1.4 boots to its desktop, boots an executable floppy, and takes keys, the mouse and joysticks. Its I/O
+accesses are compared with Hatari 2.6.1's in the tests (`crates/machines/atari-st/tests/common/mod.rs` documents the
+rules). Every hardware fact used is listed with its source in `docs/hardware-facts.md`.
+
+Scenarios: `atari-st.manifest.toml` (run by `rc-scenarios` of retroclawd-tools, see the application's CLAUDE.md) checks
+the desktop against Hatari 2.6.1, keys, joystick and mouse through `--at`, a floppy made by `rcdisk` listed on the
+desktop, a YM2149 tone and the frame length. Its media come from `scenarios/build.sh` (`scenarios/README.md`), built
+into the git-ignored `software/scenarios/`.
+
+Options: `--ram`, `--monitor` (colour; mono is refused until its frame is sourced), `--drives 1|2`; `--disk x.st`
+(drive A), `--disk-b`; key names are the host's (`KeyA`, `Escape`, `Help`, `Undo`, ...), joysticks `Joy1*` (the
+joystick port) and `Joy2*` (the mouse port).
 
 **Atari 8-bit support is experimental.** `atari-800`, `atari-800xl`, `atari-65xe`
 and `atari-130xe` boot explicitly identified Altirra replacement OS/BASIC ROMs

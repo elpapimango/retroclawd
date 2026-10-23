@@ -10,7 +10,7 @@
 #   when = { region = ... }    the PAL image (uk) for --region pal, the NTSC image (us) for --region ntsc
 
 [[rom]]
-machines = ["atari-st"]
+machines = ["atari-st", "atari-mega-st"]
 option = "rom"
 label = "EmuTOS 1.4 192K (English, PAL)"
 sha1 = ["904ea9dc09ff8286f6e0272c12255dfe85beb17a"]
@@ -20,7 +20,7 @@ entry = "emutos-192k-1.4/etos192uk.img"
 when = { region = "pal" }
 
 [[rom]]
-machines = ["atari-st"]
+machines = ["atari-st", "atari-mega-st"]
 option = "rom"
 label = "EmuTOS 1.4 192K (English, NTSC)"
 sha1 = ["c03ae6379c88b31303dd6ebe63087054f716cba0"]
@@ -53,3 +53,24 @@ machines = ["atari-800xl", "atari-65xe", "atari-130xe"]
 option = "rom_os"
 label = "AltirraOS XL/XE 3.11 replacement (not original Atari firmware)"
 sha1 = ["738b9590a29f424ad2c9d3f9cb1d170de79241f7"]
+# The STE takes the 256 KB images (readme.txt of emutos-256k-1.4.zip: "STe / Mega STe"), mapped at $E00000. The image SHA-1s
+# are pinned from the 2026-10-23 download, as for the 192 KB ones.
+[[rom]]
+machines = ["atari-ste"]
+option = "rom"
+label = "EmuTOS 1.4 256K (English, PAL)"
+sha1 = ["b9dba5346cdd237fe4ba8d89d04bc4d82e4eec72"]
+url = "https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-256k-1.4.zip"
+archive_sha1 = "3cd44f8a60658859761d86170a0f17a294eba31c"
+entry = "emutos-256k-1.4/etos256uk.img"
+when = { region = "pal" }
+
+[[rom]]
+machines = ["atari-ste"]
+option = "rom"
+label = "EmuTOS 1.4 256K (English, NTSC)"
+sha1 = ["2e0a0160d14e5340913b330aa7fe817adcf62365"]
+url = "https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-256k-1.4.zip"
+archive_sha1 = "3cd44f8a60658859761d86170a0f17a294eba31c"
+entry = "emutos-256k-1.4/etos256us.img"
+when = { region = "ntsc" }

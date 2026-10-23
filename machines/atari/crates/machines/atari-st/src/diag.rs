@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 
 use mc68000::{Cpu, ExceptionRecord, FaultInfo, Size};
 
-use crate::bus::IoStop;
+use crate::bus::{IoStop, StopReason};
 
 const HISTORY: usize = 256;
 const EXCEPTIONS: usize = 64;
@@ -83,13 +83,21 @@ impl Diag {
         };
         let direction = if stop.write { "write" } else { "read" };
         let ms = stop.at_cycle as f64 * 1000.0 / clock_hz.max(1) as f64;
-        let value = if stop.write {
+        let value = if stop.write || stop.reason == StopReason::Watch {
             format!(" = ${:X}", stop.value)
         } else {
             String::new()
         };
+        let why = match stop.reason {
+            StopReason::NotEmulated(d) => format!("{} is not emulated yet", d.name()),
+            StopReason::Watch => format!("watchpoint: {size} {direction} of ${:06X}", stop.addr),
+            StopReason::NoFact => format!(
+                "no hardware fact for ${:06X} ({size} {direction})",
+                stop.addr
+            ),
+        };
         format!(
-            "stop: {direction} {size} ${:06X}{value} (fc {}): no device emulated there yet; cycle {} ({ms:.3} ms)",
+            "stop: {direction} {size} ${:06X}{value} (fc {}): {why}; cycle {} ({ms:.3} ms)",
             stop.addr, stop.fc.0, stop.at_cycle
         )
     }
