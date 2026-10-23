@@ -152,3 +152,18 @@ modified by being read. Never committed; without the variable the tests pass and
   runtime directory on PATH on Windows; corpora, artifacts and `fuzz/target` are git-ignored.
 - Tests: `tests/blitter.rs`, `blitter_timing.rs`, `ste_sound.rs`, `ste_ports.rs`, `rtc.rs`, `watch.rs`, `phase4_models.rs`, and the Hatari comparisons
   in `timing_probes.rs` (p27-p41; the DMA counter and P34 loops compare within a tolerance, their manifest rows are `known-gap`).
+
+## Phase 5 notes (2026-10-23, the Phase 4 leftovers)
+
+- Scenarios S17 (16 STE greys), S17S (the pixel scroll, accurate mode), S19 (a blitted picture) are pixel-for-pixel Hatari's
+  (`timing/p42-p44`, goldens `atari-ste/S-p4N.png`), S18 (the DMA tone: a stereo `--dump-audio`, `channel` and
+  `other_channel_below_rms` in rc-suite's `audio`) passes. `atari-ste.manifest.toml` is 11 passed, 4 known gaps.
+- Two real defects found by them: the plugin's metadata said the STE's audio was mono (the host labelled the stereo stream
+  with it: wrong pitch, fixed: `audio_channels`/`audio_sample_rate` come from `Machine::audio_format`), and the `fast` render ignored the
+  STE's pixel scroll and line offset (`Shifter::ste_line_extra`; the line offset byte is unsigned, as in Hatari).
+- The USART has parity, framing and break flags (`mc68901::RxFault`, `AtariSt::rs232_receive_fault`; [H?] semantics: each
+  flag describes the character in the buffer, all raise the receive error). No peer produces them yet.
+- The RomM games boot on the Mega ST and the STE in both modes (`tests/romm_games.rs`).
+- Not done: the second look at 13 known-gap probes (only P19 was analysed), P35, Hatari's other wake-up states (P04 differs from
+  ws3 by 2-4 clocks of counter in ws2/ws4 and everywhere in ws1: each needs its own fit), an ACSI save action in the host, the
+  RP5C15 and LMC1992 data sheets.
