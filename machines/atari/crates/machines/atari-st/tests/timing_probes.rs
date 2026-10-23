@@ -351,3 +351,214 @@ fn p06_score() {
         .count();
     println!("SCORE equal {eq} abs_diff {d}");
 }
+
+/// `cargo test --release -p atari-st --test timing_probes border_log -- --ignored --nocapture` with `RC_PROBE=p09`: for each
+/// frame of a border sweep, the clocks into line 100 at which the device saw the two register writes.
+#[test]
+#[ignore]
+fn border_log() {
+    let name = std::env::var("RC_PROBE").unwrap_or_else(|_| "p09".to_string());
+    let (Some(rom), Some(image)) = (emutos(), floppy(&name)) else {
+        return;
+    };
+    let mut cfg = config(rom, RamSize::M1);
+    cfg.accuracy = Accuracy::Accurate;
+    let mut m = AtariSt::new(cfg).unwrap();
+    m.insert_disk(0, image).unwrap();
+    let mut frame = 0u32;
+    while m.vbl_count() < 700 {
+        m.step();
+        if m.line() == 140 {
+            let writes: Vec<_> = m
+                .bus()
+                .shifter()
+                .sync_log()
+                .filter(|w| w.line == 100)
+                .map(|w| w.cycle)
+                .collect();
+            if !writes.is_empty() {
+                frame += 1;
+                println!("frame {} writes at {:?}", frame - 1, writes);
+                while m.line() == 140 {
+                    m.step();
+                }
+            }
+        }
+    }
+}
+
+/// The sweep probes P09 to P11 record four bytes a frame (the frame, then the counter high, mid, low).
+fn sweep_counters(bytes: &[u8]) -> Vec<(u8, u32)> {
+    bytes[4..]
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| (c[0], (c[1] as u32) << 16 | (c[2] as u32) << 8 | c[3] as u32))
+        .collect()
+}
+
+/// The frames of a sweep where the counter differs from the control's by more than noise, with the difference.
+fn sweep_effects(
+    name: &str,
+    control: &str,
+    accuracy: Accuracy,
+    source: Option<&[u8]>,
+) -> Vec<(usize, i64)> {
+    let bytes = |n: &str| -> Option<Vec<u8>> {
+        match (source, n == name) {
+            (Some(b), true) => Some(b.to_vec()),
+            _ => run_probe(n, 700, 4 + 4 * 128, accuracy),
+        }
+    };
+    let (Some(t), Some(c)) = (bytes(name), bytes(control)) else {
+        return Vec::new();
+    };
+    sweep_counters(&t)
+        .iter()
+        .zip(sweep_counters(&c).iter())
+        .enumerate()
+        .filter(|(_, (a, _))| a.0 != 0)
+        .filter_map(|(i, (a, b))| {
+            let d = a.1 as i64 - b.1 as i64;
+            (d.abs() > 8).then_some((i, d))
+        })
+        .collect()
+}
+
+#[test]
+#[ignore]
+fn border_report() {
+    let name = std::env::var("RC_PROBE").unwrap_or_else(|_| "p09".to_string());
+    let ours = sweep_effects(&name, "p11", Accuracy::Accurate, None);
+    println!("ours   {ours:?}");
+    let (Some(t), Some(c)) = (golden_bytes(&name), golden_bytes("p11")) else {
+        return;
+    };
+    let hatari = sweep_counters(&t)
+        .iter()
+        .zip(sweep_counters(&c).iter())
+        .enumerate()
+        .filter(|(_, (a, _))| a.0 != 0)
+        .filter_map(|(i, (a, b))| {
+            let d = a.1 as i64 - b.1 as i64;
+            (d.abs() > 8).then_some((i, d))
+        })
+        .collect::<Vec<_>>();
+    println!("hatari {hatari:?}");
+}
+
+/// P12 and P13 record seven bytes a frame: the frame, the counter at line 120, the counter at line 300.
+fn vertical_counters(bytes: &[u8]) -> Vec<(i64, i64)> {
+    bytes[4..]
+        .as_chunks::<7>()
+        .0
+        .iter()
+        .map(|c| {
+            (
+                ((c[1] as i64) << 16 | (c[2] as i64) << 8 | c[3] as i64),
+                ((c[4] as i64) << 16 | (c[5] as i64) << 8 | c[6] as i64),
+            )
+        })
+        .collect()
+}
+
+fn vertical_effects(test: &[u8], control: &[u8]) -> Vec<(usize, i64, i64)> {
+    vertical_counters(test)
+        .iter()
+        .zip(vertical_counters(control).iter())
+        .enumerate()
+        .filter_map(|(i, (a, b))| {
+            let (d1, d2) = (a.0 - b.0, a.1 - b.1);
+            (d1.abs() > 8 || d2.abs() > 8).then_some((10 + i, d1, d2))
+        })
+        .collect()
+}
+
+#[test]
+#[ignore]
+fn vertical_report() {
+    let (Some(t), Some(c)) = (
+        run_probe("p12", 900, 4 + 7 * 256, Accuracy::Accurate),
+        run_probe("p13", 900, 4 + 7 * 256, Accuracy::Accurate),
+    ) else {
+        return;
+    };
+    println!("ours   {:?}", vertical_effects(&t, &c));
+    if let (Some(ht), Some(hc)) = (golden_bytes("p12"), golden_bytes("p13")) {
+        println!("hatari {:?}", vertical_effects(&ht, &hc));
+    }
+}
+
+/// The border effects the model reproduces: a line that opened its right border fetches 44 bytes more, one that opened its
+/// left border 26 more. The frames where that happens are the same as Hatari's (P09: the resolution switched to high and
+/// back, P10: the sync mode to 60 Hz and back), to the frame. What Hatari also does and the model does not (cuts a line
+/// short, loses a line: effects of -106 and -160 bytes) is not compared; manifest P09 says so.
+#[test]
+fn p09_and_p10_open_the_borders_on_the_frames_hatari_does() {
+    let kinds = |effects: Vec<(usize, i64)>| -> Vec<(usize, i64)> {
+        effects
+            .into_iter()
+            .filter_map(|(i, d)| {
+                if (d - 44).abs() <= 4 {
+                    Some((i, 44))
+                } else if (d - 26).abs() <= 4 {
+                    Some((i, 26))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
+    for name in ["p09", "p10"] {
+        let Some(t) = golden_bytes(name) else {
+            return;
+        };
+        let Some(c) = golden_bytes("p11") else {
+            return;
+        };
+        let hatari = kinds(
+            sweep_counters(&t)
+                .iter()
+                .zip(sweep_counters(&c).iter())
+                .enumerate()
+                .filter(|(_, (a, _))| a.0 != 0)
+                .filter_map(|(i, (a, b))| {
+                    let d = a.1 as i64 - b.1 as i64;
+                    (d.abs() > 8).then_some((i, d))
+                })
+                .collect(),
+        );
+        let ours = kinds(sweep_effects(name, "p11", Accuracy::Accurate, None));
+        assert!(!hatari.is_empty(), "{name}: Hatari's sweep shows no border");
+        assert_eq!(ours, hatari, "{name}");
+    }
+}
+
+/// The picture window: the top border opens when the line before the picture starts in 60 Hz, the picture is missed when
+/// the line it should start on starts in 60 Hz after that, the bottom ends at line 234 for a 60 Hz line there and goes on
+/// past line 263 when that line starts in 60 Hz (P12; line 257 in Hatari's sweep is not modelled).
+#[test]
+fn p12_moves_the_picture_window_on_the_lines_hatari_does() {
+    let (Some(ht), Some(hc)) = (golden_bytes("p12"), golden_bytes("p13")) else {
+        return;
+    };
+    let (Some(t), Some(c)) = (
+        run_probe("p12", 900, 4 + 7 * 256, Accuracy::Accurate),
+        run_probe("p13", 900, 4 + 7 * 256, Accuracy::Accurate),
+    ) else {
+        return;
+    };
+    let modelled = [33usize, 62, 233, 262];
+    let pick = |e: Vec<(usize, i64, i64)>| -> Vec<(usize, i64)> {
+        e.into_iter()
+            .filter(|(x, _, _)| modelled.contains(x))
+            .map(|(x, _, d2)| (x, d2 / 100))
+            .collect()
+    };
+    let (ours, theirs) = (
+        pick(vertical_effects(&t, &c)),
+        pick(vertical_effects(&ht, &hc)),
+    );
+    assert_eq!(theirs.len(), 4, "{theirs:?}");
+    assert_eq!(ours, theirs);
+}

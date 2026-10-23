@@ -10,6 +10,10 @@ fn screen() -> (Shifter, Vec<u8>) {
     let mut s = Shifter::new(true);
     s.write(0xFF_8242, true, 0x777);
     s.begin_frame();
+    // The frame has reached its first picture line, so the Shifter fetches the data.
+    for line in 1..=FIRST_LINE {
+        s.line_boundary(line);
+    }
     let mut ram = vec![0u8; 0x10000];
     for chunk in ram[..32000].as_chunks_mut::<8>().0 {
         chunk[0] = 0xFF;

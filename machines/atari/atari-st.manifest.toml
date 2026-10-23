@@ -243,3 +243,53 @@ files = { disk = "atari/software/scenarios/timing/p07.st" }
 golden = "atari-st/S12-palette-strips.png"
 golden_sha256 = "647134a3830d0468e1fa54e89efa7b24bd31eec7fadc29738d9c7f38cc9fee00"
 compare = { mode = "similarity", max_mad = 1.0, normalize = true, reason = "another emulator's picture: its colour shades differ from ours; the strips themselves start and end on the same pixels on all 122 rows" }
+
+# P09 (timing/gen_p09.py): a high-then-low resolution write pair swept along line 100 (4 clocks a frame); the golden is the video address
+# counter at the entry of line 102 in Hatari. The model reproduces the frames where the right border (+44 bytes) and the left border (+26)
+# open (tests/timing_probes.rs, p09_and_p10_open_the_borders_on_the_frames_hatari_does); Hatari also cuts lines short and loses whole lines
+# there, which is not modelled.
+[[scenario]]
+id = "P09"
+kind = "memory"
+frames = 700
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p09.st" }
+start = 49152
+len = 516
+golden = "atari-st/timing/p09.bin"
+golden_sha256 = "d7c60e3f824088a4fc9f159974c7e54510a840bba5024d807c9e65dd615915f6"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "Hatari also shows lines cut short (-106 bytes) and lost (-160 bytes) on about a dozen frames of this sweep, and the +-2..4 jitter of its interrupt timing; the model has the borders only", evidence = "sets of frames with +44 and +26 equal; -106 and -160 frames missing (cargo test --release -p atari-st --test timing_probes border_report -- --ignored --nocapture with RC_PROBE=p09)" }
+
+# P10: the same sweep with the sync mode written 60 Hz then 50 Hz; the right border (+44) opens on the frame Hatari's does.
+[[scenario]]
+id = "P10"
+kind = "memory"
+frames = 700
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p10.st" }
+start = 49152
+len = 516
+golden = "atari-st/timing/p10.bin"
+golden_sha256 = "030af85ce7d085eaa11ebba2004a386c359af44c0a25ef2166b82d99f3f7e96e"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the sweep shows the +44 frame as Hatari does, but one more effect of Hatari (a lost line, -158 bytes, at the end of the sweep) is not modelled and the interrupt jitter makes the counters differ by 2 to 4 bytes", evidence = "p09_and_p10_open_the_borders_on_the_frames_hatari_does passes; border_report with RC_PROBE=p10 lists both sweeps" }
+
+# P12 (timing/gen_p12.py): the sync mode written 60 Hz on line 10 + frame and 50 Hz on the next line, 256 frames; the golden holds the video address
+# counter at the entry of lines 120 and 300 in Hatari. The top border (60 Hz on line 33), the missed picture (line 62), the early end (line 233) and the
+# bottom border (line 262) are reproduced; Hatari also shortens the picture by 5 lines at line 257, which is not modelled.
+[[scenario]]
+id = "P12"
+kind = "memory"
+frames = 900
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p12.st" }
+start = 49152
+len = 1796
+golden = "atari-st/timing/p12.bin"
+golden_sha256 = "c1122cfed51ef8b3927d0fe0bd8327a66a789d1a71feb40e3250c2712d1bfbae"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "one effect of Hatari (the picture ends 5 lines early when 60 Hz is written on line 257) is not modelled; the counter at line 120 after the top border differs by 250 bytes", evidence = "p12_moves_the_picture_window_on_the_lines_hatari_does passes for lines 33, 62, 233 and 262 (vertical_report lists both)" }

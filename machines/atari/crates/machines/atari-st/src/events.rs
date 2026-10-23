@@ -126,8 +126,12 @@ impl StBus {
         self.hbl_count += 1;
         self.raise_hbl();
         self.line += 1;
-        if self.line == self.geometry.lines {
+        let wrapped = self.line == self.geometry.lines;
+        if wrapped {
             self.line = 0;
+        }
+        self.shifter.line_boundary(self.line as u16);
+        if wrapped {
             self.vbl_count += 1;
             self.last_vbl_at = at;
             // `fast` mode raises it with the line-end HBL (its picture and its Hatari I/O trace were made so); `accurate`

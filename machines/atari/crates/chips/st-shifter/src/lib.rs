@@ -8,6 +8,9 @@
 //! frame.
 #![forbid(unsafe_code)]
 
+mod fetch;
+pub use fetch::{Fetch, LEFT_BYTES, LINE_BYTES, RIGHT_BYTES};
+
 use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
@@ -94,6 +97,11 @@ pub struct Shifter {
     /// The clocks into the line of the write being made (set by `write_at`, stored with the palette change).
     #[serde(skip)]
     cycle: u16,
+    /// The picture window of the frame and the borders of its lines (`fetch.rs`).
+    fetch: Fetch,
+    /// The resolution and sync mode registers as the current raster line began.
+    line_res: u8,
+    line_sync: u8,
 }
 
 impl Shifter {
@@ -112,6 +120,9 @@ impl Shifter {
             line_start: 0,
             sync_log: VecDeque::new(),
             cycle: 0,
+            fetch: Fetch::default(),
+            line_res: 0,
+            line_sync: if pal { 0x02 } else { 0x00 },
         }
     }
 
@@ -153,11 +164,55 @@ impl Shifter {
         self.line = line;
     }
 
+    /// The current raster line ends and `new_line` begins: the finished line's borders are decided from its register
+    /// writes, the registers as they now stand are the new line's, and the new line may start or end the picture.
+    pub fn line_boundary(&mut self, new_line: u16) {
+        self.fetch.end_line(
+            self.line,
+            self.line_res,
+            self.line_sync,
+            self.sync_log.iter(),
+        );
+        self.line_res = self.resolution;
+        self.line_sync = self.sync;
+        self.line = new_line;
+        self.fetch.start_line(new_line, self.sync & 2 == 0);
+    }
+
+    /// The picture window and the borders of the lines of this frame.
+    pub fn fetch(&self) -> &Fetch {
+        &self.fetch
+    }
+
+    /// The borders the current line has opened by now, from the register writes made on it so far.
+    pub fn current_borders(&self) -> (bool, bool) {
+        if !self.fetch.fetching(self.line) {
+            return (false, false);
+        }
+        Fetch::split(Fetch::flags(
+            self.line,
+            self.line_res,
+            self.line_sync,
+            self.sync_log.iter(),
+        ))
+    }
+
+    /// Where the data of raster line `line` starts, as bytes past the video base, and whether its left border opened
+    /// (the visible picture then starts 26 bytes into the data); `None` for a line that fetches nothing.
+    pub fn picture_line(&self, line: u16) -> Option<(u32, bool)> {
+        if !self.fetch.fetching(line) {
+            return None;
+        }
+        let (left, _) = self.fetch.borders(line);
+        Some((self.fetch.bytes_before(line), left))
+    }
+
     /// A new frame starts: the palette as it now is becomes the frame's first, and the change log empties.
     pub fn begin_frame(&mut self) {
         self.frame_palette = self.palette;
         self.changes.clear();
         self.sync_log.clear();
+        self.fetch.reset();
     }
 
     /// The palette writes of the frame so far, in time order.
@@ -254,7 +309,11 @@ impl Shifter {
     /// medium ([H?] they cannot sync to it, p.57).
     pub fn render(&self, monitor: Monitor, ram: &dyn Fn(u32) -> u8, out: &mut Vec<u8>) {
         let palette = self.palette;
-        self.draw(monitor, ram, out, &mut |_| (palette, Vec::new()));
+        let base = self.video_base();
+        let bytes_per_line = self.bytes_per_line(monitor);
+        self.draw(monitor, ram, out, &mut |_| (palette, Vec::new()), &|line| {
+            Some(base + line * bytes_per_line)
+        });
     }
 
     /// The frame with the palette followed down the screen: picture line `y` (0 at the top, 0-199 in low and medium
@@ -269,15 +328,23 @@ impl Shifter {
     ) {
         let mut palette = self.frame_palette;
         let mut next = 0;
-        self.draw(monitor, ram, out, &mut |y| {
-            while let Some(c) = self.changes.get(next)
-                && c.line as u32 <= first_line + y
-            {
-                palette[(c.index & 15) as usize] = c.value;
-                next += 1;
-            }
-            (palette, Vec::new())
-        });
+        let base = self.video_base();
+        let bytes_per_line = self.bytes_per_line(monitor);
+        self.draw(
+            monitor,
+            ram,
+            out,
+            &mut |y| {
+                while let Some(c) = self.changes.get(next)
+                    && c.line as u32 <= first_line + y
+                {
+                    palette[(c.index & 15) as usize] = c.value;
+                    next += 1;
+                }
+                (palette, Vec::new())
+            },
+            &|line| Some(base + line * bytes_per_line),
+        );
     }
 
     /// Like [`Shifter::render_raster`], but a palette change on a line reaches the pixels from the clock it was made at:
@@ -293,29 +360,50 @@ impl Shifter {
     ) {
         let mut palette = self.frame_palette;
         let mut next = 0;
-        self.draw(monitor, ram, out, &mut |y| {
-            // Changes of earlier lines are done; those of this line are applied pixel by pixel.
-            let line = first_line + y;
-            while let Some(c) = self.changes.get(next)
-                && (c.line as u32) < line
-            {
-                palette[(c.index & 15) as usize] = c.value;
-                next += 1;
-            }
-            let start = palette;
-            let mut in_line = Vec::new();
-            while let Some(c) = self.changes.get(next)
-                && c.line as u32 == line
-            {
-                let clock = c.cycle as i32 - pixel_start;
-                // Two canvas pixels a clock in both resolutions.
-                in_line.push((2 * clock, (c.index & 15) as usize, c.value));
-                // The line after this one starts with them all done.
-                palette[(c.index & 15) as usize] = c.value;
-                next += 1;
-            }
-            (start, in_line)
-        });
+        let base = self.video_base();
+        self.draw(
+            monitor,
+            ram,
+            out,
+            &mut |y| {
+                // Changes of earlier lines are done; those of this line are applied pixel by pixel.
+                let line = first_line + y;
+                while let Some(c) = self.changes.get(next)
+                    && (c.line as u32) < line
+                {
+                    palette[(c.index & 15) as usize] = c.value;
+                    next += 1;
+                }
+                let start = palette;
+                let mut in_line = Vec::new();
+                while let Some(c) = self.changes.get(next)
+                    && c.line as u32 == line
+                {
+                    let clock = c.cycle as i32 - pixel_start;
+                    // Two canvas pixels a clock in both resolutions.
+                    in_line.push((2 * clock, (c.index & 15) as usize, c.value));
+                    // The line after this one starts with them all done.
+                    palette[(c.index & 15) as usize] = c.value;
+                    next += 1;
+                }
+                (start, in_line)
+            },
+            &|y| {
+                // The data of the raster line shown as picture line `y`: the picture may start before or after it.
+                self.picture_line((first_line + y) as u16)
+                    .map(|(offset, left)| base + offset + if left { LEFT_BYTES } else { 0 })
+            },
+        );
+    }
+
+    /// Bytes of picture data on a line in the resolution now selected.
+    fn bytes_per_line(&self, monitor: Monitor) -> u32 {
+        match (self.resolution(), monitor) {
+            (Resolution::Low, Monitor::Colour) => 160,
+            (Resolution::Medium, Monitor::Colour) => 160,
+            (Resolution::High, Monitor::Mono) => 80,
+            _ => 0,
+        }
     }
 
     /// Draws the frame. `palette_at(y)` gives picture line `y`'s palette at its start and the palette changes made on the
@@ -326,6 +414,7 @@ impl Shifter {
         ram: &dyn Fn(u32) -> u8,
         out: &mut Vec<u8>,
         palette_at: &mut dyn FnMut(u32) -> LinePalette,
+        row_at: &dyn Fn(u32) -> Option<u32>,
     ) {
         out.clear();
         out.resize((WIDTH * HEIGHT * 3) as usize, 0);
@@ -337,8 +426,6 @@ impl Shifter {
         };
         let x_scale = WIDTH / width;
         let y_scale = HEIGHT / lines;
-        let bytes_per_line = width * planes / 8;
-        let base = self.video_base();
         let rgb_of = |palette: &[u16; 16]| -> Vec<[u8; 3]> {
             if planes == 1 {
                 let (dark, light) = ([0, 0, 0], [255, 255, 255]);
@@ -356,7 +443,10 @@ impl Shifter {
             let (mut palette, changes) = palette_at(line);
             let mut rgb = rgb_of(&palette);
             let mut change_at = 0;
-            let row = base + line * bytes_per_line;
+            // A line that fetches nothing stays black.
+            let Some(row) = row_at(line) else {
+                continue;
+            };
             for group in 0..width / 16 {
                 let at = row + group * planes * 2;
                 for (p, w) in words.iter_mut().enumerate().take(planes as usize) {

@@ -44,27 +44,27 @@ pub(crate) const PIXEL_START: i32 = WINDOW_START as i32 + 23;
 /// resolutions).
 pub(crate) const CLOCKS_PER_WORD: u64 = 4;
 pub(crate) const WORDS_PER_LINE: u64 = 80;
-/// The picture's lines (colour monitor).
-pub(crate) const PICTURE_LINES: u32 = 200;
 
 impl StBus {
     /// The video address counter at the current time: the address of the next word the Shifter reads. Before the first
     /// line of the picture it holds the frame's base address, inside a line it moves one word every 4 clocks from the
     /// start of the fetch window, after the last line it holds the end of the picture.
     pub(crate) fn video_counter(&self) -> u32 {
-        let first = crate::scheduler::first_display_line(self.geometry.lines);
         let base = self.shifter.video_base();
-        if self.line < first {
-            return base;
+        let fetch = self.shifter.fetch();
+        let line = self.line as u16;
+        if !fetch.fetching(line) {
+            // Before the picture: the base; after it: past its last line.
+            return base.wrapping_add(fetch.bytes_before(u16::MAX));
         }
-        let n = self.line - first;
-        if n >= PICTURE_LINES {
-            return base.wrapping_add(PICTURE_LINES * 160);
-        }
+        let (left, right) = self.shifter.current_borders();
         let line_start = self.last_vbl_at + self.line as u64 * self.geometry.clocks_per_line as u64;
         let into = self.now.saturating_sub(line_start);
-        let words = (into.saturating_sub(WINDOW_START) / CLOCKS_PER_WORD).min(WORDS_PER_LINE);
-        base.wrapping_add(n * 160 + 2 * words as u32)
+        // A left border opened starts the fetch 52 clocks sooner, a right border runs it 88 clocks longer.
+        let start = WINDOW_START - if left { 52 } else { 0 };
+        let words = (into.saturating_sub(start) / CLOCKS_PER_WORD)
+            .min(WORDS_PER_LINE + if left { 13 } else { 0 } + if right { 22 } else { 0 });
+        base.wrapping_add(fetch.bytes_before(line) + 2 * words as u32)
     }
 
     /// The clocks a bus cycle that would start now at `addr` waits first.
