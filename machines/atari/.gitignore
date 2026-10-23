@@ -7,3 +7,8 @@ dist/
 /software/
 # Local cross-repository testing only (see CLAUDE.md); never committed.
 /.cargo/
+
+# cargo-fuzz build output, corpora and crashes
+crates/**/fuzz/target/
+crates/**/fuzz/corpus/
+crates/**/fuzz/artifacts/
