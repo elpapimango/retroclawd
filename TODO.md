@@ -109,7 +109,7 @@ No real hardware is available, so these stay parked until someone has it; everyt
 ## Atari ST: Phase 4 done except the items below (2026-10-23)
 
 Phase 4 (spec Status 2026-10-23): the Blitter, the STE (Shifter, DMA sound, ports), the Mega ST clock, watchpoints, fuzz runs, ACSI `--disk-save`.
-Open: second attempts at 13 `known-gap` probes (P02 P04 P06 P09 P10 P12 P14 P16 P17 P18 P20 P21 P22) and P35 (mid-line resolution picture); scenarios S17 (4096 colours), S18 (DMA tone), S19 (blitted picture); USART break/parity/frame error flags; an ACSI save action beside the exit save; the RomM games on the new models; the real RP5C15 and LMC1992 data sheets (their `[H?]` rows); Hatari's other wake-up states.
+Open: second attempts at 13 `known-gap` probes (P01 P04 P06 P09 P10 P12 P14 P16 P17 P18 P20 P21 P22; P19 was analysed, a constant start-up offset) and P35 (mid-line resolution picture); an ACSI save action beside the exit save (host); the real RP5C15 and LMC1992 data sheets (their `[H?]` rows); Hatari's other wake-up states (ws1, ws2, ws4: P04 differs). Done since (Phase 5): S17, S17S, S18, S19, USART error flags, the RomM games on the new models; see machines/atari/CLAUDE.md.
 
 ### Atari ST: Phase 3 done (kept for the record, 2026-10-23)
 
