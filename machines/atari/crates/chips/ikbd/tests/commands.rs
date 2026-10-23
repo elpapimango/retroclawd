@@ -413,3 +413,28 @@ fn resume_without_a_pause_does_nothing() {
     k.key(0x1E, true, T);
     assert_eq!(drain(&mut k, T), vec![0x1E]);
 }
+
+/// A host may set a delay between a query and its answer (`set_reply_delays`); the answer is not ready before it.
+#[test]
+fn an_answer_waits_for_the_reply_delay_the_host_set() {
+    let mut k = ready();
+    k.set_reply_delays(6_500, 5_000);
+    send(&mut k, &[0x16], T);
+    assert_eq!(drain(&mut k, T + 6_499), vec![], "not yet");
+    assert_eq!(drain(&mut k, T + 6_500), vec![0xFD, 0x00, 0x00]);
+    send(&mut k, &[0x87], T);
+    assert_eq!(drain(&mut k, T + 4_999), vec![]);
+    assert_eq!(drain(&mut k, T + 5_000).len(), 8);
+}
+
+/// A reset keeps the host's reply delays (they are the host's, not a mode).
+#[test]
+fn reset_keeps_the_reply_delays() {
+    let mut k = ready();
+    k.set_reply_delays(6_500, 5_000);
+    send(&mut k, &[0x80, 0x01], T);
+    drain(&mut k, T + 1_000_000);
+    send(&mut k, &[0x16], 2 * T);
+    assert_eq!(drain(&mut k, 2 * T + 6_499), vec![]);
+    assert_eq!(drain(&mut k, 2 * T + 6_500), vec![0xFD, 0x00, 0x00]);
+}

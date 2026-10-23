@@ -21,6 +21,12 @@ pub use scancodes::{SCANCODES, scancode};
 /// [O] CPU cycles from receiving RESET's second byte (or power-up) to the version code being ready: Hatari 2.6.1
 /// sends it 502 002 cycles (62.6 ms at 8 MHz) later; §9.1 allows up to 300 ms.
 pub const RESET_REPLY_DELAY: u64 = 502_002;
+/// [O] CPU cycles from receiving the last byte of an interrogation command (`$0D`, `$16`, `$1C`, `$21`) to the answer being
+/// ready, and likewise for a status inquiry (`$87` to `$9A`): means of Hatari 2.6.1's first-answer latencies in probe P20 (456
+/// and 430 loop runs of 60 clocks against 347 with no delay; Hatari's own figures vary by about 30 runs from one start to
+/// another, the 6301's loop position). The document leaves them open.
+pub const QUERY_REPLY_DELAY: u64 = 6_500;
+pub const STATUS_REPLY_DELAY: u64 = 5_000;
 /// [O] the version code: §8 gives `$F0` for the first release and `$F1` for a second; Hatari's ST answers `$F1`.
 pub const VERSION: u8 = 0xF1;
 /// [H?] bytes the controller can hold for the host. The 6301 has 128 bytes of RAM (*Internals* p.69); the document
@@ -132,6 +138,12 @@ pub struct Ikbd {
     clock: [u8; 6],
     clock_at: u64,
     cycles_per_second: u64,
+    /// Cycles an answer to a query or a status inquiry waits after its command (0: the document's, immediate). Set by the
+    /// host from the [O] constants; not part of a state.
+    #[serde(skip)]
+    query_delay: u64,
+    #[serde(skip)]
+    status_delay: u64,
     /// [H?] §9.24-9.26: a model of the controller memory the host loaded; nothing else is there.
     memory: BTreeMap<u16, u8>,
     /// [H?] the addresses of §9.26 controller-execute commands received (the program is not run), newest last.
@@ -175,11 +187,19 @@ impl Ikbd {
             clock: [0; 6],
             clock_at: 0,
             cycles_per_second: 0,
+            query_delay: 0,
+            status_delay: 0,
             memory: BTreeMap::new(),
             executed: Vec::new(),
         };
         k.push(RESET_REPLY_DELAY, &[VERSION]);
         k
+    }
+
+    /// The delays of the answers to queries and status inquiries ([`QUERY_REPLY_DELAY`], [`STATUS_REPLY_DELAY`] on the ST).
+    pub fn set_reply_delays(&mut self, query: u64, status: u64) {
+        self.query_delay = query;
+        self.status_delay = status;
     }
 
     /// The host's CPU clock, which converts the document's hundredths and tenths of a second to cycles.
@@ -191,11 +211,13 @@ impl Ikbd {
     /// off, the output queue is emptied, and the loaded controller memory is gone (the self-test runs again).
     fn reset(&mut self, at: u64) {
         let (clock, clock_at, cps) = (self.clock, self.clock_at, self.cycles_per_second);
+        let delays = (self.query_delay, self.status_delay);
         *self = Self::new();
         self.queue.clear();
         self.clock = clock;
         self.clock_at = clock_at;
         self.cycles_per_second = cps;
+        (self.query_delay, self.status_delay) = delays;
         self.push(at + RESET_REPLY_DELAY, &[VERSION]);
     }
 
@@ -465,7 +487,7 @@ impl Ikbd {
                 let [xh, xl] = (self.abs.0 as u16).to_be_bytes();
                 let [yh, yl] = (self.abs.1 as u16).to_be_bytes();
                 let b = std::mem::take(&mut self.abs_buttons);
-                self.push(at, &[0xF7, b, xh, xl, yh, yl]);
+                self.push(at + self.query_delay, &[0xF7, b, xh, xl, yh, yl]);
             }
             0x0E => {
                 self.abs = (
@@ -483,7 +505,7 @@ impl Ikbd {
             0x15 => self.joystick_command(JoyMode::Interrogation, at),
             0x16 => {
                 let j0 = if self.port0_joystick { self.joy[0] } else { 0 };
-                self.push(at, &[0xFD, j0, self.joy[1]]);
+                self.push(at + self.query_delay, &[0xFD, j0, self.joy[1]]);
             }
             0x17 => self.joystick_command(JoyMode::Monitoring { rate: cmd[1] }, at),
             0x18 => self.joystick_command(JoyMode::FireButton, at),
@@ -514,7 +536,10 @@ impl Ikbd {
             }
             0x1C => {
                 let c = self.clock;
-                self.push(at, &[0xFC, c[0], c[1], c[2], c[3], c[4], c[5]]);
+                self.push(
+                    at + self.query_delay,
+                    &[0xFC, c[0], c[1], c[2], c[3], c[4], c[5]],
+                );
             }
             0x20 => self.memory_load(cmd),
             // §9.25: `$F6 $20` and six bytes from the address. [H?] only what a load put there is known; the rest
@@ -531,7 +556,7 @@ impl Ikbd {
                         .copied()
                         .unwrap_or(0);
                 }
-                self.push(at, &p);
+                self.push(at + self.query_delay, &p);
             }
             // [H?] §9.26: the controller's firmware is not emulated, so nothing runs; the address is kept for tests
             // and diagnostics.
@@ -620,7 +645,7 @@ impl Ikbd {
         }
         let mut packet = vec![0xF6];
         packet.extend_from_slice(&r);
-        self.push(at, &packet);
+        self.push(at + self.status_delay, &packet);
     }
 
     /// Whether a monitoring mode has the controller to itself (§9.18, §9.19: "nothing but monitor the serial command

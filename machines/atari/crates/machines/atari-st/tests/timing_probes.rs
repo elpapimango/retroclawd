@@ -898,3 +898,111 @@ fn p17_the_index_pulse_and_the_sector_pitch_are_hatari_s() {
         );
     }
 }
+
+/// P20: per case (12) eight loop counts (longs) and eight bytes.
+fn p20_cases(b: &[u8]) -> Vec<(Vec<u32>, Vec<u8>)> {
+    b[4..]
+        .chunks(40)
+        .map(|c| {
+            let counts = c[..32]
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|x| u32::from_be_bytes(*x))
+                .collect();
+            (counts, c[32..40].to_vec())
+        })
+        .collect()
+}
+
+#[test]
+#[ignore = "report"]
+fn p20_report() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p20", 3000, 484, Accuracy::Accurate),
+        golden_bytes("p20"),
+    ) else {
+        return;
+    };
+    for (i, (o, t)) in p20_cases(&ours).iter().zip(p20_cases(&theirs)).enumerate() {
+        println!("case {i}: ours   {:?} {:02X?}", o.0, o.1);
+        println!("case {i}: theirs {:?} {:02X?}", t.0, t.1);
+    }
+}
+
+#[test]
+fn p20_the_keyboard_answers_with_the_latencies_and_byte_spacing_hatari_shows() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p20", 3000, 484, Accuracy::Accurate),
+        golden_bytes("p20"),
+    ) else {
+        return;
+    };
+    let (o, t) = (p20_cases(&ours), p20_cases(&theirs));
+    assert_eq!(o.len(), 12);
+    for (i, (a, b)) in o.iter().zip(&t).enumerate() {
+        // The answers' bytes are the same except the clock's seconds (the clock runs from another start).
+        assert_eq!(a.1[0], b.1[0], "case {i}: first answer byte");
+        let answered =
+            |c: &(Vec<u32>, Vec<u8>)| c.0.iter().take_while(|&&n| n < 100_000 && n != 0).count();
+        assert_eq!(answered(a), answered(b), "case {i}: number of answer bytes");
+        // The first answer: Hatari's own figure varies by about 30 loop runs between starts; the rest is a byte time apart.
+        let limit = if i == 0 { 40 } else { 70 };
+        assert!(
+            a.0[0].abs_diff(b.0[0]) <= limit,
+            "case {i}: first answer ours {:?} theirs {:?}",
+            a.0,
+            b.0
+        );
+        for k in 1..answered(a) {
+            assert!(
+                a.0[k].abs_diff(b.0[k]) <= 2,
+                "case {i}: byte {k} ours {:?} theirs {:?}",
+                a.0,
+                b.0
+            );
+        }
+    }
+}
+
+/// P21: eight loop counts of a byte at 9600 baud, then eight at 1200.
+fn p21_values(b: &[u8]) -> Vec<u32> {
+    b[4..68]
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_be_bytes(*c))
+        .collect()
+}
+
+#[test]
+#[ignore = "report"]
+fn p21_report() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe("p21", 1500, 68, Accuracy::Accurate),
+        golden_bytes("p21"),
+    ) else {
+        return;
+    };
+    println!("ours   {:?}", p21_values(&ours));
+    println!("theirs {:?}", p21_values(&theirs));
+}
+
+/// Hatari 2.6.1 transmits at once when no RS-232 device is attached (every wait above is one loop run), so there is no
+/// timing to copy; ours follows the MC68901 data sheet: a frame is 10 bits of 16 timer D periods x 2, so 1200 baud takes
+/// eight times as long as 9600.
+#[test]
+fn p21_the_transmitter_follows_the_baud_rate_the_data_sheet_gives() {
+    let Some(ours) = run_probe("p21", 1500, 68, Accuracy::Accurate) else {
+        return;
+    };
+    let v = p21_values(&ours);
+    let (fast, slow) = (&v[2..8], &v[10..16]);
+    let (f, s) = (
+        fast.iter().sum::<u32>() as f64 / 6.0,
+        slow.iter().sum::<u32>() as f64 / 6.0,
+    );
+    assert!((s / f - 8.0).abs() < 0.05, "{fast:?} {slow:?}");
+    // 9600 baud is 8 355 clocks a byte; a loop run of the poll is about 40 clocks.
+    assert!((f * 40.0 - 8_355.0).abs() < 250.0, "{fast:?}");
+}

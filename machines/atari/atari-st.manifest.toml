@@ -342,6 +342,36 @@ compare = { mode = "exact" }
 status = "known-gap"
 gap = { reason = "the data sheet's step times agree to 0.25%: the controller's settle and command set-up are a few hundred clocks apart in the two emulators", evidence = "timing_probes p19_the_step_rates_take_the_times_hatari_shows passes (0.25% limit)" }
 
+# P20 (keyboard controller answer latencies)
+[[scenario]]
+id = "P20"
+kind = "memory"
+frames = 3000
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p20.st" }
+start = 49152
+len = 484
+golden = "atari-st/timing/p20.bin"
+golden_sha256 = "f4ccc0e37dfee69206ca6ac3264a772c2417efeee393fcdd45b1ab2cd2e514a2"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "Hatari's first-answer latency varies by about 30 loop runs from one start to another (the 6301's loop position); ours is the mean of its figures per class of command, so single loop counts differ, the byte spacing and the answers equal", evidence = "timing_probes p20_the_keyboard_answers_with_the_latencies_and_byte_spacing_hatari_shows passes (40 runs for the reset, 70 for the rest)" }
+
+# P21 (MFP transmitter byte time)
+[[scenario]]
+id = "P21"
+kind = "memory"
+frames = 1500
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p21.st" }
+start = 49152
+len = 68
+golden = "atari-st/timing/p21.bin"
+golden_sha256 = "f694e0ead47ba40e140982d240a44e84a2879540c15cbcebf8e46748bd772212"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "Hatari 2.6.1 transmits at once with no RS-232 device attached (the buffer is empty after every write), so it has no byte time to match; ours follows the MC68901 data sheet", evidence = "timing_probes p21_the_transmitter_follows_the_baud_rate_the_data_sheet_gives" }
+
 # P09 (timing/gen_p09.py): a high-then-low resolution write pair swept along line 100 (4 clocks a frame); the golden is the video address
 # counter at the entry of line 102 in Hatari. The model reproduces the frames where the right border (+44 bytes) and the left border (+26)
 # open (tests/timing_probes.rs, p09_and_p10_open_the_borders_on_the_frames_hatari_does); Hatari also cuts lines short and loses whole lines

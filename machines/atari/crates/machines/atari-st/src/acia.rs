@@ -50,6 +50,13 @@ impl SerialPeer for NullPeer {
 /// time as the ACIA's ÷64 (1024 CPU cycles), 10 bits a character.
 pub const IKBD_FRAME_CYCLES: u64 = ikbd::BYTE_CYCLES;
 
+/// The keyboard controller with the answer delays measured in Hatari (probe P20).
+fn timed_ikbd() -> Ikbd {
+    let mut k = Ikbd::new();
+    k.set_reply_delays(ikbd::QUERY_REPLY_DELAY, ikbd::STATUS_REPLY_DELAY);
+    k
+}
+
 impl SerialPeer for Ikbd {
     fn receive(&mut self, byte: u8, at: u64) {
         self.command_byte(byte, at);
@@ -166,7 +173,8 @@ impl Port {
 
     pub(crate) fn restore(&mut self, s: PortState) {
         self.chip = s.chip;
-        if let Some(k) = s.ikbd {
+        if let Some(mut k) = s.ikbd {
+            k.set_reply_delays(ikbd::QUERY_REPLY_DELAY, ikbd::STATUS_REPLY_DELAY);
             self.peer = Peer::Ikbd(Box::new(k));
         }
         self.phase = s.phase;
@@ -285,7 +293,7 @@ impl Acias {
     pub fn new() -> Self {
         Self {
             ports: [
-                Port::new(Peer::Ikbd(Box::new(Ikbd::new()))),
+                Port::new(Peer::Ikbd(Box::new(timed_ikbd()))),
                 Port::new(Peer::Other(Box::new(NullPeer))),
             ],
         }
