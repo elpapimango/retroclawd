@@ -202,12 +202,19 @@ impl StBus {
 
     pub(crate) fn render(&mut self) {
         let mut frame = std::mem::take(&mut self.frame);
-        self.shifter.render_raster(
-            self.monitor,
-            scheduler::first_display_line(self.geometry.lines),
-            &|a| self.peek(a),
-            &mut frame,
-        );
+        let first = scheduler::first_display_line(self.geometry.lines);
+        if self.accurate {
+            self.shifter.render_exact(
+                self.monitor,
+                first,
+                crate::waits::PIXEL_START,
+                &|a| self.peek(a),
+                &mut frame,
+            );
+        } else {
+            self.shifter
+                .render_raster(self.monitor, first, &|a| self.peek(a), &mut frame);
+        }
         self.frame = frame;
     }
 }

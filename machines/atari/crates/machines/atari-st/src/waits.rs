@@ -35,6 +35,11 @@ pub(crate) const VBL_DELAY: u64 = 64;
 /// one word.
 pub(crate) const WINDOW_START: u64 = 56;
 
+/// The clock of a line at which the first pixel of the picture is on the screen: the Shifter takes 23 clocks from
+/// fetching a word to drawing it. A palette write at clock `c` reaches the pixel `c - PIXEL_START` (probe P07: all 122
+/// rows of Hatari's strips start and end on the same pixel).
+pub(crate) const PIXEL_START: i32 = WINDOW_START as i32 + 23;
+
 /// The Shifter fetches one word of the picture every 4 clocks inside its window (160 bytes a line in the colour
 /// resolutions).
 pub(crate) const CLOCKS_PER_WORD: u64 = 4;

@@ -229,3 +229,17 @@ golden_sha256 = "3cc16ecb34395c87a8d14b1202d225e722086aa9822f4c6c231a50482378c68
 compare = { mode = "exact" }
 status = "known-gap"
 gap = { reason = "two of the 256 timer reads differ from Hatari's by one count: the timer's first count after the control write is placed to the clock in Hatari and to the nearest MFP tick here", evidence = "ours-minus-theirs over the 256 reads has two entries of 1 and none else (cargo test --release -p atari-st --test timing_probes p06_report -- --ignored --nocapture)" }
+
+# S12 (probe P07, timing/p07_palette_strip.s): on 64 lines the HBL handler writes palette entry 1 red part way along the line and
+# white again 100 clocks later, a red strip on each line that starts one clock later than the line above. Hatari 2.6.1's picture is the
+# golden; measured by hand (a PNG reader): all 122 rows of red start and end on exactly the same pixel as ours. The similarity limit is
+# for its grey levels, not for the strips.
+[[scenario]]
+id = "S12"
+kind = "screen"
+frames = 700
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p07.st" }
+golden = "atari-st/S12-palette-strips.png"
+golden_sha256 = "647134a3830d0468e1fa54e89efa7b24bd31eec7fadc29738d9c7f38cc9fee00"
+compare = { mode = "similarity", max_mad = 1.0, normalize = true, reason = "another emulator's picture: its colour shades differ from ours; the strips themselves start and end on the same pixels on all 122 rows" }

@@ -66,9 +66,15 @@ pub struct SyncWrite {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PaletteChange {
     pub line: u16,
+    /// CPU clocks into the line when the device saw the write (0 for a write made outside a running machine).
+    pub cycle: u16,
     pub index: u8,
     pub value: u16,
 }
+
+/// A picture line's palette at its start and the changes made on it: the canvas pixel each reaches, the colour index
+/// and the value, in time order.
+type LinePalette = ([u16; 16], Vec<(i32, usize, u16)>);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Shifter {
@@ -85,6 +91,9 @@ pub struct Shifter {
     /// The CPU cycle the current raster line began on, and the sync-mode and resolution writes of the frame.
     line_start: u64,
     sync_log: VecDeque<SyncWrite>,
+    /// The clocks into the line of the write being made (set by `write_at`, stored with the palette change).
+    #[serde(skip)]
+    cycle: u16,
 }
 
 impl Shifter {
@@ -102,6 +111,7 @@ impl Shifter {
             changes: Vec::new(),
             line_start: 0,
             sync_log: VecDeque::new(),
+            cycle: 0,
         }
     }
 
@@ -113,6 +123,7 @@ impl Shifter {
     /// A register write at CPU cycle `now`: like [`Shifter::write`], and a write to the sync mode or the resolution
     /// goes into the log with its line and cycle.
     pub fn write_at(&mut self, addr: u32, word: bool, value: u16, now: u64) {
+        self.cycle = now.saturating_sub(self.line_start).min(u16::MAX as u64) as u16;
         let register = match (addr & 0xFF_FFFF, word) {
             (0xFF_820A, false) => Some(SyncRegister::Sync),
             (0xFF_8260, false) => Some(SyncRegister::Resolution),
@@ -199,6 +210,7 @@ impl Shifter {
                     if self.changes.len() < MAX_PALETTE_CHANGES {
                         self.changes.push(PaletteChange {
                             line: self.line,
+                            cycle: self.cycle,
                             index: ((a - 0xFF_8240) / 2) as u8,
                             value,
                         });
@@ -242,7 +254,7 @@ impl Shifter {
     /// medium ([H?] they cannot sync to it, p.57).
     pub fn render(&self, monitor: Monitor, ram: &dyn Fn(u32) -> u8, out: &mut Vec<u8>) {
         let palette = self.palette;
-        self.draw(monitor, ram, out, &mut |_| palette);
+        self.draw(monitor, ram, out, &mut |_| (palette, Vec::new()));
     }
 
     /// The frame with the palette followed down the screen: picture line `y` (0 at the top, 0-199 in low and medium
@@ -264,16 +276,56 @@ impl Shifter {
                 palette[(c.index & 15) as usize] = c.value;
                 next += 1;
             }
-            palette
+            (palette, Vec::new())
         });
     }
 
+    /// Like [`Shifter::render_raster`], but a palette change on a line reaches the pixels from the clock it was made at:
+    /// the first pixel of the picture is drawn at clock `pixel_start` of the line, and the beam draws one low resolution
+    /// pixel (two medium resolution pixels) a clock. A change before the line's start applies to the whole line.
+    pub fn render_exact(
+        &self,
+        monitor: Monitor,
+        first_line: u32,
+        pixel_start: i32,
+        ram: &dyn Fn(u32) -> u8,
+        out: &mut Vec<u8>,
+    ) {
+        let mut palette = self.frame_palette;
+        let mut next = 0;
+        self.draw(monitor, ram, out, &mut |y| {
+            // Changes of earlier lines are done; those of this line are applied pixel by pixel.
+            let line = first_line + y;
+            while let Some(c) = self.changes.get(next)
+                && (c.line as u32) < line
+            {
+                palette[(c.index & 15) as usize] = c.value;
+                next += 1;
+            }
+            let start = palette;
+            let mut in_line = Vec::new();
+            while let Some(c) = self.changes.get(next)
+                && c.line as u32 == line
+            {
+                let clock = c.cycle as i32 - pixel_start;
+                // Two canvas pixels a clock in both resolutions.
+                in_line.push((2 * clock, (c.index & 15) as usize, c.value));
+                // The line after this one starts with them all done.
+                palette[(c.index & 15) as usize] = c.value;
+                next += 1;
+            }
+            (start, in_line)
+        });
+    }
+
+    /// Draws the frame. `palette_at(y)` gives picture line `y`'s palette at its start and the palette changes made on the
+    /// line as (canvas pixel they reach, colour index, value), in time order.
     fn draw(
         &self,
         monitor: Monitor,
         ram: &dyn Fn(u32) -> u8,
         out: &mut Vec<u8>,
-        palette_at: &mut dyn FnMut(u32) -> [u16; 16],
+        palette_at: &mut dyn FnMut(u32) -> LinePalette,
     ) {
         out.clear();
         out.resize((WIDTH * HEIGHT * 3) as usize, 0);
@@ -287,10 +339,8 @@ impl Shifter {
         let y_scale = HEIGHT / lines;
         let bytes_per_line = width * planes / 8;
         let base = self.video_base();
-        let mut words = [0u16; 4];
-        for line in 0..lines {
-            let palette = palette_at(line);
-            let rgb: Vec<[u8; 3]> = if planes == 1 {
+        let rgb_of = |palette: &[u16; 16]| -> Vec<[u8; 3]> {
+            if planes == 1 {
                 let (dark, light) = ([0, 0, 0], [255, 255, 255]);
                 if palette[0] & 1 == 0 {
                     vec![light, dark]
@@ -299,7 +349,13 @@ impl Shifter {
                 }
             } else {
                 palette.iter().map(|&c| to_rgb(c)).collect()
-            };
+            }
+        };
+        let mut words = [0u16; 4];
+        for line in 0..lines {
+            let (mut palette, changes) = palette_at(line);
+            let mut rgb = rgb_of(&palette);
+            let mut change_at = 0;
             let row = base + line * bytes_per_line;
             for group in 0..width / 16 {
                 let at = row + group * planes * 2;
@@ -308,12 +364,24 @@ impl Shifter {
                     *w = u16::from_be_bytes([ram(a), ram(a + 1)]);
                 }
                 for bit in 0..16u32 {
+                    let x = (group * 16 + bit) * x_scale;
+                    // The palette changes that have reached the beam by this pixel.
+                    let mut changed = false;
+                    while let Some(&(at_x, index, value)) = changes.get(change_at)
+                        && at_x <= x as i32
+                    {
+                        palette[index] = value;
+                        change_at += 1;
+                        changed = true;
+                    }
+                    if changed {
+                        rgb = rgb_of(&palette);
+                    }
                     let mut index = 0usize;
                     for (p, w) in words.iter().enumerate().take(planes as usize) {
                         index |= (((w >> (15 - bit)) & 1) as usize) << p;
                     }
                     let colour = rgb[index];
-                    let x = (group * 16 + bit) * x_scale;
                     for dy in 0..y_scale {
                         let y = line * y_scale + dy;
                         for dx in 0..x_scale {
