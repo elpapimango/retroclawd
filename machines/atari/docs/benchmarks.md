@@ -19,3 +19,12 @@ boot's floppy and desktop drawing: 11.3x and 10.1x).
 
 Before the optimisation of the Atari crates' build (`opt-level = 3`) and the floppy fix of Task 46 the same measure
 read 7.1x (`fast`) and 6.5x (`accurate`). No code path of the machine was changed for speed: the budget needed none.
+
+## Phase 4 (Task 65): the STE
+
+Measured 2026-10-23 on the same machine and build (median of 3 runs, `RC_EMUTOS_STE` for the example): the Atari ST rows read
+13.5x (`fast`) and 12.5x (`accurate`) on the idle desktop; the STE's desktop (256K EmuTOS: the Blitter draws, the Shifter has 4096
+colours, the DMA sound is idle) runs `fast` at 10.6x (532 frames/s, 529 to 534) and `accurate` at 9.3x (465 frames/s). Both meet
+the budget (10x and 2x). The first STE figure was 9.1x: the DMA sound was brought up to date at every MFP catch-up even while it
+was not playing; it now is only while it plays (its audio is caught up by the sound registers and by draining). The speed test of
+`tests/speed_smoke.rs` has an STE case (frames 600 to 800: 10.7x and 9.1x).

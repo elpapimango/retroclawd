@@ -4,7 +4,7 @@
 
 use std::time::Instant;
 
-use atari_st::{Accuracy, AtariSt, Config, RamSize, Region};
+use atari_st::{Accuracy, AtariSt, Chipset, Config, RamSize, Region};
 use machine::Machine;
 
 fn config(rom: Vec<u8>, accuracy: Accuracy) -> Config {
@@ -42,8 +42,8 @@ fn mips(accuracy: Accuracy) -> f64 {
     n as f64 / t.elapsed().as_secs_f64() / 1e6
 }
 
-fn desktop_fps(rom: &[u8], accuracy: Accuracy) -> f64 {
-    let mut m = AtariSt::new(config(rom.to_vec(), accuracy)).unwrap();
+fn desktop_fps(rom: &[u8], accuracy: Accuracy, chipset: Chipset) -> f64 {
+    let mut m = AtariSt::with_chipset(config(rom.to_vec(), accuracy), chipset).unwrap();
     while m.vbl_count() < 900 && m.io_stop().is_none() {
         m.step();
     }
@@ -79,7 +79,7 @@ fn main() {
             Some(rom) => {
                 let (m, lo, hi) = median(
                     &mut (0..runs)
-                        .map(|_| desktop_fps(&rom, accuracy))
+                        .map(|_| desktop_fps(&rom, accuracy, Chipset::St))
                         .collect::<Vec<_>>(),
                 );
                 println!(
@@ -88,6 +88,23 @@ fn main() {
                 );
             }
             None => println!(", no EmuTOS (RC_EMUTOS or an argument) for the desktop figure"),
+        }
+    }
+    // The STE's desktop (256 KB EmuTOS from `RC_EMUTOS_STE`): the Blitter, the 4096-colour Shifter and the DMA sound machinery.
+    if let Some(rom) = std::env::var("RC_EMUTOS_STE")
+        .ok()
+        .and_then(|p| std::fs::read(p).ok())
+    {
+        for accuracy in [Accuracy::Fast, Accuracy::Accurate] {
+            let (m, lo, hi) = median(
+                &mut (0..runs)
+                    .map(|_| desktop_fps(&rom, accuracy, Chipset::Ste))
+                    .collect::<Vec<_>>(),
+            );
+            println!(
+                "STE {accuracy:?}: idle desktop {m:.0} frames/s median ({lo:.0}-{hi:.0}) = {:.1}x real time",
+                m / 50.0
+            );
         }
     }
 }

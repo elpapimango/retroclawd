@@ -689,7 +689,11 @@ impl StBus {
 
     /// Advances the MFP to CPU clock `cycle` (never backwards).
     pub(crate) fn catch_up_mfp(&mut self, cycle: u64) {
-        self.run_dma(cycle);
+        // The DMA sound only matters to the MFP while it plays (frame ends, GPIP 7); its audio is brought up to date by the
+        // sound registers and by draining.
+        if self.ste.dma.playing() {
+            self.run_dma(cycle);
+        }
         self.advance_mfp(cycle);
     }
 
