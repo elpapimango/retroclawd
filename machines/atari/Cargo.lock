@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "ay-3-8910",
  "bincode",
+ "blitter",
  "crc32fast",
  "ikbd",
  "machine",
@@ -67,6 +68,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf95709a440f45e986983918d0e8a1f30a9b1df04918fc828670606804ac3c09"
 dependencies = [
  "virtue",
+]
+
+[[package]]
+name = "blitter"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
