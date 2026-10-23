@@ -44,6 +44,9 @@ pub(crate) const PIXEL_START: i32 = WINDOW_START as i32 + 23;
 /// resolutions).
 pub(crate) const CLOCKS_PER_WORD: u64 = 4;
 pub(crate) const WORDS_PER_LINE: u64 = 80;
+/// The monochrome monitor's line: its fetch starts at this clock ([O] P15, fitted) and holds 40 words.
+pub(crate) const MONO_WINDOW_START: u64 = 8;
+pub(crate) const MONO_WORDS_PER_LINE: u64 = 40;
 
 impl StBus {
     /// The video address counter at the current time: the address of the next word the Shifter reads. Before the first
@@ -57,13 +60,23 @@ impl StBus {
             // Before the picture: the base; after it: past its last line.
             return base.wrapping_add(fetch.bytes_before(u16::MAX));
         }
+        let mono = self.monitor == st_shifter::Monitor::Mono;
         let (left, right) = self.shifter.current_borders();
         let line_start = self.last_vbl_at + self.line as u64 * self.geometry.clocks_per_line as u64;
         let into = self.now.saturating_sub(line_start);
         // A left border opened starts the fetch 52 clocks sooner, a right border runs it 88 clocks longer.
-        let start = WINDOW_START - if left { 52 } else { 0 };
+        let start = if mono {
+            MONO_WINDOW_START
+        } else {
+            WINDOW_START
+        } - if left { 52 } else { 0 };
+        let line_words = if mono {
+            MONO_WORDS_PER_LINE
+        } else {
+            WORDS_PER_LINE
+        };
         let words = (into.saturating_sub(start) / CLOCKS_PER_WORD)
-            .min(WORDS_PER_LINE + if left { 13 } else { 0 } + if right { 22 } else { 0 });
+            .min(line_words + if left { 13 } else { 0 } + if right { 22 } else { 0 });
         base.wrapping_add(fetch.bytes_before(line) + 2 * words as u32)
     }
 

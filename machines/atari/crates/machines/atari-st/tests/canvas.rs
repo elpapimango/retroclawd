@@ -84,3 +84,16 @@ fn the_desktop_is_inside_the_borders_on_the_canvas() {
         .collect();
     assert!(picture.len() > 1, "the desktop is in the picture area");
 }
+
+#[test]
+#[ignore = "report"]
+fn mono_palette_report() {
+    let Some(rom) = emutos() else {
+        return;
+    };
+    let mut cfg = config(rom, RamSize::M1);
+    cfg.monitor = st_shifter::Monitor::Mono;
+    let mut m = AtariSt::new(cfg).unwrap();
+    run_to_vbl(&mut m, 300);
+    println!("palette {:X?}", m.bus().shifter().palette());
+}

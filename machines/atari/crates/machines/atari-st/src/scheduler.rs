@@ -80,8 +80,7 @@ impl FrameGeometry {
 }
 
 /// The frame for the sync mode (`$FF820A` bit 1) and the monitor. [H] colour 512 x 313 at 50 Hz, 508 x 263 at 60 Hz
-/// (sources above). A mono monitor's line is 224 clocks (same thread), but its line count has no source yet, so it is
-/// refused rather than guessed.
+/// (sources above). A mono monitor's line is 224 clocks (same thread) and its frame 501 lines ([O], probe P14).
 pub fn geometry(sync_50hz: bool, monitor: st_shifter::Monitor) -> Result<FrameGeometry, String> {
     match monitor {
         st_shifter::Monitor::Colour if sync_50hz => Ok(FrameGeometry {
@@ -92,10 +91,11 @@ pub fn geometry(sync_50hz: bool, monitor: st_shifter::Monitor) -> Result<FrameGe
             clocks_per_line: 508,
             lines: 263,
         }),
-        st_shifter::Monitor::Mono => Err(
-            "the mono monitor is not supported yet: the number of lines in its frame has no hardware source (docs/hardware-facts.md)"
-                .to_string(),
-        ),
+        // [O] Hatari 2.6.1 (probe P14): 501 HBLs between two VBLs and a counted loop that fills 112 224 clocks.
+        st_shifter::Monitor::Mono => Ok(FrameGeometry {
+            clocks_per_line: 224,
+            lines: 501,
+        }),
     }
 }
 
@@ -103,7 +103,13 @@ pub fn geometry(sync_50hz: bool, monitor: st_shifter::Monitor) -> Result<FrameGe
 /// 50 Hz frame and 34 in the 263-line 60 Hz frame: provisional, to be measured against the reference emulator's
 /// picture (`docs/hardware-facts.md`, "Raster palette").
 pub fn first_display_line(lines: u32) -> u32 {
-    if lines >= 313 { 63 } else { 34 }
+    if lines == 501 {
+        st_shifter::MONO_START as u32
+    } else if lines >= 313 {
+        63
+    } else {
+        34
+    }
 }
 
 #[derive(Debug, Default)]

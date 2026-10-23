@@ -72,7 +72,7 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | `$FF8260` bits 7-2 | read as 1 | `[O]` | Hatari reads `$FC` in low resolution (EmuTOS at `$FC69C2`) |
 | Resolution | `$FF8260` bits 1-0: 0 = 320×200 4 planes, 1 = 640×200 2 planes, 2 = 640×400 1 plane | `[H]` | *Internals* p.58 |
 | Resolution 3 | treated as a black picture | `[H?]` | reserved |
-| High resolution colour | palette 0 bit 0: clear = black on white, set = inverted | `[H]` | *Internals* p.58 |
+| High resolution colour | palette 0 bit 0: set = a set bit is black on white (EmuTOS leaves palette 0 at `$777`), clear = inverted | `[O]` | Hatari 2.6.1 mono desktop (S15) shows EmuTOS' `$777` as black on white; *Internals* p.58 says clear = black on white, so the book is taken to be wrong here |
 | Bitplanes | each 16-pixel group is N consecutive words (plane 0 first), most significant bit = leftmost pixel | `[H]` | *Internals* video RAM chapter ("Video display"), and the screen formats in *TOS hyp* |
 | Colour monitor in high resolution, mono monitor in low or medium | no picture (black) | `[H?]` | *Internals* p.57: "High-res operation puts the ST at a 70 Hz screen frequency" |
 | 3-bit level to 8-bit RGB | `level * 255 / 7` | — | a display choice, not a hardware fact |
@@ -83,7 +83,7 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 |---|---|---|---|
 | Colour frame | 50 Hz: 512 clocks × 313 lines; 60 Hz: 508 × 263 | `[H]` | *forum*, cited in `scheduler.rs` |
 | Mono line | 224 clocks | `[H]` | *forum* |
-| Mono lines per frame | unknown: `--monitor mono` is refused | — | — |
+| Mono lines per frame | 501 (224 clocks each, a frame of 112 224 clocks); the picture is 400 lines of 80 bytes from raster line 34 to 433, with the fetch of a line starting at clock 8 | `[O]` | Hatari 2.6.1 `--monitor mono`, probes P14 (501 HBLs a frame, a counted loop fills 112 224 clocks) and P15 (video counter at every HBL: first line 34, last 433, 80 bytes a line, the fetch start fitted to the counter inside a line) |
 | Sync mode at power-on | 50 Hz on a PAL machine, 60 Hz on an NTSC one | `[H?]` | TOS writes the register before showing anything (*Hatari io* line 39) |
 | HBL | level 2 autovector, vector `$68` | `[H]` | *TOS hyp* |
 | VBL | level 4 autovector, vector `$70` | `[H]` | *TOS hyp* |

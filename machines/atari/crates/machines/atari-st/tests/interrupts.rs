@@ -171,12 +171,18 @@ fn timer_c_200hz_bare_metal() {
     assert_eq!(count, 199);
 }
 
+/// The mono monitor's frame is 501 lines of 224 clocks ([O], probes P14 and P15), whatever the sync mode says.
 #[test]
-fn a_mono_monitor_is_refused_until_its_line_count_is_sourced() {
+fn a_mono_monitor_has_a_501_line_frame_of_224_clocks() {
     let mut cfg = config(rom(&[BRA_SELF], &[]));
     cfg.monitor = Monitor::Mono;
-    let err = AtariSt::new(cfg).err().expect("refused");
-    assert!(err.contains("mono"), "{err}");
+    let mut m = AtariSt::new(cfg).unwrap();
+    assert_eq!(m.cycles_per_frame(), 224 * 501);
+    while m.vbl_count() < 3 {
+        m.step();
+    }
+    assert_eq!(m.cycles_per_frame(), 224 * 501);
+    assert_eq!(m.hbl_count(), 3 * 501);
 }
 
 /// A long run with Timer C interrupting and the sync mode flipped every 64 frames by a VBL handler: every frame is

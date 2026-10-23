@@ -213,7 +213,8 @@ impl StBus {
         for (line, level) in gpip_inputs(cfg.monitor) {
             mfp.set_input(line, level);
         }
-        let shifter = Shifter::new(cfg.region == crate::config::Region::Pal);
+        let mut shifter = Shifter::new(cfg.region == crate::config::Region::Pal);
+        shifter.set_mono(cfg.monitor == Monitor::Mono);
         let geometry = scheduler::geometry(shifter.sync_50hz(), cfg.monitor)?;
         let mut bus = Self {
             ram: vec![0; mmu.ram_bytes()],

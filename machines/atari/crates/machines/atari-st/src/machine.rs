@@ -281,13 +281,20 @@ impl AtariSt {
         std::mem::take(&mut self.state_warnings)
     }
 
-    /// The accuracy in the state header: bit 0 accurate, bit 1 borders (a state is only loaded by the same canvas).
+    /// The accuracy in the state header: bit 0 accurate, bit 1 borders, bit 2 mono monitor (a state is only loaded by the
+    /// same canvas and monitor).
     fn accuracy_code(&self) -> u8 {
         let accuracy = match self.accuracy {
             Accuracy::Fast => 0,
             Accuracy::Accurate => 1,
         };
-        accuracy | if self.bus.borders { 2 } else { 0 }
+        accuracy
+            | if self.bus.borders { 2 } else { 0 }
+            | if self.bus.monitor == st_shifter::Monitor::Mono {
+                4
+            } else {
+                0
+            }
     }
 
     /// Draws the picture with its borders (`borders = on`), which needs `Accuracy::Accurate`.
@@ -539,9 +546,10 @@ impl Machine for AtariSt {
     }
 
     fn frame_hz(&self) -> u64 {
-        match self.bus.region {
-            Region::Pal => 50,
-            Region::Ntsc => 60,
+        match (self.bus.monitor, self.bus.region) {
+            (st_shifter::Monitor::Mono, _) => 71,
+            (_, Region::Pal) => 50,
+            (_, Region::Ntsc) => 60,
         }
     }
 
@@ -549,7 +557,11 @@ impl Machine for AtariSt {
     fn frame_rate(&self) -> FrameRate {
         FrameRate {
             num: scheduler::crystal_hz(self.bus.region),
-            den: scheduler::CPU_DIVIDER * scheduler::cycles_per_frame(self.bus.region) as u32,
+            den: scheduler::CPU_DIVIDER
+                * match self.bus.monitor {
+                    st_shifter::Monitor::Mono => 224 * 501,
+                    _ => scheduler::cycles_per_frame(self.bus.region),
+                } as u32,
         }
     }
 

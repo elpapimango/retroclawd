@@ -299,7 +299,7 @@ fn machine_profile() -> MachineProfile {
                 "monitor",
                 text_choices(&["color", "mono"]),
                 text("color"),
-                "Monitor: color (mono is refused until its frame timing is sourced)",
+                "Monitor: color, or mono (501 lines of 224 clocks, 640x400 one plane)",
             ),
             option(
                 "model",
@@ -2125,8 +2125,8 @@ mod tests {
     }
 
     #[test]
-    fn mono_monitor_is_refused_with_the_missing_fact() {
-        let err = create_machine(MachineCreateRequest {
+    fn mono_monitor_is_accepted_and_has_the_mono_frame() {
+        let created = create_machine(MachineCreateRequest {
             machine_id: MACHINE_ID.to_string(),
             region: Some("pal".to_string()),
             roms: vec![BinaryBlob {
@@ -2135,7 +2135,11 @@ mod tests {
             }],
             options: vec![text("monitor", "mono")],
         })
-        .expect_err("refused");
-        assert!(err.contains("mono"), "{err}");
+        .expect("a mono monitor is created");
+        let id = created.instance;
+        let mut guard = state().lock().unwrap();
+        let machine = guard.instances.get(&id).expect("the instance exists");
+        assert_eq!(machine.machine.cycles_per_frame(), 224 * 501);
+        guard.instances.remove(&id);
     }
 }

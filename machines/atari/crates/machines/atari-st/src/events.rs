@@ -150,7 +150,7 @@ impl StBus {
                 k.tick_clock(at, cps);
             }
             self.render();
-            // A mono monitor is refused at creation, so this cannot fail later.
+            // Both monitors have a frame for every sync mode, so this cannot fail.
             if let Ok(g) = scheduler::geometry(self.shifter.sync_50hz(), self.monitor) {
                 self.geometry = g;
             }

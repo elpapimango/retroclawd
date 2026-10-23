@@ -178,7 +178,7 @@ fn high_resolution_follows_palette_zero_too() {
     palette(&mut s, 0, 1);
     let mut out = Vec::new();
     s.render_raster(Monitor::Mono, FIRST, &zeros, &mut out);
-    // Bit clear is light while palette 0 bit 0 is clear and dark after it is set.
-    assert_eq!(pixel(&out, 3, 99), [255, 255, 255]);
-    assert_eq!(pixel(&out, 3, 100), BLACK);
+    // Bit clear is dark while palette 0 bit 0 is clear and light after it is set.
+    assert_eq!(pixel(&out, 3, 99), BLACK);
+    assert_eq!(pixel(&out, 3, 100), [255, 255, 255]);
 }

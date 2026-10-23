@@ -118,17 +118,18 @@ fn medium_res_two_planes() {
     assert_eq!(pixel(&frame, 0, 0), [0, 0, 0]);
 }
 
-/// High resolution: one plane, 80 bytes per line; a set bit is dark unless palette 0 bit 0 inverts.
+/// High resolution: one plane, 80 bytes per line; a set bit is dark while palette 0 bit 0 is set (as EmuTOS leaves it).
 #[test]
 fn high_res_mono_and_inversion() {
     let mut s = shifter_at_f8000();
     byte(&mut s, 0xFF8260, 2);
+    word(&mut s, 0xFF8240, 0x777);
     let mem = ram(&[(80, 0x8000)]);
     let mut frame = Vec::new();
     s.render(Monitor::Mono, &mem, &mut frame);
     assert_eq!(pixel(&frame, 0, 1), [0, 0, 0], "set bit: dark");
     assert_eq!(pixel(&frame, 1, 1), [255, 255, 255]);
-    word(&mut s, 0xFF8240, 0x001);
+    word(&mut s, 0xFF8240, 0x000);
     s.render(Monitor::Mono, &mem, &mut frame);
     assert_eq!(pixel(&frame, 0, 1), [255, 255, 255], "inverted");
 }
@@ -158,4 +159,24 @@ fn render_is_deterministic() {
     s.render(Monitor::Colour, &mem, &mut a);
     s.render(Monitor::Colour, &mem, &mut b);
     assert_eq!(a, b);
+}
+
+/// A mono monitor cannot sync to a colour resolution, and a colour monitor not to high resolution: black.
+#[test]
+fn a_resolution_the_monitor_cannot_show_is_black() {
+    let mut s = shifter_at_f8000();
+    word(&mut s, 0xFF8240, 0x777);
+    let mem = ram(&[(0, 0xFFFF)]);
+    let mut frame = Vec::new();
+    s.render(Monitor::Mono, &mem, &mut frame); // low resolution
+    assert!(
+        frame.iter().all(|&b| b == 0),
+        "mono monitor, low resolution"
+    );
+    byte(&mut s, 0xFF8260, 2);
+    s.render(Monitor::Colour, &mem, &mut frame);
+    assert!(
+        frame.iter().all(|&b| b == 0),
+        "colour monitor, high resolution"
+    );
 }

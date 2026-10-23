@@ -124,6 +124,10 @@ fn accuracy_name(code: u8) -> &'static str {
         1 => "accurate",
         2 => "fast with borders",
         3 => "accurate with borders",
+        4 => "fast, mono monitor",
+        5 => "accurate, mono monitor",
+        6 => "fast with borders, mono monitor",
+        7 => "accurate with borders, mono monitor",
         _ => "unknown",
     }
 }

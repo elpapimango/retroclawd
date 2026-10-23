@@ -31,6 +31,12 @@ pub const START_60: u16 = 34;
 pub const END_50: u16 = 263;
 pub const END_60: u16 = 234;
 
+/// The monochrome monitor: the first picture line of its 501-line frame, the picture's lines and the bytes of a line
+/// (640 pixels in one plane). It has no borders to open and no 50/60 Hz choice.
+pub const MONO_START: u16 = 34;
+pub const MONO_LINES: u16 = 400;
+pub const MONO_LINE_BYTES: u32 = 80;
+
 const LEFT: u8 = 1;
 const RIGHT: u8 = 2;
 
@@ -52,6 +58,9 @@ pub struct Fetch {
     last: u16,
     /// Flags of the picture lines, in order from the first one: `LEFT`, `RIGHT`.
     lines: Vec<u8>,
+    /// A monochrome monitor (set once at power-on from the configuration, not part of a state).
+    #[serde(skip)]
+    mono: bool,
 }
 
 /// The value of a register at `clock` of a line that began with `start`, after the writes of the line (`SyncRegister`
@@ -75,7 +84,24 @@ fn value_at<'a>(
 impl Fetch {
     /// A new frame: nothing has started.
     pub fn reset(&mut self) {
-        *self = Self::default();
+        *self = Self {
+            mono: self.mono,
+            ..Self::default()
+        };
+    }
+
+    /// The monitor is monochrome: the picture is a fixed window of 400 lines of 80 bytes.
+    pub fn set_mono(&mut self, mono: bool) {
+        self.mono = mono;
+    }
+
+    /// Bytes of a picture line without borders.
+    pub fn line_bytes(&self) -> u32 {
+        if self.mono {
+            MONO_LINE_BYTES
+        } else {
+            LINE_BYTES
+        }
     }
 
     /// Whether picture data is being fetched on `line`.
@@ -90,6 +116,16 @@ impl Fetch {
 
     /// The vertical rules at the start of `line`, with the sync mode in force then (`hz60`).
     pub fn start_line(&mut self, line: u16, hz60: bool) {
+        if self.mono {
+            if line == MONO_START && !self.started {
+                self.started = true;
+                self.first = line;
+            } else if self.started && !self.ended && line == MONO_START + MONO_LINES {
+                self.ended = true;
+                self.last = line;
+            }
+            return;
+        }
         if !self.started && !self.ended {
             if line == if hz60 { START_60 } else { START_50 } {
                 self.started = true;
@@ -118,7 +154,11 @@ impl Fetch {
             return;
         }
         self.lines.resize(index + 1, 0);
-        self.lines[index] = Self::flags(line, res_start, sync_start, log);
+        self.lines[index] = if self.mono {
+            0
+        } else {
+            Self::flags(line, res_start, sync_start, log)
+        };
     }
 
     /// The borders (`LEFT`, `RIGHT`) a line opens with the register writes made on it so far.
@@ -185,7 +225,9 @@ impl Fetch {
         (self.first..end)
             .map(|l| {
                 let (left, right) = self.borders(l);
-                LINE_BYTES + if left { LEFT_BYTES } else { 0 } + if right { RIGHT_BYTES } else { 0 }
+                self.line_bytes()
+                    + if left { LEFT_BYTES } else { 0 }
+                    + if right { RIGHT_BYTES } else { 0 }
             })
             .sum()
     }

@@ -10,7 +10,9 @@
 
 mod fetch;
 mod overscan;
-pub use fetch::{Fetch, LEFT_BYTES, LINE_BYTES, RIGHT_BYTES};
+pub use fetch::{
+    Fetch, LEFT_BYTES, LINE_BYTES, MONO_LINE_BYTES, MONO_LINES, MONO_START, RIGHT_BYTES,
+};
 pub use overscan::{OVERSCAN_FIRST_LINE, OVERSCAN_HEIGHT, OVERSCAN_WIDTH};
 
 use std::collections::VecDeque;
@@ -181,6 +183,11 @@ impl Shifter {
         self.fetch.start_line(new_line, self.sync & 2 == 0);
     }
 
+    /// The monitor is monochrome (at power-on).
+    pub fn set_mono(&mut self, mono: bool) {
+        self.fetch.set_mono(mono);
+    }
+
     /// The picture window and the borders of the lines of this frame.
     pub fn fetch(&self) -> &Fetch {
         &self.fetch
@@ -306,8 +313,8 @@ impl Shifter {
     ///
     /// Screen layout (pp.207-209): 16-pixel groups of N consecutive big-endian words, one per plane, the most
     /// significant bit the leftmost pixel; plane 0 (the first word) is bit 0 of the colour index ([H?] the book
-    /// names the words but not the bit order of the index). High resolution: a set bit is dark unless palette 0
-    /// bit 0 is set (p.58). A colour monitor shows nothing in high resolution, a mono monitor nothing in low or
+    /// names the words but not the bit order of the index). High resolution: a set bit is dark while palette 0
+    /// bit 0 is set (observed in Hatari; the book, p.58, says the opposite). A colour monitor shows nothing in high resolution, a mono monitor nothing in low or
     /// medium ([H?] they cannot sync to it, p.57).
     pub fn render(&self, monitor: Monitor, ram: &dyn Fn(u32) -> u8, out: &mut Vec<u8>) {
         let palette = self.palette;
@@ -431,7 +438,8 @@ impl Shifter {
         let rgb_of = |palette: &[u16; 16]| -> Vec<[u8; 3]> {
             if planes == 1 {
                 let (dark, light) = ([0, 0, 0], [255, 255, 255]);
-                if palette[0] & 1 == 0 {
+                // [O] Hatari's mono desktop with EmuTOS' palette 0 = $777: a set bit is dark while bit 0 of palette 0 is set.
+                if palette[0] & 1 != 0 {
                     vec![light, dark]
                 } else {
                     vec![dark, light]

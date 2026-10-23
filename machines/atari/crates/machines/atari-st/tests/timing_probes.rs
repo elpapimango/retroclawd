@@ -48,10 +48,22 @@ fn golden_bytes(name: &str) -> Option<Vec<u8>> {
 
 /// Runs probe `name` on EmuTOS until VBL number `vbls` and returns `len` bytes from `RESULT`.
 pub fn run_probe(name: &str, vbls: u64, len: usize, accuracy: Accuracy) -> Option<Vec<u8>> {
+    run_probe_on(name, vbls, len, accuracy, st_shifter::Monitor::Colour)
+}
+
+/// `run_probe` on the given monitor.
+pub fn run_probe_on(
+    name: &str,
+    vbls: u64,
+    len: usize,
+    accuracy: Accuracy,
+    monitor: st_shifter::Monitor,
+) -> Option<Vec<u8>> {
     let rom = emutos()?;
     let image = floppy(name)?;
     let mut cfg = config(rom, RamSize::M1);
     cfg.accuracy = accuracy;
+    cfg.monitor = monitor;
     let mut m = AtariSt::new(cfg).unwrap();
     m.insert_disk(0, image).unwrap();
     while m.io_stop().is_none() && m.vbl_count() < vbls {
@@ -561,4 +573,115 @@ fn p12_moves_the_picture_window_on_the_lines_hatari_does() {
     );
     assert_eq!(theirs.len(), 4, "{theirs:?}");
     assert_eq!(ours, theirs);
+}
+
+/// P14 (mono frame length): ten loop counts of frames with the HBL masked, then the HBLs of eleven frames.
+fn p14(accuracy: Accuracy) -> Option<(Vec<u32>, Vec<u16>)> {
+    let b = run_probe_on("p14", 700, 66, accuracy, st_shifter::Monitor::Mono)?;
+    assert_eq!(&b[..4], b"P14 ");
+    let loops = b[4..44]
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_be_bytes(*c))
+        .collect();
+    let hbls = b[44..66]
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_be_bytes(*c))
+        .collect();
+    Some((loops, hbls))
+}
+
+#[test]
+fn p14_the_mono_frame_has_the_lines_and_length_hatari_has() {
+    let Some(theirs) = golden_bytes("p14") else {
+        return;
+    };
+    let (loops, hbls) = p14(Accuracy::Accurate).unwrap();
+    // The first interval holds the HBL that was pending when the mask came off: Hatari counts one more there (ledger).
+    assert_eq!(hbls[1..], [501; 10], "lines in a frame");
+    // A frame is 501 x 224 clocks: the counted loop (20 clocks an iteration) fills it but the VBL handler's few hundred.
+    let their_loops: Vec<u32> = theirs[4..44]
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_be_bytes(*c))
+        .collect();
+    let mean = |v: &[u32]| v.iter().sum::<u32>() as f64 / v.len() as f64;
+    assert!(
+        (mean(&loops) - mean(&their_loops)).abs() < 1.0,
+        "loop counts ours {loops:?} theirs {their_loops:?}"
+    );
+}
+
+/// P15 as the 3-byte counters of the frame's HBLs, as addresses.
+fn counters(b: &[u8]) -> Vec<u32> {
+    b[4..]
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|c| u32::from_be_bytes([0, c[0], c[1], c[2]]))
+        .collect()
+}
+
+#[test]
+#[ignore = "report"]
+fn p15_report() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe_on(
+            "p15",
+            700,
+            1508,
+            Accuracy::Accurate,
+            st_shifter::Monitor::Mono,
+        ),
+        golden_bytes("p15"),
+    ) else {
+        return;
+    };
+    let (o, t) = (counters(&ours), counters(&theirs));
+    let first = |v: &[u32]| v.windows(2).position(|w| w[0] != w[1]);
+    println!("first change ours {:?} theirs {:?}", first(&o), first(&t));
+    let last = |v: &[u32]| v.windows(2).rposition(|w| w[0] != w[1]);
+    println!("last change ours {:?} theirs {:?}", last(&o), last(&t));
+    let diff: i64 = o
+        .iter()
+        .zip(&t)
+        .map(|(a, b)| (*a as i64 - *b as i64).abs())
+        .sum();
+    println!("sum |ours - theirs| = {diff}");
+    for i in (30..40).chain(430..436) {
+        println!("{i}: ours {:X} theirs {:X}", o[i], t[i]);
+    }
+}
+
+#[test]
+fn p15_the_mono_picture_window_and_fetch_rate_match_hatari() {
+    let (Some(ours), Some(theirs)) = (
+        run_probe_on(
+            "p15",
+            700,
+            1508,
+            Accuracy::Accurate,
+            st_shifter::Monitor::Mono,
+        ),
+        golden_bytes("p15"),
+    ) else {
+        return;
+    };
+    let (o, t) = (counters(&ours), counters(&theirs));
+    let edges = |v: &[u32]| {
+        (
+            v.windows(2).position(|w| w[0] != w[1]),
+            v.windows(2).rposition(|w| w[0] != w[1]),
+            v[v.len() - 1] - v[0],
+        )
+    };
+    // Where the picture starts and stops being fetched and how much it holds (400 lines of 80 bytes) are equal; inside a
+    // line the counter differs by the few clocks the interrupt that reads it is placed differently.
+    assert_eq!(edges(&o), edges(&t));
+    let worst = o.iter().zip(&t).map(|(a, b)| a.abs_diff(*b)).max().unwrap();
+    assert!(worst <= 24, "the counters differ by up to {worst} bytes");
 }
