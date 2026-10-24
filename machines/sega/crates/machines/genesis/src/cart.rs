@@ -43,7 +43,7 @@ pub struct Sram {
 
 impl Sram {
     fn new(info: SramInfo) -> Self {
-        let lane = match info.kind & 0xFF {
+        let lane = match info.kind {
             0xF8 | 0xB8 => Lane::Odd,
             0xF0 | 0xB0 => Lane::Even,
             _ => Lane::Word,
@@ -134,6 +134,13 @@ impl Cart {
         self.rom = rom;
     }
 
+    /// Puts a cartridge state that came from a saved state in place of this one, keeping this cartridge's ROM.
+    pub fn adopt(&mut self, mut state: Cart) {
+        std::mem::swap(&mut state.rom, &mut self.rom);
+        state.rom_mask = self.rom_mask;
+        *self = state;
+    }
+
     pub fn rom(&self) -> &[u8] {
         &self.rom
     }
@@ -146,9 +153,8 @@ impl Cart {
             }
             None => addr as usize,
         };
-        self.rom.get(a & self.rom_mask.max(0x7_FFFF) | 0).copied().filter(|_| a <= self.rom_mask || self.banks.is_some()).unwrap_or_else(|| {
-            self.rom.get(a & self.rom_mask).copied().unwrap_or(0xFF)
-        })
+        // The chip repeats every power-of-two size; a page the ROM does not have reads as an open bus.
+        self.rom.get(a & self.rom_mask).copied().unwrap_or(0xFF)
     }
 
     fn sram_active(&self, s: &Sram) -> bool {
@@ -198,7 +204,7 @@ impl Cart {
             }
             r @ (0xF3 | 0xF5 | 0xF7 | 0xF9 | 0xFB | 0xFD | 0xFF) => {
                 if let Some(banks) = &mut self.banks {
-                    banks[usize::from((r - 0xF1) / 2)] = value & 0x3F;
+                    banks[((r - 0xF1) / 2) as usize] = value & 0x3F;
                 }
             }
             _ => {}
@@ -313,14 +319,25 @@ mod tests {
     fn odd_byte_battery_ram_is_there_without_a_lock_when_the_rom_ends_below_it() {
         let mut cart = Cart::new(
             vec![0xAA; 0x8_0000],
-            &header("SEGA MEGA DRIVE", Some(sram_info(0xF8, 0x20_0001, 0x20_FFFF))),
+            &header(
+                "SEGA MEGA DRIVE",
+                Some(sram_info(0xF8, 0x20_0001, 0x20_FFFF)),
+            ),
         );
-        assert_eq!(cart.read(0x20_0001), 0xFF, "unwritten battery RAM reads $FF");
+        assert_eq!(
+            cart.read(0x20_0001),
+            0xFF,
+            "unwritten battery RAM reads $FF"
+        );
         cart.write(0x20_0001, 0x42);
         cart.write(0x20_0003, 0x43);
         assert_eq!(cart.read(0x20_0001), 0x42);
         assert_eq!(cart.read(0x20_0003), 0x43);
-        assert_eq!(cart.read(0x20_0002), 0xFF, "the even bytes are not connected");
+        assert_eq!(
+            cart.read(0x20_0002),
+            0xFF,
+            "the even bytes are not connected"
+        );
         assert_eq!(cart.sram_data().unwrap().0.len(), 0x8000);
         assert!(cart.sram_dirty());
     }
@@ -329,11 +346,18 @@ mod tests {
     fn a_big_rom_shows_its_own_bytes_until_the_lock_register_maps_the_ram() {
         let mut cart = Cart::new(
             vec![0x11; 0x30_0000],
-            &header("SEGA MEGA DRIVE", Some(sram_info(0xF8, 0x20_0001, 0x20_FFFF))),
+            &header(
+                "SEGA MEGA DRIVE",
+                Some(sram_info(0xF8, 0x20_0001, 0x20_FFFF)),
+            ),
         );
         assert_eq!(cart.read(0x20_0001), 0x11);
         cart.write(0x20_0001, 0x77);
-        assert_eq!(cart.read(0x20_0001), 0x11, "not mapped: the write goes nowhere");
+        assert_eq!(
+            cart.read(0x20_0001),
+            0x11,
+            "not mapped: the write goes nowhere"
+        );
         cart.write_register(0xF1, 1);
         cart.write(0x20_0001, 0x77);
         assert_eq!(cart.read(0x20_0001), 0x77);
@@ -346,7 +370,10 @@ mod tests {
     fn write_protect_keeps_the_ram_as_it_is() {
         let mut cart = Cart::new(
             vec![0; 0x10_0000],
-            &header("SEGA MEGA DRIVE", Some(sram_info(0xE0, 0x20_0000, 0x20_0FFF))),
+            &header(
+                "SEGA MEGA DRIVE",
+                Some(sram_info(0xE0, 0x20_0000, 0x20_0FFF)),
+            ),
         );
         cart.write_register(0xF1, 3);
         cart.write(0x20_0000, 0x55);
@@ -363,7 +390,10 @@ mod tests {
     fn loading_battery_ram_fills_it_and_clears_the_changed_flag() {
         let mut cart = Cart::new(
             vec![0; 0x8_0000],
-            &header("SEGA MEGA DRIVE", Some(sram_info(0xF8, 0x20_0001, 0x20_0FFF))),
+            &header(
+                "SEGA MEGA DRIVE",
+                Some(sram_info(0xF8, 0x20_0001, 0x20_0FFF)),
+            ),
         );
         cart.write(0x20_0001, 1);
         assert!(cart.sram_dirty());

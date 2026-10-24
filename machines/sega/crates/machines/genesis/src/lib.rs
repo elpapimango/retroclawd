@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 mod bus;
+mod cart;
 mod config;
 mod io;
 mod machine;
@@ -12,6 +13,7 @@ mod z80bus;
 mod z80sys;
 
 pub use bus::{Bus, Stop};
+pub use cart::Cart;
 pub use config::{Config, LINE_CLOCKS, M68K_DIVIDER, Region, Z80_DIVIDER, frame_clocks};
 pub use io::{BUTTONS, Io, PadKind};
 pub use machine::Genesis;

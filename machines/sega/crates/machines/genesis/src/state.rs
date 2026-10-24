@@ -4,6 +4,7 @@
 //! applied, so a bad state leaves the machine as it was.
 
 use crate::bus::{Bus, RAM_SIZE};
+use crate::cart::Cart;
 use crate::config::Region;
 use crate::io::Io;
 use crate::sound::Sound;
@@ -68,6 +69,7 @@ struct Payload {
     io: Io,
     z80: Z80Sys,
     sound: Sound,
+    cart: Cart,
 }
 
 fn region_byte(r: Region) -> u8 {
@@ -95,6 +97,7 @@ pub fn save(cpu: &Cpu, bus: &Bus, rom_crc: u32) -> Vec<u8> {
         io: bus.io.clone(),
         z80: bus.z80.clone(),
         sound: bus.sound.clone(),
+        cart: bus.cart.clone(),
     };
     let body = bincode::serde::encode_to_vec(&payload, bincode::config::standard())
         .expect("a state always encodes");
@@ -173,6 +176,7 @@ pub fn load(
     payload.vdp.validate().map_err(StateError::Corrupt)?;
     payload.z80.validate().map_err(StateError::Corrupt)?;
     payload.sound.validate().map_err(StateError::Corrupt)?;
+    payload.cart.validate().map_err(StateError::Corrupt)?;
     payload
         .vdp
         .validate_time(payload.now)
@@ -193,6 +197,7 @@ pub fn load(
         io: payload.io,
         z80: payload.z80,
         sound: payload.sound,
+        cart: payload.cart,
     })
 }
 
@@ -205,4 +210,5 @@ pub struct Loaded {
     pub io: Io,
     pub z80: Z80Sys,
     pub sound: Sound,
+    pub cart: Cart,
 }

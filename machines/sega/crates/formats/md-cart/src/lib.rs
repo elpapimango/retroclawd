@@ -137,7 +137,8 @@ pub fn parse_regions(field: &[u8]) -> Regions {
     }
 }
 
-fn parse_header(rom: &[u8]) -> (Header, bool) {
+/// The header of a ROM image and whether its system-type field starts with `SEGA`.
+pub fn parse_header(rom: &[u8]) -> (Header, bool) {
     let mut padded = [b' '; 0x200];
     let n = rom.len().min(0x200);
     padded[..n].copy_from_slice(&rom[..n]);

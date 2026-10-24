@@ -68,11 +68,62 @@ struct InstanceRecord {
     machine: Genesis,
     breakpoints: Vec<u64>,
     diag_file: Option<std::path::PathBuf>,
+    /// Where battery RAM is kept between sessions (only for a cartridge with battery RAM).
+    sram_path: Option<std::path::PathBuf>,
+}
+
+/// The most a battery RAM file may hold when it is read.
+const MAX_SRAM_FILE: u64 = 1 << 20;
+
+/// Where battery RAM goes when the option does not say: `saves/<name>-<hash>.srm` under the working directory (the same
+/// place convention as the host's `states/` and `screenshots/`).
+fn default_sram_path(header: &md_cart::Header, rom: &[u8]) -> std::path::PathBuf {
+    let name: String = header
+        .overseas_name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(24)
+        .collect();
+    let mut hash = 0x811C_9DC5u32;
+    for b in rom {
+        hash = (hash ^ u32::from(*b)).wrapping_mul(0x0100_0193);
+    }
+    let name = if name.is_empty() {
+        "game".to_string()
+    } else {
+        name
+    };
+    std::path::Path::new("saves").join(format!("{name}-{hash:08x}.srm"))
 }
 
 impl InstanceRecord {
-    /// Writes the stop report once, to the diagnostic file or stderr.
+    /// Writes battery RAM to its file (through a temporary file, so a crash never leaves half of one).
+    fn save_sram(&mut self) {
+        let (Some(path), Some((data, true))) = (&self.sram_path, self.machine.sram()) else {
+            return;
+        };
+        let write = || -> std::io::Result<()> {
+            if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+                std::fs::create_dir_all(dir)?;
+            }
+            let temp = path.with_extension("srm.tmp");
+            std::fs::write(&temp, data)?;
+            std::fs::rename(&temp, path)
+        };
+        match write() {
+            Ok(()) => self.machine.mark_sram_saved(),
+            Err(e) => eprintln!(
+                "genesis: cannot save battery RAM to {}: {e}",
+                path.display()
+            ),
+        }
+    }
+
+    /// Writes the stop report once, to the diagnostic file or stderr; saves battery RAM the guest has just locked.
     fn after_step(&mut self) {
+        if self.machine.take_sram_flush() {
+            self.save_sram();
+        }
         if let Some(report) = self.machine.take_stop_report() {
             match &self.diag_file {
                 Some(path) => {
@@ -82,6 +133,14 @@ impl InstanceRecord {
                 }
                 None => eprintln!("genesis: {report}"),
             }
+        }
+    }
+}
+
+impl Drop for InstanceRecord {
+    fn drop(&mut self) {
+        if self.machine.sram_dirty() {
+            self.save_sram();
         }
     }
 }
@@ -188,6 +247,12 @@ fn machine_profile() -> MachineProfile {
                 },
                 Some(DebugValue::Text("auto".to_string())),
                 "Console region: auto picks it from the cartridge header (the Americas first, then Japan, then Europe); europe is PAL (50 Hz, 313 lines), the others NTSC",
+            ),
+            option(
+                "sram_file",
+                MachineOptionKind::Text,
+                None,
+                "Where the cartridge's battery RAM is kept between sessions (default: saves/<game>-<hash>.srm); read at start, written when the game locks it after a change and at exit",
             ),
             option(
                 "diag_file",
@@ -304,6 +369,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let cartridge = md_cart::Cartridge::parse(rom).map_err(|e| e.to_string())?;
     let mut console_region = None;
     let mut diag_file = None;
+    let mut sram_file = None;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
             ("console_region", DebugValue::Text(v)) if v == "auto" => {}
@@ -314,6 +380,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
                     })?);
             }
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(std::path::PathBuf::from(v)),
+            ("sram_file", DebugValue::Text(v)) => sram_file = Some(std::path::PathBuf::from(v)),
             (key, _) => {
                 return Err(format!(
                     "unsupported machine-create option \"{key}\" for {MACHINE_ID}"
@@ -322,7 +389,25 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         }
     }
     let region = console_region.unwrap_or_else(|| Region::from_header(cartridge.header.regions));
-    let machine = Genesis::new(Config::new(cartridge.rom, region))?;
+    let sram_default = default_sram_path(&cartridge.header, &cartridge.rom);
+    let mut machine = Genesis::new(Config::new(cartridge.rom, region))?;
+    let sram_path = machine
+        .sram()
+        .is_some_and(|(_, battery)| battery)
+        .then(|| sram_file.unwrap_or(sram_default));
+    if let Some(path) = &sram_path
+        && let Ok(meta) = std::fs::metadata(path)
+        && meta.is_file()
+    {
+        if meta.len() > MAX_SRAM_FILE {
+            return Err(format!(
+                "battery RAM file {} is {} bytes; at most {MAX_SRAM_FILE} are read",
+                path.display(),
+                meta.len()
+            ));
+        }
+        machine.load_sram(&std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?);
+    }
     let metadata = metadata(&machine);
     let mut state = state()
         .lock()
@@ -334,6 +419,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             machine,
             breakpoints: Vec::new(),
             diag_file,
+            sram_path,
         },
     );
     Ok(MachineCreateResponse { instance, metadata })
@@ -875,6 +961,59 @@ mod tests {
             },
         );
         assert!(bad.is_err());
+    }
+
+    /// A ROM with battery RAM at $200001 whose program unlocks the RAM, stores $42, and locks it again.
+    fn sram_rom() -> Vec<u8> {
+        let mut rom = rom();
+        let program: [u16; 14] = [
+            0x13FC, 0x0001, 0x00A1, 0x30F1, 0x13FC, 0x0042, 0x0020, 0x0001, 0x13FC, 0x0000, 0x00A1,
+            0x30F1, 0x60FE, 0x4E71,
+        ];
+        for (i, w) in program.iter().enumerate() {
+            rom[0x200 + 2 * i..0x202 + 2 * i].copy_from_slice(&w.to_be_bytes());
+        }
+        rom[0x1B0..0x1B4].copy_from_slice(&[b'R', b'A', 0xF8, 0x20]);
+        rom[0x1B4..0x1B8].copy_from_slice(&0x20_0001u32.to_be_bytes());
+        rom[0x1B8..0x1BC].copy_from_slice(&0x20_0FFFu32.to_be_bytes());
+        rom
+    }
+
+    #[test]
+    fn battery_ram_is_saved_when_the_game_locks_it_and_loaded_at_the_next_start() {
+        let dir = std::env::temp_dir().join(format!("sega-sram-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let file = dir.join("game.srm");
+        let options = || {
+            vec![plugin_api::NamedValue {
+                key: "sram_file".to_string(),
+                value: DebugValue::Text(file.to_string_lossy().into_owned()),
+            }]
+        };
+        let mut req = request(options());
+        req.roms[0].bytes = sram_rom();
+        let created = create_machine(req).unwrap();
+        for _ in 0..30 {
+            plugin_step_inner(created.instance);
+        }
+        let saved = std::fs::read(&file).expect("saved when the game locked the RAM");
+        assert_eq!(saved[0], 0x42);
+        assert_eq!(saved[1], 0xFF);
+        // a second start reads it back
+        let mut again = request(options());
+        again.roms[0].bytes = sram_rom();
+        let second = create_machine(again).unwrap();
+        {
+            let mut state = state().lock().unwrap();
+            let record = state.record_mut(second.instance).unwrap();
+            assert_eq!(record.machine.read_memory(0x20_0001), 0x42);
+        }
+        // an absurdly big file is refused
+        std::fs::write(&file, vec![0u8; (MAX_SRAM_FILE + 1) as usize]).unwrap();
+        let mut big = request(options());
+        big.roms[0].bytes = sram_rom();
+        assert!(create_machine(big).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! The 68000's address space (fact rows M1-M15 in `docs/hardware-facts.md`). Every access advances the machine's master
 //! clock by one 68000 bus cycle; devices are caught up to that clock when they are touched.
 
+use crate::cart::Cart;
 use crate::config::{Config, M68K_DIVIDER, Region};
 use crate::io::Io;
 use crate::sound::Sound;
@@ -48,9 +49,9 @@ pub struct Bus {
     /// Master clocks since power on.
     pub now: u64,
     pub region: Region,
-    rom: Vec<u8>,
-    /// ROM address mask: the cartridge repeats every power-of-two size (a fact still to be probed, P02).
-    rom_mask: usize,
+    pub cart: Cart,
+    /// Set when the guest has just switched changed battery RAM out (a good moment to save it).
+    sram_flush: bool,
     ram: Box<[u8; RAM_SIZE]>,
     pub vdp: Vdp,
     pub io: Io,
@@ -63,8 +64,7 @@ pub struct Bus {
 
 /// What a VDP DMA transfer can read: the cartridge and work RAM (fact V14). Anything else stops the machine.
 struct DmaMemory<'a> {
-    rom: &'a [u8],
-    rom_mask: usize,
+    cart: &'a Cart,
     ram: &'a [u8; RAM_SIZE],
     unmapped: Option<u32>,
 }
@@ -74,11 +74,7 @@ impl DmaBus for DmaMemory<'_> {
         let addr = addr & 0x00FF_FFFE;
         let byte = |this: &Self, a: u32| -> u8 {
             match a {
-                0..=0x3F_FFFF => this
-                    .rom
-                    .get(a as usize & this.rom_mask)
-                    .copied()
-                    .unwrap_or(0xFF),
+                0..=0x3F_FFFF => this.cart.read(a),
                 0xE0_0000..=0xFF_FFFF => this.ram[(a & 0xFFFF) as usize],
                 _ => 0,
             }
@@ -92,12 +88,12 @@ impl DmaBus for DmaMemory<'_> {
 
 impl Bus {
     pub fn new(config: &Config) -> Self {
-        let size = config.rom.len().max(2).next_power_of_two();
+        let header = md_cart::parse_header(&config.rom).0;
         Self {
             now: 0,
             region: config.region,
-            rom: config.rom.clone(),
-            rom_mask: size - 1,
+            cart: Cart::new(config.rom.clone(), &header),
+            sram_flush: false,
             ram: Box::new([0; RAM_SIZE]),
             vdp: Vdp::new(config.region.is_pal()),
             io: Io::new(config.region, config.pads[0], config.pads[1]),
@@ -151,8 +147,12 @@ impl Bus {
     }
 
     fn rom_byte(&self, addr: u32) -> u8 {
-        let i = addr as usize & self.rom_mask;
-        self.rom.get(i).copied().unwrap_or(0xFF)
+        self.cart.read(addr)
+    }
+
+    /// Whether battery RAM was just switched out with changes in it; clears the flag.
+    pub fn take_sram_flush(&mut self) -> bool {
+        std::mem::take(&mut self.sram_flush)
     }
 
     fn fail(&mut self, write: bool, addr: u32, size: Size, value: u32) {
@@ -171,8 +171,7 @@ impl Bus {
     fn vdp_control_write(&mut self, value: u16) {
         self.catch_up();
         let mut src = DmaMemory {
-            rom: &self.rom,
-            rom_mask: self.rom_mask,
+            cart: &self.cart,
             ram: &self.ram,
             unmapped: None,
         };
@@ -217,8 +216,7 @@ impl Bus {
             0x00 | 0x02 => self.vdp.write_data(word, t),
             0x04 | 0x06 => {
                 let mut src = DmaMemory {
-                    rom: &self.rom,
-                    rom_mask: self.rom_mask,
+                    cart: &self.cart,
                     ram: &self.ram,
                     unmapped: None,
                 };
@@ -316,7 +314,13 @@ impl Bus {
                 true
             }
             0xA1_1000 | 0xA1_1001 | 0xA1_1101 | 0xA1_1201 => true,
-            0xA1_3000..=0xA1_30FF | 0xA1_4000..=0xA1_4003 | 0xA1_4101 => true,
+            0xA1_3000..=0xA1_30FF => {
+                if self.cart.write_register(addr, value) {
+                    self.sram_flush = true;
+                }
+                true
+            }
+            0xA1_4000..=0xA1_4003 | 0xA1_4101 => true,
             // The I/O chip decodes the odd (low) byte of each register; an even byte write does nothing (fact I2, [H?]).
             0xA1_0000..=0xA1_001F => {
                 if addr & 1 != 0 {
@@ -324,8 +328,11 @@ impl Bus {
                 }
                 true
             }
-            // The cartridge area ignores writes (fact M1); mappers and battery RAM arrive in Phase 4.
-            0..=0x3F_FFFF => true,
+            // Writes in the cartridge area reach battery RAM when it is mapped and writable (fact H3), else nothing.
+            0..=0x3F_FFFF => {
+                self.cart.write(addr, value);
+                true
+            }
             0xE0_0000..=0xFF_FFFF => {
                 self.ram[(addr & 0xFFFF) as usize] = value;
                 true

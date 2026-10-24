@@ -46,6 +46,29 @@ impl Genesis {
         &self.cpu
     }
 
+    /// The battery RAM and whether it is meant to be kept between sessions.
+    pub fn sram(&self) -> Option<(&[u8], bool)> {
+        self.bus.cart.sram_data()
+    }
+
+    pub fn load_sram(&mut self, bytes: &[u8]) {
+        self.bus.cart.load_sram(bytes);
+    }
+
+    /// Whether battery RAM changed since it was loaded or last saved.
+    pub fn sram_dirty(&self) -> bool {
+        self.bus.cart.sram_dirty()
+    }
+
+    pub fn mark_sram_saved(&mut self) {
+        self.bus.cart.mark_sram_saved();
+    }
+
+    /// Whether the guest just locked its battery RAM after changing it (the moment games finish a save).
+    pub fn take_sram_flush(&mut self) -> bool {
+        self.bus.take_sram_flush()
+    }
+
     /// The Z80's registers, for the debugger.
     pub fn z80_registers(&self) -> Vec<(&'static str, u64)> {
         self.bus.z80.cpu.registers()
@@ -205,6 +228,7 @@ impl Machine for Genesis {
         self.bus.io = loaded.io;
         self.bus.z80 = loaded.z80;
         self.bus.sound = loaded.sound;
+        self.bus.cart.adopt(loaded.cart);
         self.bus.take_stop();
         self.stop_reported = false;
         Ok(())
