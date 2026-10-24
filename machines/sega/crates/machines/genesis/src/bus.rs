@@ -3,6 +3,7 @@
 
 use crate::config::{Config, M68K_DIVIDER, Region};
 use crate::io::Io;
+use crate::z80sys::Z80Sys;
 use mc68000::{BusFault, FunctionCode, IackResponse, M68kBus, Size};
 use vdp::{DmaBus, Vdp};
 
@@ -52,6 +53,7 @@ pub struct Bus {
     ram: Box<[u8; RAM_SIZE]>,
     pub vdp: Vdp,
     pub io: Io,
+    pub z80: Z80Sys,
     stop: Option<Stop>,
     /// The PC of the instruction being executed, for reports.
     pub pc: u32,
@@ -97,6 +99,7 @@ impl Bus {
             ram: Box::new([0; RAM_SIZE]),
             vdp: Vdp::new(config.region.is_pal()),
             io: Io::new(config.region, config.pads[0], config.pads[1]),
+            z80: Z80Sys::new(),
             stop: None,
             pc: 0,
         }
@@ -147,7 +150,7 @@ impl Bus {
 
     /// A word to the VDP control port; a DMA from the bus holds the 68000 until it is done.
     fn vdp_control_write(&mut self, value: u16) {
-        self.vdp.advance(self.now);
+        self.catch_up();
         let mut src = DmaMemory {
             rom: &self.rom,
             rom_mask: self.rom_mask,
@@ -166,19 +169,61 @@ impl Bus {
 
     /// A word read from one of the VDP ports; `None` for the ports no fact covers yet.
     fn vdp_read_word(&mut self, addr: u32) -> Option<u16> {
-        self.vdp.advance(self.now);
+        self.catch_up();
+        self.vdp_read_word_at(addr, self.now)
+    }
+
+    /// The VDP port read at master clock `t` (the VDP has been brought up to `t` by the caller).
+    fn vdp_read_word_at(&mut self, addr: u32, t: u64) -> Option<u16> {
         match addr & 0x1E {
             0x00 | 0x02 => Some(self.vdp.read_data()),
-            0x04 | 0x06 => Some(self.vdp.read_status(self.now)),
-            0x08 | 0x0A | 0x0C | 0x0E => Some(self.vdp.read_hv(self.now)),
+            0x04 | 0x06 => Some(self.vdp.read_status(t)),
+            0x08 | 0x0A | 0x0C | 0x0E => Some(self.vdp.read_hv(t)),
             _ => None,
         }
+    }
+
+    /// The Z80 reads a VDP port: it was brought up to the Z80's clock before the instruction.
+    pub(crate) fn vdp_word_for_z80(&mut self, addr: u32) -> u16 {
+        let t = self.z80_access_clock();
+        self.vdp.advance(t);
+        self.vdp_read_word_at(addr, t).unwrap_or(0xFFFF)
+    }
+
+    pub(crate) fn vdp_byte_write_for_z80(&mut self, addr: u32, value: u8) {
+        let t = self.z80_access_clock();
+        self.vdp.advance(t);
+        let word = u16::from(value) << 8 | u16::from(value);
+        match addr & 0x1E {
+            0x00 | 0x02 => self.vdp.write_data(word, t),
+            0x04 | 0x06 => {
+                let mut src = DmaMemory {
+                    rom: &self.rom,
+                    rom_mask: self.rom_mask,
+                    ram: &self.ram,
+                    unmapped: None,
+                };
+                // A DMA the Z80 starts holds the 68000, not the Z80 (the time it takes is not modelled yet).
+                self.vdp.write_control(word, t, &mut src);
+            }
+            _ => {}
+        }
+    }
+
+    /// Brings the Z80 and the VDP up to the 68000's clock: the Z80 first, because it must see the VDP as it was.
+    pub fn catch_up(&mut self) {
+        self.run_z80(self.now);
+        self.vdp.advance(self.now);
+    }
+
+    pub(crate) fn rom_byte_for_z80(&self, addr: u32) -> u8 {
+        self.rom_byte(addr)
     }
 
     fn vdp_write_word(&mut self, addr: u32, value: u16) -> bool {
         match addr & 0x1E {
             0x00 | 0x02 => {
-                self.vdp.advance(self.now);
+                self.catch_up();
                 self.vdp.write_data(value, self.now);
                 true
             }
@@ -190,9 +235,42 @@ impl Bus {
         }
     }
 
+    /// A byte of the Z80's address space as the 68000 sees it at `$A00000-$A0FFFF` (fact Z1, probe P05): only while it owns
+    /// the Z80's bus and the Z80 is running or just reset; otherwise nothing answers and the data bus floats high.
+    fn z80_area_read(&mut self, addr: u32) -> u8 {
+        self.catch_up();
+        if !self.z80.ram_open_to_68k(self.now) {
+            return 0xFF;
+        }
+        match addr & 0xFFFF {
+            a @ 0..=0x3FFF => self.z80.ram[(a & 0x1FFF) as usize],
+            0x4000..=0x5FFF => 0,
+            _ => 0xFF,
+        }
+    }
+
+    fn z80_area_write(&mut self, addr: u32, value: u8) {
+        self.catch_up();
+        if !self.z80.ram_open_to_68k(self.now) {
+            return;
+        }
+        match addr & 0xFFFF {
+            a @ 0..=0x3FFF => self.z80.ram[(a & 0x1FFF) as usize] = value,
+            0x6000..=0x60FF => self.z80.write_bank(value),
+            _ => {}
+        }
+    }
+
     fn read_byte(&mut self, addr: u32) -> Option<u8> {
         match addr {
             0..=0x3F_FFFF => Some(self.rom_byte(addr)),
+            0xA0_0000..=0xA0_FFFF => Some(self.z80_area_read(addr)),
+            0xA1_1000 | 0xA1_1001 | 0xA1_1101 | 0xA1_1201 => Some(0),
+            0xA1_1100 => {
+                self.catch_up();
+                Some(self.z80.read_bus_request(self.now))
+            }
+            0xA1_1200 => Some(self.z80.read_reset()),
             0xA1_0000..=0xA1_001F => Some(self.io.read(((addr >> 1) & 0xF) as usize, self.now)),
             0xE0_0000..=0xFF_FFFF => Some(self.ram[(addr & 0xFFFF) as usize]),
             _ => None,
@@ -201,6 +279,24 @@ impl Bus {
 
     fn write_byte(&mut self, addr: u32, value: u8) -> bool {
         match addr {
+            0xA0_0000..=0xA0_FFFF => {
+                self.z80_area_write(addr, value);
+                true
+            }
+            // The bus request and reset registers decode the high byte (bit 0 of the even address); the memory mode
+            // register, TMSS and the cartridge mapper registers take writes without effect for now (facts M8, M10-M12).
+            0xA1_1100 => {
+                self.catch_up();
+                self.z80.write_bus_request(value & 1 != 0, self.now);
+                true
+            }
+            0xA1_1200 => {
+                self.catch_up();
+                self.z80.write_reset(value & 1 != 0, self.now);
+                true
+            }
+            0xA1_1000 | 0xA1_1001 | 0xA1_1101 | 0xA1_1201 => true,
+            0xA1_3000..=0xA1_30FF | 0xA1_4000..=0xA1_4003 | 0xA1_4101 => true,
             // The I/O chip decodes the odd (low) byte of each register; an even byte write does nothing (fact I2, [H?]).
             0xA1_0000..=0xA1_001F => {
                 if addr & 1 != 0 {
@@ -230,6 +326,11 @@ impl M68kBus for Bus {
             Size::Byte => self.read_byte(addr).map(u32::from),
             Size::Word if (0xC0_0000..0xC0_0020).contains(&addr) => {
                 self.vdp_read_word(addr).map(u32::from)
+            }
+            // The Z80 area is 8 bits wide: a word read shows the even byte in both halves ([O] P05).
+            Size::Word if (0xA0_0000..=0xA0_FFFF).contains(&addr) => {
+                let b = u32::from(self.z80_area_read(addr));
+                Some(b << 8 | b)
             }
             Size::Word => {
                 let hi = self.read_byte(addr);
@@ -266,6 +367,11 @@ impl M68kBus for Bus {
             Size::Word if (0xC0_0000..0xC0_0020).contains(&addr) => {
                 self.vdp_write_word(addr, value as u16)
             }
+            // A word write to the Z80 area stores its high byte at the even address ([O] P05).
+            Size::Word if (0xA0_0000..=0xA0_FFFF).contains(&addr) => {
+                self.z80_area_write(addr & !1, (value >> 8) as u8);
+                true
+            }
             Size::Word => {
                 self.write_byte(addr, (value >> 8) as u8) && self.write_byte(addr | 1, value as u8)
             }
@@ -279,7 +385,7 @@ impl M68kBus for Bus {
     fn iack(&mut self, level: u8) -> IackResponse {
         // The VDP and the external devices answer with an autovector.
         if level == 4 || level == 6 {
-            self.vdp.advance(self.now);
+            self.catch_up();
             self.vdp.acknowledge();
         }
         IackResponse::Autovector

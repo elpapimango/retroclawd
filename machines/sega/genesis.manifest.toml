@@ -64,3 +64,80 @@ start = 16711696
 len = 12
 golden = "genesis/p04b_io_bytes.bin"
 golden_sha256 = "ab1c2175c74726f81e004689225e387b5139722d97a269991c27ebf5ddf829fb"
+
+# P05: the Z80 from both sides: Z80 RAM through the 68000 (bytes only, a word write keeps its high byte, a word read repeats
+# the byte), the RAM mirror at $2000, the YM2612 area, the ROM window and the bank register, and the Z80 running its own program
+# (A: 68000 side, B: RAM, C: mirror and YM reads, D: the window: $FF where the work RAM would be, E: the Z80 reached its end).
+# The VDP status the Z80 reads, and the register power-on values (open bus), differ with timing and are not compared.
+
+[[scenario]]
+id = "P05A"
+kind = "memory"
+frames = 40
+files = { rom = "sega/software/scenarios/p05_z80.md" }
+start = 16711692
+len = 12
+golden = "genesis/p05a_68k_side.bin"
+golden_sha256 = "aff910ce9fb9fd79d31ba1ea55b7755cec3accc883e1ed45fcca73e3137dba1e"
+
+[[scenario]]
+id = "P05B"
+kind = "memory"
+frames = 40
+files = { rom = "sega/software/scenarios/p05_z80.md" }
+start = 16711712
+len = 6
+golden = "genesis/p05b_z80_ram.bin"
+golden_sha256 = "ecd7fc4e571ed017bfb8285e9e2223d5be9b56d79c23f666a12885bfd915808e"
+
+[[scenario]]
+id = "P05C"
+kind = "memory"
+frames = 40
+files = { rom = "sega/software/scenarios/p05_z80.md" }
+start = 16711728
+len = 8
+golden = "genesis/p05c_z80_mirror_ym.bin"
+golden_sha256 = "15194ee62ca44a51535ca8c47e619351015a4162ab6211318ebd3e131ce84976"
+
+[[scenario]]
+id = "P05D"
+kind = "memory"
+frames = 40
+files = { rom = "sega/software/scenarios/p05_z80.md" }
+start = 16711744
+len = 5
+golden = "genesis/p05d_window.bin"
+golden_sha256 = "8db4192285a2ab30d0550be51d7c8db603f9bbff86b53da853fb2bdf3d79705e"
+
+[[scenario]]
+id = "P05E"
+kind = "memory"
+frames = 40
+files = { rom = "sega/software/scenarios/p05_z80.md" }
+start = 16711775
+len = 1
+golden = "genesis/p05e_done.bin"
+golden_sha256 = "ae3f4619b0413d70d3004b9131c3752153074e45725be13b9a148978895e359e"
+
+# S1 at frame 300: the Altered Beast intro art. Genesis Plus GX's picture, compared with a mean absolute difference: the emulators convert the
+# 3-bit colour levels to 8 bits differently (scenarios/compare_frames.py shows the pictures are identical once reduced to levels).
+[[scenario]]
+id = "S1-300"
+kind = "screen"
+frames = 300
+files = { rom = "sega/software/roms/altered-beast/ab.smd" }
+golden = "genesis/S1-altered-beast-300.png"
+golden_sha256 = "2e24b6280d2f7a3209515804bab9a250922a1fd1b24009e54434cb4feb4a933a"
+compare = { mode = "similarity", max_mad = 3.0, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+# S1 at frame 600: the SEGA logo has gone and the title screen is up. Genesis Plus GX's picture, compared with a mean absolute difference: the emulators convert the
+# 3-bit colour levels to 8 bits differently (scenarios/compare_frames.py shows the pictures are identical once reduced to levels).
+[[scenario]]
+id = "S1-600"
+kind = "screen"
+frames = 600
+files = { rom = "sega/software/roms/altered-beast/ab.smd" }
+golden = "genesis/S1-altered-beast-600.png"
+golden_sha256 = "ba242ce81812e63f0423c80f1dd01d39c8774fc74d1cf24c7067eab5cb56f510"
+compare = { mode = "similarity", max_mad = 3.0, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }

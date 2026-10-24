@@ -7,8 +7,13 @@ out="$here/../software/scenarios"
 rcasm="${RCASM:-$here/../../../../retroclawd-tools/target/release/rcasm}"
 mkdir -p "$out"
 for src in "$here"/probes/*.s; do
+    case "$src" in *.z80.s) continue ;; esac
     name="$(basename "$src" .s)"
-    "$rcasm" -c 68000 -f bin --force -o "$out/$name.bin" "$src"
+    if [ -f "$here/probes/$name.z80.s" ]; then
+        "$rcasm" -c z80 -f bin --force -o "$out/$name.z80.bin" "$here/probes/$name.z80.s"
+        python -I "$here/bin2dc.py" "$out/$name.z80.bin" "$out/$name.z80.inc"
+    fi
+    "$rcasm" -c 68000 -f bin --force -I "$out" -o "$out/$name.bin" "$src"
     python -I "$here/mkrom.py" "$out/$name.bin" "$out/$name.md" --name "$name"
 done
 ls -l "$out"/*.md

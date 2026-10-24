@@ -12,7 +12,7 @@ use plugin_api::{
     ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, CodecError, CpuFamily, CpuInfo, DebugCommand,
     DebugResponse, DebugValue, DisassemblyLine, MACHINE_PROFILE_CONTRACT_VERSION,
     MachineCapability, MachineCommand, MachineCreateRequest, MachineCreateResponse,
-    MachineInstanceCallRequest, MachineInstanceCallResponse, MachineInstanceHandle,
+    MachineInstanceCallRequest, MachineInstanceCallResponse, MachineInstanceHandle, MachineKeyInfo,
     MachineMetadata, MachineOptionInfo, MachineOptionKind, MachinePluginVTableV1, MachineProfile,
     MachineResponse, MediaKind, PluginDescriptorV1, PluginKind,
     REQUIRED_MACHINE_DEBUG_CAPABILITIES, RcBuffer, RcCallResult, RcSlice, RcStatus, RegisterField,
@@ -196,7 +196,7 @@ fn machine_profile() -> MachineProfile {
                 "Write the diagnostic report of a stop at an unemulated device here (default: stderr)",
             ),
         ],
-        key_names: Vec::new(),
+        key_names: key_names(),
         cpus: vec![
             CpuInfo {
                 id: "main".to_string(),
@@ -213,6 +213,65 @@ fn machine_profile() -> MachineProfile {
         ],
         axis_names: Vec::new(),
     }
+}
+
+/// The host keyboard names a pad 1 button answers to by default (arrows, Z X C, A S D, Enter, Right Shift).
+const PAD1_KEYBOARD: [(&str, &[&str]); 12] = [
+    ("Up", &["up"]),
+    ("Down", &["down"]),
+    ("Left", &["left"]),
+    ("Right", &["right"]),
+    ("A", &["z"]),
+    ("B", &["x"]),
+    ("C", &["c"]),
+    ("X", &["a"]),
+    ("Y", &["s"]),
+    ("Z", &["d"]),
+    ("Start", &["enter", "return"]),
+    ("Mode", &["shiftright"]),
+];
+
+/// The extra names the host's gamepad defaults bind (`Joy{n}Fire1` is B, `Fire2` A, `Fire3` C).
+const FIRE_KEYS: [(&str, &str); 3] = [("Fire1", "B"), ("Fire2", "A"), ("Fire3", "C")];
+
+fn key_names() -> Vec<MachineKeyInfo> {
+    let mut keys = Vec::new();
+    for port in 1..=2 {
+        for (button, aliases) in PAD1_KEYBOARD {
+            let aliases = if port == 1 { aliases } else { &[] };
+            keys.push(MachineKeyInfo::with_aliases(
+                &format!("Joy{port}{button}"),
+                aliases,
+            ));
+        }
+        for (name, _) in FIRE_KEYS {
+            keys.push(MachineKeyInfo::new(&format!("Joy{port}{name}")));
+        }
+    }
+    keys
+}
+
+/// The pad and button a key name stands for.
+fn pad_key(name: &str) -> Option<(usize, &'static str)> {
+    let rest = name.get(3..)?;
+    if !name[..3].eq_ignore_ascii_case("joy") {
+        return None;
+    }
+    let port = match rest.as_bytes().first()? {
+        b'1' => 0,
+        b'2' => 1,
+        _ => return None,
+    };
+    let button = &rest[1..];
+    for (n, _) in PAD1_KEYBOARD {
+        if n.eq_ignore_ascii_case(button) {
+            return Some((port, n));
+        }
+    }
+    FIRE_KEYS
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case(button))
+        .map(|&(_, b)| (port, b))
 }
 
 fn metadata(machine: &Genesis) -> MachineMetadata {
@@ -411,6 +470,12 @@ fn handle_machine_command(
         )),
         MachineCommand::SetPc { address } => {
             record.machine.set_pc(address);
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::KeyEvent { key, pressed } => {
+            let (port, button) =
+                pad_key(&key).ok_or_else(|| format!("unknown key \"{key}\" (try --list-keys)"))?;
+            record.machine.set_pad_button(port, button, pressed)?;
             Ok(MachineResponse::Ack)
         }
         MachineCommand::RenderFrame => {
@@ -668,6 +733,43 @@ mod tests {
             value: DebugValue::Text("mars".to_string()),
         }]);
         assert!(create_machine(bad_region).is_err());
+    }
+
+    #[test]
+    fn the_key_list_and_the_key_handler_agree() {
+        let keys = key_names();
+        assert!(keys.len() >= 30);
+        for k in &keys {
+            assert!(pad_key(&k.name).is_some(), "{}", k.name);
+        }
+        assert_eq!(pad_key("Joy2Start"), Some((1, "Start")));
+        assert_eq!(pad_key("Joy1Fire1"), Some((0, "B")));
+        assert_eq!(pad_key("joy1up"), Some((0, "Up")));
+        assert!(pad_key("Joy3Up").is_none());
+        assert!(pad_key("Space").is_none());
+    }
+
+    #[test]
+    fn a_pressed_key_reaches_the_pad() {
+        let created = create_machine(request(Vec::new())).unwrap();
+        let mut state = state().lock().unwrap();
+        let record = state.record_mut(created.instance).unwrap();
+        let result = handle_machine_command(
+            record,
+            MachineCommand::KeyEvent {
+                key: "Joy1Up".to_string(),
+                pressed: true,
+            },
+        );
+        assert!(matches!(result, Ok(MachineResponse::Ack)));
+        let bad = handle_machine_command(
+            record,
+            MachineCommand::KeyEvent {
+                key: "Nope".to_string(),
+                pressed: true,
+            },
+        );
+        assert!(bad.is_err());
     }
 
     #[test]

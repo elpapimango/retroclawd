@@ -43,7 +43,15 @@ def build(source, header_region="JUE"):
     os.makedirs(OUT, exist_ok=True)
     binary = os.path.join(OUT, name + ".bin")
     rom = os.path.join(OUT, name + ".md")
-    subprocess.run([RCASM, "-c", "68000", "-f", "bin", "--force", "-o", binary, source], check=True, stdout=subprocess.DEVNULL)
+    companion = os.path.splitext(source)[0] + ".z80.s"
+    if os.path.exists(companion):
+        # a Z80 program the probe copies into Z80 RAM: `.incbin "NAME.z80.bin"`
+        subprocess.run([RCASM, "-c", "z80", "-f", "bin", "--force", "-o", os.path.join(OUT, name + ".z80.bin"), companion],
+                       check=True, stdout=subprocess.DEVNULL)
+        subprocess.run([sys.executable, "-I", os.path.join(HERE, "bin2dc.py"), os.path.join(OUT, name + ".z80.bin"),
+                        os.path.join(OUT, name + ".z80.inc")], check=True)
+    subprocess.run([RCASM, "-c", "68000", "-f", "bin", "--force", "-I", OUT, "-o", binary, source], check=True,
+                   stdout=subprocess.DEVNULL)
     subprocess.run([sys.executable, "-I", os.path.join(HERE, "mkrom.py"), binary, rom, "--name", name,
                     "--region", header_region], check=True)
     return name, rom

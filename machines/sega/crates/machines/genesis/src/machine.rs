@@ -42,6 +42,20 @@ impl Genesis {
         &self.cpu
     }
 
+    /// Presses or releases a pad button by its name (`Up`, `A`, `Start`, `Mode`, ...) on port 0 or 1.
+    pub fn set_pad_button(&mut self, port: usize, name: &str, pressed: bool) -> Result<(), String> {
+        let mask = crate::io::BUTTONS
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|&(_, m)| m)
+            .ok_or_else(|| format!("unknown pad button \"{name}\""))?;
+        if port > 1 {
+            return Err(format!("no pad port {port}"));
+        }
+        self.bus.io.set_button(port, mask, pressed);
+        Ok(())
+    }
+
     /// The report of the stop at an address no fact covers, once.
     pub fn take_stop_report(&mut self) -> Option<String> {
         if self.stop_reported {
@@ -87,10 +101,10 @@ impl Machine for Genesis {
             return (4 * M68K_DIVIDER) as u32;
         }
         self.bus.pc = self.cpu.pc;
-        self.bus.vdp.advance(start);
+        self.bus.catch_up();
         self.cpu.set_ipl(self.bus.vdp.irq_level());
         self.cpu.step(&mut self.bus);
-        self.bus.vdp.advance(self.bus.now);
+        self.bus.catch_up();
         (self.bus.now - start) as u32
     }
 
