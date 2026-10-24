@@ -97,7 +97,7 @@ Document copies live in `software/docs/` (git-ignored); this file cites them by 
 | V18 | Interrupts: VBlank level 6, HBlank level 4, external level 2 | [H] | SR-TECH |
 | V19 | HV counter tables (HCounter ranges, VCounter increment point, HBlank set/clear, VBlank set/clear, F flag) for H32/H40 and PAL/NTSC V28/V30 | [H] | KABUTO "H/V counter values" (from the SpritesMind thread); values copied into code only with these rows |
 | V20 | Sprites: 80 per frame (64 in H32), 20 per line (16 in H32), link list walk with loop guard; sprite cache behaviour | [H] | SR-TECH, KABUTO "Precise details of sprite rendering" |
-| V21 | DMA rates: VRAM 205 bytes per VBlank line / 18 per active line; CRAM/VSRAM 410 / 36 (H40 values) | [H] | SR-TECH "DMA" |
+| V21 | (closed) The disagreement of `p20_fifo_stall` and `p25_loop_forms` with Genesis Plus GX, BlastEm and clownmdemu was the probes' fault: they wrote registers 11-23 before enabling Mode 5, which three of the cores ignore (fact V29). With the rule in place the loops agree with Genesis Plus GX within one H step | [O] probes p20, p23, p24, p25 | |
 | V22 | Status register bits (FIFO empty/full, VINT pending, sprite overflow, collision, odd frame, VBlank, HBlank, DMA busy, PAL) | [H?] | to read from a document in Task 8 |
 | V23 | Debug register `$C0001C` | [H] | KABUTO; not emulated in Phase 1 (stop) |
 
