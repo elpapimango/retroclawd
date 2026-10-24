@@ -115,8 +115,26 @@ impl Vdp {
         if w > 320 || h > 240 || self.shown.len() != (w * h * 3) as usize {
             return Err("the shown picture does not fit its size".to_string());
         }
-        if self.pal != self.timing.is_pal() {
+        if self.timing.lines() != if self.pal { 313 } else { 262 } {
             return Err("the timing does not match the region".to_string());
+        }
+        if self.fifo_idx >= 4 {
+            return Err("the FIFO position is out of range".to_string());
+        }
+        Ok(())
+    }
+
+    /// Whether the VDP's position in time is believable for a machine whose master clock is `now`: it can lag behind (it is
+    /// brought up to date when it is used) but never be ahead of the clock by more than a line.
+    pub fn validate_time(&self, now: u64) -> Result<(), String> {
+        if self.line_abs > now / LINE_CLOCKS + 2 {
+            return Err("the VDP is ahead of the clock".to_string());
+        }
+        if self
+            .vint_at
+            .is_some_and(|t| t > now.saturating_add(2 * LINE_CLOCKS))
+        {
+            return Err("the vertical interrupt is scheduled too far ahead".to_string());
         }
         Ok(())
     }
@@ -168,5 +186,38 @@ impl Vdp {
     /// The width of the picture in pixels.
     pub fn width(&self) -> u32 {
         if self.h40() { 320 } else { 256 }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_damaged_vdp_state_is_refused() {
+        assert!(Vdp::new(false).validate().is_ok());
+        let mut v = Vdp::new(false);
+        v.fifo_idx = 9;
+        assert!(v.validate().is_err());
+        let mut v = Vdp::new(true);
+        v.timing = timing::Timing::new(false);
+        assert!(v.validate().is_err(), "a PAL VDP with NTSC timing");
+        let mut v = Vdp::new(false);
+        v.vram.pop();
+        assert!(v.validate().is_err());
+        let mut v = Vdp::new(false);
+        v.shown_size = (320, 240);
+        assert!(v.validate().is_err());
+        let mut v = Vdp::new(false);
+        v.line_abs = u64::MAX;
+        assert!(v.validate_time(1_000_000).is_err());
+        assert!(Vdp::new(false).validate_time(0).is_ok());
+    }
+
+    #[test]
+    fn a_vdp_far_behind_the_clock_skips_instead_of_looping() {
+        let mut v = Vdp::new(false);
+        v.advance(u64::MAX / 4);
+        v.advance(u64::MAX);
     }
 }

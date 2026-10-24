@@ -43,7 +43,7 @@ impl Vdp {
 
     /// The master clock of the start of absolute line `n`.
     fn line_time(n: u64) -> u64 {
-        n * LINE_CLOCKS
+        n.saturating_mul(LINE_CLOCKS)
     }
 
     /// Brings the VDP up to master clock `now`: lines whose time has come are drawn and their events happen. Call it
@@ -52,7 +52,7 @@ impl Vdp {
         let lines = u64::from(self.timing_lines());
         // A line count that is far behind the clock (a damaged state) is caught up by skipping, not by looping.
         let behind = now / LINE_CLOCKS;
-        if behind > self.line_abs + 4 * lines {
+        if behind > self.line_abs.saturating_add(4 * lines) {
             self.line_abs = behind - lines;
             self.vint_at = None;
         }

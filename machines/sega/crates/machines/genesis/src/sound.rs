@@ -103,10 +103,20 @@ impl Sound {
     }
 
     /// Runs both chips up to master clock `t`; finished samples go to the output queue.
+    /// Whether the chips' position in time is believable for a machine whose master clock is `now` (they lag behind and are
+    /// brought up to date when used; they are never ahead by more than a sample).
+    pub fn validate_time(&self, now: u64) -> Result<(), String> {
+        let slack = SAMPLE_MASTER_CLOCKS + STEP_MASTER_CLOCKS;
+        if self.ym_time > now.saturating_add(slack) || self.psg_time > now.saturating_add(slack) {
+            return Err("the sound chips are ahead of the clock".to_string());
+        }
+        Ok(())
+    }
+
     pub fn run_to(&mut self, t: u64) {
         // A chip far behind the clock (a machine that is never drained, or a damaged state) skips the time instead of
         // making every sample of it: sound that nobody collected is not worth computing.
-        if t > self.ym_time + MAX_LAG {
+        if t > self.ym_time.saturating_add(MAX_LAG) {
             let skip = (t - MAX_LAG - self.ym_time) / SAMPLE_MASTER_CLOCKS * SAMPLE_MASTER_CLOCKS;
             self.ym_time += skip;
             self.psg_time = self.psg_time.max(self.ym_time);
@@ -120,11 +130,13 @@ impl Sound {
             self.sum_r = 0;
             self.out.clear();
         }
-        while self.ym_time + CYCLE_MASTER_CLOCKS <= t {
+        while let Some(next) = self.ym_time.checked_add(CYCLE_MASTER_CLOCKS)
+            && next <= t
+        {
             let (l, r) = self.ym.clock();
             self.sum_l += i32::from(l);
             self.sum_r += i32::from(r);
-            self.ym_time += CYCLE_MASTER_CLOCKS;
+            self.ym_time = next;
             self.ym_cycle += 1;
             if self.ym_cycle == CYCLES_PER_SAMPLE {
                 self.psg_run_to(self.ym_time);
@@ -252,5 +264,22 @@ mod tests {
         ym_write_gap(&mut s, &mut t, 0, 0x25, 0x03);
         ym_write_gap(&mut s, &mut t, 0, 0x27, 0x05);
         assert_eq!(s.ym_read(t + 10 * SAMPLE_MASTER_CLOCKS, 0) & 1, 1);
+    }
+
+    #[test]
+    fn a_sound_state_ahead_of_the_clock_is_refused_and_one_far_behind_skips() {
+        let mut s = Sound::new(Chip::Ym3438);
+        assert!(s.validate_time(0).is_ok());
+        s.ym_time = u64::MAX;
+        assert!(s.validate_time(1_000_000).is_err());
+        let mut s = Sound::new(Chip::Ym3438);
+        s.run_to(u64::MAX / 2);
+        assert!(
+            s.drain().len() <= 2 * (MAX_LAG / SAMPLE_MASTER_CLOCKS + 2) as usize,
+            "only the last few frames of sound are made"
+        );
+        let mut s = Sound::new(Chip::Ym3438);
+        s.ym_time = u64::MAX - 10;
+        s.run_to(u64::MAX);
     }
 }

@@ -22,7 +22,7 @@ pub(crate) fn unpack_colour(cram: u16) -> u16 {
 impl Vdp {
     /// One word written to the memory the code selects, then the address advances by register 15.
     pub(crate) fn bus_write(&mut self, data: u16) {
-        self.fifo[self.fifo_idx] = data;
+        self.fifo[self.fifo_idx & 3] = data;
         self.fifo_idx = (self.fifo_idx + 1) & 3;
         match self.code & 0x0F {
             0x01 => {
@@ -51,7 +51,7 @@ impl Vdp {
 
     /// One word read from the memory the code selects, then the address advances.
     pub(crate) fn bus_read(&mut self) -> u16 {
-        let leftover = self.fifo[self.fifo_idx];
+        let leftover = self.fifo[self.fifo_idx & 3];
         let data = match self.code & 0x1F {
             0x00 => {
                 let index = usize::from(self.addr & 0xFFFE);

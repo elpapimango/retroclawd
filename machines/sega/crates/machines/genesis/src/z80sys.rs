@@ -53,6 +53,19 @@ impl Z80Sys {
         Ok(())
     }
 
+    /// Whether the Z80's clocks are believable for a machine whose master clock is `now`: the Z80 runs a few cycles ahead of
+    /// the 68000 at most (it finishes the instruction it is in), and a grant is never far in the future.
+    pub fn validate_time(&self, now: u64) -> Result<(), String> {
+        let slack = 64 * Z80_DIVIDER;
+        if self.time > now.saturating_add(slack)
+            || self.grant_at > now.saturating_add(slack)
+            || self.offset > 64
+        {
+            return Err("the Z80 is ahead of the clock".to_string());
+        }
+        Ok(())
+    }
+
     /// The 68000 wrote the bus request register.
     pub fn write_bus_request(&mut self, request: bool, now: u64) {
         if request && !self.requested {
@@ -61,7 +74,7 @@ impl Z80Sys {
             self.grant_at = if self.reset {
                 now
             } else {
-                self.time.max(now) + GRANT_DELAY
+                self.time.max(now).saturating_add(GRANT_DELAY)
             };
         } else if !request && self.requested {
             self.requested = false;
@@ -200,5 +213,16 @@ mod tests {
         z.cpu.pc = 0x1234;
         z.write_reset(false, 10);
         assert_eq!(z.cpu.pc, 0);
+    }
+
+    #[test]
+    fn a_z80_ahead_of_the_clock_is_refused() {
+        let mut z = Z80Sys::new();
+        assert!(z.validate_time(0).is_ok());
+        z.time = u64::MAX;
+        assert!(z.validate_time(100).is_err());
+        let mut z = Z80Sys::new();
+        z.write_bus_request(true, u64::MAX - 1);
+        z.write_reset(true, u64::MAX - 1);
     }
 }

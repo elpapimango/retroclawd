@@ -173,6 +173,18 @@ pub fn load(
     payload.vdp.validate().map_err(StateError::Corrupt)?;
     payload.z80.validate().map_err(StateError::Corrupt)?;
     payload.sound.validate().map_err(StateError::Corrupt)?;
+    payload
+        .vdp
+        .validate_time(payload.now)
+        .map_err(StateError::Corrupt)?;
+    payload
+        .z80
+        .validate_time(payload.now)
+        .map_err(StateError::Corrupt)?;
+    payload
+        .sound
+        .validate_time(payload.now)
+        .map_err(StateError::Corrupt)?;
     Ok(Loaded {
         cpu: payload.cpu,
         now: payload.now,

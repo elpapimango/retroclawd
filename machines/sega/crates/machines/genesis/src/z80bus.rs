@@ -89,7 +89,7 @@ impl Bus {
     /// reset or whose bus the 68000 holds loses the time.
     pub fn run_z80(&mut self, until: u64) {
         // A Z80 far behind (a damaged state) loses the time instead of running through all of it.
-        if until > self.z80.time + 4 * 1_070_460 {
+        if until > self.z80.time.saturating_add(4 * 1_070_460) {
             self.z80.time = until - 4 * 1_070_460;
         }
         while self.z80.time < until {
