@@ -179,7 +179,9 @@ pub fn load(
         return Err(StateError::OtherRegion);
     }
     if payload.refresh_at > payload.now.saturating_add(crate::bus::REFRESH_INTERVAL) {
-        return Err(StateError::Corrupt("the bus refresh is too far ahead".to_string()));
+        return Err(StateError::Corrupt(
+            "the bus refresh is too far ahead".to_string(),
+        ));
     }
     payload.vdp.validate().map_err(StateError::Corrupt)?;
     payload.z80.validate().map_err(StateError::Corrupt)?;
