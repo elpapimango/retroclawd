@@ -145,6 +145,9 @@ pub struct DmaSound {
     /// The tone controls' filters (the last samples only: not part of a state).
     #[serde(skip)]
     tone: crate::tone::Tone,
+    /// The DAC's output filters (also the last few samples only).
+    #[serde(skip)]
+    dac: crate::dac::Dac,
 }
 
 impl DmaSound {
@@ -356,8 +359,17 @@ impl DmaSound {
         self.tone.apply(self.lmc.bass, self.lmc.treble, samples);
     }
 
-    /// The samples taken so far (DMA left, right, YM gains left, right), removed.
+    /// The samples taken so far (DMA left, right, YM gains left, right), removed. The DMA samples have been through the DAC's
+    /// output filters ([D] *STe manual* 2.10.1, see `dac.rs`), at the sample rate now selected.
     pub fn drain(&mut self) -> Vec<[f32; 4]> {
-        std::mem::take(&mut self.samples).into()
+        let mut samples: Vec<[f32; 4]> = std::mem::take(&mut self.samples).into();
+        for channel in 0..2 {
+            let mut column: Vec<f32> = samples.iter().map(|s| s[channel]).collect();
+            self.dac.apply(self.mode & 3, channel, &mut column);
+            for (s, c) in samples.iter_mut().zip(column) {
+                s[channel] = c;
+            }
+        }
+        samples
     }
 }

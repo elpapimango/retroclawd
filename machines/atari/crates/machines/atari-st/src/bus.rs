@@ -632,6 +632,13 @@ impl StBus {
                     None => self.dma.set_error(),
                 }
             }
+            Transfer::Discard(bytes) => {
+                let n = bytes.min(self.dma.dma_bytes_left());
+                match self.dma_ram_range(n) {
+                    Some(_) if n == bytes => self.dma.acsi_moved(n),
+                    _ => self.dma.set_error(),
+                }
+            }
             Transfer::FromHost { target, lba, bytes } => {
                 let n = bytes.min(self.dma.dma_bytes_left());
                 match self.dma_ram_range(n) {

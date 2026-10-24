@@ -158,6 +158,8 @@ pub enum Transfer {
         lba: u64,
         bytes: usize,
     },
+    /// The host sends `bytes` bytes that the device takes and does not keep (the parameter list of MODE SELECT).
+    Discard(usize),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -363,6 +365,33 @@ impl Acsi {
                         lba,
                         bytes: count as usize * BLOCK_BYTES,
                     })
+                }
+            }
+            // The four commands of the 1986 table that this device has nothing to do for ([D] *ST spec* pp.19-20 names them;
+            // [H?] what they do is a choice: a disk image has no medium to verify, format or correct, so a range that
+            // exists is accepted and nothing changes, a FORMAT TRACK in particular leaves the data as it is).
+            (false, 0x05 | 0x06) => {
+                let lba = lba6(args);
+                let count = if args[3] == 0 { 256 } else { args[3] as u64 };
+                if lba
+                    .checked_add(count)
+                    .is_none_or(|end| end > blocks_on_disk)
+                {
+                    return fail(self, STATUS_INVALID_ADDRESS, 5);
+                }
+                self.state.sense[target as usize & 7] = 0;
+                ok(Transfer::None)
+            }
+            (false, 0x0D) => {
+                self.state.sense[target as usize & 7] = 0;
+                ok(Transfer::None)
+            }
+            // MODE SELECT(6): the parameter list (its length is byte 4, 0 = none) is taken and ignored ([H?]).
+            (false, 0x15) => {
+                self.state.sense[target as usize & 7] = 0;
+                match args[3] {
+                    0 => ok(Transfer::None),
+                    n => ok(Transfer::Discard(n as usize)),
                 }
             }
             // [H?] SCSI-2 INQUIRY: a direct-access device, fixed vendor and product, 36 bytes, cut to the allocation.

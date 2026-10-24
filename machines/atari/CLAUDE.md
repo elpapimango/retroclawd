@@ -186,4 +186,7 @@ modified by being read. Never committed; without the variable the tests pass and
   Hatari 2.6.1 draws no part of a line in another resolution). Probes P35 and P45 (`timing/gen_p35.py`), scenarios S20 and S21 (pictures
   against Hatari's, similarity with colour mapping; P35 equal on every line, P45 but two lines at an edge where Hatari's own timing differs
   from run to run). `fast` mode still draws the frame in the register's last value. The per-line record is not part of a save state.
+- Also 2026-10-24: STE DAC output filters (`src/dac.rs`: 4 poles at 40 % of the sample rate and 2 poles at 16 kHz, Butterworth by
+  choice), ACSI opcodes `$05`/`$06`/`$0D`/`$15` accepted (nothing changes, `Transfer::Discard` for MODE SELECT's list). Tried and
+  reverted: the sync mode reset of 0 (60 Hz) breaks the Hatari boot-phase comparisons (see `hardware-facts.md`).
 - Not modelled: a switch to high resolution inside the picture (Hatari cuts the line short; P09 frames 16-18), lost lines (P09/P10).

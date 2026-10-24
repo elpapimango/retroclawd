@@ -25,6 +25,7 @@ pub use acia::{NullPeer, SerialPeer};
 pub use bus::{
     CARTRIDGE_BYTES, HBL_LEVEL, IoStop, MFP_LEVEL, ROM_BASE, ROM_SIZE, StBus, StopReason, VBL_LEVEL,
 };
+pub mod dac;
 mod dmasound;
 pub mod rtc;
 pub mod ste;

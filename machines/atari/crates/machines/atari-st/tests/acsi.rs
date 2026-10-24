@@ -258,3 +258,36 @@ fn a_short_sector_count_limits_the_transfer() {
         "the DMA stopped when its count reached 0"
     );
 }
+
+/// The 1986 table's other four commands ([D] ST spec p.20): accepted when the range exists, nothing changes.
+#[test]
+fn verify_format_correction_and_mode_select_are_accepted_and_change_nothing() {
+    for (op, count) in [(0x05u8, 2u8), (0x06, 1), (0x0D, 0)] {
+        let mut m = machine(&command(0x20000, 0, &cdb6(op, 4, count), false), 16);
+        let before = m.hard_disk_image(0).unwrap().to_vec();
+        run(&mut m);
+        assert_eq!(word(&m, 0x600) & 0xFF, 0x00, "opcode {op:#04x}");
+        assert!(!m.hard_disk_modified(0), "opcode {op:#04x}");
+        assert_eq!(
+            m.hard_disk_image(0).unwrap(),
+            &before[..],
+            "opcode {op:#04x}"
+        );
+    }
+    // a range past the end is an invalid address for the two track commands
+    for op in [0x05u8, 0x06] {
+        let mut m = machine(&command(0x20000, 0, &cdb6(op, 15, 2), false), 16);
+        run(&mut m);
+        assert_eq!(word(&m, 0x600) & 0xFF, 0x21, "opcode {op:#04x}");
+    }
+    // MODE SELECT takes its parameter list from memory (twelve bytes of the one sector the DMA allows) and keeps nothing
+    let mut m = machine(&command(0x30000, 1, &cdb6(0x15, 0, 12), true), 16);
+    m.load(0x30000, &[0xEE; 12]);
+    run(&mut m);
+    assert_eq!(word(&m, 0x600) & 0xFF, 0x00);
+    assert!(!m.hard_disk_modified(0));
+    // a parameter list longer than the sector count allows is refused with the DMA error bit, as a short write is
+    let mut m = machine(&command(0x30000, 0, &cdb6(0x15, 0, 12), true), 16);
+    run(&mut m);
+    assert_eq!(word(&m, 0x602) & 1, 0, "DMA error: {:#x}", word(&m, 0x602));
+}
