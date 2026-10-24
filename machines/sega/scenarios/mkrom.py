@@ -16,13 +16,17 @@ def field(text, size):
     return data + b" " * (size - len(data))
 
 
-def build(code, region="JUE", name="RETROCLAWD PROBE"):
+def build(code, region="JUE", name="RETROCLAWD PROBE", size=0, pattern=False):
     if len(code) % 2:
         code += b"\x00"
     stub_addr = 0x200 + len(code)
     body = code + b"\x60\xFE"
-    size = (0x200 + len(body) + 127) & ~127
+    size = max(size, (0x200 + len(body) + 127) & ~127)
     rom = bytearray(b"\xFF" * size)
+    if pattern:
+        # every 4 KB block distinct: the byte is the block number, so a mirror or an open bus shows in what is read
+        for i in range(size):
+            rom[i] = (i >> 12) & 0xFF
     vectors = struct.pack(">II", 0x00FFFE00, 0x200) + struct.pack(">I", stub_addr) * 62
     rom[0:len(vectors)] = vectors
     rom[0x200:0x200 + len(body)] = body
@@ -43,5 +47,7 @@ if __name__ == "__main__":
     ap.add_argument("out")
     ap.add_argument("--region", default="JUE")
     ap.add_argument("--name", default="RETROCLAWD PROBE")
+    ap.add_argument("--size", type=lambda v: int(v, 0), default=0, help="pad the ROM to this many bytes")
+    ap.add_argument("--pattern", action="store_true", help="fill the padding with the block number of each 4 KB")
     a = ap.parse_args()
-    open(a.out, "wb").write(build(open(a.code, "rb").read(), a.region, a.name))
+    open(a.out, "wb").write(build(open(a.code, "rb").read(), a.region, a.name, a.size, a.pattern))

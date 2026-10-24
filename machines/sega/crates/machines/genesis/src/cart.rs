@@ -99,6 +99,8 @@ pub struct Cart {
     rom: Vec<u8>,
     #[serde(skip)]
     rom_mask: usize,
+    /// The smallest size the ROM repeats at: 4 MB for Sonic & Knuckles, whose upper 2 MB is the lock-on socket, not a mirror.
+    mirror_floor: usize,
     /// The page each 512 KB bank shows, when the mapper is in use.
     banks: Option<[u8; 8]>,
     pub sram: Option<Sram>,
@@ -106,10 +108,12 @@ pub struct Cart {
 
 impl Cart {
     pub fn new(rom: Vec<u8>, header: &md_cart::Header) -> Self {
-        let size = rom.len().max(2).next_power_of_two();
+        let mirror_floor = if header.overseas_name.contains("SONIC & KNUCKLES") { 0x40_0000 } else { 2 };
+        let size = rom.len().max(mirror_floor).next_power_of_two();
         let mapped = rom.len() > 0x40_0000 || header.console.starts_with("SEGA SSF");
         Self {
             rom_mask: size - 1,
+            mirror_floor,
             banks: mapped.then_some([0, 1, 2, 3, 4, 5, 6, 7]),
             sram: header.sram.map(Sram::new),
             rom,
@@ -121,6 +125,7 @@ impl Cart {
         let size = rom.len().max(2).next_power_of_two();
         Self {
             rom_mask: size - 1,
+            mirror_floor: 2,
             banks: None,
             sram: None,
             rom,
@@ -129,7 +134,7 @@ impl Cart {
 
     /// Gives a cartridge loaded from a saved state its ROM back.
     pub fn restore_rom(&mut self, rom: Vec<u8>) {
-        let size = rom.len().max(2).next_power_of_two();
+        let size = rom.len().max(self.mirror_floor.max(2)).next_power_of_two();
         self.rom_mask = size - 1;
         self.rom = rom;
     }
@@ -307,6 +312,17 @@ mod tests {
         assert_eq!(cart.read(0x30_0000), 0x18);
         assert_eq!(cart.read(0x38_0000), 0x19);
         assert_eq!(cart.read(0), 0x10, "bank 0 stays on page 0");
+    }
+
+    #[test]
+    fn sonic_and_knuckles_does_not_mirror_into_the_lock_on_socket() {
+        let mut h = header("SEGA MEGA DRIVE", None);
+        h.overseas_name = "SONIC & KNUCKLES".into();
+        let sk = Cart::new(vec![0x11; 0x20_0000], &h);
+        assert_eq!(sk.read(0x1F_FFFF), 0x11);
+        assert_eq!(sk.read(0x20_0000), 0xFF, "nothing locked on: open bus");
+        let plain = Cart::new(vec![0x11; 0x20_0000], &header("SEGA MEGA DRIVE", None));
+        assert_eq!(plain.read(0x20_0000), 0x11, "any other 2 MB ROM repeats");
     }
 
     #[test]

@@ -38,7 +38,7 @@ REGION_OPTIONS = {
 }
 
 
-def build(source, header_region="JUE"):
+def build(source, header_region="JUE", size=0):
     name = os.path.splitext(os.path.basename(source))[0]
     os.makedirs(OUT, exist_ok=True)
     binary = os.path.join(OUT, name + ".bin")
@@ -53,7 +53,8 @@ def build(source, header_region="JUE"):
     subprocess.run([RCASM, "-c", "68000", "-f", "bin", "--force", "-I", OUT, "-o", binary, source], check=True,
                    stdout=subprocess.DEVNULL)
     subprocess.run([sys.executable, "-I", os.path.join(HERE, "mkrom.py"), binary, rom, "--name", name,
-                    "--region", header_region], check=True)
+                    "--region", header_region]
+                   + (["--size", str(size), "--pattern"] if size else []), check=True)
     return name, rom
 
 
@@ -76,10 +77,11 @@ def main():
     ap.add_argument("--cores", default=",".join(CORES))
     ap.add_argument("--option", action="append", default=[])
     ap.add_argument("--header-region", default="JUE", help="the region field of the probe ROM's header")
+    ap.add_argument("--rom-size", type=lambda v: int(v, 0), default=0, help="pad the probe ROM to this size with a block pattern")
     ap.add_argument("--save")
     a = ap.parse_args()
     start, length = (int(x, 0) for x in a.ram.split(":"))
-    name, rom = build(a.source, a.header_region)
+    name, rom = build(a.source, a.header_region, a.rom_size)
     results = {}
     for key in a.cores.split(","):
         try:

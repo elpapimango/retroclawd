@@ -128,3 +128,5 @@ Rows are added in Tasks 16 and 17 from PD-YM, PD-PSG, the SpritesMind research a
 | P-Z80MAP | Z80 map: bank register address and protocol, VDP ports at `$7F00`, YM mirror extent | to do |
 | P-Z80INT | Z80 interrupt position and width | to do |
 | P-VDP-DOT | H40 dot clock over a line | Phase 3 |
+
+| Cartridge area above a small ROM | A ROM repeats at its power-of-two size across `$000000-$3FFFFF`; Sonic & Knuckles (overseas name) does not: its upper 2 MB is the lock-on socket and reads `$FF` with nothing locked on, so its own lock-on check fails over to the standalone title | [O] Genesis Plus GX source reading (cart mapping) and probe `p08b_rom_map` on three cores; standalone S&K boots to the SEGA logo | `genesis/src/cart.rs` `mirror_floor` |
