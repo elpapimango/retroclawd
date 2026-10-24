@@ -148,7 +148,7 @@ compare = { mode = "similarity", max_mad = 3.0, reason = "another emulator's col
 id = "S1T"
 kind = "screen"
 frames = 120
-files = { rom = "sega/software/roms/altered-beast/ab.smd", rom_tmss = "sega/software/oracles/system/bios_MD.bin" }
+files = { rom = "sega/software/roms/altered-beast/ab.smd", rom-tmss = "sega/software/oracles/system/bios_MD.bin" }
 golden = "genesis/S1T-tmss-120.png"
 golden_sha256 = "fb6e4efc3862cc9ebc7b4d4cb606885fb65826ddc28134f92400d29de69b9d14"
 compare = { mode = "similarity", max_mad = 3.0, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
