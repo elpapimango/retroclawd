@@ -115,12 +115,9 @@ the plugin and its debugger (two CPUs), probes `p00`-`p30` against Genesis Plus 
 
 Open, each with what it needs:
 - **Frame offsets in some title animations** (Ecco, Sonic 2, Sonic 3D Blast, Golden Axe at 600+ frames): the cores disagree with
-  each other as well (Ecco: Genesis Plus GX, BlastEm and PicoDrive hold different state at frame 139); fact V21 in
-  `docs/hardware-facts.md`. Needs hardware captures or a cycle-exact reference (MAME is installed and not yet used as a tie-break).
-- **Probes `p20`/`p25`** measure the H counter around tight loops and show up to 15 steps of difference with three oracles for some code
-  alignments; the cause is not found.
-- **FIFO slot timing, DMA slot interleave, mid-line palette and register effects** (`render_exact`), pixel-level HBLANK flags: not
-  modelled beyond the per-line rates; needs probes that write CRAM/registers at known H positions and read the picture back.
+  each other as well (Ecco: Genesis Plus GX, BlastEm and PicoDrive hold different state at frame 139); fact V30. Needs hardware captures or a cycle-exact reference (MAME is installed and not yet used as a tie-break).
+- **FIFO slots** are fitted to Genesis Plus GX (about 16 clocks); **DMA slot interleave with the 68000, mid-line palette and register
+  effects** (`render_exact`), pixel-level HBLANK flags: not modelled beyond the per-line rates; needs probes that write CRAM/registers at known H positions and read the picture back.
 - **Interlace modes 1 and 2** (Sonic 2 2-player, Combat Cars): the VDP accepts the register bits and draws one field.
 - **EEPROM cartridges** (NBA Jam, Wonder Boy V, Micro Machines, Sega Sports titles), **Sonic & Knuckles lock-on** (`sk.bin`, `sk2chip.bin`
   on RomM), Game Genie / Action Replay, Sega CD, 32X, Menacer, mouse, 4-way play, Pico: not started.
