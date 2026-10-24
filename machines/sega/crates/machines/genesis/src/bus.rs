@@ -254,7 +254,9 @@ impl Bus {
         self.vdp.advance(t);
         let word = u16::from(value) << 8 | u16::from(value);
         match addr & 0x1E {
-            0x00 | 0x02 => self.vdp.write_data(word, t),
+            0x00 | 0x02 => {
+                self.vdp.write_data(word, t);
+            }
             0x04 | 0x06 => {
                 let mut src = DmaMemory {
                     cart: &self.cart,
@@ -283,7 +285,11 @@ impl Bus {
         match addr & 0x1E {
             0x00 | 0x02 => {
                 self.catch_up();
-                self.vdp.write_data(value, self.now);
+                let until = self.vdp.write_data(value, self.now);
+                if until > self.now {
+                    // the 68000 waits for a free FIFO entry, to the next 68000 clock
+                    self.now = until.div_ceil(M68K_DIVIDER) * M68K_DIVIDER;
+                }
                 true
             }
             0x04 | 0x06 => {

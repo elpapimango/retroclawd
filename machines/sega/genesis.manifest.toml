@@ -181,3 +181,16 @@ golden_sha256 = "66a5eabec24cfc39a33961a118d7c18d06a54eb520e5878d8539de9faa8835a
 compare = { mode = "exact" }
 status = "known-gap"
 gap = { reason = "the 68000 count is 209 against 208 and the Z80 count 4898 against 4099: the Z80 waits 3 clocks and the 68000 10 cycles for each access to the 68000's bus (the average of Genesis Plus GX's rule, which varies with the Z80 clock), but Genesis Plus GX's Z80 completes fewer iterations of the RAM loop as well (4010 against 4865 in BlastEm, PicoDrive and here), so its Z80 runs slower for a reason not found", evidence = "p30a_z80_ram_loop: Genesis Plus GX 00e5 0faa, PicoDrive 00e5 1302, BlastEm 00e5 1300, here 00e5 1301; p30b: 00d0 1003, 00d5 12cb, 00d6 12e0, here 00d1 1322 (probe.py scenarios/probes/p30b_z80_rom_loop.s --frames 90 --ram 0:4)" }
+
+# P29: the lines the V counter advances while the 68000 writes 200 words to the data port from line 20: VRAM in H40 and H32 with
+# the display on and off, CRAM and VSRAM with it on. Genesis Plus GX, PicoDrive and BlastEm agree (21, 7, 24, 7, 11, 11 lines);
+# clownmdemu does not hold the 68000 up and is not followed.
+[[scenario]]
+id = "P29"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p29_fifo_rate.md" }
+start = 16711680
+len = 12
+golden = "genesis/p29_fifo_rate.bin"
+golden_sha256 = "7985a1e77a22852218e6fd4c71dc41f0c244b799438379762b9193670ec67f17"

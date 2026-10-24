@@ -40,13 +40,16 @@ impl Vdp {
         }
     }
 
-    /// A word written to the data port.
-    pub fn write_data(&mut self, value: u16, now: u64) {
+    /// A word written to the data port by the 68000 at `now`. Returns the master clock at which the VDP takes it, which is
+    /// later than `now` while the FIFO is full (the 68000 waits).
+    pub fn write_data(&mut self, value: u16, now: u64) -> u64 {
         self.pending = false;
+        let accepted = self.fifo_accept(now);
         self.bus_write(value);
         if self.dma.fill_pending {
-            self.dma_fill(now, value);
+            self.dma_fill(accepted, value);
         }
+        accepted
     }
 
     /// A word read from the data port.
@@ -83,8 +86,7 @@ impl Vdp {
         if self.sprite_overflow {
             status |= 0x0040;
         }
-        // The FIFO is empty (the slot-accurate FIFO is Phase 3).
-        status |= 0x0200;
+        status |= self.fifo_status(now);
         self.pending = false;
         self.sprite_collision = false;
         self.sprite_overflow = false;

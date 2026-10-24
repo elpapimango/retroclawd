@@ -6,6 +6,7 @@
 #![forbid(unsafe_code)]
 
 mod dma;
+mod fifo;
 mod frame;
 mod memory;
 mod ports;
@@ -42,6 +43,8 @@ pub struct Vdp {
     /// The last four words written to the memories: what the unused bits of CRAM and VSRAM reads show.
     pub(crate) fifo: [u16; 4],
     pub(crate) fifo_idx: usize,
+    /// The master clock at which the VDP has finished with each FIFO entry.
+    pub(crate) fifo_done: [u64; 4],
     pub(crate) dma: dma::DmaState,
     /// Master clock at which the busy flag of a fill or copy clears.
     pub(crate) dma_busy_until: u64,
@@ -80,6 +83,7 @@ impl Vdp {
             addr_latch: 0,
             fifo: [0; 4],
             fifo_idx: 0,
+            fifo_done: [0; 4],
             dma: dma::DmaState::default(),
             dma_busy_until: 0,
             sprite_overflow: false,
@@ -129,6 +133,13 @@ impl Vdp {
     pub fn validate_time(&self, now: u64) -> Result<(), String> {
         if self.line_abs > now / LINE_CLOCKS + 2 {
             return Err("the VDP is ahead of the clock".to_string());
+        }
+        if self
+            .fifo_done
+            .iter()
+            .any(|&t| t > now.saturating_add(8 * LINE_CLOCKS))
+        {
+            return Err("the FIFO is busy for too long".to_string());
         }
         if self
             .vint_at
