@@ -41,11 +41,6 @@ impl Vdp {
         }
     }
 
-    /// The master clock of the start of absolute line `n`.
-    fn line_time(n: u64) -> u64 {
-        n.saturating_mul(LINE_CLOCKS)
-    }
-
     /// Brings the VDP up to master clock `now`: lines whose time has come are drawn and their events happen. Call it
     /// before anything reads or writes the VDP, so the registers a line is drawn with are the ones in force at its time.
     pub fn advance(&mut self, now: u64) {
@@ -56,8 +51,7 @@ impl Vdp {
             self.line_abs = behind - lines;
             self.vint_at = None;
         }
-        loop {
-            let line_start = Self::line_time(self.line_abs);
+        while let Some(line_start) = self.line_abs.checked_mul(LINE_CLOCKS) {
             let mut next = line_start;
             let mut vint = false;
             if let Some(t) = self.vint_at
