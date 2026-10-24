@@ -49,7 +49,7 @@ fi
 if [[ $UNIT -eq 1 ]]; then
   step unit-app cargo test --workspace --release
   step unit-shared bash -c "cd shared && cargo test --workspace --release"
-  for f in sinclair amstrad commodore atari; do
+  for f in sinclair amstrad commodore atari sega; do
     [[ -d machines/$f ]] || continue
     step "unit-$f" bash -c "cd machines/$f && CARGO_TARGET_DIR='$ROOT/target/families' cargo test --workspace --release"
   done

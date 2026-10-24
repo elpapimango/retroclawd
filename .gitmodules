@@ -13,3 +13,7 @@
 [submodule "machines/atari"]
 	path = machines/atari
 	url = https://github.com/elpapimango/retroclawd-atari
+[submodule "machines/sega"]
+	path = machines/sega
+	url = https://github.com/elpapimango/retroclawd-sega
+	branch = main
