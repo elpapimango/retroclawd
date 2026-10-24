@@ -26,6 +26,12 @@ impl Region {
         }
     }
 
+    /// The version register of a console with TMSS: the version number in bits 3-0 is 1 (fact T5: it is what tells games
+    /// to write `SEGA` to the TMSS register).
+    pub fn version_register_tmss(self) -> u8 {
+        self.version_register() | 1
+    }
+
     /// The master clock in Hz (fact C1).
     pub fn master_hz(self) -> u64 {
         if self.is_pal() {
@@ -84,6 +90,14 @@ pub fn frame_clocks(region: Region) -> u64 {
     u64::from(region.lines()) * LINE_CLOCKS
 }
 
+/// What a TMSS console has: the lock, and maybe its boot ROM.
+#[derive(Clone, Debug, Default)]
+pub struct Tmss {
+    /// The 2 KB boot ROM that runs first and hands over to the cartridge; without it the lock is the only part of TMSS
+    /// emulated, and the registers the boot ROM would set are set directly.
+    pub boot_rom: Option<Vec<u8>>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     /// The cartridge ROM, as the 68000 sees it from `$000000` (see `md-cart`).
@@ -91,6 +105,9 @@ pub struct Config {
     pub region: Region,
     /// What is plugged into the two controller ports.
     pub pads: [crate::io::PadKind; 2],
+    /// Trademark security: the console's TMSS (a locked VDP until `SEGA` is written to `$A14000`) and, optionally, its 2 KB
+    /// boot ROM (fact T1-T4). `None`: a console without TMSS, or one started with the lock already open.
+    pub tmss: Option<Tmss>,
     /// The FM chip: the discrete YM2612 of the first consoles or the YM3438 core of the later ones.
     pub fm_chip: ym2612::Chip,
 }
@@ -101,6 +118,7 @@ impl Config {
             rom,
             region,
             pads: [crate::io::PadKind::Six; 2],
+            tmss: None,
             fm_chip: ym2612::Chip::Ym2612,
         }
     }

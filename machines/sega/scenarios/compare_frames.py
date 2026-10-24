@@ -52,6 +52,8 @@ def main():
     ap.add_argument("--frames", default="300")
     ap.add_argument("--tap", action="append", default=[])
     ap.add_argument("--region")
+    ap.add_argument("--gpgx-option", action="append", default=[], help="a core option for the oracle, key=value")
+    ap.add_argument("--ours", action="append", default=[], help="extra arguments for retroclawd (give one per word)")
     ap.add_argument("--keep", default=os.path.join(ROOT, "software", "out", "compare"))
     a = ap.parse_args()
     os.makedirs(a.keep, exist_ok=True)
@@ -82,10 +84,13 @@ def main():
                "--system-dir", SYSTEM, "--input", script, "--out-frame", gp]
         if a.region:
             cmd += ["--option", "genesis_plus_gx_region_detect=" + GPGX_REGION[a.region]]
+        for opt in a.gpgx_option:
+            cmd += ["--option", opt]
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         cmd = [HOST, "genesis", "--rom", a.rom, "--headless", "--frames", str(n), "--dump-screen", ours]
         if a.region:
             cmd += ["--console-region", a.region]
+        cmd += a.ours
         for frame, button, hold in taps:
             if frame <= n:
                 cmd += ["--at", f"{frame}:key_down=Joy1{button}"]

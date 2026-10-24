@@ -1,0 +1,12 @@
+# Which firmware satisfies which machine option (see retroclawd-sinclair's firmware.toml for the format).
+#
+# The Mega Drive needs no firmware to run a cartridge. The console's boot ROM is optional and only used when TMSS is asked for
+# (`--tmss on`): it is the 2 KB ROM that shows the licence screen and starts the cartridge. It is never committed; it is
+# matched by SHA-1 on the RomM server (it is the same file under the names bios_MD.bin, GEN_boot.md and tmss.md there).
+
+[[rom]]
+machines = ["genesis"]
+option = "rom_tmss"
+label = "Mega Drive TMSS boot ROM (bios_MD.bin)"
+sha1 = ["3f50b76b0529db7f79c396b5e808cc0786ffc311"]
+when = { tmss = "on" }

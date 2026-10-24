@@ -5,6 +5,7 @@ use crate::cart::Cart;
 use crate::config::{Config, M68K_DIVIDER, Region};
 use crate::io::Io;
 use crate::sound::Sound;
+use crate::tmss::Tmss;
 use crate::z80sys::Z80Sys;
 use mc68000::{BusFault, FunctionCode, IackResponse, M68kBus, Size};
 use vdp::{DmaBus, Vdp};
@@ -50,6 +51,7 @@ pub struct Bus {
     pub now: u64,
     pub region: Region,
     pub cart: Cart,
+    pub tmss: Tmss,
     /// Set when the guest has just switched changed battery RAM out (a good moment to save it).
     sram_flush: bool,
     ram: Box<[u8; RAM_SIZE]>,
@@ -96,7 +98,13 @@ impl Bus {
             sram_flush: false,
             ram: Box::new([0; RAM_SIZE]),
             vdp: Vdp::new(config.region.is_pal()),
-            io: Io::new(config.region, config.pads[0], config.pads[1]),
+            io: Io::new(
+                config.region,
+                config.pads[0],
+                config.pads[1],
+                config.tmss.is_some(),
+            ),
+            tmss: Tmss::new(config.tmss.as_ref()),
             z80: Z80Sys::new(),
             sound: Sound::new(config.fm_chip),
             stop: None,
@@ -168,6 +176,16 @@ impl Bus {
     }
 
     /// A word to the VDP control port; a DMA from the bus holds the 68000 until it is done.
+    /// Whether a VDP access must hang the machine because the TMSS lock is shut (fact T2): records the stop.
+    fn vdp_locked(&mut self, write: bool, addr: u32, size: Size, value: u32) -> bool {
+        if self.tmss.vdp_locked() {
+            self.fail(write, addr, size, value);
+            true
+        } else {
+            false
+        }
+    }
+
     fn vdp_control_write(&mut self, value: u16) {
         self.catch_up();
         let mut src = DmaMemory {
@@ -281,8 +299,13 @@ impl Bus {
 
     fn read_byte(&mut self, addr: u32) -> Option<u8> {
         match addr {
-            0..=0x3F_FFFF => Some(self.rom_byte(addr)),
+            0..=0x3F_FFFF => Some(
+                self.tmss
+                    .boot_rom_byte(addr)
+                    .unwrap_or_else(|| self.cart.read(addr)),
+            ),
             0xA0_0000..=0xA0_FFFF => Some(self.z80_area_read(addr)),
+            0xA1_4101 => Some(u8::from(self.tmss.cartridge_mapped())),
             0xA1_1000 | 0xA1_1001 | 0xA1_1101 | 0xA1_1201 => Some(0),
             0xA1_1100 => {
                 self.catch_up();
@@ -320,7 +343,14 @@ impl Bus {
                 }
                 true
             }
-            0xA1_4000..=0xA1_4003 | 0xA1_4101 => true,
+            0xA1_4000..=0xA1_4003 => {
+                self.tmss.write_register(addr & 3, value);
+                true
+            }
+            0xA1_4101 => {
+                self.tmss.map_cartridge(value & 1 != 0);
+                true
+            }
             // The I/O chip decodes the odd (low) byte of each register; an even byte write does nothing (fact I2, [H?]).
             0xA1_0000..=0xA1_001F => {
                 if addr & 1 != 0 {
@@ -347,6 +377,12 @@ impl M68kBus for Bus {
         self.now += BUS_CYCLE;
         let value = match size {
             // A byte read from a VDP port reads the whole word and returns the half the address names ([O] P03).
+            Size::Byte | Size::Word
+                if (0xC0_0000..0xC0_0020).contains(&addr)
+                    && self.vdp_locked(false, addr, size, 0) =>
+            {
+                Some(0)
+            }
             Size::Byte if (0xC0_0000..0xC0_0010).contains(&addr) => self
                 .vdp_read_word(addr & !1)
                 .map(|w| u32::from(if addr & 1 == 0 { w >> 8 } else { w & 0xFF })),
@@ -383,6 +419,12 @@ impl M68kBus for Bus {
     ) -> Result<(), BusFault> {
         self.now += BUS_CYCLE;
         let ok = match size {
+            Size::Byte | Size::Word
+                if (0xC0_0000..0xC0_0020).contains(&addr)
+                    && self.vdp_locked(true, addr, size, value) =>
+            {
+                true
+            }
             // A byte written to a VDP port is the word with the byte in both halves ([O] P03); the PSG takes bytes at odd
             // addresses ($C00011-$C00017, not emulated until Task 16).
             Size::Byte if (0xC0_0000..0xC0_0008).contains(&addr) => {

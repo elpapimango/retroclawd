@@ -29,6 +29,11 @@ impl Vdp {
         }
     }
 
+    /// Sets a register directly (what a boot ROM would have written).
+    pub fn set_register(&mut self, reg: usize, value: u8) {
+        self.write_register(reg, value);
+    }
+
     pub(crate) fn write_register(&mut self, reg: usize, value: u8) {
         if let Some(r) = self.regs.get_mut(reg) {
             *r = value;

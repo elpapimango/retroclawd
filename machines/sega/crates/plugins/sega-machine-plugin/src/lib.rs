@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-use genesis::{Config, Genesis, Region};
+use genesis::{Config, Genesis, Region, Tmss};
 use machine::Machine;
 use plugin_api::{
     ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, CodecError, CpuFamily, CpuInfo, DebugCommand,
@@ -238,6 +238,23 @@ fn machine_profile() -> MachineProfile {
                 )
             },
             option(
+                "rom_tmss",
+                MachineOptionKind::File,
+                None,
+                "The console's 2 KB boot ROM (TMSS, bios_MD.bin, SHA-1 3f50b76b...): it runs first, shows its licence screen and starts the cartridge. Optional; giving it turns the TMSS lock on",
+            ),
+            option(
+                "tmss",
+                MachineOptionKind::Enum {
+                    choices: ["auto", "off", "on"]
+                        .iter()
+                        .map(|c| c.to_string())
+                        .collect(),
+                },
+                Some(DebugValue::Text("auto".to_string())),
+                "Trademark security: on shuts the VDP until the game writes SEGA to the TMSS register and makes the version register report a TMSS console; auto turns it on when a boot ROM is given",
+            ),
+            option(
                 "console_region",
                 MachineOptionKind::Enum {
                     choices: ["auto", "japan", "usa", "europe"]
@@ -368,10 +385,14 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         blob(&req.roms, "rom").ok_or_else(|| "missing required binary blob: rom".to_string())?;
     let cartridge = md_cart::Cartridge::parse(rom).map_err(|e| e.to_string())?;
     let mut console_region = None;
+    let mut tmss_choice = "auto".to_string();
     let mut diag_file = None;
     let mut sram_file = None;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
+            ("tmss", DebugValue::Text(v)) if matches!(v.as_str(), "auto" | "off" | "on") => {
+                tmss_choice = v.clone();
+            }
             ("console_region", DebugValue::Text(v)) if v == "auto" => {}
             ("console_region", DebugValue::Text(v)) => {
                 console_region =
@@ -390,7 +411,22 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     }
     let region = console_region.unwrap_or_else(|| Region::from_header(cartridge.header.regions));
     let sram_default = default_sram_path(&cartridge.header, &cartridge.rom);
-    let mut machine = Genesis::new(Config::new(cartridge.rom, region))?;
+    let boot_rom = blob(&req.roms, "rom_tmss").map(<[u8]>::to_vec);
+    if let Some(rom) = &boot_rom
+        && rom.len() != 2048
+    {
+        return Err(format!(
+            "option \"rom_tmss\": the boot ROM is 2048 bytes, this file has {}",
+            rom.len()
+        ));
+    }
+    let mut config = Config::new(cartridge.rom, region);
+    config.tmss = match tmss_choice.as_str() {
+        "on" => Some(Tmss { boot_rom }),
+        "auto" if boot_rom.is_some() => Some(Tmss { boot_rom }),
+        _ => None,
+    };
+    let mut machine = Genesis::new(config)?;
     let sram_path = machine
         .sram()
         .is_some_and(|(_, battery)| battery)
@@ -1014,6 +1050,29 @@ mod tests {
         big.roms[0].bytes = sram_rom();
         assert!(create_machine(big).is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_boot_rom_of_the_wrong_size_is_refused_and_tmss_can_be_chosen() {
+        let mut req = request(Vec::new());
+        req.roms.push(plugin_api::BinaryBlob {
+            key: "rom_tmss".to_string(),
+            bytes: vec![0; 100],
+        });
+        assert!(create_machine(req).unwrap_err().contains("2048"));
+        let on = request(vec![plugin_api::NamedValue {
+            key: "tmss".to_string(),
+            value: DebugValue::Text("on".to_string()),
+        }]);
+        let created = create_machine(on).unwrap();
+        let mut state = state().lock().unwrap();
+        let record = state.record_mut(created.instance).unwrap();
+        assert!(record.machine.bus().tmss.vdp_locked());
+        let bad = request(vec![plugin_api::NamedValue {
+            key: "tmss".to_string(),
+            value: DebugValue::Text("maybe".to_string()),
+        }]);
+        assert!(create_machine(bad).is_err());
     }
 
     #[test]

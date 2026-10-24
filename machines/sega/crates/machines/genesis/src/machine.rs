@@ -30,6 +30,13 @@ impl Genesis {
             stop_reported: false,
             rom_crc: crc32fast::hash(&config.rom),
         };
+        // A TMSS console without its boot ROM: the registers the boot ROM sets are set here (mode 5, display off, 40 cells,
+        // increment 2), as the reference emulators do.
+        if config.tmss.as_ref().is_some_and(|t| t.boot_rom.is_none()) {
+            for (reg, value) in [(0, 0x04), (1, 0x04), (12, 0x81), (15, 0x02)] {
+                machine.bus.vdp.set_register(reg, value);
+            }
+        }
         machine.reset();
         Ok(machine)
     }
@@ -229,6 +236,7 @@ impl Machine for Genesis {
         self.bus.z80 = loaded.z80;
         self.bus.sound = loaded.sound;
         self.bus.cart.adopt(loaded.cart);
+        self.bus.tmss.adopt(loaded.tmss);
         self.bus.take_stop();
         self.stop_reported = false;
         Ok(())

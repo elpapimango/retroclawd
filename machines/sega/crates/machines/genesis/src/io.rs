@@ -148,9 +148,13 @@ pub struct Io {
 }
 
 impl Io {
-    pub fn new(region: Region, pad1: PadKind, pad2: PadKind) -> Self {
+    pub fn new(region: Region, pad1: PadKind, pad2: PadKind, tmss: bool) -> Self {
         Self {
-            version: region.version_register(),
+            version: if tmss {
+                region.version_register_tmss()
+            } else {
+                region.version_register()
+            },
             ports: [Port::new(pad1), Port::new(pad2), Port::new(PadKind::None)],
         }
     }
@@ -217,7 +221,7 @@ mod tests {
     use super::*;
 
     fn io(pad: PadKind) -> Io {
-        Io::new(Region::Usa, pad, pad)
+        Io::new(Region::Usa, pad, pad, false)
     }
 
     /// Sets TH to `th` on port 1 (control $40 already set) and reads the data register.

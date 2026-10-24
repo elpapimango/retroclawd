@@ -9,12 +9,13 @@ mod io;
 mod machine;
 mod sound;
 mod state;
+mod tmss;
 mod z80bus;
 mod z80sys;
 
 pub use bus::{Bus, Stop};
 pub use cart::Cart;
-pub use config::{Config, LINE_CLOCKS, M68K_DIVIDER, Region, Z80_DIVIDER, frame_clocks};
+pub use config::{Config, LINE_CLOCKS, M68K_DIVIDER, Region, Tmss, Z80_DIVIDER, frame_clocks};
 pub use io::{BUTTONS, Io, PadKind};
 pub use machine::Genesis;
 pub use mc68000;

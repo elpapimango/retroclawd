@@ -8,6 +8,7 @@ use crate::cart::Cart;
 use crate::config::Region;
 use crate::io::Io;
 use crate::sound::Sound;
+use crate::tmss::Tmss;
 use crate::z80sys::Z80Sys;
 use mc68000::Cpu;
 use serde::{Deserialize, Serialize};
@@ -70,6 +71,7 @@ struct Payload {
     z80: Z80Sys,
     sound: Sound,
     cart: Cart,
+    tmss: Tmss,
 }
 
 fn region_byte(r: Region) -> u8 {
@@ -98,6 +100,7 @@ pub fn save(cpu: &Cpu, bus: &Bus, rom_crc: u32) -> Vec<u8> {
         z80: bus.z80.clone(),
         sound: bus.sound.clone(),
         cart: bus.cart.clone(),
+        tmss: bus.tmss.clone(),
     };
     let body = bincode::serde::encode_to_vec(&payload, bincode::config::standard())
         .expect("a state always encodes");
@@ -198,6 +201,7 @@ pub fn load(
         z80: payload.z80,
         sound: payload.sound,
         cart: payload.cart,
+        tmss: payload.tmss,
     })
 }
 
@@ -211,4 +215,5 @@ pub struct Loaded {
     pub z80: Z80Sys,
     pub sound: Sound,
     pub cart: Cart,
+    pub tmss: Tmss,
 }
