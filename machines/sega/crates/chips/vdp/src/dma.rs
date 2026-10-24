@@ -1,6 +1,7 @@
 //! DMA: from the 68000 bus into VRAM, CRAM or VSRAM, a VRAM fill and a VRAM copy. The data moves when the command is
 //! given; the time it takes is computed from the per-line transfer counts (fact V21b, from the table published with
-//! Charles MacDonald's VDP document, repeated in the reference emulators' sources; slot-exact timing is Phase 3).
+//! Charles MacDonald's VDP document, repeated in the reference emulators' sources, and confirmed by probes `p34_*`,
+//! `p35_*`: a fill runs at the slot count, 16 and 18 bytes a line while the picture is drawn; slot-exact timing is Phase 3).
 
 use crate::Vdp;
 use serde::{Deserialize, Serialize};
@@ -21,7 +22,7 @@ pub(crate) struct DmaState {
 /// CRAM/VSRAM counts words.
 const BUS_WORDS_VRAM: [[u64; 2]; 2] = [[8, 83], [9, 102]];
 const BUS_WORDS_CRAM: [[u64; 2]; 2] = [[16, 166], [18, 204]];
-const FILL_BYTES: [[u64; 2]; 2] = [[15, 165], [17, 203]];
+const FILL_BYTES: [[u64; 2]; 2] = [[16, 166], [18, 204]];
 const COPY_BYTES: [[u64; 2]; 2] = [[8, 83], [9, 102]];
 
 impl Vdp {

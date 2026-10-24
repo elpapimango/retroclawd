@@ -194,3 +194,75 @@ start = 16711680
 len = 12
 golden = "genesis/p29_fifo_rate.bin"
 golden_sha256 = "7985a1e77a22852218e6fd4c71dc41f0c244b799438379762b9193670ec67f17"
+
+# p34_bus_cram_h40_on: 1000 units of VDP DMA from line 20, the lines the V counter advanced until it was done (Genesis Plus GX's dump; BlastEm and
+# PicoDrive are within a line).
+[[scenario]]
+id = "P34-bus-cram-h40-on"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p34_bus_cram_h40_on.md" }
+start = 16711680
+len = 2
+golden = "genesis/p34_bus_cram_h40_on.bin"
+golden_sha256 = "797427cf8368051fe7b8e3e9d5ade9c5bc9d0cf96f4f3fad2a1e1d7848368188"
+
+# p34_bus_vram_h40_on: 1000 units of VDP DMA from line 20, the lines the V counter advanced until it was done (Genesis Plus GX's dump; BlastEm and
+# PicoDrive are within a line).
+[[scenario]]
+id = "P34-bus-vram-h40-on"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p34_bus_vram_h40_on.md" }
+start = 16711680
+len = 2
+golden = "genesis/p34_bus_vram_h40_on.bin"
+golden_sha256 = "f3a5441d11e0c900d8957d0e72f4a82f1490c4a0a4d9e1c0f3b29328e3898ed0"
+
+# p34_bus_vram_h32_on: 1000 units of VDP DMA from line 20, the lines the V counter advanced until it was done (Genesis Plus GX's dump; BlastEm and
+# PicoDrive are within a line).
+[[scenario]]
+id = "P34-bus-vram-h32-on"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p34_bus_vram_h32_on.md" }
+start = 16711680
+len = 2
+golden = "genesis/p34_bus_vram_h32_on.bin"
+golden_sha256 = "96ed520f5948ca82194267414b0b0cd4df82fe3f16dfdcf53d3c9a7dc6284821"
+
+# p34_fill_h32_on: 1000 units of VDP DMA from line 20, the lines the V counter advanced until it was done (Genesis Plus GX's dump; BlastEm and
+# PicoDrive are within a line).
+[[scenario]]
+id = "P34-fill-h32-on"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p34_fill_h32_on.md" }
+start = 16711680
+len = 2
+golden = "genesis/p34_fill_h32_on.bin"
+golden_sha256 = "267ff33d242cf99619876d639456f362147845ca99fdd30d4195275ab833c807"
+
+# p34_fill_h40_on: 1000 units of VDP DMA from line 20, the lines the V counter advanced until it was done (Genesis Plus GX's dump; BlastEm and
+# PicoDrive are within a line).
+[[scenario]]
+id = "P34-fill-h40-on"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p34_fill_h40_on.md" }
+start = 16711680
+len = 2
+golden = "genesis/p34_fill_h40_on.bin"
+golden_sha256 = "797427cf8368051fe7b8e3e9d5ade9c5bc9d0cf96f4f3fad2a1e1d7848368188"
+
+# p34_copy_h40_on: 1000 units of VDP DMA from line 20, the lines the V counter advanced until it was done (Genesis Plus GX's dump; BlastEm and
+# PicoDrive are within a line).
+[[scenario]]
+id = "P34-copy-h40-on"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p34_copy_h40_on.md" }
+start = 16711680
+len = 2
+golden = "genesis/p34_copy_h40_on.bin"
+golden_sha256 = "f3a5441d11e0c900d8957d0e72f4a82f1490c4a0a4d9e1c0f3b29328e3898ed0"

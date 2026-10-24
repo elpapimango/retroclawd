@@ -35,6 +35,10 @@ impl Vdp {
     }
 
     pub(crate) fn write_register(&mut self, reg: usize, value: u8) {
+        // Registers 11 to 23 do not exist in Mode 4 (fact V29).
+        if reg > 10 && self.regs[1] & 0x04 == 0 {
+            return;
+        }
         if let Some(r) = self.regs.get_mut(reg) {
             *r = value;
         }
@@ -122,6 +126,7 @@ mod tests {
     #[test]
     fn a_register_write_sets_the_register() {
         let mut v = Vdp::new(false);
+        v.write_control(0x8104, 0, &mut NoBus);
         v.write_control(0x8F02, 0, &mut NoBus);
         assert_eq!(v.reg(15), 2);
         v.write_control(0x9740, 0, &mut NoBus);
@@ -142,6 +147,19 @@ mod tests {
         assert_eq!(v.code, 0x08);
         command(&mut v, 0x0000_0010);
         assert_eq!(v.code, 0x04);
+    }
+
+    #[test]
+    fn registers_above_ten_cannot_be_written_in_mode_4() {
+        let mut v = Vdp::new(false);
+        v.write_control(0x8C81, 0, &mut NoBus);
+        v.write_control(0x8F04, 0, &mut NoBus);
+        assert_eq!((v.reg(12), v.reg(15)), (0, 0), "mode 4: ignored");
+        v.write_control(0x8A55, 0, &mut NoBus);
+        assert_eq!(v.reg(10), 0x55, "registers up to 10 are there");
+        v.write_control(0x8104, 0, &mut NoBus);
+        v.write_control(0x8C81, 0, &mut NoBus);
+        assert_eq!(v.reg(12), 0x81, "mode 5: written");
     }
 
     #[test]
