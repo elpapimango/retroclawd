@@ -181,6 +181,26 @@ Unfinished and unsourced items are the `[H?]` rows of `machines/atari/docs/hardw
 
 **Phase 4 (2026-10-23, slices 18-20; plan `docs/superpowers/plans/2026-10-23-atari-st-phase4.md`, spec Status 2026-10-23).** Two more machine ids in the Atari plugin, `atari-mega-st` (192K ROM at `$FC0000`, the Blitter, the RP5C15 clock at `$FFFC20`, options `rtc_time`/`rtc_mode`) and `atari-ste` (256K ROM at `$E00000`, the STE Shifter with 4096 colours, scroll, line offset and writable counter, DMA sound with the LMC1992 volume control and stereo output, enhanced joystick ports with `Joy1Pad*`/`Joy2Pad*` keys, the Blitter); `--firmware auto` finds EmuTOS 256K for the STE. The Blitter (`crates/chips/blitter`) is checked word for word against Hatari's P33 and P37-P40 dumps, shares the bus as P34 shows (HOG stalls the CPU, else 64 clocks of words against 96 of CPU) and raises GPIP 3's edge. The option `watch` (`$1000-$10FF:w,$400`) stops the machine at the first data access with a report; the host has `--acsi-save N=FILE` (at exit), `--at FRAME:save_acsi=N:FILE` and the unbound hotkey `save_hd` (ACSI 0), which write a copy mid-run and count its changes as saved. Manifests `machines/atari/atari-ste.manifest.toml` and `atari-mega-st.manifest.toml` (S16 and P31/P33/P37-P40 exact; P29/P30/P32/P34/P41 `known-gap` with their reasons). The fuzz targets ran 60 s each with no finding. Left open: see TODO.md "Atari ST: Phase 4".
 
+## Sega Mega Drive / Genesis (2026-10-24)
+
+`machines/sega` (`elpapimango/retroclawd-sega`, public) builds `sega_machine_plugin` with one machine id, `genesis`
+(NTSC/PAL/Japan from the ROM header, `--console-region` overrides). Design `docs/superpowers/specs/2026-10-24-sega-genesis-design.md`,
+plan `docs/superpowers/plans/2026-10-24-sega-genesis.md`; every hardware fact is a row of `machines/sega/docs/hardware-facts.md`
+(`[D]/[H]/[O]/[H?]`, sources in `docs/sources.md`). Two CPUs: the 68000 (`mc68000`, `step()` returns master clocks, 53.69 MHz NTSC /
+53.20 MHz PAL) and the Z80 (`z80`, run lazily to the 68000's clock by `Bus::catch_up`, always before the VDP is advanced); the profile
+lists both (`cpus = main, z80`) and the debugger follows either through `OnCpu`. Chips in the family: `vdp` (planes, scroll, window,
+sprites, shadow/highlight, FIFO, DMA with per-line rates, HV counter, HINT/VINT), `ym2612` (a Rust re-implementation of the
+die-level pipeline, cycle-identical to the Nuked OPN2 reference harness on 80 random register scripts, both chip variants),
+`sn76489`; format `md-cart` (headers, `.smd`, SRAM info). Cartridge: power-of-two mirroring (Sonic & Knuckles leaves its upper 2 MB
+open), SSF2 mapper (> 4 MB or header `SEGA SSF`), battery SRAM (`sram_file`, saved when the guest locks it and on drop), TMSS boot ROM
+(`--tmss auto|off|on`, `--rom-tmss`). Timing: bus refresh (2 of every 130 CPU cycles), Z80 access to the 68000's bus (3 Z80 clocks
+wait, 10 CPU cycles lost by the 68000, waits for DMA), VDP DMA holds the 68000. Save states are `RCST` v2 (ROM CRC, region, chip,
+full validation, fuzzed by `RC_SWEEP`). Not done: interlace modes, EEPROM carts, Sonic & Knuckles lock-on, Game Genie, Sega CD/32X,
+mouse and the 4-way adapter; see `TODO.md` "Sega Mega Drive". Oracles for comparison are the libretro cores in a RetroArch install
+(`retroclawd-tools/scripts/libretro_run.py`; Genesis Plus GX is the main reference); `machines/sega/scenarios/` has the probes
+(`probe.py`), the frame comparison against Genesis Plus GX (`compare_frames.py`, `batch_compare.py`) and `sweep.py` (every game of
+`software/roms/` for N frames). Manifest: `machines/sega/genesis.manifest.toml` (`rc-scenarios`).
+
 ## What this is
 
 Zilog Z80 CPU emulator/core in Rust, prioritizing accuracy (correct

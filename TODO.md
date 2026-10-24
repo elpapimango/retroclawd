@@ -106,6 +106,27 @@ No real hardware is available, so these stay parked until someone has it; everyt
   entities; gilrs itself was never exercised. To check: a physical pad, bind `reset = ["f12", "pad:select+start"]`, hold Select then
   press Start, and confirm Select alone does not reach the machine as a joystick button once it is part of a chord.
 
+## Sega Mega Drive / Genesis (2026-10-24): working, accuracy work continues
+
+Done: the machine (68000 + Z80, VDP, YM2612, SN76489, I/O, pads), cartridges (mirroring, SSF2, battery SRAM, TMSS), save states,
+the plugin and its debugger (two CPUs), probes `p00`-`p30` against Genesis Plus GX, PicoDrive, BlastEm and clownmdemu, a manifest of
+15 scenarios (one `known-gap`), a 30-game RomM sweep (no stops, no crashes) and a frame comparison against Genesis Plus GX
+(`scenarios/batch_compare.py`: many games identical at every sampled frame, the rest differ in animation phase).
+
+Open, each with what it needs:
+- **Frame offsets in some title animations** (Ecco, Sonic 2, Sonic 3D Blast, Golden Axe at 600+ frames): the cores disagree with
+  each other as well (Ecco: Genesis Plus GX, BlastEm and PicoDrive hold different state at frame 139); fact V21 in
+  `docs/hardware-facts.md`. Needs hardware captures or a cycle-exact reference (MAME is installed and not yet used as a tie-break).
+- **Probes `p20`/`p25`** measure the H counter around tight loops and show up to 15 steps of difference with three oracles for some code
+  alignments; the cause is not found.
+- **FIFO slot timing, DMA slot interleave, mid-line palette and register effects** (`render_exact`), pixel-level HBLANK flags: not
+  modelled beyond the per-line rates; needs probes that write CRAM/registers at known H positions and read the picture back.
+- **Interlace modes 1 and 2** (Sonic 2 2-player, Combat Cars): the VDP accepts the register bits and draws one field.
+- **EEPROM cartridges** (NBA Jam, Wonder Boy V, Micro Machines, Sega Sports titles), **Sonic & Knuckles lock-on** (`sk.bin`, `sk2chip.bin`
+  on RomM), Game Genie / Action Replay, Sega CD, 32X, Menacer, mouse, 4-way play, Pico: not started.
+- **Speed**: about 5x real time headless with sound on this machine; no profile-driven optimisation has been done.
+- **`--accuracy fast|accurate`**: there is one mode (per-bus-cycle 68000, instruction-granular Z80).
+
 ## Atari ST: closed (2026-10-24); what is parked, and what each item needs
 
 Phases 1 to 4 and the leftovers are done: ST, Mega ST and STE boot EmuTOS and the RomM games in both accuracy modes; every timing fact has a
