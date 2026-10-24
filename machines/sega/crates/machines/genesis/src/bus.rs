@@ -3,6 +3,7 @@
 
 use crate::config::{Config, M68K_DIVIDER, Region};
 use crate::io::Io;
+use crate::sound::Sound;
 use crate::z80sys::Z80Sys;
 use mc68000::{BusFault, FunctionCode, IackResponse, M68kBus, Size};
 use vdp::{DmaBus, Vdp};
@@ -54,6 +55,7 @@ pub struct Bus {
     pub vdp: Vdp,
     pub io: Io,
     pub z80: Z80Sys,
+    pub sound: Sound,
     stop: Option<Stop>,
     /// The PC of the instruction being executed, for reports.
     pub pc: u32,
@@ -100,6 +102,7 @@ impl Bus {
             vdp: Vdp::new(config.region.is_pal()),
             io: Io::new(config.region, config.pads[0], config.pads[1]),
             z80: Z80Sys::new(),
+            sound: Sound::new(config.fm_chip),
             stop: None,
             pc: 0,
         }
@@ -244,7 +247,7 @@ impl Bus {
         }
         match addr & 0xFFFF {
             a @ 0..=0x3FFF => self.z80.ram[(a & 0x1FFF) as usize],
-            0x4000..=0x5FFF => 0,
+            a @ 0x4000..=0x5FFF => self.sound.ym_read(self.now, u32::from(a & 3)),
             _ => 0xFF,
         }
     }
@@ -256,6 +259,7 @@ impl Bus {
         }
         match addr & 0xFFFF {
             a @ 0..=0x3FFF => self.z80.ram[(a & 0x1FFF) as usize] = value,
+            a @ 0x4000..=0x5FFF => self.sound.ym_write(self.now, u32::from(a & 3), value),
             0x6000..=0x60FF => self.z80.write_bank(value),
             _ => {}
         }
@@ -362,8 +366,16 @@ impl M68kBus for Bus {
                 let b = value as u8;
                 self.vdp_write_word(addr & !1, u16::from(b) << 8 | u16::from(b))
             }
-            Size::Byte if matches!(addr, 0xC0_0011 | 0xC0_0013 | 0xC0_0015 | 0xC0_0017) => true,
+            Size::Byte if matches!(addr, 0xC0_0011 | 0xC0_0013 | 0xC0_0015 | 0xC0_0017) => {
+                self.sound.psg_write(self.now, value as u8);
+                true
+            }
             Size::Byte => self.write_byte(addr, value as u8),
+            // The PSG answers at the odd byte of its word addresses: a word write reaches it with its low byte.
+            Size::Word if matches!(addr, 0xC0_0010 | 0xC0_0012 | 0xC0_0014 | 0xC0_0016) => {
+                self.sound.psg_write(self.now, value as u8);
+                true
+            }
             Size::Word if (0xC0_0000..0xC0_0020).contains(&addr) => {
                 self.vdp_write_word(addr, value as u16)
             }

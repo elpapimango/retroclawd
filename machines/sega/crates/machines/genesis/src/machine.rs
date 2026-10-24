@@ -3,6 +3,7 @@ use mc68000::{Cpu, RunState};
 
 use crate::bus::Bus;
 use crate::config::{Config, M68K_DIVIDER, Region, frame_clocks};
+use crate::sound::SAMPLE_MASTER_CLOCKS;
 
 /// Width and height of the frame until the VDP draws one.
 const BLANK_WIDTH: u32 = 320;
@@ -84,10 +85,17 @@ impl Machine for Genesis {
     }
 
     fn audio_format(&self) -> AudioFormat {
+        // One sample per 24 YM2612 chip cycles (1008 master clocks): 53 267.04 Hz on NTSC, 52 780.5 Hz on PAL.
         AudioFormat {
             channels: 2,
-            sample_rate: 53_267,
+            sample_rate: (self.region.master_hz() / SAMPLE_MASTER_CLOCKS) as u32,
         }
+    }
+
+    fn drain_audio(&mut self) -> Vec<f32> {
+        self.bus.catch_up();
+        self.bus.sound.run_to(self.bus.now);
+        self.bus.sound.drain()
     }
 
     fn run(&mut self, running: &mut dyn FnMut(&dyn Machine) -> bool) -> RunStats {

@@ -91,6 +91,8 @@ pub struct Config {
     pub region: Region,
     /// What is plugged into the two controller ports.
     pub pads: [crate::io::PadKind; 2],
+    /// The FM chip: the discrete YM2612 of the first consoles or the YM3438 core of the later ones.
+    pub fm_chip: ym2612::Chip,
 }
 
 impl Config {
@@ -99,6 +101,7 @@ impl Config {
             rom,
             region,
             pads: [crate::io::PadKind::Six; 2],
+            fm_chip: ym2612::Chip::Ym2612,
         }
     }
 }

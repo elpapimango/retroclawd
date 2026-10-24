@@ -56,7 +56,8 @@ impl Psg {
         Self {
             tone: [0; 3],
             noise: 0,
-            attenuation: [0; 4],
+            // Silent at power on: the reference emulators and the console's own start-up leave the PSG quiet (fact S6).
+            attenuation: [0xF; 4],
             // The power-on latch is tone 2's attenuation (verified only on the integrated chip: fact S6).
             latch: 3,
             counter: [0; 4],

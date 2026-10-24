@@ -36,7 +36,9 @@ dependencies = [
  "mc68000",
  "md-cart",
  "serde",
+ "sn76489",
  "vdp",
+ "ym2612",
  "z80",
 ]
 

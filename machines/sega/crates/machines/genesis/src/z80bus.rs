@@ -26,9 +26,13 @@ impl Bus {
     }
 
     fn z80_window_write(&mut self, addr: u32, value: u8) {
-        // PSG writes and everything else are dropped for now.
-        if let 0xC0_0000..=0xC0_0007 = addr {
-            self.vdp_byte_write_for_z80(addr, value);
+        match addr {
+            0xC0_0000..=0xC0_0007 => self.vdp_byte_write_for_z80(addr, value),
+            0xC0_0011 | 0xC0_0013 | 0xC0_0015 | 0xC0_0017 => {
+                let t = self.z80_access_clock();
+                self.sound.psg_write(t, value);
+            }
+            _ => {}
         }
     }
 
@@ -36,7 +40,10 @@ impl Bus {
     fn z80_read(&mut self, addr: u16) -> u8 {
         match addr {
             0x0000..=0x3FFF => self.z80.ram[usize::from(addr & 0x1FFF)],
-            0x4000..=0x5FFF => 0,
+            0x4000..=0x5FFF => {
+                let t = self.z80_access_clock();
+                self.sound.ym_read(t, u32::from(addr & 3))
+            }
             0x6000..=0x7EFF => 0xFF,
             0x7F00..=0x7FFF => {
                 let a = 0xC0_0000 | u32::from(addr & 0x1F);
@@ -56,7 +63,10 @@ impl Bus {
     fn z80_write(&mut self, addr: u16, value: u8) {
         match addr {
             0x0000..=0x3FFF => self.z80.ram[usize::from(addr & 0x1FFF)] = value,
-            0x4000..=0x5FFF => {}
+            0x4000..=0x5FFF => {
+                let t = self.z80_access_clock();
+                self.sound.ym_write(t, u32::from(addr & 3), value);
+            }
             0x6000..=0x60FF => self.z80.write_bank(value),
             0x7F00..=0x7FFF => {
                 let a = 0xC0_0000 | u32::from(addr & 0x1F);

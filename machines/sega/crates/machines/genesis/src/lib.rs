@@ -6,6 +6,7 @@ mod bus;
 mod config;
 mod io;
 mod machine;
+mod sound;
 mod z80bus;
 mod z80sys;
 
@@ -14,4 +15,6 @@ pub use config::{Config, LINE_CLOCKS, M68K_DIVIDER, Region, Z80_DIVIDER, frame_c
 pub use io::{BUTTONS, Io, PadKind};
 pub use machine::Genesis;
 pub use mc68000;
+pub use sound::{SAMPLE_MASTER_CLOCKS, Sound};
+pub use ym2612::Chip as FmChip;
 pub use z80sys::Z80Sys;
