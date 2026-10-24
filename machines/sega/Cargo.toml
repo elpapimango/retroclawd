@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = ["crates/machines/genesis", "crates/plugins/sega-machine-plugin", "crates/plugin-dlls/genesis"]
+
+# Same release profile as the retroclawd host.
+[profile.release]
+strip = true
+opt-level = "s"
+
+[profile.profiling]
+inherits = "release"
+debug = true
+
+[profile.release.package.mc68000]
+opt-level = 3
+
+[profile.release.package.z80]
+opt-level = 3
+
+[profile.release.package.machine]
+opt-level = 3
+
+[profile.release.package.genesis]
+opt-level = 3
+
+[profile.release.package.sega-machine-plugin]
+strip = false
+
+[profile.release.package.sega-machine-plugin-dll]
+strip = false
