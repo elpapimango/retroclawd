@@ -261,8 +261,9 @@ fn a_character_from_the_line_arrives_after_one_character_time() {
     assert_eq!(m.read(UDR), 0xA5);
 }
 
-/// A peer's faulty frames ([H?]: no data sheet text to hand): parity shows only when the UCR enables it, a framing error sets
-/// FE, a break sets FE and B with the data 0, each describes the character in the buffer, and all of them raise the receive error.
+/// A peer's faulty frames (§6.2.2): parity shows only when the UCR enables it, a framing error sets FE, a break sets B with the
+/// data 0 and no FE (a frame error is a non-zero word), each describes the character in the buffer, and all of them raise the
+/// receive error.
 #[test]
 fn faulty_frames_set_the_error_flags_of_the_character_in_the_buffer() {
     use mc68901::RxFault;
@@ -275,7 +276,7 @@ fn faulty_frames_set_the_error_flags_of_the_character_in_the_buffer() {
     for (fault, flags, sent, got) in [
         (RxFault::Parity, PE, 0x55u8, 0x55u8),
         (RxFault::Frame, FE, 0x66, 0x66),
-        (RxFault::Break, FE | B, 0x55, 0x00),
+        (RxFault::Break, B, 0x55, 0x00),
         (RxFault::None, 0, 0x77, 0x77),
     ] {
         assert!(m.usart_can_receive());
@@ -356,4 +357,93 @@ fn the_transmitter_channels_are_9_and_10() {
     m.write(ISRA, !CH_TX_EMPTY); // software end of interrupt (VR S = 1 after reset)
     m.tick(4 * 19);
     assert_eq!(m.iack(), Some(0x09), "underrun");
+}
+
+/// Sends one character and lets it come in.
+fn receive(m: &mut Mfp, byte: u8, fault: mc68901::RxFault) {
+    assert!(m.usart_can_receive());
+    m.usart_rx_begin_fault(byte, fault);
+    m.tick(4 * 400);
+}
+
+/// §6.2.3 example 1: a break received while the buffer is full is no overrun; only B is set, after the buffer has been read.
+#[test]
+fn a_break_while_the_buffer_is_full_shows_after_the_read_and_is_no_overrun() {
+    use mc68901::RxFault;
+    const B: u8 = 0x08;
+    let mut m = running();
+    m.write(UCR, FORMAT_8N1_16);
+    m.write(RSR, RE);
+    receive(&mut m, 0x41, RxFault::None);
+    receive(&mut m, 0x00, RxFault::Break);
+    assert_eq!(m.read(RSR) & (BF | OE | B), BF, "the break waits");
+    assert_eq!(m.read(UDR), 0x41);
+    assert_eq!(m.read(RSR) & (BF | OE | B), B, "B only, no overrun");
+}
+
+/// §6.2.3 example 2: a word is lost to the full buffer, then a break: both B and OE show once the buffer is read.
+#[test]
+fn a_break_after_a_lost_word_sets_both_b_and_oe() {
+    use mc68901::RxFault;
+    const B: u8 = 0x08;
+    let mut m = running();
+    m.write(UCR, FORMAT_8N1_16);
+    m.write(RSR, RE);
+    receive(&mut m, 0x41, RxFault::None);
+    receive(&mut m, 0x42, RxFault::None); // lost: the buffer is full, OE shows once it is read
+    receive(&mut m, 0x00, RxFault::Break);
+    assert_eq!(
+        m.read(RSR) & (BF | OE | B),
+        BF,
+        "nothing shows before the read"
+    );
+    assert_eq!(m.read(UDR), 0x41);
+    assert_eq!(m.read(RSR) & (BF | OE | B), OE | B);
+}
+
+/// §6.2.2: B clears when the break ends and the RSR has been read since it began, and that raises the receive error again.
+#[test]
+fn a_break_ends_when_the_line_lets_go_and_the_rsr_was_read() {
+    use mc68901::RxFault;
+    const B: u8 = 0x08;
+    let mut m = running();
+    m.write(UCR, FORMAT_8N1_16);
+    m.write(RSR, RE);
+    enable(&mut m, CH_RX_ERROR);
+    receive(&mut m, 0x00, RxFault::Break);
+    assert_eq!(
+        m.read(IPRA) & CH_RX_ERROR,
+        CH_RX_ERROR,
+        "the break interrupts"
+    );
+    m.write(IPRA, !CH_RX_ERROR);
+    assert_eq!(m.read(UDR), 0);
+    // the line is still low: B stays however often it is read
+    assert_eq!(m.read(RSR) & B, B);
+    assert_eq!(m.read(RSR) & B, B);
+    m.usart_end_break();
+    assert_eq!(
+        m.read(IPRA) & CH_RX_ERROR,
+        CH_RX_ERROR,
+        "end of break interrupts"
+    );
+    assert_eq!(m.read(RSR) & B, 0);
+}
+
+/// §6.2.2: a break that ends before the RSR is read keeps B until the first read, which still shows it.
+#[test]
+fn a_break_that_ended_unread_shows_in_the_first_rsr_read() {
+    use mc68901::RxFault;
+    const B: u8 = 0x08;
+    let mut m = running();
+    m.write(UCR, FORMAT_8N1_16);
+    m.write(RSR, RE);
+    receive(&mut m, 0x00, RxFault::Break);
+    m.usart_end_break();
+    assert_eq!(
+        m.read(RSR) & B,
+        B,
+        "the read that acknowledges the break shows it"
+    );
+    assert_eq!(m.read(RSR) & B, 0);
 }

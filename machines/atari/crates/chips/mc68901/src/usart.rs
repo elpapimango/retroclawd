@@ -6,10 +6,12 @@
 //! sends the timing signal for the MFP's built-in serial interface"). The timer output toggles on every time-out
 //! (§5.1.1), so one clock period is two time-outs; a bit is one clock period, or sixteen in divide-by-16 mode (UCR
 //! CLK, §6.1). The chip holds no peer: finished characters wait for the machine in a queue, and the machine hands
-//! received characters in with [`Usart::rx_begin`]. A peer may mark a character faulty ([`RxFault`]): the parity error, frame
-//! error and break flags of the RSR then describe the character in the receive buffer ([H?]: no data sheet text was to
-//! hand for their clearing, so each flag is rewritten with every character that reaches the buffer) and the receive
-//! error interrupt is raised as for an overrun.
+//! received characters in with [`Usart::rx_begin`]. A peer may mark a character faulty ([`RxFault`]): the parity error and
+//! frame error flags of the RSR describe the character in the receive buffer and are rewritten with every character that
+//! reaches it (§6.2.2); a break (an all-zero word with no stop bit, so no frame error) sets B, which stays until the break has
+//! ended and the RSR has been read since it began, and then raises the receive error interrupt again (end of break); a
+//! break that arrives while the buffer is full is no overrun, B shows once the buffer has been read (§6.2.3). Every
+//! such condition raises the receive error interrupt.
 
 use std::collections::VecDeque;
 
@@ -27,6 +29,17 @@ pub(crate) const EV_RX_FULL: u8 = 8;
 // RSR bits (Figure 6-3).
 const RSR_BF: u8 = 0x80;
 const RSR_OE: u8 = 0x40;
+
+/// `Usart::flags`: a word was lost to a full buffer.
+const FLAG_OVERRUN: u8 = 1;
+/// A break arrived while the buffer was full; it shows when the buffer is read.
+const FLAG_BREAK_PENDING: u8 = 2;
+/// B is set by a break that has not been cleared yet.
+const FLAG_BREAK: u8 = 4;
+/// The line is no longer in the break condition.
+const FLAG_BREAK_ENDED: u8 = 8;
+/// The RSR was read since the break began.
+const FLAG_RSR_READ: u8 = 16;
 const RSR_PE: u8 = 0x20;
 const RSR_FE: u8 = 0x10;
 /// Found/search in a synchronous format; in an asynchronous one it flags a break (all zeros through the stop bit).
@@ -83,8 +96,9 @@ pub(crate) struct Usart {
     tx_buf: Option<u8>,
     tx_shift: Option<Shift>,
     rx_shift: Option<Shift>,
-    /// A word arrived while the receive buffer was full: OE rises when the buffer is read (§6.2.2).
-    overrun_pending: bool,
+    /// `FLAG_*`: a word that was lost to a full buffer (OE rises when the buffer is read, §6.2.2) and the state of a break.
+    /// One byte, like the bool it replaced, so an earlier state still loads.
+    flags: u8,
     /// Characters out of the transmitter, for the peer.
     tx_done: VecDeque<u8>,
 }
@@ -101,7 +115,7 @@ impl Usart {
             tx_buf: None,
             tx_shift: None,
             rx_shift: None,
-            overrun_pending: false,
+            flags: 0,
             tx_done: VecDeque::new(),
         }
     }
@@ -114,7 +128,7 @@ impl Usart {
         self.rsr = 0;
         self.tx_shift = None;
         self.rx_shift = None;
-        self.overrun_pending = false;
+        self.flags = 0;
     }
 
     pub(crate) fn read_scr(&self) -> u8 {
@@ -134,11 +148,37 @@ impl Usart {
         self.ucr = v & 0xFE;
     }
 
-    /// Reading the RSR clears OE (§6.2.2).
-    pub(crate) fn read_rsr(&mut self) -> u8 {
+    /// Reading the RSR clears OE and, once a break has ended, B (§6.2.2); the second is an end of break, an interrupt.
+    pub(crate) fn read_rsr(&mut self) -> (u8, u8) {
         let v = self.rsr;
         self.rsr &= !RSR_OE;
-        v
+        let mut ev = 0;
+        if self.flags & FLAG_BREAK != 0 {
+            self.flags |= FLAG_RSR_READ;
+            self.settle_break(&mut ev);
+        }
+        (v, ev)
+    }
+
+    /// B goes when the break has ended and the RSR has been read since it began; that is an interrupt (§6.2.2).
+    fn settle_break(&mut self, ev: &mut u8) {
+        const BOTH: u8 = FLAG_BREAK | FLAG_BREAK_ENDED | FLAG_RSR_READ;
+        if self.flags & BOTH == BOTH {
+            self.flags &= !BOTH;
+            self.rsr &= !RSR_B;
+            *ev |= EV_RX_ERROR;
+        }
+    }
+
+    /// The line left the break condition (a non-zero bit came in): B clears at once if the RSR was read since the break began,
+    /// else at the next read. A break still waiting for the buffer is dropped after it has shown.
+    pub(crate) fn end_break(&mut self) -> u8 {
+        let mut ev = 0;
+        if self.flags & (FLAG_BREAK | FLAG_BREAK_PENDING) != 0 {
+            self.flags |= FLAG_BREAK_ENDED;
+            self.settle_break(&mut ev);
+        }
+        ev
     }
 
     /// RE and SS are the writable bits; clearing RE disables the receiver at once and clears every flag (§6.2.2).
@@ -146,7 +186,7 @@ impl Usart {
         if v & RSR_RE == 0 {
             self.rsr = v & RSR_SS;
             self.rx_shift = None;
-            self.overrun_pending = false;
+            self.flags = 0;
         } else {
             self.rsr = (self.rsr & !(RSR_RE | RSR_SS)) | (v & (RSR_RE | RSR_SS));
         }
@@ -178,16 +218,22 @@ impl Usart {
         ev
     }
 
-    /// The receive buffer; reading it clears BF and lets a held-back overrun show (§6.2, §6.2.2).
+    /// The receive buffer; reading it clears BF and lets a held-back overrun and a held-back break show (§6.2, §6.2.2, §6.2.3).
     pub(crate) fn read_udr(&mut self) -> (u8, u8) {
         let mut ev = 0;
+        let v = self.rx_buf;
         self.rsr &= !RSR_BF;
-        if self.overrun_pending {
-            self.overrun_pending = false;
+        if self.flags & FLAG_OVERRUN != 0 {
+            self.flags &= !FLAG_OVERRUN;
             self.rsr |= RSR_OE;
             ev |= EV_RX_ERROR;
         }
-        (self.rx_buf, ev)
+        if self.flags & FLAG_BREAK_PENDING != 0 {
+            self.flags = self.flags & !(FLAG_BREAK_PENDING | FLAG_RSR_READ) | FLAG_BREAK;
+            self.rsr |= RSR_B;
+            ev |= EV_RX_ERROR;
+        }
+        (v, ev)
     }
 
     /// A write loads the transmit buffer and clears BE (§6.3.2); it may be loaded before the transmitter is enabled.
@@ -285,22 +331,36 @@ impl Usart {
 
     fn rx_complete(&mut self, byte: u8, fault: u8, ev: &mut u8) {
         self.rsr &= !RSR_CIP;
+        let fault = match fault {
+            1 if self.ucr & 0x04 != 0 => RxFault::Parity,
+            2 => RxFault::Frame,
+            3 => RxFault::Break,
+            _ => RxFault::None,
+        };
+        if fault != RxFault::Break {
+            // a word with a non-zero bit ends a break
+            *ev |= self.end_break();
+        }
         if self.rsr & RSR_BF != 0 {
-            // §6.2.2: neither the buffer nor the RSR is overwritten; OE shows once the buffer has been read.
-            self.overrun_pending = true;
+            // §6.2.2: neither the buffer nor the RSR is overwritten; OE shows once the buffer has been read. §6.2.3: a break
+            // is no overrun by itself (B shows once the buffer is read), but after a lost word both show.
+            if fault == RxFault::Break {
+                self.flags |= FLAG_BREAK_PENDING;
+                self.flags &= !FLAG_BREAK_ENDED;
+            } else {
+                self.flags |= FLAG_OVERRUN;
+            }
         } else {
-            let fault = match fault {
-                1 if self.ucr & 0x04 != 0 => RxFault::Parity,
-                2 => RxFault::Frame,
-                3 => RxFault::Break,
-                _ => RxFault::None,
-            };
             self.rx_buf = if fault == RxFault::Break { 0 } else { byte } & self.word_mask();
-            self.rsr &= !(RSR_PE | RSR_FE | RSR_B);
+            // A break is a word of zeros with no stop bit: not a framing error, which is a non-zero word (§6.2.2).
+            self.rsr &= !(RSR_PE | RSR_FE);
             match fault {
                 RxFault::Parity => self.rsr |= RSR_PE,
                 RxFault::Frame => self.rsr |= RSR_FE,
-                RxFault::Break => self.rsr |= RSR_FE | RSR_B,
+                RxFault::Break => {
+                    self.rsr |= RSR_B;
+                    self.flags = self.flags & !(FLAG_BREAK_ENDED | FLAG_RSR_READ) | FLAG_BREAK;
+                }
                 RxFault::None => {}
             }
             self.rsr |= RSR_BF;

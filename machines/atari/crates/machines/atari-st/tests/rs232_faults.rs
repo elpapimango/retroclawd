@@ -1,4 +1,4 @@
-//! A faulty character on the RS-232 line (parity, framing, break) reaches the MFP's RSR as flags ([H?] semantics of the USART
+//! A faulty character on the RS-232 line (parity, framing, break) reaches the MFP RSR as flags (semantics of the USART
 //! flags: see `mc68901`).
 
 mod common;
@@ -59,8 +59,8 @@ fn a_break_and_a_framing_error_reach_the_receiver_status_register() {
     let rsr = m.read_memory(0x1000);
     assert_eq!(
         rsr & 0x98,
-        0x98,
-        "buffer full, frame error and break: {rsr:#04x}"
+        0x88,
+        "buffer full and break, no frame error: {rsr:#04x}"
     );
     assert_eq!(m.read_memory(0x1001), 0, "a break reads as 0");
 }

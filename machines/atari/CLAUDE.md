@@ -161,8 +161,9 @@ modified by being read. Never committed; without the variable the tests pass and
 - Two real defects found by them: the plugin's metadata said the STE's audio was mono (the host labelled the stereo stream
   with it: wrong pitch, fixed: `audio_channels`/`audio_sample_rate` come from `Machine::audio_format`), and the `fast` render ignored the
   STE's pixel scroll and line offset (`Shifter::ste_line_extra`; the line offset byte is unsigned, as in Hatari).
-- The USART has parity, framing and break flags (`mc68901::RxFault`, `AtariSt::rs232_receive_fault`; [H?] semantics: each
-  flag describes the character in the buffer, all raise the receive error). No peer produces them yet.
+- The USART has parity, framing and break flags (`mc68901::RxFault`, `AtariSt::rs232_receive_fault`, `rs232_end_break`; [D] MC68901 §6.2.2-6.2.3,
+  checked 2026-10-24: a break sets B and not FE, B clears when the break has ended and the RSR was read, a break into a full buffer is no overrun).
+  No peer produces them yet.
 - The RomM games boot on the Mega ST and the STE in both modes (`tests/romm_games.rs`).
 - Since: the second look at the 13 known-gap probes (2026-10-23, none closed), the host ACSI save action and the RP5C15 and
   LMC1992 data sheets (below) are done. Not done: P35 and Hatari's other wake-up states (P04 differs from ws3 by 2-4 clocks of

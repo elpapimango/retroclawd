@@ -617,6 +617,15 @@ impl AtariSt {
         true
     }
 
+    /// The RS-232 peer lets go of a break (see [`AtariSt::rs232_receive_fault`] with `RxFault::Break`): B in the RSR clears once
+    /// the RSR has been read since the break began, and the receive error interrupt fires again (end of break).
+    pub fn rs232_end_break(&mut self) {
+        let now = self.bus.now;
+        self.bus.catch_up_mfp(now);
+        self.bus.mfp_mut().usart_end_break();
+        self.bus.mfp_changed();
+    }
+
     /// Whether a blit is running (Mega ST and STE).
     pub fn blitter_busy(&self) -> bool {
         self.bus.ste.blitter.busy()

@@ -123,7 +123,11 @@ impl Mfp {
             15..=18 => self.timers[(reg - 15) as usize].read_data(),
             19 => self.usart.read_scr(),
             20 => self.usart.read_ucr(),
-            21 => self.usart.read_rsr(),
+            21 => {
+                let (v, ev) = self.usart.read_rsr();
+                self.usart_events(ev);
+                v
+            }
             22 => self.usart.read_tsr(),
             23 => {
                 let (v, ev) = self.usart.read_udr();
@@ -257,6 +261,13 @@ impl Mfp {
     /// A character with a fault in its frame starts coming in (parity, framing, break).
     pub fn usart_rx_begin_fault(&mut self, byte: u8, fault: RxFault) {
         self.usart.rx_begin(byte, fault);
+    }
+
+    /// The line left the break condition (a peer that held it low lets go): B clears once the RSR has been read since the
+    /// break began, with an end-of-break interrupt on the receive error channel (§6.2.2).
+    pub fn usart_end_break(&mut self) {
+        let ev = self.usart.end_break();
+        self.usart_events(ev);
     }
 
     /// The oldest character the transmitter has finished, for whatever is on the other end of the line.
