@@ -247,7 +247,7 @@ impl Bus {
         }
         match addr & 0xFFFF {
             a @ 0..=0x3FFF => self.z80.ram[(a & 0x1FFF) as usize],
-            a @ 0x4000..=0x5FFF => self.sound.ym_read(self.now, u32::from(a & 3)),
+            a @ 0x4000..=0x5FFF => self.sound.ym_read(self.now, a & 3),
             _ => 0xFF,
         }
     }
@@ -259,7 +259,7 @@ impl Bus {
         }
         match addr & 0xFFFF {
             a @ 0..=0x3FFF => self.z80.ram[(a & 0x1FFF) as usize] = value,
-            a @ 0x4000..=0x5FFF => self.sound.ym_write(self.now, u32::from(a & 3), value),
+            a @ 0x4000..=0x5FFF => self.sound.ym_write(self.now, a & 3, value),
             0x6000..=0x60FF => self.z80.write_bank(value),
             _ => {}
         }
