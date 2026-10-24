@@ -1,0 +1,19 @@
+machine = "genesis"
+# Probe ROMs come from scenarios/build.sh (software/scenarios/, not committed). The goldens are the memory the probes leave
+# behind in Genesis Plus GX, PicoDrive, BlastEm and clownmdemu (they agree: scenarios/probe.py), never committed.
+
+[reference]
+emulator = "genesis-plus-gx"
+version = "1.7.4"
+command = "machines/sega/scenarios/probe.py scenarios/probes/pNN_name.s --save GOLDENS/genesis (libretro_run.py, --swap16)"
+
+# P00: the harness smoke test: $BEEF and $CAFEF00D copied to work RAM.
+[[scenario]]
+id = "P00"
+kind = "memory"
+frames = 20
+files = { rom = "sega/software/scenarios/p00_hello.md" }
+start = 16711680
+len = 16
+golden = "genesis/p00.bin"
+golden_sha256 = "300f9ecc4a6ce7776811ff903d83dc17a02a22278d9e1022a2f70bad876ef1c3"

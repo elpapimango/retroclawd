@@ -6,6 +6,7 @@ license = "GPL-3.0-or-later"
 description = "Sega Mega Drive / Genesis: memory map, master-clock scheduler and the Machine implementation"
 
 [dependencies]
+md-cart = { path = "../../formats/md-cart" }
 machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
 mc68000 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
 z80 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }

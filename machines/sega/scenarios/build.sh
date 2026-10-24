@@ -8,7 +8,7 @@ rcasm="${RCASM:-$here/../../../../retroclawd-tools/target/release/rcasm}"
 mkdir -p "$out"
 for src in "$here"/probes/*.s; do
     name="$(basename "$src" .s)"
-    "$rcasm" -c 68000 -f bin -o "$out/$name.bin" "$src"
+    "$rcasm" -c 68000 -f bin --force -o "$out/$name.bin" "$src"
     python -I "$here/mkrom.py" "$out/$name.bin" "$out/$name.md" --name "$name"
 done
 ls -l "$out"/*.md

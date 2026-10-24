@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-use genesis::Genesis;
+use genesis::{Config, Genesis, Region};
 use machine::Machine;
 use plugin_api::{
     ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, CodecError, CpuFamily, CpuInfo, DebugCommand,
@@ -67,6 +67,23 @@ struct PluginState {
 struct InstanceRecord {
     machine: Genesis,
     breakpoints: Vec<u64>,
+    diag_file: Option<std::path::PathBuf>,
+}
+
+impl InstanceRecord {
+    /// Writes the stop report once, to the diagnostic file or stderr.
+    fn after_step(&mut self) {
+        if let Some(report) = self.machine.take_stop_report() {
+            match &self.diag_file {
+                Some(path) => {
+                    if let Err(e) = std::fs::write(path, &report) {
+                        eprintln!("genesis: cannot write {}: {e}", path.display());
+                    }
+                }
+                None => eprintln!("genesis: {report}"),
+            }
+        }
+    }
 }
 
 impl PluginState {
@@ -151,12 +168,34 @@ fn machine_profile() -> MachineProfile {
             MachineCapability::Debug,
         ],
         media_kinds: vec![MediaKind::Cartridge],
-        options: vec![option(
-            "diag_file",
-            MachineOptionKind::Text,
-            None,
-            "Write the diagnostic report of a stop at an unemulated device here (default: stderr)",
-        )],
+        options: vec![
+            MachineOptionInfo {
+                required: true,
+                ..option(
+                    "rom",
+                    MachineOptionKind::File,
+                    None,
+                    "The cartridge: a Mega Drive ROM (.md, .gen, .bin) or an interleaved .smd dump",
+                )
+            },
+            option(
+                "console_region",
+                MachineOptionKind::Enum {
+                    choices: ["auto", "japan", "usa", "europe"]
+                        .iter()
+                        .map(|c| c.to_string())
+                        .collect(),
+                },
+                Some(DebugValue::Text("auto".to_string())),
+                "Console region: auto picks it from the cartridge header (the Americas first, then Japan, then Europe); europe is PAL (50 Hz, 313 lines), the others NTSC",
+            ),
+            option(
+                "diag_file",
+                MachineOptionKind::Text,
+                None,
+                "Write the diagnostic report of a stop at an unemulated device here (default: stderr)",
+            ),
+        ],
         key_names: Vec::new(),
         cpus: vec![
             CpuInfo {
@@ -180,12 +219,18 @@ fn metadata(machine: &Genesis) -> MachineMetadata {
     let rate = machine.frame_rate();
     MachineMetadata {
         machine_id: MACHINE_ID.to_string(),
-        region: Some("ntsc".to_string()),
+        region: Some(machine.region().name().to_string()),
         frame_rate: (rate.num, rate.den),
         audio_channels: machine.audio_format().channels,
         audio_sample_rate: machine.audio_format().sample_rate,
         ..MachineMetadata::default()
     }
+}
+
+fn blob<'a>(roms: &'a [plugin_api::BinaryBlob], key: &str) -> Option<&'a [u8]> {
+    roms.iter()
+        .find(|blob| blob.key.eq_ignore_ascii_case(key))
+        .map(|blob| blob.bytes.as_slice())
 }
 
 fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, String> {
@@ -195,13 +240,30 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             req.machine_id
         ));
     }
-    if let Some(option) = req.options.first() {
-        return Err(format!(
-            "unsupported machine-create option \"{}\" for {MACHINE_ID}",
-            option.key
-        ));
+    let rom =
+        blob(&req.roms, "rom").ok_or_else(|| "missing required binary blob: rom".to_string())?;
+    let cartridge = md_cart::Cartridge::parse(rom).map_err(|e| e.to_string())?;
+    let mut console_region = None;
+    let mut diag_file = None;
+    for option in &req.options {
+        match (option.key.as_str(), &option.value) {
+            ("console_region", DebugValue::Text(v)) if v == "auto" => {}
+            ("console_region", DebugValue::Text(v)) => {
+                console_region =
+                    Some(Region::parse(v).ok_or_else(|| {
+                        format!("option \"console_region\": unknown value \"{v}\"")
+                    })?);
+            }
+            ("diag_file", DebugValue::Text(v)) => diag_file = Some(std::path::PathBuf::from(v)),
+            (key, _) => {
+                return Err(format!(
+                    "unsupported machine-create option \"{key}\" for {MACHINE_ID}"
+                ));
+            }
+        }
     }
-    let machine = Genesis::new();
+    let region = console_region.unwrap_or_else(|| Region::from_header(cartridge.header.regions));
+    let machine = Genesis::new(Config::new(cartridge.rom, region))?;
     let metadata = metadata(&machine);
     let mut state = state()
         .lock()
@@ -212,6 +274,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         InstanceRecord {
             machine,
             breakpoints: Vec::new(),
+            diag_file,
         },
     );
     Ok(MachineCreateResponse { instance, metadata })
@@ -247,6 +310,7 @@ fn handle_debug_command(
         DebugCommand::Pause | DebugCommand::Resume => Ok(DebugResponse::Ack),
         DebugCommand::StepInstruction | DebugCommand::StepOver => {
             record.machine.step();
+            record.after_step();
             Ok(DebugResponse::Ack)
         }
         DebugCommand::SetBreakpoint { address } => {
@@ -316,6 +380,7 @@ fn handle_machine_command(
         MachineCommand::RequestInterrupt => Ok(MachineResponse::Ack),
         MachineCommand::Step => {
             let cycles = record.machine.step();
+            record.after_step();
             Ok(MachineResponse::Step(plugin_api::StepResult {
                 cycles,
                 pc: record.machine.pc(),
@@ -326,6 +391,26 @@ fn handle_machine_command(
         MachineCommand::GetPc => Ok(MachineResponse::Pc(record.machine.pc())),
         MachineCommand::Reset => {
             record.machine.reset();
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::ReadMemory { address, len, .. } => Ok(MachineResponse::Memory(
+            (0..u64::from(len))
+                .map(|i| record.machine.read_memory(address.wrapping_add(i)))
+                .collect(),
+        )),
+        MachineCommand::WriteMemory { space: Some(_), .. } => {
+            Err("unsupported: banked memory writes on the genesis".to_string())
+        }
+        MachineCommand::WriteMemory {
+            address,
+            bytes,
+            space: None,
+        }
+        | MachineCommand::LoadBytes { address, bytes } => Ok(MachineResponse::BytesWritten(
+            record.machine.load(address, &bytes) as u32,
+        )),
+        MachineCommand::SetPc { address } => {
+            record.machine.set_pc(address);
             Ok(MachineResponse::Ack)
         }
         MachineCommand::RenderFrame => {
@@ -454,10 +539,14 @@ fn plugin_step_inner(instance: MachineInstanceHandle) -> u32 {
     let Ok(mut state) = state().lock() else {
         return 0;
     };
-    state
-        .instances
-        .get_mut(&instance)
-        .map_or(0, |record| record.machine.step())
+    match state.instances.get_mut(&instance) {
+        Some(record) => {
+            let cycles = record.machine.step();
+            record.after_step();
+            cycles
+        }
+        None => 0,
+    }
 }
 
 extern "C" fn plugin_halted_v1(instance: MachineInstanceHandle) -> u8 {
@@ -510,17 +599,40 @@ mod tests {
         assert_eq!(p.cpus[1].id, "z80");
     }
 
-    #[test]
-    fn an_instance_can_be_created_stepped_and_destroyed() {
-        let created = create_machine(MachineCreateRequest {
+    /// A minimal ROM: vectors, then `MOVE.W #$BEEF,$FF0000 ; BRA.S *` at $200.
+    fn rom() -> Vec<u8> {
+        let mut rom = vec![0u8; 0x400];
+        rom[0..4].copy_from_slice(&0x00FF_FE00u32.to_be_bytes());
+        rom[4..8].copy_from_slice(&0x200u32.to_be_bytes());
+        let program: [u16; 5] = [0x33FC, 0xBEEF, 0x00FF, 0x0000, 0x60FE];
+        for (i, w) in program.iter().enumerate() {
+            rom[0x200 + 2 * i..0x202 + 2 * i].copy_from_slice(&w.to_be_bytes());
+        }
+        rom[0x100..0x110].copy_from_slice(b"SEGA MEGA DRIVE ");
+        rom[0x1F0..0x1F3].copy_from_slice(b"E  ");
+        rom
+    }
+
+    fn request(options: Vec<plugin_api::NamedValue>) -> MachineCreateRequest {
+        MachineCreateRequest {
             machine_id: MACHINE_ID.to_string(),
             region: None,
-            roms: Vec::new(),
-            options: Vec::new(),
-        })
-        .unwrap();
-        assert_eq!(created.metadata.frame_rate, (53_693_175, 896_040));
-        assert_eq!(plugin_step_inner(created.instance), 1);
+            roms: vec![plugin_api::BinaryBlob {
+                key: "rom".to_string(),
+                bytes: rom(),
+            }],
+            options,
+        }
+    }
+
+    #[test]
+    fn a_rom_given_as_a_blob_boots_the_machine_and_the_header_picks_the_region() {
+        let created = create_machine(request(Vec::new())).unwrap();
+        assert_eq!(created.metadata.region.as_deref(), Some("europe"));
+        assert_eq!(created.metadata.frame_rate, (53_203_424, 1_070_460));
+        for _ in 0..5 {
+            assert!(plugin_step_inner(created.instance) > 0);
+        }
         assert_eq!(plugin_halted_v1(created.instance), 0);
         // SAFETY: the handle was just created by this plugin.
         unsafe { plugin_destroy_instance_inner(created.instance) };
@@ -528,16 +640,41 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_option_is_refused() {
-        let result = create_machine(MachineCreateRequest {
-            machine_id: MACHINE_ID.to_string(),
-            region: None,
-            roms: Vec::new(),
-            options: vec![plugin_api::NamedValue {
-                key: "bogus".to_string(),
-                value: DebugValue::Bool(true),
-            }],
-        });
-        assert!(result.is_err());
+    fn the_console_region_option_overrides_the_header() {
+        let created = create_machine(request(vec![plugin_api::NamedValue {
+            key: "console_region".to_string(),
+            value: DebugValue::Text("japan".to_string()),
+        }]))
+        .unwrap();
+        assert_eq!(created.metadata.region.as_deref(), Some("japan"));
+        assert_eq!(created.metadata.frame_rate, (53_693_175, 896_040));
+    }
+
+    #[test]
+    fn a_missing_or_empty_rom_and_unknown_options_are_refused() {
+        let mut none = request(Vec::new());
+        none.roms.clear();
+        assert!(create_machine(none).is_err());
+        let mut empty = request(Vec::new());
+        empty.roms[0].bytes.clear();
+        assert!(create_machine(empty).is_err());
+        let bogus = request(vec![plugin_api::NamedValue {
+            key: "bogus".to_string(),
+            value: DebugValue::Bool(true),
+        }]);
+        assert!(create_machine(bogus).is_err());
+        let bad_region = request(vec![plugin_api::NamedValue {
+            key: "console_region".to_string(),
+            value: DebugValue::Text("mars".to_string()),
+        }]);
+        assert!(create_machine(bad_region).is_err());
+    }
+
+    #[test]
+    fn the_rom_option_is_required_and_a_file() {
+        let p = machine_profile();
+        let rom = p.options.iter().find(|o| o.key == "rom").unwrap();
+        assert!(rom.required);
+        assert_eq!(rom.kind, MachineOptionKind::File);
     }
 }

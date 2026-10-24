@@ -1,7 +1,12 @@
 //! Sega Mega Drive / Genesis. Design: `docs/superpowers/specs/2026-10-24-sega-genesis-design.md` in the
-//! retroclawd repository. Skeleton: the real machine arrives task by task (plan `2026-10-24-sega-genesis.md`).
+//! retroclawd repository; every hardware fact used is listed in `docs/hardware-facts.md`.
 #![forbid(unsafe_code)]
 
+mod bus;
+mod config;
 mod machine;
 
+pub use bus::{Bus, Stop};
+pub use config::{Config, LINE_CLOCKS, M68K_DIVIDER, Region, Z80_DIVIDER, frame_clocks};
 pub use machine::Genesis;
+pub use mc68000;
