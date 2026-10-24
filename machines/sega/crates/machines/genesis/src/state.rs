@@ -118,7 +118,7 @@ pub fn load(
     rom_crc: u32,
     region: Region,
     chip: ym2612::Chip,
-) -> Result<(Cpu, u64, Vec<u8>, Vdp, Io, Z80Sys, Sound), StateError> {
+) -> Result<Loaded, StateError> {
     let mut at = 0usize;
     let mut take = |n: usize| -> Result<&[u8], StateError> {
         let end = at.checked_add(n).ok_or(StateError::Truncated)?;
@@ -173,13 +173,24 @@ pub fn load(
     payload.vdp.validate().map_err(StateError::Corrupt)?;
     payload.z80.validate().map_err(StateError::Corrupt)?;
     payload.sound.validate().map_err(StateError::Corrupt)?;
-    Ok((
-        payload.cpu,
-        payload.now,
-        payload.ram,
-        payload.vdp,
-        payload.io,
-        payload.z80,
-        payload.sound,
-    ))
+    Ok(Loaded {
+        cpu: payload.cpu,
+        now: payload.now,
+        ram: payload.ram,
+        vdp: payload.vdp,
+        io: payload.io,
+        z80: payload.z80,
+        sound: payload.sound,
+    })
+}
+
+/// A state that passed every check, ready to be put into the machine.
+pub struct Loaded {
+    pub cpu: Cpu,
+    pub now: u64,
+    pub ram: Vec<u8>,
+    pub vdp: Vdp,
+    pub io: Io,
+    pub z80: Z80Sys,
+    pub sound: Sound,
 }

@@ -195,16 +195,16 @@ impl Machine for Genesis {
     }
 
     fn load_state(&mut self, bytes: &[u8]) -> Result<(), String> {
-        let (cpu, now, ram, vdp, io, z80, sound) =
+        let loaded =
             crate::state::load(bytes, self.rom_crc, self.region, self.bus.sound.ym().kind())
                 .map_err(|e| e.to_string())?;
-        self.cpu = cpu;
-        self.bus.now = now;
-        self.bus.ram_mut().copy_from_slice(&ram);
-        self.bus.vdp = vdp;
-        self.bus.io = io;
-        self.bus.z80 = z80;
-        self.bus.sound = sound;
+        self.cpu = loaded.cpu;
+        self.bus.now = loaded.now;
+        self.bus.ram_mut().copy_from_slice(&loaded.ram);
+        self.bus.vdp = loaded.vdp;
+        self.bus.io = loaded.io;
+        self.bus.z80 = loaded.z80;
+        self.bus.sound = loaded.sound;
         self.bus.take_stop();
         self.stop_reported = false;
         Ok(())
