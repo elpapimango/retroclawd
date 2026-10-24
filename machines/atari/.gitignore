@@ -12,3 +12,7 @@ dist/
 crates/**/fuzz/target/
 crates/**/fuzz/corpus/
 crates/**/fuzz/artifacts/
+
+# Python bytecode from the timing/ generators
+__pycache__/
+*.pyc
