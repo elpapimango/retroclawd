@@ -54,6 +54,7 @@ pub(crate) enum Action {
     LoadDiskB,
     EjectDiskB,
     SaveDiskB,
+    SaveHardDisk,
     NextDisk,
     PrevDisk,
     Freeze,
@@ -78,6 +79,7 @@ impl Action {
             Action::LoadDiskB => FileAction::LoadDiskB,
             Action::EjectDiskB => FileAction::EjectDiskB,
             Action::SaveDiskB => FileAction::SaveDiskB,
+            Action::SaveHardDisk => FileAction::SaveHardDisk,
             Action::NextDisk => FileAction::NextDisk,
             Action::PrevDisk => FileAction::PrevDisk,
             _ => return None,
@@ -100,7 +102,7 @@ pub(crate) struct ActionInfo {
 /// and Scroll Lock (plus chords on those): none of them is a key any
 /// emulated machine uses (the C64's F1/F3/F5/F7 and the Spectrum/CPC/C64
 /// letter and modifier keys all stay with the machine).
-pub(crate) const ACTIONS: [ActionInfo; 34] = [
+pub(crate) const ACTIONS: [ActionInfo; 35] = [
     ActionInfo {
         action: Action::Reset,
         name: "reset",
@@ -262,6 +264,13 @@ pub(crate) const ACTIONS: [ActionInfo; 34] = [
         name: "save_disk_b",
         default: None,
         help: "save a copy of the disk in drive B as a .dsk file (and count its changes as saved)",
+        hold: false,
+    },
+    ActionInfo {
+        action: Action::SaveHardDisk,
+        name: "save_hd",
+        default: None,
+        help: "save a copy of ACSI hard disk 0 as an image file (and count its changes as saved)",
         hold: false,
     },
     ActionInfo {

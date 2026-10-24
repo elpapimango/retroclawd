@@ -33,6 +33,7 @@ pub(crate) enum Action {
     LoadDiskB(String),
     EjectDiskB,
     SaveDiskB(String),
+    SaveAcsi(u8, String),
     LoadSnapshot(String),
     SaveSnapshot(String),
     LoadState(String),
@@ -130,6 +131,19 @@ pub(crate) fn parse(text: &str) -> Result<Scripted, String> {
         "eject_disk_b" => none(&arg).map(|()| Action::EjectDiskB)?,
         "load_disk_b" => Action::LoadDiskB(need(arg)?),
         "save_disk_b" => Action::SaveDiskB(need(arg)?),
+        "save_acsi" => {
+            let arg = need(arg)?;
+            let (target, file) = arg
+                .split_once(':')
+                .and_then(|(n, f)| Some((n.trim().parse::<u8>().ok().filter(|n| *n <= 7)?, f)))
+                .filter(|(_, f)| !f.is_empty())
+                .ok_or_else(|| {
+                    format!(
+                        "--at {text}: save_acsi needs N:FILE, N being 0 to 7 (save_acsi=0:hd.img)"
+                    )
+                })?;
+            Action::SaveAcsi(target, file.to_string())
+        }
         "load_tape" => Action::LoadTape(need(arg)?),
         "load_disk" => Action::LoadDisk(need(arg)?),
         "load_snapshot" => Action::LoadSnapshot(need(arg)?),
@@ -148,7 +162,7 @@ pub(crate) fn parse(text: &str) -> Result<Scripted, String> {
             return Err(format!(
                 "--at {text}: unknown action {name:?} (reset, freeze, screenshot[=FILE], key_down=K, key_up=K, mouse_move=DX,DY, \
                  mouse_down=B, mouse_up=B, quick_save, quick_load, \
-                 state_slot_next, state_slot_prev, load_tape=F, load_disk=F, eject_tape, eject_disk, load_disk_b=F, eject_disk_b, save_disk_b=F, load_snapshot=F, \
+                 state_slot_next, state_slot_prev, load_tape=F, load_disk=F, eject_tape, eject_disk, load_disk_b=F, eject_disk_b, save_disk_b=F, save_acsi=N:F, load_snapshot=F, \
                  save_snapshot=F, load_state=F, save_state=F, save_tape=F, save_disk=F)"
             ));
         }
@@ -237,6 +251,12 @@ impl Runner {
                 let note = self.save(Export::DiskB, path, machine)?;
                 self.control
                     .apply(EmuCommand::Media(MediaOp::DiskBSaved), machine);
+                Ok(note)
+            }
+            Action::SaveAcsi(target, path) => {
+                let note = self.save(Export::Acsi(*target), path, machine)?;
+                self.control
+                    .apply(EmuCommand::Media(MediaOp::AcsiSaved(*target)), machine);
                 Ok(note)
             }
             Action::KeyDown(key) | Action::KeyUp(key) => {
@@ -391,6 +411,18 @@ mod tests {
             Action::SaveDiskB("o.dsk".into())
         );
         assert_eq!(
+            parse("2:save_acsi=3:hd.img").unwrap().action,
+            Action::SaveAcsi(3, "hd.img".into())
+        );
+        for bad in [
+            "save_acsi",
+            "save_acsi=hd.img",
+            "save_acsi=8:a.img",
+            "save_acsi=0:",
+        ] {
+            assert!(parse(&format!("2:{bad}")).is_err(), "{bad}");
+        }
+        assert_eq!(
             parse("9:screenshot").unwrap().action,
             Action::Screenshot(None)
         );
@@ -442,6 +474,42 @@ mod tests {
         assert_eq!(std::fs::read(&copy).unwrap(), std::fs::read(&disk).unwrap());
         // Nothing left in drive B to save: that is a failed action, not a silent no-op.
         runner.run_due(3, &mut machine);
+        assert!(runner.failed);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn save_acsi_writes_a_copy_of_the_hard_disk_and_marks_it_saved() {
+        let machine_id = "stub-machine";
+        let mut machine =
+            crate::plugin_bridge::create_hosted_machine(plugin_api::MachineCreateRequest {
+                machine_id: machine_id.to_string(),
+                region: Some("pal".to_string()),
+                roms: Vec::new(),
+                options: Vec::new(),
+            })
+            .expect("the bundled stub machine");
+        let drive = crate::plugin_bridge::HostedMachine::ACSI_DRIVE_BASE;
+        let image = dsk::Disk::new(1).to_bytes();
+        machine.apply_disk_in(drive, "dsk", &image).unwrap();
+        let dir = std::env::temp_dir().join(format!("rc-scripted-acsi-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let copy = dir.join("hd.img");
+        let mut runner = Runner::new(
+            machine_id,
+            MediaSettings::default(),
+            vec![parse(&format!("0:save_acsi=0:{}", copy.display())).unwrap()],
+        );
+        runner.run_due(0, &mut machine);
+        assert!(!runner.failed);
+        assert_eq!(std::fs::read(&copy).unwrap(), image);
+        // Target 5 holds no disk: a failed action, not a silent no-op.
+        let mut runner = Runner::new(
+            machine_id,
+            MediaSettings::default(),
+            vec![parse(&format!("0:save_acsi=5:{}", dir.join("none.img").display())).unwrap()],
+        );
+        runner.run_due(0, &mut machine);
         assert!(runner.failed);
         std::fs::remove_dir_all(&dir).unwrap();
     }

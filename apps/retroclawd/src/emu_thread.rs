@@ -388,6 +388,8 @@ pub(crate) enum MediaOp {
     },
     EjectDiskB,
     DiskBSaved,
+    /// The ACSI hard disk behind this target (0 to 7) was written out: its changes are no longer unsaved.
+    AcsiSaved(u8),
 }
 
 /// What a "save" dialog wants serialised.
@@ -397,6 +399,8 @@ pub(crate) enum Export {
     Disk,
     /// The same for drive B.
     DiskB,
+    /// The ACSI hard disk behind this target (0 to 7), guest writes applied.
+    Acsi(u8),
     /// The cassette recording as `cdt`/`tzx`/`voc`.
     Tape {
         format: String,
@@ -545,6 +549,9 @@ impl HostControl {
                     Export::Snapshot { extension } => machine.save_snapshot(&extension).map(Some),
                     Export::Disk => machine.export_disk(0, false),
                     Export::DiskB => machine.export_disk(1, false),
+                    Export::Acsi(target) => {
+                        machine.export_disk(HostedMachine::ACSI_DRIVE_BASE + target, false)
+                    }
                     Export::Tape { format } => machine.export_tape(&format),
                 };
                 let _ = reply.send(result);
@@ -741,6 +748,12 @@ impl HostControl {
             MediaOp::DiskBSaved => {
                 if let Err(e) = machine.mark_disk_saved(1) {
                     self.say(format!("Could not mark drive B saved: {e}"));
+                }
+                false
+            }
+            MediaOp::AcsiSaved(target) => {
+                if let Err(e) = machine.mark_disk_saved(HostedMachine::ACSI_DRIVE_BASE + target) {
+                    self.say(format!("Could not mark ACSI {target} saved: {e}"));
                 }
                 false
             }
