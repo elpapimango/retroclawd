@@ -89,11 +89,17 @@ pub struct Config {
     /// The cartridge ROM, as the 68000 sees it from `$000000` (see `md-cart`).
     pub rom: Vec<u8>,
     pub region: Region,
+    /// What is plugged into the two controller ports.
+    pub pads: [crate::io::PadKind; 2],
 }
 
 impl Config {
     pub fn new(rom: Vec<u8>, region: Region) -> Self {
-        Self { rom, region }
+        Self {
+            rom,
+            region,
+            pads: [crate::io::PadKind::Six; 2],
+        }
     }
 }
 

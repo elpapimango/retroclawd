@@ -17,3 +17,50 @@ start = 16711680
 len = 16
 golden = "genesis/p00.bin"
 golden_sha256 = "300f9ecc4a6ce7776811ff903d83dc17a02a22278d9e1022a2f70bad876ef1c3"
+
+# P02: VDP memory access through the data port (VRAM even/odd addresses, increments, CRAM and VSRAM bits, wraps); the four
+# emulators agree on all of it but the read at VSRAM index 40 (clownmdemu differs) and the status word, which is not compared.
+[[scenario]]
+id = "P02"
+kind = "memory"
+frames = 30
+files = { rom = "sega/software/scenarios/p02_vdp_memory.md" }
+start = 16711680
+len = 94
+golden = "genesis/p02_vdp_memory.bin"
+golden_sha256 = "2ee7ee3dec808f188000588b52b4ca0b9014bd8328d516b71b85065a52acaf3b"
+
+# P03: byte accesses to the VDP ports: a byte written to the data or control port is the word with the byte in both halves.
+[[scenario]]
+id = "P03"
+kind = "memory"
+frames = 30
+files = { rom = "sega/software/scenarios/p03_vdp_bytes.md" }
+start = 16711680
+len = 32
+golden = "genesis/p03_vdp_bytes.bin"
+golden_sha256 = "34e1f442f7ac198c50b4519db0f13c1d67f97542b102c07f9a84bcf8101dc558"
+
+# P04: the I/O registers read as words (both bytes alike). PicoDrive reads $FF where the others read the pulled-up pins
+# ($7F): Genesis Plus GX and BlastEm are followed.
+[[scenario]]
+id = "P04"
+kind = "memory"
+frames = 30
+files = { rom = "sega/software/scenarios/p04_io_words.md" }
+start = 16711680
+len = 14
+golden = "genesis/p04_io_words.bin"
+golden_sha256 = "22fd1be1e253b1cfd37a7d3eeafc2872d1344ebbfdf0f5f0573a7a24a0a900ba"
+
+# P04B: even byte reads, the data register with TH driven, an output pin readback and the transmit register
+# (offsets $10-$1B of the probe; the serial control register's first read differs between emulators and is left out).
+[[scenario]]
+id = "P04B"
+kind = "memory"
+frames = 30
+files = { rom = "sega/software/scenarios/p04_io_words.md" }
+start = 16711696
+len = 12
+golden = "genesis/p04b_io_bytes.bin"
+golden_sha256 = "ab1c2175c74726f81e004689225e387b5139722d97a269991c27ebf5ddf829fb"

@@ -87,7 +87,10 @@ impl Machine for Genesis {
             return (4 * M68K_DIVIDER) as u32;
         }
         self.bus.pc = self.cpu.pc;
+        self.bus.vdp.advance(start);
+        self.cpu.set_ipl(self.bus.vdp.irq_level());
         self.cpu.step(&mut self.bus);
+        self.bus.vdp.advance(self.bus.now);
         (self.bus.now - start) as u32
     }
 
@@ -117,11 +120,14 @@ impl Machine for Genesis {
     }
 
     fn render_frame(&self) -> Option<(u32, u32, Vec<u8>)> {
-        Some((
-            BLANK_WIDTH,
-            BLANK_HEIGHT,
-            vec![0; (BLANK_WIDTH * BLANK_HEIGHT * 3) as usize],
-        ))
+        match self.bus.vdp.frame() {
+            Some((w, h, rgb)) => Some((w, h, rgb.to_vec())),
+            None => Some((
+                BLANK_WIDTH,
+                BLANK_HEIGHT,
+                vec![0; (BLANK_WIDTH * BLANK_HEIGHT * 3) as usize],
+            )),
+        }
     }
 
     fn read_memory(&self, addr: Addr) -> u8 {
