@@ -70,12 +70,18 @@ fn parse_hex_u16(s: &str) -> Result<u16, String> {
     u16::from_str_radix(s.trim_start_matches("0x"), 16).map_err(|e| e.to_string())
 }
 
-fn parse_dump_range(s: &str) -> Result<(u16, u16), String> {
+/// The most `--dump-memory` prints: a 24-bit machine's whole work RAM is 64 KB, its address space 16 MB.
+const MAX_DUMP_BYTES: u32 = 16 * 1024 * 1024;
+
+fn parse_dump_range(s: &str) -> Result<(u32, u32), String> {
     let (start, len) = s.split_once(':').ok_or("--dump-memory expects START:LEN")?;
-    let start = parse_hex_u16(start)?;
-    let len: u16 = len
+    let start = u32::from_str_radix(start.trim_start_matches("0x"), 16).map_err(|e| e.to_string())?;
+    let len: u32 = len
         .parse()
         .map_err(|e: std::num::ParseIntError| e.to_string())?;
+    if len > MAX_DUMP_BYTES {
+        return Err(format!("--dump-memory: at most {MAX_DUMP_BYTES} bytes"));
+    }
     Ok((start, len))
 }
 
@@ -381,7 +387,7 @@ struct CommonArgs {
 
     /// Hex-dump memory after halt: START:LEN (e.g. 0x4000:16)
     #[arg(long, value_parser = parse_dump_range, requires = "headless")]
-    dump_memory: Option<(u16, u16)>,
+    dump_memory: Option<(u32, u32)>,
 
     /// Stop after this many instructions even if never halted (safety valve
     /// for booting a real ROM with no video/keyboard, which spins forever)
@@ -3099,7 +3105,7 @@ fn run_headless(
     }
 
     if let Some((start, len)) = args.dump_memory {
-        println!("memory 0x{start:04X}..0x{:04X}:", start as u32 + len as u32);
+        println!("memory 0x{start:04X}..0x{:04X}:", u64::from(start) + u64::from(len));
         for offset in 0..len {
             let addr = start.wrapping_add(offset);
             if offset % 16 == 0 {
