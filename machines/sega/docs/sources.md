@@ -28,9 +28,18 @@ Installed in RetroArch: `C:\Users\matti\Workspace\Emulators\RetroArch-Win64\core
 
 | Core | Version | File | SHA-256 |
 |---|---|---|---|
-| Genesis Plus GX | v1.7.4 `60bee4c` | `genesis_plus_gx_libretro.dll` | recorded by `scenarios/oracle_info.py` |
-| Genesis Plus GX Wide | v1.7.4 `b7ad005` | `genesis_plus_gx_wide_libretro.dll` | |
-| PicoDrive | 2.05 `1890c29` | `picodrive_libretro.dll` | |
-| BlastEm | 1.0.1-pre | `blastem_libretro.dll` | |
-| clownmdemu | v1.6.12 `d43c270` | `clownmdemu_libretro.dll` | |
+| Genesis Plus GX | v1.7.4 `60bee4c` | `genesis_plus_gx_libretro.dll` | 8865e4e880e726e3ac91f6fc66858375984f4f3ea19ee696e744e8ebab4c583e |
+| Genesis Plus GX Wide | v1.7.4 `b7ad005` | `genesis_plus_gx_wide_libretro.dll` | c4e96a1ca41084241f02fd70643d45d0d3ddfde18b388b86cedf67ae4de5e378 |
+| PicoDrive | 2.05 `1890c29` | `picodrive_libretro.dll` | 86e453c2f417a1a5f6e11a85c44e0880755ede85383f5e4af1ff0c512aa40359 |
+| BlastEm | 1.0.1-pre | `blastem_libretro.dll` | 8fb3b2fd214d4590a95422139b3460b749ef7b9403f879b57d42d564a2ce1657 |
+| clownmdemu | v1.6.12 `d43c270` | `clownmdemu_libretro.dll` | 6de85dd37e2f286abc073b82562aac59ce05df4b526f88ddcb5900706dbf60b7 |
 | MAME | installed in `Emulators/Mame` | `mame.exe` (driver `genesis`) | tie-break |
+
+## Oracle host and corpus
+
+`retroclawd-tools/scripts/libretro_run.py CORE ROM --frames N ...` runs a core and writes frame, RAM (`RETRO_MEMORY_SYSTEM_RAM`),
+audio and state. Checked 2026-10-24 on Altered Beast (RomM game 6174, `Altered Beast.smd`, 524 800 bytes, SHA-1 of the file inside
+the zip `316eb916907b6d2c2f1ce363b8c43d5584c16b0d`): Genesis Plus GX, PicoDrive and BlastEm run the `.smd` directly and give the
+same RAM for a de-interleaved copy (`scenarios/smd2md.py`, validated by the ROM header checksum); clownmdemu needs the
+de-interleaved ROM. Genesis Plus GX is deterministic (two runs, equal RAM). Genesis Plus GX reports 59.922743 fps NTSC, PicoDrive 60.
+`bios_MD.bin` (RomM firmware 168, 2048 bytes, SHA-1 `3f50b76b0529db7f79c396b5e808cc0786ffc311`) is in `software/oracles/system/`.
