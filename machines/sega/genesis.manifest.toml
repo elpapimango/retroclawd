@@ -165,3 +165,19 @@ start = 16711680
 len = 4
 golden = "genesis/p22_line_cycles.bin"
 golden_sha256 = "3db40f3b2432b37709586cd4489317f9d233bd786efcc306f558808feb93361a"
+
+# P30B: a Z80 loop reading the cartridge through its window while the 68000 counts a 42-cycle loop over 20 lines, then the Z80's
+# own count. The 68000 loses cycles for each access of the Z80 to its bus (Genesis Plus GX: 208 iterations against 229 without
+# the Z80; BlastEm 214, PicoDrive 213). Genesis Plus GX's dump is the golden.
+[[scenario]]
+id = "P30B"
+kind = "memory"
+frames = 90
+files = { rom = "sega/software/scenarios/p30b_z80_rom_loop.md" }
+start = 16711680
+len = 4
+golden = "genesis/p30b_z80_rom_loop.bin"
+golden_sha256 = "66a5eabec24cfc39a33961a118d7c18d06a54eb520e5878d8539de9faa8835af"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the 68000 count is 209 against 208 and the Z80 count 4898 against 4099: the Z80 waits 3 clocks and the 68000 10 cycles for each access to the 68000's bus (the average of Genesis Plus GX's rule, which varies with the Z80 clock), but Genesis Plus GX's Z80 completes fewer iterations of the RAM loop as well (4010 against 4865 in BlastEm, PicoDrive and here), so its Z80 runs slower for a reason not found", evidence = "p30a_z80_ram_loop: Genesis Plus GX 00e5 0faa, PicoDrive 00e5 1302, BlastEm 00e5 1300, here 00e5 1301; p30b: 00d0 1003, 00d5 12cb, 00d6 12e0, here 00d1 1322 (probe.py scenarios/probes/p30b_z80_rom_loop.s --frames 90 --ram 0:4)" }

@@ -29,6 +29,9 @@ pub struct Z80Sys {
     pub time: u64,
     /// Z80 clocks spent inside the instruction being executed, for the time of an access in the middle of it.
     pub offset: u64,
+    /// Z80 clocks the instruction being executed waited for the 68000's bus (included in `offset`).
+    #[serde(skip)]
+    pub wait: u64,
 }
 
 impl Z80Sys {
@@ -42,6 +45,7 @@ impl Z80Sys {
             reset: true,
             time: 0,
             offset: 0,
+            wait: 0,
         }
     }
 

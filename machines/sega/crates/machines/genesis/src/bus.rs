@@ -68,6 +68,10 @@ pub struct Bus {
     pub pc: u32,
     /// The master clock at which the next bus refresh holds the 68000.
     pub refresh_at: u64,
+    /// Master clocks the 68000 owes for the Z80's accesses to its bus, paid at the next catch-up.
+    pub(crate) z80_delay: u64,
+    /// The 68000's bus is held by a VDP DMA until this master clock (the Z80 cannot use it before).
+    pub(crate) dma_hold_until: u64,
 }
 
 /// What a VDP DMA transfer can read: the cartridge and work RAM (fact V14). Anything else stops the machine.
@@ -116,6 +120,8 @@ impl Bus {
             stop: None,
             pc: 0,
             refresh_at: REFRESH_INTERVAL,
+            z80_delay: 0,
+            dma_hold_until: 0,
         }
     }
 
@@ -212,6 +218,7 @@ impl Bus {
         let until = self.vdp.write_control(value, self.now, &mut src);
         let unmapped = src.unmapped;
         if until > self.now {
+            self.dma_hold_until = until;
             self.now = until;
         }
         if let Some(a) = unmapped {
@@ -264,6 +271,7 @@ impl Bus {
     /// Brings the Z80 and the VDP up to the 68000's clock: the Z80 first, because it must see the VDP as it was.
     pub fn catch_up(&mut self) {
         self.run_z80(self.now);
+        self.now += std::mem::take(&mut self.z80_delay);
         self.vdp.advance(self.now);
     }
 

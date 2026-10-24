@@ -6,7 +6,12 @@
 //! (reads `$FF`), and the bank register cannot be read.
 
 use crate::bus::Bus;
-use crate::config::Z80_DIVIDER;
+use crate::config::{M68K_DIVIDER, Z80_DIVIDER};
+
+/// Z80 clocks the Z80 waits for the 68000's bus on average (fact Z13).
+const Z80_BUS_WAIT: u64 = 3;
+/// Master clocks the 68000 loses for each access of the Z80 to its bus (fact Z13).
+const Z80_WINDOW_68K_DELAY: u64 = 10 * M68K_DIVIDER;
 
 impl Bus {
     /// What the Z80 reads at a 68000 address through its window. Unmapped places read `$FF` (the data bus floats high).
@@ -54,6 +59,7 @@ impl Bus {
                 }
             }
             0x8000..=0xFFFF => {
+                self.z80_takes_68k_bus();
                 let a = u32::from(self.z80.bank) << 15 | u32::from(addr & 0x7FFF);
                 self.z80_window_read(a)
             }
@@ -73,11 +79,25 @@ impl Bus {
                 self.z80_window_write(a, value);
             }
             0x8000..=0xFFFF => {
+                self.z80_takes_68k_bus();
                 let a = u32::from(self.z80.bank) << 15 | u32::from(addr & 0x7FFF);
                 self.z80_window_write(a, value);
             }
             _ => {}
         }
+    }
+
+    /// The Z80 reaches into the 68000's bus (fact Z13): it waits until a VDP DMA from that bus is over and then for the
+    /// arbitration, and the 68000 loses cycles while the Z80 holds the bus.
+    fn z80_takes_68k_bus(&mut self) {
+        let t = self.z80_access_clock();
+        let mut wait = Z80_BUS_WAIT;
+        if t < self.dma_hold_until {
+            wait += (self.dma_hold_until - t).div_ceil(Z80_DIVIDER);
+        }
+        self.z80.offset += wait;
+        self.z80.wait += wait;
+        self.z80_delay += Z80_WINDOW_68K_DELAY;
     }
 
     /// The master clock of the Z80 access in progress.
@@ -104,10 +124,12 @@ impl Bus {
                 cpu.request_interrupt();
             }
             self.z80.offset = 0;
+            self.z80.wait = 0;
             let tstates = cpu.step(self);
             self.z80.cpu = cpu;
-            self.z80.time += u64::from(tstates) * Z80_DIVIDER;
+            self.z80.time += (u64::from(tstates) + self.z80.wait) * Z80_DIVIDER;
             self.z80.offset = 0;
+            self.z80.wait = 0;
         }
     }
 }
