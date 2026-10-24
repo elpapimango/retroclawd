@@ -106,12 +106,37 @@ No real hardware is available, so these stay parked until someone has it; everyt
   entities; gilrs itself was never exercised. To check: a physical pad, bind `reset = ["f12", "pad:select+start"]`, hold Select then
   press Start, and confirm Select alone does not reach the machine as a joystick button once it is part of a chord.
 
-## Atari ST: Phase 4 done except the items below (2026-10-23)
+## Atari ST: closed (2026-10-24); what is parked, and what each item needs
 
-Phase 4 (spec Status 2026-10-23): the Blitter, the STE (Shifter, DMA sound, ports), the Mega ST clock, watchpoints, fuzz runs, ACSI `--disk-save`.
-Second look at the 13 `known-gap` probes done 2026-10-23 (evidence in the manifest rows; none closed: Hatari jitter and quirks, and an arbitrary spindle phase for P16/P17 that would need a motor-start hook in the shared Floppy trait). Open: Hatari's other wake-up states (ws1, ws2, ws4: P04 differs; no hardware source); the STE pad button bits and the other `[H?]` rows that need the *ST Hardware Specification* (not in hand); P29's counter ramp and P30's shift rate are Hatari's own (known gaps). Done since (Phase 5, 2026-10-24): S17, S17S, S18, S19, S20, S21, the USART flags from the MC68901 sheet, the RP5C15 and LMC1992 data sheets (clock, Microwire stream, silent power-up, bass and treble), mid-line resolution (P35, P45), the host ACSI save action; see machines/atari/CLAUDE.md.
+Phases 1 to 4 and the leftovers are done: ST, Mega ST and STE boot EmuTOS and the RomM games in both accuracy modes; every timing fact has a
+probe or a source; the manifests are `atari-st` 32 passed / 14 known gaps, `atari-ste` 11 / 4, `atari-mega-st` 0 / 1 (all gaps are Hatari
+differences with their evidence in the manifest rows). Since Phase 4: S17-S21, USART flags and break (MC68901 sheet), the RP5C15 and LMC1992
+data sheets (clock, Microwire stream, silent power-up, bass/treble), mid-line resolution (P35, P45), the STE DAC filters, ACSI opcodes
+`$05 $06 $0D $15`, the host ACSI save action, and the 1986 *Engineering Hardware Specification* (rows relabelled `[D]`). See
+`machines/atari/CLAUDE.md` and `docs/hardware-facts.md`.
 
-### Atari ST: Phase 3 done (kept for the record, 2026-10-23)
+Parked (not planned; each says what would unblock it):
+- **STE pad button bits and the STE video extras**: observed in Hatari only. Needs the Atari STE hardware register list (the STe service
+  manual refers to it and does not contain it).
+- **Empty cartridge slot level, and which unlisted I/O addresses bus-error** (`io.rs` stops the machine on them): the 1986 specification
+  says only "bus error". Needs real-hardware knowledge or the GLUE's decode.
+- **Sync mode reset value**: the specification says reset is all zeros (60 Hz); honouring it was tried and reverted on 2026-10-24 (breaks
+  the Hatari boot-phase comparisons P04, P09/P10, the recorded fast-mode table and bare-metal tests, which assume a PAL machine starts at
+  50 Hz). Revisit only with a real-hardware reference for a PAL power-on frame.
+- **DMA status error bit versus the selected register** (specification note 841017G) and **the DMA FIFO's second 16 bytes**: no value or
+  probe defines them.
+- **Hatari's other wake-up states** (ws1, ws2, ws4; P04 differs): Hatari is the only oracle, no hardware source; each state needs its own fit.
+- **The 14 known-gap probes** (P02 P04 P06 P09 P10 P12 P14 P16 P17 P18 P20 P21 P22 and P29/P30, P32/P34/P41 on the STE): Hatari's jitter,
+  lost lines, its instant USART, its unchanged ACSI DMA address, its counter ramp and shift rate; P16/P17 would also need a motor-start hook
+  in the shared `Floppy` trait. Looked at twice, none closable without a Hatari-specific fit.
+- **A switch to high resolution inside the picture and lost lines** (P09 frames 16-18, 91-119): Hatari's own behaviour, not modelled.
+- **ACSI details beyond the 1986 table** (INQUIRY/REQUEST SENSE/READ CAPACITY layouts, block count 0 = 256, error codes `$24`/`$25`): `[H?]`
+  choices; needs the AHDI/ACSI specification pages that were poor scans.
+- **LMC1992 mixer meaning** (the ST wiring of input select: YM at full level for 1, 12 dB down for 0) and **the board's tone capacitors**:
+  `[H?]`; needs a schematic of the STE audio section (the Mega STE schematic in `docs/` is a TT-class board and was not mined further).
+- **Not tried**: the STBook specification and the Mega STE schematic in `docs/`; `.stx` images; libFuzzer targets beyond their 60 s runs.
+
+### Atari ST: Phase 3 done (kept for the record, 2026-10-23; superseded by the section above)
 
 Phases 1 to 3 are done (spec section 24, Status 2026-10-21, 2026-10-22 and 2026-10-23). Phase 3 gave `--accuracy accurate` (every bus
 cycle, wait states, cycle-exact Shifter with borders and mid-line palette, exact MFP/ACIA/IKBD/DMA/FDC timing, the mono monitor, the
