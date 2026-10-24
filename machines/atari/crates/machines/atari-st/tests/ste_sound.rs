@@ -203,3 +203,25 @@ fn the_volume_control_powers_up_with_minimum_volume_and_a_fader_ignores_its_sixt
         assert_eq!(l.abs() > 0.1, audible, "fader {fader:#x}: {l}");
     }
 }
+
+#[test]
+fn the_bass_control_boosts_a_steady_level_by_the_shelf_gain_through_the_microwire() {
+    // a constant sample is all low frequency: bass 12 (command %001, data 12) gives the shelf's final gain, about 14.6 dB;
+    // bass 6 (flat) leaves it alone
+    let data = vec![0x08u8; 64];
+    let peak_with = |bass: Option<u16>| {
+        let mut extra = volume(40);
+        if let Some(b) = bass {
+            extra.extend(microwire(1, b));
+        }
+        let mut m = machine(&play_program(&data, 0x83, &extra));
+        run_frames(&mut m, 12);
+        peak(&m.drain_audio(), 0)
+    };
+    let flat = peak_with(None);
+    assert!((flat - 0.0625).abs() < 0.001, "{flat}");
+    let boosted = peak_with(Some(12));
+    assert!((boosted / flat - 5.36).abs() < 0.15, "{}", boosted / flat);
+    let cut = peak_with(Some(0));
+    assert!((cut / flat - 1.0 / 5.36).abs() < 0.02, "{}", cut / flat);
+}

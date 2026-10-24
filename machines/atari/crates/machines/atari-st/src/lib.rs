@@ -28,6 +28,7 @@ pub use bus::{
 mod dmasound;
 pub mod rtc;
 pub mod ste;
+pub mod tone;
 pub mod watch;
 pub use config::{Accuracy, Chipset, Config, RamSize, Region};
 pub use dma::Dma;

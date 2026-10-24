@@ -737,12 +737,18 @@ impl Machine for AtariSt {
         }
         self.bus.run_dma(self.bus.now);
         let dma = self.bus.ste.dma.drain();
-        ym.iter()
+        let mut out: Vec<f32> = ym
+            .iter()
             .zip(dma)
-            .flat_map(|(&y, [l, r, gl, gr])| {
-                [(l + y * gl).clamp(-1.0, 1.0), (r + y * gr).clamp(-1.0, 1.0)]
-            })
-            .collect()
+            .flat_map(|(&y, [l, r, gl, gr])| [l + y * gl, r + y * gr])
+            .collect();
+        // [D] the tone controls come after the input select and before the volume; the volume is already in the samples, and the
+        // filters are linear, so the order only matters while a gain changes.
+        self.bus.ste.dma.apply_tone(&mut out);
+        for s in &mut out {
+            *s = s.clamp(-1.0, 1.0);
+        }
+        out
     }
 
     fn audio_format(&self) -> machine::AudioFormat {

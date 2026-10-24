@@ -142,6 +142,9 @@ pub struct DmaSound {
     at: u64,
     /// Output samples: DMA left and right and the YM's gains, already scaled by the volume control.
     samples: VecDeque<[f32; 4]>,
+    /// The tone controls' filters (the last samples only: not part of a state).
+    #[serde(skip)]
+    tone: crate::tone::Tone,
 }
 
 impl DmaSound {
@@ -346,6 +349,11 @@ impl DmaSound {
         self.frames += 1;
         let target = PREFETCH + 2 * self.stream.div_ceil(2);
         self.fetch_to(target, at, events);
+    }
+
+    /// Passes interleaved stereo `samples` through the bass and treble controls ([D] LMC1992/3, see `tone.rs`).
+    pub fn apply_tone(&mut self, samples: &mut [f32]) {
+        self.tone.apply(self.lmc.bass, self.lmc.treble, samples);
     }
 
     /// The samples taken so far (DMA left, right, YM gains left, right), removed.

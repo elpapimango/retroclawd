@@ -176,7 +176,9 @@ modified by being read. Never committed; without the variable the tests pass and
   ADJ, the reset register's alarm and divider bits, the leap year counter as a counter, the bank 1 map and the bits each register has;
   the mode register's bit 1 reads 0. LMC1992: the stream is at least 11 bits (address `%10` first, the last nine the function and data),
   a fader has five data bits, and it **powers up silent** (minimum volume and faders), so a program that wants to be heard sets them
-  (`scenarios/ste_tone.s` and `tests/ste_sound.rs` do; TOS does at boot). Bass and treble are still not filtered.
+  (`scenarios/ste_tone.s` and `tests/ste_sound.rs` do; TOS does at boot). Bass and treble are first-order shelves (`src/tone.rs`,
+  `tests/tone.rs`): the sheet's turnover and inflection frequencies and its +-12 dB at 50 Hz / 15 kHz agree on one model, the board's
+  capacitors are assumed to be the sheet's standard circuit.
 
 ## Resolution switches along a line (2026-10-24, P35)
 
