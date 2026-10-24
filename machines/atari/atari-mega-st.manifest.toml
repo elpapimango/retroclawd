@@ -19,5 +19,5 @@ golden = "atari-megast/timing/p32.bin"
 golden_sha256 = "ca4e50d488dab70268a74d0c2c4dfef838167002291cb154bcc30f880b81d234"
 compare = { mode = "exact" }
 status = "known-gap"
-gap = { reason = "Hatari's time registers follow the host clock and its bank 1 has no alarm registers but 2 and 3; ours counts machine time from rtc_time", evidence = "timing_probes p32_the_clock_registers_that_do_not_follow_the_host_read_back_as_in_hatari (mode, test, reset and alarm registers 2 and 3 equal)" }
+gap = { reason = "Hatari's time registers follow the host clock and its bank 1 has no alarm registers but 2 and 3; ours counts machine time from rtc_time; three more differences follow the RP5C15 data sheet and not Hatari: the mode register's bit 1 reads 0, the 10-minute alarm register has three bits, bank 1 registers 0, 1, 9 and 12 are not the time", evidence = "timing_probes p32_the_clock_registers_that_do_not_follow_the_host_read_back_as_in_hatari (mode, test, reset and alarm registers 2 and 3 equal)" }
 

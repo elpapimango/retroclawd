@@ -26,6 +26,8 @@ inventing a value.
 | *MC6850* | Motorola MC6850 data sheet (DS9493R, 1985), https://docs.ampnuts.ru/eevblog.docs/Tektronix/TLA_Ensoniq/Datasheets/MC6850.pdf (SHA-256 `294a8b9f557d03a2a7f4d736d060244f39216dad2d5479d2e47954feb4f34655`) |
 | *IKBD* | Atari, *Intelligent Keyboard (ikbd) Protocol*, revised 26 February 1985, scan in https://bitsavers.org/pdf/atari/ST/Atari_ST_GEM_Programming_1986/GEM_0883.pdf (SHA-256 `9f216bf7a02b9141b2bc3a9bb97225c18149d261aae4059b186e3119d3779d82`) |
 | *WD177X* | Western Digital WD177X-00 data sheet, *1986 Storage Management Products Handbook* pp.1-1 to 1-26, https://bitsavers.org/components/westernDigital/_dataBooks/1986_Storage_Management_Products_Handbook.pdf (SHA-256 `72382885abfde5cdee875384aed7ca97c17112db047d7792d3a4b4d3ed0c895f`) |
+| *RP5C15* | Ricoh RP/RF/RJ5C15 Real-Time Clock, No. EK-086-9908, June 1995 (owner's copy `docs/RP5C15.pdf`, not committed; SHA-256 `70d5df25f6106491657460d9b88375b28b9cca8cc29bfe0cb59dea7ee8e35414`) |
+| *LMC1992* | National Semiconductor LMC1992/LMC1993 Computer Controlled Tone and Volume Circuits, advance information (owner's copy `docs/LMC1993.pdf`, not committed; SHA-256 `245647c3a2ca7e5d11cec36720f5da564746f1d86ed7145e23ec16b9064f07db`) |
 | *YM2149* | Yamaha YM2149 catalog, September 1992, https://bitsavers.org/components/yamaha/YM2149_199209.pdf (SHA-256 `a4b946bf525fc1a7c6dec9e7662ce2342d3a3c627f980c7c3b1a396df7e91d20`) |
 
 The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 403 from cpcwiki); every `[H?]` and
@@ -388,7 +390,11 @@ Register map `[H]` *Atari ST Internals* (the STE chapter); the behaviour is `[O]
 | Empty frame | with the end not past the base the play bit stays set in loop mode and clears at once for play once; nothing is played | `[O]`/`[H?]` | P29 (register read-back), the rest is the choice |
 | Writes while playing | a change of base or end acts at once; a change of the mode restarts the frame timer | `[H?]` | |
 | Memory | the DMA reads RAM, ROM and the cartridge; the I/O area and nothing-fitted read `$FF`; no stop, no write | `[H?]` | |
-| Volume control | the Microwire word shifted out through the mask's set bits, eleven of them, device `%10` then command: mixer, bass, treble, master volume (0-40), right and left volume (0-20); applied when the data is written; 2 dB a step; the YM at full level for mixer 1, 12 dB down for 0, off for 2-3; bass and treble not modelled | `[H]`/`[H?]` | Internals' table; the dB steps and the mixer meaning are the LM1992 data sheet from memory: not verified |
+| Volume control | the Microwire word shifted out through the mask's set bits, at least eleven of them: the first two the address `%10` (another address or fewer than eleven bits changes nothing), then optional don't-care bits, the last nine a function (`%000` input select and loudness, `%001` bass, `%010` treble, `%011` volume, `%100` right front fader, `%101` left front fader) and six data bits; applied when the data is written | `[D]` | *LMC1992* Serial Data Entry and Table I; Internals' table for which registers the ST wires |
+| Steps | volume D5-D0: 0 = -80 dB to 40 = 0 dB, 2 dB a step (40 to 47 are 0 dB); each front fader D4-D0 (D5 is a don't care): 0 = -40 dB to 20 = 0 dB, 2 dB a step; bass and treble D3-D0: 0 = -12 dB, 6 = flat, 12 = +12 dB, 2 dB a step; the sum of master and fader is the channel gain | `[D]` | *LMC1992* Table I and note 4 |
+| Power-up | flat tone, minimum volume (-80 dB) and minimum faders (-40 dB): silent until a program sets them; a reset of the machine does not change it | `[D]` / `[H?]` | *LMC1992* features; the reset is not in the sheet (the chip has no reset input) |
+| Input select | data D3 loudness, D2-D0 the input (0 open, 1-4 inputs); the ST wires it as a mixer of the YM and the DMA sound: the YM at full level for 1, 12 dB down for 0, off for 2-3 | `[D]` for the field, `[H?]` for the ST's meaning | *LMC1992* Table I; Internals' wording is not in hand |
+| Tone | bass and treble are stored but do not filter the sound | `[H?]` | the sheet gives the range (+-12 dB at 50 Hz and 15 kHz) but its curves are tentative graphs |
 | Audio | 44 100 Hz stereo: a zero-order hold of the frame last played, plus the YM through the volume control; the queue keeps two seconds | | |
 
 ### STE enhanced joystick ports (Phase 4)
@@ -408,8 +414,10 @@ so only the rest state and the write behaviour are observed; the bits a held but
 
 An RP5C15 at `$FFFC20-$FFFC3F`; `[O]` Hatari 2.6.1 `--machine megast` (probe P32, a scan of the area, and EmuTOS's own accesses
 in the I/O log). Hatari's time registers follow the host clock, so only the other registers are compared; here the time is
-the plugin option `rtc_time` counted in machine time (`rtc_mode = stopped` freezes it). No data sheet was to hand: what Hatari
-does not show is `[H?]`.
+the plugin option `rtc_time` counted in machine time (`rtc_mode = stopped` freezes it until the program sets Timer EN). The
+*RP5C15* data sheet (address mapping, mode, 12/24, leap year, reset and ADJ descriptions) was added 2026-10-24 and settles
+what Hatari does not show; where it and Hatari differ the sheet wins and the difference is listed under "Differences from
+Hatari" below.
 
 | Fact | Value | Label | Source |
 |---|---|---|---|
@@ -418,10 +426,20 @@ does not show is `[H?]`.
 | Mode register 13 | keeps four bits, reads with the upper nibble `$F` | `[O]` | P32 |
 | Test and reset registers 14, 15 | keep four bits, read with the upper nibble 0 | `[O]` | P32 |
 | Alarm bank | bit 0 of the mode register selects bank 1; its registers 2 and 3 read back what was written with the upper nibble `$F` (`$FF`, `$F0`, `$F5`): EmuTOS writes `$0A` and `$05` there and reads them back to find the clock | `[O]` | P32, the I/O log |
-| Alarm registers 4-8, 12/24 hour select (register 10 bit 0, 1 = 24 hours), leap-year counter (register 11) | stored in bank 1, read with the upper nibble `$F`; the alarm does nothing (not wired on the ST) | `[H?]` | the chip's layout as remembered; Hatari returns the time there |
-| Writes to the time | a digit write takes effect when it makes a valid field, else it is ignored; the weekday follows the date | `[H?]` | Hatari ignores all time writes |
-| 12 hour mode | the hour shows 1-12 with bit 1 of the tens digit set for PM | `[H?]` | |
+| Bank 1 map | 0 clock output select (three bits), 1 ADJ, 2 and 3 minute alarm, 4 and 5 hour alarm, 6 weekday alarm, 7 and 8 day alarm, 9 and 12 nothing (read 0), 10 12/24 hour select, 11 leap year counter, 13-15 as in bank 0; a register keeps only the bits the chip has (3: 3, 5: 2, 6: 3, 8: 2 bits) and reads with the upper nibble `$F`; the alarm does nothing (not wired on the ST) | `[D]` | *RP5C15* address mapping; Hatari returns the time at 0, 1, 4-9 and 12 |
+| Mode register bits | D3 Timer EN, D2 Alarm EN, D1 not implemented (reads 0), D0 bank 1 | `[D]` | *RP5C15* MODE register |
+| Timer EN | clear: the seconds counter and everything above it hold, the carry from the divider below is held too, so a pause shorter than a second loses nothing; set again: counting goes on from the held part of the second. The clock the option stopped starts when Timer EN is set. Power-on state of the bit is not in the sheet: the clock runs until a program clears the bit | `[D]` / `[H?]` | *RP5C15* MODE register note |
+| 12/24 hour select | register 10 bit 0: 1 = 24 hours, 0 = 12 hours; in 12 hour mode the 10-hour digit's bit 1 is set for p.m. | `[D]` | *RP5C15* 12/24 select register |
+| Hour 0 in 12 hour mode | shows 12 (a.m.) | `[H?]` | the sheet does not give the hour 12 and 0 cases |
+| Leap year counter | register 11 bits 1-0, leap year at 0, counts in step with the year counter; reads `(year + offset) mod 4`, a write sets the offset; the calendar here is always the true one (a counter set out of step does not change February) | `[D]` / `[H?]` | *RP5C15* leap year counter |
+| ADJ | bank 1 register 1 bit 0 written 1: seconds 00-29 become 00, 30-59 become 00 with a carry into the minutes; the divider below the seconds starts again; the bit reads 0 (the sheet's 100 us completion time is not modelled) | `[D]` / `[H?]` | *RP5C15* ADJ |
+| Reset register 15 | bit 0 set clears all alarm registers, bit 1 set restarts the divider below the seconds counter; bits 2 and 3 are the 16 Hz and 1 Hz outputs (not wired); the register keeps its four bits and reads them back (the sheet says write only) | `[D]` / `[O]` | *RP5C15* reset controller; P32 |
+| Writes to the time | a digit write takes effect when it makes a valid field, else it is ignored; the weekday follows the date | `[H?]` | the sheet does not say what an invalid digit does; Hatari ignores all time writes |
 | Range | 1980 to 2079 | `[H]` | the year register is two digits since 1980 |
+
+Differences from Hatari 2.6.1, all following the data sheet: the mode register's bit 1 reads 0 (Hatari keeps it); the 10-minute
+alarm register has three bits (Hatari four); bank 1 registers 0, 1, 9 and 12 are the clock output select, ADJ and nothing (Hatari
+returns the time); Timer EN, ADJ and the reset register's bits 0 and 1 act (Hatari ignores them).
 
 ### Blitter on the bus (Phase 4)
 

@@ -79,7 +79,8 @@ fn the_mode_test_and_reset_registers_keep_four_bits_and_the_alarm_bank_shows_wit
     let mut rtc = Rtc::default();
     for v in 0..16u32 {
         rtc.access(reg(13), false, Some(v), 0, HZ);
-        assert_eq!(rtc.access(reg(13), false, None, 0, HZ), 0xF0 | v);
+        // [D] bit 1 of the mode register is not implemented: it reads 0 (Hatari keeps it)
+        assert_eq!(rtc.access(reg(13), false, None, 0, HZ), 0xF0 | v & !2);
     }
     rtc.access(reg(14), false, Some(0xFF), 0, HZ);
     assert_eq!(rtc.access(reg(14), false, None, 0, HZ), 0x0F);
@@ -194,5 +195,114 @@ fn emutos_reads_the_clock_it_was_given() {
     };
     for (r, want) in [(0, 6), (2, 5), (4, 4), (6, 6), (11, 1), (12, 2)] {
         assert_eq!(value(r), Some(want), "register {r}");
+    }
+}
+
+fn write(rtc: &mut Rtc, r: u32, v: u32, now: u64) {
+    rtc.access(reg(r), false, Some(v), now, HZ);
+}
+
+fn read(rtc: &mut Rtc, r: u32, now: u64) -> u32 {
+    rtc.access(reg(r), false, None, now, HZ)
+}
+
+#[test]
+fn clearing_timer_en_holds_the_clock_and_setting_it_carries_on_from_the_same_part_of_the_second() {
+    let mut rtc = Rtc::default();
+    at(&mut rtc, "2026-10-23 08:43:55");
+    write(&mut rtc, 13, 8, 0);
+    // 0.75 s in: still second 55; clear Timer EN, wait ten seconds, set it again
+    let t0 = HZ * 3 / 4;
+    write(&mut rtc, 13, 0, t0);
+    let t1 = t0 + 10 * HZ;
+    assert_eq!(read(&mut rtc, 0, t1), 5, "held at 55");
+    write(&mut rtc, 13, 8, t1);
+    // a quarter of a second after the restart the held three quarters are complete: second 56
+    assert_eq!(read(&mut rtc, 0, t1 + (HZ - t0) - 1) & 0xF, 5);
+    assert_eq!(read(&mut rtc, 0, t1 + (HZ - t0)) & 0xF, 6);
+}
+
+#[test]
+fn a_clock_the_option_stopped_starts_when_timer_en_is_set() {
+    let mut rtc = Rtc::default();
+    rtc.set_time(parse_time("2001-02-03 04:05:06").unwrap(), 0, false);
+    write(&mut rtc, 13, 8, 100);
+    assert_eq!(read(&mut rtc, 0, 100 + HZ) & 0xF, 7);
+}
+
+#[test]
+fn adjust_rounds_the_seconds_to_the_minute() {
+    for (from, to) in [
+        ("2026-10-23 08:43:29", "2026-10-23 08:43:00"),
+        ("2026-10-23 08:43:30", "2026-10-23 08:44:00"),
+        ("2026-10-23 23:59:45", "2026-10-24 00:00:00"),
+    ] {
+        let mut rtc = Rtc::default();
+        at(&mut rtc, from);
+        write(&mut rtc, 13, 9, 0); // Timer EN and bank 1
+        write(&mut rtc, 1, 1, 100);
+        write(&mut rtc, 13, 8, 100);
+        let mut want = Rtc::default();
+        at(&mut want, to);
+        assert_eq!(digits(&mut rtc, 100), digits(&mut want, 0), "{from}");
+    }
+}
+
+#[test]
+fn the_reset_register_clears_the_alarm_registers_and_restarts_the_divider() {
+    let mut rtc = Rtc::default();
+    at(&mut rtc, "2026-10-23 08:43:55");
+    write(&mut rtc, 13, 9, 0);
+    write(&mut rtc, 2, 0x0A, 0);
+    write(&mut rtc, 7, 0x03, 0);
+    write(&mut rtc, 15, 1, 0);
+    assert_eq!(read(&mut rtc, 2, 0), 0xF0);
+    assert_eq!(read(&mut rtc, 7, 0), 0xF0);
+    // three quarters of a second in, the divider restarts: the next second is a whole second later
+    write(&mut rtc, 13, 8, 0);
+    write(&mut rtc, 15, 2, HZ * 3 / 4);
+    assert_eq!(read(&mut rtc, 0, HZ * 3 / 4 + HZ - 1) & 0xF, 5);
+    assert_eq!(read(&mut rtc, 0, HZ * 3 / 4 + HZ) & 0xF, 6);
+}
+
+#[test]
+fn the_leap_year_counter_follows_the_year_and_can_be_set() {
+    let mut rtc = Rtc::default();
+    at(&mut rtc, "2028-02-28 12:00:00");
+    write(&mut rtc, 13, 9, 0);
+    assert_eq!(
+        read(&mut rtc, 11, 0),
+        0xF0,
+        "2028 is a leap year: counter 0"
+    );
+    // a year later the counter is 1
+    assert_eq!(read(&mut rtc, 11, 366 * 86_400 * HZ), 0xF1);
+    write(&mut rtc, 11, 3, 0);
+    assert_eq!(read(&mut rtc, 11, 0), 0xF3);
+    assert_eq!(read(&mut rtc, 11, 366 * 86_400 * HZ), 0xF0);
+}
+
+#[test]
+fn bank_1_registers_without_a_register_read_zero_and_the_digit_registers_keep_their_bits() {
+    let mut rtc = Rtc::default();
+    at(&mut rtc, "2026-10-23 08:43:55");
+    write(&mut rtc, 13, 9, 0);
+    for r in [1, 9, 12] {
+        write(&mut rtc, r, 0, 0);
+        assert_eq!(read(&mut rtc, r, 0), 0xF0, "register {r}");
+    }
+    write(&mut rtc, 0, 0xF, 0);
+    assert_eq!(
+        read(&mut rtc, 0, 0),
+        0xF7,
+        "the clock output select has three bits"
+    );
+    for (r, bits) in [(2, 4), (3, 3), (4, 4), (5, 2), (6, 3), (7, 4), (8, 2)] {
+        write(&mut rtc, r, 0xF, 0);
+        assert_eq!(
+            read(&mut rtc, r, 0),
+            0xF0 | ((1 << bits) - 1),
+            "register {r}"
+        );
     }
 }

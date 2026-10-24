@@ -3,16 +3,23 @@
 //! The sixteen four-bit registers sit at the odd addresses `$FFFC21 + 2n`. [O] Hatari 2.6.1 (probe P32 and a scan of the
 //! area): the even addresses read `$FF`, nothing bus-errors; in bank 0 registers 0-12 are the time (seconds, minutes, hours,
 //! weekday, day, month, year since 1980, ones digit then tens digit) and read with the upper nibble 0; the mode register 13
-//! keeps all four bits and reads with the upper nibble `$F`; the test and reset registers 14 and 15 keep four bits. [H?] The
-//! rest is the chip's documented layout as remembered (no data sheet to hand): bit 0 of the mode register selects bank 1, the
-//! alarm registers (minutes 2-3, hours 4-5, weekday 6, day 7-8) and the 12/24 hour select (register 10, bit 0 set = 24 hours)
-//! live there and read with the upper nibble `$F` as Hatari's registers 2 and 3 do; the alarm output is not wired on the ST,
-//! so alarms are stored and do nothing. Hatari's clock is the host's; this one counts machine time from the time the
-//! plugin option `rtc_time` gives (or stands still, `rtc_mode = stopped`) and never reads a wall clock.
+//! keeps all four bits and reads with the upper nibble `$F`; the test and reset registers 14 and 15 keep four bits.
+//! [D] The rest is the Ricoh RP/RF/RJ5C15 data sheet (EK-086-9908, June 1995, `docs/RP5C15.pdf`): bit 0 of the mode register
+//! selects bank 1 (alarm registers 2-8, clock output select 0, ADJ 1, 12/24 hour select 10 with bit 0 set = 24 hours, leap year
+//! counter 11), bit 3 is Timer EN (clear: the seconds counter and everything above it hold, the carry from below is held
+//! too, so a pause under a second loses nothing), bit 1 is not implemented and reads 0, and the reset register 15 clears the
+//! alarm registers (bit 0) and the divider below the seconds (bit 1). Bank 1 registers read with the upper nibble `$F` as
+//! Hatari's registers 2 and 3 do ([O]); the alarm output is not wired on the ST, so alarms are stored and do nothing.
+//! Hatari's clock is the host's; this one counts machine time from the time the plugin option `rtc_time` gives (or stands
+//! still, `rtc_mode = stopped`) and never reads a wall clock.
 
 use serde::{Deserialize, Serialize};
 
 const SECS_PER_DAY: u64 = 86_400;
+
+/// The bits each bank 1 alarm register has, by register number (2-8): the digit registers whose tens (or weekday) need
+/// fewer than four bits do not hold the others ([D] data sheet, address mapping).
+const ALARM_MASK: [u8; 9] = [0, 0, 0xF, 0x7, 0xF, 0x3, 0x7, 0xF, 0x3];
 
 /// Days from 1970-01-01 to a civil date (proleptic Gregorian).
 fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
@@ -83,16 +90,18 @@ const MAX_SECS: u64 = 100 * 366 * SECS_PER_DAY;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rtc {
-    /// The seconds since 1980-01-01 00:00:00 at CPU cycle `base_cycle`.
+    /// The seconds since 1980-01-01 00:00:00 at CPU cycle `base_cycle`. While the clock does not run (the option, or Timer EN
+    /// clear) `base_cycle` holds the CPU cycles already counted of the current second, which Timer EN set carries on from.
     base_secs: u64,
     base_cycle: u64,
     running: bool,
     mode: u8,
     test: u8,
     reset: u8,
-    /// The alarm registers (bank 1), by register number.
+    /// The bank 1 registers 0 (clock output select) and 2-8 (alarm), by register number.
     alarm: [u8; 13],
     hour24: bool,
+    /// The leap year counter minus the year counter, modulo 4: the counter reads `(year + leap) % 4`, a leap year at 0.
     leap: u8,
 }
 
@@ -126,8 +135,36 @@ impl Rtc {
     /// Sets the clock to `secs` seconds after 1980-01-01 00:00:00 at cycle `now`; `running` false freezes it there.
     pub fn set_time(&mut self, secs: u64, now: u64, running: bool) {
         self.base_secs = secs.min(MAX_SECS - 1);
-        self.base_cycle = now;
+        self.base_cycle = if running { now } else { 0 };
         self.running = running;
+    }
+
+    /// Timer EN went from set to clear (hold, keeping the part of the second counted) or from clear to set (carry on).
+    fn timer_enable(&mut self, on: bool, now: u64, clock_hz: u64) {
+        let hz = clock_hz.max(1);
+        if !on && self.running {
+            let elapsed = now.saturating_sub(self.base_cycle);
+            self.base_secs = (self.base_secs + elapsed / hz) % MAX_SECS;
+            self.base_cycle = elapsed % hz;
+            self.running = false;
+        } else if on && !self.running {
+            self.base_cycle = now.saturating_sub(self.base_cycle.min(hz - 1));
+            self.running = true;
+        }
+    }
+
+    /// The divider below the seconds counter starts again (the next second comes a whole second from `now`).
+    fn reset_divider(&mut self, now: u64, clock_hz: u64) {
+        self.base_secs = self.seconds(now, clock_hz);
+        self.base_cycle = if self.running { now } else { 0 };
+    }
+
+    /// ADJ: seconds 00-29 go to 00, 30-59 to 00 with a carry into the minutes; the divider below starts again.
+    fn adjust(&mut self, now: u64, clock_hz: u64) {
+        let secs = self.seconds(now, clock_hz);
+        let sec = secs % 60;
+        self.base_secs = (secs - sec + if sec >= 30 { 60 } else { 0 }) % MAX_SECS;
+        self.base_cycle = if self.running { now } else { 0 };
     }
 
     /// The seconds since 1980-01-01 00:00:00 at cycle `now`.
@@ -181,13 +218,14 @@ impl Rtc {
             }
         };
         match n {
-            13 => 0xF0 | self.mode,
+            13 => 0xF0 | self.mode & !2,
             14 => self.test,
             15 => self.reset,
-            0 | 1 | 9 | 12 if self.bank1() => time(n),
+            0 if self.bank1() => 0xF0 | self.alarm[0],
+            1 | 9 | 12 if self.bank1() => 0xF0,
             2..=8 if self.bank1() => 0xF0 | self.alarm[n],
             10 if self.bank1() => 0xF0 | u8::from(self.hour24),
-            11 if self.bank1() => 0xF0 | self.leap,
+            11 if self.bank1() => 0xF0 | (f.year as u8).wrapping_add(self.leap) & 3,
             _ => time(n),
         }
     }
@@ -195,13 +233,35 @@ impl Rtc {
     fn write_reg(&mut self, n: usize, v: u8, now: u64, clock_hz: u64) {
         let v = v & 0x0F;
         match n {
-            13 => self.mode = v,
+            13 => {
+                if (self.mode ^ v) & 8 != 0 {
+                    self.timer_enable(v & 8 != 0, now, clock_hz);
+                }
+                self.mode = v;
+            }
             14 => self.test = v,
-            15 => self.reset = v,
-            2..=8 if self.bank1() => self.alarm[n] = v,
+            15 => {
+                self.reset = v;
+                if v & 1 != 0 {
+                    self.alarm = [0; 13];
+                }
+                if v & 2 != 0 {
+                    self.reset_divider(now, clock_hz);
+                }
+            }
+            0 if self.bank1() => self.alarm[0] = v & 7,
+            1 if self.bank1() => {
+                if v & 1 != 0 {
+                    self.adjust(now, clock_hz);
+                }
+            }
+            2..=8 if self.bank1() => self.alarm[n] = v & ALARM_MASK[n],
             10 if self.bank1() => self.hour24 = v & 1 != 0,
-            11 if self.bank1() => self.leap = v & 3,
-            0 | 1 | 9 | 12 if self.bank1() => {}
+            11 if self.bank1() => {
+                let year = fields(self.seconds(now, clock_hz)).year as u8;
+                self.leap = (v & 3).wrapping_sub(year) & 3;
+            }
+            9 | 12 if self.bank1() => {}
             _ => self.write_time(n, v, now, clock_hz),
         }
     }
@@ -254,7 +314,7 @@ impl Rtc {
             && f.day <= days_in_month(f.year, f.month);
         if valid {
             self.base_secs = secs_of(f);
-            self.base_cycle = now;
+            self.base_cycle = if self.running { now } else { 0 };
         }
     }
 

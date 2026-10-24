@@ -49,22 +49,26 @@ pub struct Lmc {
 }
 
 impl Default for Lmc {
-    /// [H?] full volume and the YM mixed in: what EmuTOS sets, so a program that never touches the chip is heard.
+    /// [D] the LMC1992/3 "powers up with flat tone and min volume/fader" (data sheet, features): tone 6 is flat, volume 0 is
+    /// -80 dB and the faders 0 are -40 dB each. The input select at power-up is not in the sheet; [H?] the YM mixed in (1),
+    /// what TOS sets.
     fn default() -> Self {
         Self {
             mixer: 1,
             bass: 6,
             treble: 6,
-            master: 40,
-            right: 20,
-            left: 20,
+            master: 0,
+            right: 0,
+            left: 0,
         }
     }
 }
 
 impl Lmc {
-    /// Applies a Microwire word: `data` shifted out through the bits `mask` has set (most significant first) must make a
-    /// device `%10` and a command; anything else is ignored ([H] *Internals* Microwire table).
+    /// Applies a Microwire word: `data` shifted out through the bits `mask` has set (most significant first) must start with
+    /// the address `%10` and end with a 3-bit function and 6 data bits; any number of don't-care bits may come between, so a
+    /// stream of fewer than 11 bits or with another address changes nothing ([D] LMC1992/3 data sheet, "Serial Data Entry"
+    /// and Table I, `docs/LMC1993.pdf`; [H] *Internals* Microwire table for the registers it is wired to).
     pub fn microwire(&mut self, data: u16, mask: u16) {
         let mut bits = 0u32;
         let mut count = 0;
@@ -74,17 +78,19 @@ impl Lmc {
                 count += 1;
             }
         }
-        if count != 11 || bits >> 9 != 0b10 {
+        if count < 11 || bits >> (count - 2) != 0b10 {
             return;
         }
+        // The function select and the six data bits are the last nine; D5 of a fader and D5-D4 of a tone control are
+        // don't-care bits ([D] Table I).
         let operand = (bits & 0x3F) as u8;
         match bits >> 6 & 7 {
             0 => self.mixer = operand & 3,
-            1 => self.bass = operand.min(12),
-            2 => self.treble = operand.min(12),
+            1 => self.bass = (operand & 0xF).min(12),
+            2 => self.treble = (operand & 0xF).min(12),
             3 => self.master = operand.min(40),
-            4 => self.right = operand.min(20),
-            5 => self.left = operand.min(20),
+            4 => self.right = (operand & 0x1F).min(20),
+            5 => self.left = (operand & 0x1F).min(20),
             _ => {}
         }
     }

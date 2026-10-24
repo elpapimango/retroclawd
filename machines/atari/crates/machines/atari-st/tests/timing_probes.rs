@@ -1641,15 +1641,19 @@ fn p32_the_clock_registers_that_do_not_follow_the_host_read_back_as_in_hatari() 
             "bank {bank}: reset register"
         );
     }
-    for reg in [2usize, 3] {
-        let at = |b: &[u8]| b[4 + 48 + 3 * reg..4 + 48 + 3 * reg + 3].to_vec();
+    // Two differences from Hatari follow the RP5C15 data sheet (docs/RP5C15.pdf): the 10-minute alarm register (3) has three
+    // bits, Hatari keeps four; bit 1 of the mode register is not implemented and reads 0, Hatari keeps it.
+    for (reg, mask) in [(2usize, 0xFFu8), (3, 0xF7)] {
+        let at = |b: &[u8]| {
+            b[4 + 48 + 3 * reg..4 + 48 + 3 * reg + 3]
+                .iter()
+                .map(|v| v & mask)
+                .collect::<Vec<_>>()
+        };
         assert_eq!(at(&ours), at(&theirs), "bank 1: alarm register {reg}");
     }
-    assert_eq!(
-        &ours[100..116],
-        &theirs[100..116],
-        "the mode register's read-back"
-    );
+    let mode = |b: &[u8]| b[100..116].iter().map(|v| v & !2).collect::<Vec<_>>();
+    assert_eq!(mode(&ours), mode(&theirs), "the mode register's read-back");
 }
 
 /// P34's records: (iterations, control byte, GPIP) for frames 2 to 106.

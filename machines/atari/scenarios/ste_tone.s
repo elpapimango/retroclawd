@@ -22,6 +22,17 @@ low:
     clr.b   $ff8911
     move.b  #$40,$ff8913
     move.b  #$03,$ff8921        ; stereo, 50066 Hz
+    ; the LMC1992 powers up with minimum volume and faders (data sheet): master 0 dB, both front faders 0 dB
+    move.w  #$07ff,$ff8924      ; Microwire mask
+    move.w  #$04e8,$ff8922      ; %10 address, volume (%011), 40
+mw0:  tst.w    $ff8922            ; wait until the command is shifted out
+    bne.s   mw0
+    move.w  #$0554,$ff8922      ; left front fader (%101), 20
+mw1:  tst.w    $ff8922            ; wait until the command is shifted out
+    bne.s   mw1
+    move.w  #$0514,$ff8922      ; right front fader (%100), 20
+mw2:  tst.w    $ff8922            ; wait until the command is shifted out
+    bne.s   mw2
     move.b  #$03,$ff8901        ; play, repeat
 forever:
     bra.s   forever

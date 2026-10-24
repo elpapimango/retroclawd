@@ -27,6 +27,20 @@ fn mw(imm: u16, addr: u32) -> [u16; 4] {
 
 const DMA: u32 = 0xFF_8900;
 
+/// A Microwire command (mask `$07FF`): the LMC1992 powers up with minimum volume and faders, so a program that wants to be
+/// heard sets them.
+fn microwire(function: u16, value: u16) -> [u16; 8] {
+    let mut c = [0; 8];
+    c[..4].copy_from_slice(&mw(0x07FF, DMA + 0x24));
+    c[4..].copy_from_slice(&mw((0b10 << 9) | (function << 6) | value, DMA + 0x22));
+    c
+}
+
+/// Master volume `master` (0 to 40) and both faders at 0 dB.
+fn volume(master: u16) -> Vec<u16> {
+    [microwire(3, master), microwire(4, 20), microwire(5, 20)].concat()
+}
+
 /// Fills `data` at `$20000`, sets the frame `$20000..$20000+len`, the mode and starts playing in loop mode.
 fn play_program(data: &[u8], mode: u8, extra: &[u16]) -> Vec<u16> {
     let mut p = Vec::new();
@@ -77,7 +91,7 @@ fn an_ste_makes_stereo_audio() {
 fn a_stereo_frame_plays_left_and_right_apart() {
     // stereo (bit 7 clear), 50 kHz: left +64, right -64 for ever
     let data: Vec<u8> = (0..64).flat_map(|_| [0x40u8, 0xC0]).collect();
-    let mut m = machine(&play_program(&data, 0x03, &[]));
+    let mut m = machine(&play_program(&data, 0x03, &volume(40)));
     run_frames(&mut m, 4);
     let audio = m.drain_audio();
     assert!(audio.len() > 4000, "{}", audio.len());
@@ -91,7 +105,7 @@ fn a_stereo_frame_plays_left_and_right_apart() {
 #[test]
 fn a_mono_frame_plays_on_both_channels() {
     let data = vec![0x20u8; 64];
-    let mut m = machine(&play_program(&data, 0x83, &[]));
+    let mut m = machine(&play_program(&data, 0x83, &volume(40)));
     run_frames(&mut m, 4);
     let audio = m.drain_audio();
     let (l, r) = (peak(&audio, 0), peak(&audio, 1));
@@ -104,9 +118,7 @@ fn a_mono_frame_plays_on_both_channels() {
 #[test]
 fn the_microwire_master_volume_scales_the_output_by_two_decibels_a_step() {
     // mask $07FF, data device %10, command %011 (master volume), 20: 40 dB down
-    let mut extra = Vec::new();
-    extra.extend(mw(0x07FF, DMA + 0x24));
-    extra.extend(mw((0b10 << 9) | (0b011 << 6) | 20, DMA + 0x22));
+    let extra = volume(20);
     let data = vec![0x40u8; 64];
     let mut m = machine(&play_program(&data, 0x83, &extra));
     run_frames(&mut m, 4);
@@ -167,4 +179,27 @@ fn the_state_round_trips_while_playing_and_playing_goes_on() {
         b.drain_audio(),
         "a restored machine plays the same samples"
     );
+}
+
+#[test]
+fn the_volume_control_powers_up_with_minimum_volume_and_a_fader_ignores_its_sixth_bit() {
+    // [D] LMC1992/3 data sheet: "powers up with flat tone and min volume/fader"; a fader's D5 is a don't-care bit
+    let data = vec![0x40u8; 64];
+    let mut m = machine(&play_program(&data, 0x83, &[]));
+    run_frames(&mut m, 4);
+    assert!(
+        peak(&m.drain_audio(), 0).abs() < 0.001,
+        "silent until the program sets the volume"
+    );
+    // master 40, left fader sent as 0b100000 (D5 set, data 0): -40 dB, silent; sent as 0b100000 | 20: 0 dB
+    for (fader, audible) in [(0x20u16, false), (0x20 | 20, true)] {
+        let mut extra = Vec::new();
+        extra.extend(microwire(3, 40));
+        extra.extend(microwire(5, fader));
+        extra.extend(microwire(4, 20));
+        let mut m = machine(&play_program(&data, 0x83, &extra));
+        run_frames(&mut m, 4);
+        let l = peak(&m.drain_audio(), 0);
+        assert_eq!(l.abs() > 0.1, audible, "fader {fader:#x}: {l}");
+    }
 }

@@ -164,6 +164,15 @@ modified by being read. Never committed; without the variable the tests pass and
 - The USART has parity, framing and break flags (`mc68901::RxFault`, `AtariSt::rs232_receive_fault`; [H?] semantics: each
   flag describes the character in the buffer, all raise the receive error). No peer produces them yet.
 - The RomM games boot on the Mega ST and the STE in both modes (`tests/romm_games.rs`).
-- Not done: the second look at 13 known-gap probes (only P19 was analysed), P35, Hatari's other wake-up states (P04 differs from
-  ws3 by 2-4 clocks of counter in ws2/ws4 and everywhere in ws1: each needs its own fit), an ACSI save action in the host, the
-  RP5C15 and LMC1992 data sheets.
+- Since: the second look at the 13 known-gap probes (2026-10-23, none closed), the host ACSI save action and the RP5C15 and
+  LMC1992 data sheets (below) are done. Not done: P35 and Hatari's other wake-up states (P04 differs from ws3 by 2-4 clocks of
+  counter in ws2/ws4 and everywhere in ws1: each needs its own fit, with no hardware source).
+
+## Data sheets added 2026-10-24
+
+- The RP5C15 (`docs/RP5C15.pdf` in the application repository) and LMC1992/3 (`docs/LMC1993.pdf`) data sheets are in; the PDFs are
+  never committed, `docs/hardware-facts.md` cites them by SHA-256. RTC: Timer EN holds the clock (and keeps the part of the second),
+  ADJ, the reset register's alarm and divider bits, the leap year counter as a counter, the bank 1 map and the bits each register has;
+  the mode register's bit 1 reads 0. LMC1992: the stream is at least 11 bits (address `%10` first, the last nine the function and data),
+  a fader has five data bits, and it **powers up silent** (minimum volume and faders), so a program that wants to be heard sets them
+  (`scenarios/ste_tone.s` and `tests/ste_sound.rs` do; TOS does at boot). Bass and treble are still not filtered.
