@@ -177,3 +177,11 @@ modified by being read. Never committed; without the variable the tests pass and
   the mode register's bit 1 reads 0. LMC1992: the stream is at least 11 bits (address `%10` first, the last nine the function and data),
   a fader has five data bits, and it **powers up silent** (minimum volume and faders), so a program that wants to be heard sets them
   (`scenarios/ste_tone.s` and `tests/ste_sound.rs` do; TOS does at boot). Bass and treble are still not filtered.
+
+## Resolution switches along a line (2026-10-24, P35)
+
+- A colour line is drawn whole in one resolution: the register's value 464 clocks into it (`Shifter::line_resolution`, `RES_SAMPLE_CLOCK`;
+  Hatari 2.6.1 draws no part of a line in another resolution). Probes P35 and P45 (`timing/gen_p35.py`), scenarios S20 and S21 (pictures
+  against Hatari's, similarity with colour mapping; P35 equal on every line, P45 but two lines at an edge where Hatari's own timing differs
+  from run to run). `fast` mode still draws the frame in the register's last value. The per-line record is not part of a save state.
+- Not modelled: a switch to high resolution inside the picture (Hatari cuts the line short; P09 frames 16-18), lost lines (P09/P10).

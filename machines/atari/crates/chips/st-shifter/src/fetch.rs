@@ -11,6 +11,9 @@
 //! - **Left.** A line fetches 26 bytes more, before the picture, when it begins in high resolution (the register was
 //!   switched before the end of the line before) and goes back to low within 16 clocks.
 //!
+//! A line is drawn in one resolution: the register's value about 464 clocks into it (`Shifter::line_resolution`, probes P35
+//! and P45); Hatari draws no part of a line in another resolution.
+//!
 //! What is not modelled: a switch to high resolution inside the picture, which Hatari answers by cutting the line short
 //! (probe P09, frames 16 to 18), a line lost altogether (frames 91 to 119), and the 60 Hz line near the bottom of the frame
 //! (P12, line 257).

@@ -1759,3 +1759,30 @@ fn p44_the_ste_scroll_moves_the_picture_in_both_modes() {
         );
     }
 }
+
+/// P35 exploration: the clock of every resolution write of frame 700 (`RC_REPORT=1`, ignored).
+#[test]
+#[ignore]
+fn p35_report() {
+    let (Some(rom), Some(image)) = (emutos(), floppy("p35")) else {
+        return;
+    };
+    let mut m = AtariSt::new(config(rom, RamSize::M1)).unwrap();
+    m.insert_disk(0, image).unwrap();
+    while m.io_stop().is_none() && m.vbl_count() < 700 {
+        m.step();
+    }
+    while m.io_stop().is_none()
+        && m.vbl_count() == 700
+        && m.bus().shifter().sync_log().count() < 256
+    {
+        m.step();
+    }
+    for w in m.bus().shifter().sync_log() {
+        println!("w {} {} {:?} {}", w.line, w.cycle, w.register, w.value);
+    }
+    let medium: Vec<u16> = (60..300u16)
+        .filter(|&l| m.bus().shifter().line_resolution(l) == st_shifter::Resolution::Medium)
+        .collect();
+    println!("medium raster lines {medium:?}");
+}

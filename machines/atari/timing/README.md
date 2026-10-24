@@ -41,6 +41,8 @@ manifest's comparison, the tests next to it check the property each probe is abo
 | P29 `gen_p29.py` | the DMA sound: register read-back, the counter at each rate in stereo and mono, a frame end (play once, loop), timer A counting the frame ends, GPIP line 7 | 4 + 48 + 11 x 192 + 1, 1500 | `p29_*` (counter within 16 bytes) |
 | P30 `gen_p30.py` | the Microwire data register's shifting | 340, 800 | `p30_*` (known gap: the shift per read) |
 | P41 `gen_p41.py` | the DMA sound's byte rate over 6 million clocks at each rate | 4 + 5 x 4, 600 | `p41_*` |
+| P35 `gen_p35.py` | the resolution register written once on a line at a clock that moves 4 clocks a line (medium at the start and low after, or low and medium after); the picture (S20) | screenshot, 700 | `p35_*` |
+| P45 `gen_p35.py` | a medium segment whose start or end moves along the line; the picture (S21) | screenshot, 700 | `p45_*` |
 | P31 `gen_p31.py` (`scan_p31.py` finds the answering addresses) | the enhanced ports at rest and after writes | 4 + 4 x 22, 600 | `p31_*` |
 | P32 `gen_p32.py` (`scan_p32.py` scans the area; Mega ST, EmuTOS 192K, goldens in `atari-megast/timing/`) | the clock registers in both banks and the mode register | 4 + 2 x 48 + 16, 600 | `p32_*` (the registers Hatari does not take from the host) |
 | P33 `gen_p33.py` | the Blitter for 174 settings: HOP x OP, end masks, skew with FXSR/NFSR, backwards, increments, halftone line, smudge, overlap; a checksum of the area and the registers after | 4 + 174 x 20, 1500 | `p33_*` |

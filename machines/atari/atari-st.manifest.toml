@@ -580,3 +580,30 @@ golden_sha256 = "c1122cfed51ef8b3927d0fe0bd8327a66a789d1a71feb40e3250c2712d1bfba
 compare = { mode = "exact" }
 status = "known-gap"
 gap = { reason = "one effect of Hatari (the picture ends 5 lines early when 60 Hz is written on line 257) is not modelled; the counter at line 120 after the top border differs by 250 bytes", evidence = "second look 2026-10-23: no new experiment; the 60 Hz line-257 effect and lost lines are Hatari's own; p12_moves_the_picture_window_on_the_lines_hatari_does passes for lines 33, 62, 233 and 262 (vertical_report lists both)" }
+
+# S20 (probe P35, timing/p35_midline_resolution.s): the resolution register is written once on 144 lines, medium at a clock that moves 4 clocks a
+# line along the line (E1) or medium from the handler's start until a clock that moves (E2). Hatari 2.6.1 draws a line whole in the resolution
+# the register has about 464 clocks into it, and no part of a line in another: 71 lines of the picture are medium (109 to 179), the same lines
+# as ours, pixel for pixel through the colour mapping.
+[[scenario]]
+id = "S20"
+kind = "screen"
+frames = 700
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p35.st" }
+golden = "atari-st/S20-midline-resolution.png"
+golden_sha256 = "e697137391e854e15b66eb3b50e465a140f17665e69d0af0cb707a2adf05f98b"
+compare = { mode = "similarity", max_mad = 1.0, normalize = true, reason = "another emulator's picture: its colour shades differ from ours; the same lines are medium" }
+
+# S21 (probe P45, timing/p45_midline_segments.s): a medium segment on a line whose start or end moves along the line. Same rule as S20. Hatari's
+# own timing differs from run to run by a line at the edges of a block (its captures of this probe gave 90-100 and 91-100 for the first block):
+# every other line is equal, and two lines (135 and 136) differ in the one capture the golden is.
+[[scenario]]
+id = "S21"
+kind = "screen"
+frames = 700
+args = ["--accuracy", "accurate"]
+files = { disk = "atari/software/scenarios/timing/p45.st" }
+golden = "atari-st/S21-midline-segments.png"
+golden_sha256 = "10e779c913aae7e9914cb8b8d781af9f969a0b684a4f6492428856149fc51774"
+compare = { mode = "similarity", max_mad = 2.0, normalize = true, reason = "another emulator's picture: its colour shades differ from ours; two lines at the edge of a block of medium lines differ by Hatari's own timing" }

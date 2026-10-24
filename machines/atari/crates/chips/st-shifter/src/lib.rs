@@ -35,6 +35,18 @@ pub enum Resolution {
     Reserved,
 }
 
+impl Resolution {
+    /// The resolution `$FF8260` bits 1-0 select.
+    fn of(register: u8) -> Self {
+        match register & 3 {
+            0 => Resolution::Low,
+            1 => Resolution::Medium,
+            2 => Resolution::High,
+            _ => Resolution::Reserved,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Monitor {
     Colour,
@@ -98,6 +110,14 @@ pub struct SteVideo {
     pub line_extra: Vec<(u16, u8)>,
 }
 
+/// What each picture line of a frame is drawn from, by picture line `y`: where its data starts in memory (`None`: nothing is
+/// fetched and the line stays black), the pixel scroll, and the resolution it is drawn in.
+struct Lines<'a> {
+    row_at: &'a dyn Fn(u32) -> Option<u32>,
+    scroll_at: &'a dyn Fn(u32) -> u32,
+    res_at: &'a dyn Fn(u32) -> Resolution,
+}
+
 /// A picture line's palette at its start and the changes made on it: the canvas pixel each reaches, the colour index
 /// and the value, in time order.
 type LinePalette = ([u16; 16], Vec<(i32, usize, u16)>);
@@ -128,7 +148,23 @@ pub struct Shifter {
     /// The resolution and sync mode registers as the current raster line began.
     line_res: u8,
     line_sync: u8,
+    /// The resolution each raster line of the frame is drawn in, by line (`UNKNOWN_RES` for a line not seen): the register as
+    /// it stood `RES_SAMPLE_CLOCK` clocks into the line ([O] P35, `line_resolution`). Not part of the saved state: a state
+    /// loaded in the middle of a frame draws the lines before it in the register's resolution.
+    #[serde(skip)]
+    line_res_log: Vec<u8>,
+    /// The resolution of the current line as sampled so far.
+    #[serde(skip)]
+    res_sample: u8,
 }
+
+/// A raster line with no recorded resolution in `Shifter::line_res_log`.
+const UNKNOWN_RES: u8 = 0xFF;
+
+/// The clock of a line at which the resolution register decides how the line is drawn: a line is drawn in the resolution the
+/// register has at this clock, whole ([O] P35 and P45: Hatari 2.6.1, which draws no part of a line in another resolution; the
+/// lines P35 draws in medium are the same for 464 to 467 and change at 460 and 468).
+pub const RES_SAMPLE_CLOCK: u64 = 464;
 
 impl Shifter {
     /// Power-on: every register 0 except sync mode, 50 Hz on a PAL machine and 60 Hz on an NTSC one ([H?]: TOS
@@ -150,6 +186,8 @@ impl Shifter {
             ste: None,
             line_res: 0,
             line_sync: if pal { 0x02 } else { 0x00 },
+            line_res_log: Vec::new(),
+            res_sample: 0,
         }
     }
 
@@ -177,6 +215,11 @@ impl Shifter {
                 register,
                 value: value as u8 & 0x03,
             });
+            if register == SyncRegister::Resolution
+                && now.saturating_sub(self.line_start) <= RES_SAMPLE_CLOCK
+            {
+                self.res_sample = value as u8 & 0x03;
+            }
         }
         self.write(addr, word, value);
     }
@@ -201,7 +244,13 @@ impl Shifter {
             self.line_sync,
             self.sync_log.iter(),
         );
+        let finished = self.line as usize;
+        if self.line_res_log.len() <= finished {
+            self.line_res_log.resize(finished + 1, UNKNOWN_RES);
+        }
+        self.line_res_log[finished] = self.res_sample;
         self.line_res = self.resolution;
+        self.res_sample = self.resolution;
         self.line_sync = self.sync;
         self.line = new_line;
         self.fetch.start_line(new_line, self.sync & 2 == 0);
@@ -315,6 +364,16 @@ impl Shifter {
         })
     }
 
+    /// The resolution raster line `line` of this frame is drawn in: the register's value `RES_SAMPLE_CLOCK` clocks into it,
+    /// the whole line ([O] P35: Hatari does not draw a part of a line in another resolution). A line not seen (a state
+    /// loaded part way through the frame) uses the register now.
+    pub fn line_resolution(&self, line: u16) -> Resolution {
+        match self.line_res_log.get(line as usize).copied() {
+            Some(UNKNOWN_RES) | None => self.resolution(),
+            Some(r) => Resolution::of(r),
+        }
+    }
+
     /// Bytes of one 16-pixel group in the resolution now selected.
     fn group_bytes(&self) -> u16 {
         match self.resolution() {
@@ -355,6 +414,7 @@ impl Shifter {
         self.frame_palette = self.palette;
         self.changes.clear();
         self.sync_log.clear();
+        self.line_res_log.clear();
         self.fetch.reset();
         self.set_counter_adjust(0);
         if let Some(s) = self.ste.as_mut() {
@@ -477,12 +537,7 @@ impl Shifter {
     }
 
     pub fn resolution(&self) -> Resolution {
-        match self.resolution {
-            0 => Resolution::Low,
-            1 => Resolution::Medium,
-            2 => Resolution::High,
-            _ => Resolution::Reserved,
-        }
+        Resolution::of(self.resolution)
     }
 
     pub fn palette(&self) -> [u16; 16] {
@@ -507,8 +562,11 @@ impl Shifter {
             ram,
             out,
             &mut |_| (palette, Vec::new()),
-            &|line| Some(base + line * bytes_per_line),
-            &|_| scroll,
+            &Lines {
+                row_at: &|line| Some(base + line * bytes_per_line),
+                scroll_at: &|_| scroll,
+                res_at: &|_| self.resolution(),
+            },
         );
     }
 
@@ -540,8 +598,11 @@ impl Shifter {
                 }
                 (palette, Vec::new())
             },
-            &|line| Some(base + line * bytes_per_line),
-            &|_| scroll,
+            &Lines {
+                row_at: &|line| Some(base + line * bytes_per_line),
+                scroll_at: &|_| scroll,
+                res_at: &|_| self.resolution(),
+            },
         );
     }
 
@@ -586,12 +647,15 @@ impl Shifter {
                 }
                 (start, in_line)
             },
-            &|y| {
+            &Lines {
                 // The data of the raster line shown as picture line `y`: the picture may start before or after it.
-                self.picture_line((first_line + y) as u16)
-                    .map(|(offset, left)| base + offset + if left { LEFT_BYTES } else { 0 })
+                row_at: &|y| {
+                    self.picture_line((first_line + y) as u16)
+                        .map(|(offset, left)| base + offset + if left { LEFT_BYTES } else { 0 })
+                },
+                scroll_at: &|y| self.line_scroll((first_line + y) as u16),
+                res_at: &|y| self.line_resolution((first_line + y) as u16),
             },
-            &|y| self.line_scroll((first_line + y) as u16),
         );
     }
 
@@ -630,21 +694,24 @@ impl Shifter {
         ram: &dyn Fn(u32) -> u8,
         out: &mut Vec<u8>,
         palette_at: &mut dyn FnMut(u32) -> LinePalette,
-        row_at: &dyn Fn(u32) -> Option<u32>,
-        scroll_at: &dyn Fn(u32) -> u32,
+        picture: &Lines,
     ) {
+        let Lines {
+            row_at,
+            scroll_at,
+            res_at,
+        } = *picture;
         out.clear();
         out.resize((WIDTH * HEIGHT * 3) as usize, 0);
-        let (planes, width, lines) = match (self.resolution(), monitor) {
-            (Resolution::Low, Monitor::Colour) => (4, 320, 200),
-            (Resolution::Medium, Monitor::Colour) => (2, 640, 200),
-            (Resolution::High, Monitor::Mono) => (1, 640, 400),
+        // A colour monitor draws each line in its own resolution; the mono monitor has one.
+        let lines = match (self.resolution(), monitor) {
+            (Resolution::Low | Resolution::Medium, Monitor::Colour) => 200,
+            (Resolution::High, Monitor::Mono) => 400,
             _ => return,
         };
-        let x_scale = WIDTH / width;
         let y_scale = HEIGHT / lines;
         let ste = self.ste.is_some();
-        let rgb_of = |palette: &[u16; 16]| -> Vec<[u8; 3]> {
+        let rgb_of = |palette: &[u16; 16], planes: u32| -> Vec<[u8; 3]> {
             if planes == 1 {
                 let (dark, light) = ([0, 0, 0], [255, 255, 255]);
                 // [O] Hatari's mono desktop with EmuTOS' palette 0 = $777: a set bit is dark while bit 0 of palette 0 is set.
@@ -660,7 +727,17 @@ impl Shifter {
         let mut words = [0u16; 4];
         for line in 0..lines {
             let (mut palette, changes) = palette_at(line);
-            let mut rgb = rgb_of(&palette);
+            let (planes, width) = match (monitor, res_at(line)) {
+                (Monitor::Colour, Resolution::Low) => (4, 320),
+                (Monitor::Colour, Resolution::Medium) => (2, 640),
+                (Monitor::Mono, _) => (1, 640),
+                _ => {
+                    // no picture in this resolution on this monitor: the line stays black, its palette still advances
+                    continue;
+                }
+            };
+            let x_scale = WIDTH / width;
+            let mut rgb = rgb_of(&palette, planes);
             let mut change_at = 0;
             // A line that fetches nothing stays black.
             let Some(row) = row_at(line) else {
@@ -692,7 +769,7 @@ impl Shifter {
                         changed = true;
                     }
                     if changed {
-                        rgb = rgb_of(&palette);
+                        rgb = rgb_of(&palette, planes);
                     }
                     let mut index = 0usize;
                     for (p, w) in words.iter().enumerate().take(planes as usize) {

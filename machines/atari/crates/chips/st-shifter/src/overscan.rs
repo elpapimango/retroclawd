@@ -29,17 +29,18 @@ impl Shifter {
     ) {
         out.clear();
         out.resize((OVERSCAN_WIDTH * OVERSCAN_HEIGHT * 3) as usize, 0);
-        let planes = match (self.resolution(), monitor) {
-            (Resolution::Low, Monitor::Colour) => 4u32,
-            (Resolution::Medium, Monitor::Colour) => 2,
-            _ => 0,
-        };
         let base = self.video_base();
         let x0 = pixel_start - BORDER_CLOCKS;
         let mut palette = self.frame_palette;
         let mut next = 0;
         for line in 0..LINES {
             let raster = (OVERSCAN_FIRST_LINE + line) as u16;
+            // Each line is drawn in its own resolution (`Shifter::line_resolution`).
+            let planes = match (self.line_resolution(raster), monitor) {
+                (Resolution::Low, Monitor::Colour) => 4u32,
+                (Resolution::Medium, Monitor::Colour) => 2,
+                _ => 0,
+            };
             // Changes of earlier lines are folded in; those of this line are applied as the beam reaches them.
             while let Some(c) = self.changes.get(next)
                 && c.line < raster
