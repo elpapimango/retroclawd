@@ -13,6 +13,10 @@ use vdp::{DmaBus, Vdp};
 /// Master clocks of one 68000 bus cycle (4 CPU clocks).
 pub const BUS_CYCLE: u64 = 4 * M68K_DIVIDER;
 
+/// The external bus is refreshed every 128 CPU cycles and the 68000 waits 2 cycles for it (fact M16).
+pub const REFRESH_INTERVAL: u64 = 128 * M68K_DIVIDER;
+pub const REFRESH_DELAY: u64 = 2 * M68K_DIVIDER;
+
 pub const RAM_SIZE: usize = 0x1_0000;
 
 /// An access to an address no fact covers: the machine stops with this report instead of inventing a value.
@@ -62,6 +66,8 @@ pub struct Bus {
     stop: Option<Stop>,
     /// The PC of the instruction being executed, for reports.
     pub pc: u32,
+    /// The master clock at which the next bus refresh holds the 68000.
+    pub refresh_at: u64,
 }
 
 /// What a VDP DMA transfer can read: the cartridge and work RAM (fact V14). Anything else stops the machine.
@@ -109,7 +115,17 @@ impl Bus {
             sound: Sound::new(config.fm_chip),
             stop: None,
             pc: 0,
+            refresh_at: REFRESH_INTERVAL,
         }
+    }
+
+    /// The start of an external bus cycle of the 68000: a refresh that came due holds it first.
+    fn bus_cycle(&mut self) {
+        if self.now >= self.refresh_at {
+            self.refresh_at = self.now + REFRESH_INTERVAL;
+            self.now += REFRESH_DELAY;
+        }
+        self.now += BUS_CYCLE;
     }
 
     pub fn stop(&self) -> Option<&Stop> {
@@ -374,7 +390,7 @@ impl Bus {
 
 impl M68kBus for Bus {
     fn read(&mut self, addr: u32, size: Size, _fc: FunctionCode) -> Result<u32, BusFault> {
-        self.now += BUS_CYCLE;
+        self.bus_cycle();
         let value = match size {
             // A byte read from a VDP port reads the whole word and returns the half the address names ([O] P03).
             Size::Byte | Size::Word
@@ -417,7 +433,7 @@ impl M68kBus for Bus {
         value: u32,
         _fc: FunctionCode,
     ) -> Result<(), BusFault> {
-        self.now += BUS_CYCLE;
+        self.bus_cycle();
         let ok = match size {
             Size::Byte | Size::Word
                 if (0xC0_0000..0xC0_0020).contains(&addr)

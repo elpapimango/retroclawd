@@ -130,3 +130,11 @@ Rows are added in Tasks 16 and 17 from PD-YM, PD-PSG, the SpritesMind research a
 | P-VDP-DOT | H40 dot clock over a line | Phase 3 |
 
 | Cartridge area above a small ROM | A ROM repeats at its power-of-two size across `$000000-$3FFFFF`; Sonic & Knuckles (overseas name) does not: its upper 2 MB is the lock-on socket and reads `$FF` with nothing locked on, so its own lock-on check fails over to the standalone title | [O] Genesis Plus GX source reading (cart mapping) and probe `p08b_rom_map` on three cores; standalone S&K boots to the SEGA logo | `genesis/src/cart.rs` `mirror_floor` |
+
+## 9. Timing (accuracy work)
+
+| Id | Fact | Class / source | Used in |
+|---|---|---|---|
+| M16 | The 68000 loses 2 CPU cycles at the start of an external bus cycle every 128 CPU cycles (the bus refresh); the refresh interval restarts when the delay is taken, so one in 130 cycles is lost (1.5%) | [O] probe `p22_line_cycles`: 229 iterations of the loop in 20 lines on Genesis Plus GX, PicoDrive and BlastEm against 232 without; source reading: Genesis Plus GX and BlastEm both model it (128 cycles, 2 cycles) | `genesis/src/bus.rs` `bus_cycle` |
+| V20 | The V counter changes between H = $A2 and $AE of the previous line (ours: $A5); the H counter advances one step per 16 master clocks in H40 within the picture (probes `p27_hv_hint`, `p28_v_increment`: four cores agree with ours within 3 steps) | [O] probes p23, p27, p28 | `vdp/src/frame.rs` `read_hv` |
+| V21 | Open: loops that write the VDP or RAM in a tight loop measured with the H counter (`p20_fifo_stall`, `p25_loop_forms`) differ from Genesis Plus GX, BlastEm and clownmdemu by up to 15 H steps for some code alignments while matching PicoDrive; the cause is not found (not the H counter scale, not instruction timing: `p23`, `p24` agree). Ecco's and Sonic 2's title animation phases drift from Genesis Plus GX for this or a related reason; PicoDrive drifts from Genesis Plus GX more than we do | [H?] | |

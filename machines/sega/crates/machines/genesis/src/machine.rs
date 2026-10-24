@@ -230,6 +230,7 @@ impl Machine for Genesis {
                 .map_err(|e| e.to_string())?;
         self.cpu = loaded.cpu;
         self.bus.now = loaded.now;
+        self.bus.refresh_at = loaded.refresh_at;
         self.bus.ram_mut().copy_from_slice(&loaded.ram);
         self.bus.vdp = loaded.vdp;
         self.bus.io = loaded.io;

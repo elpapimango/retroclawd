@@ -52,9 +52,14 @@ def build(source, header_region="JUE", size=0):
                         os.path.join(OUT, name + ".z80.inc")], check=True)
     subprocess.run([RCASM, "-c", "68000", "-f", "bin", "--force", "-I", OUT, "-o", binary, source], check=True,
                    stdout=subprocess.DEVNULL)
+    # a line `; mkrom: --vector 28=0x300` in the source passes options to the ROM builder
+    extra = []
+    for line in open(source, encoding="utf-8"):
+        if line.startswith("; mkrom:"):
+            extra += line[len("; mkrom:"):].split()
     subprocess.run([sys.executable, "-I", os.path.join(HERE, "mkrom.py"), binary, rom, "--name", name,
                     "--region", header_region]
-                   + (["--size", str(size), "--pattern"] if size else []), check=True)
+                   + (["--size", str(size), "--pattern"] if size else []) + extra, check=True)
     return name, rom
 
 

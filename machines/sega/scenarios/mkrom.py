@@ -16,7 +16,7 @@ def field(text, size):
     return data + b" " * (size - len(data))
 
 
-def build(code, region="JUE", name="RETROCLAWD PROBE", size=0, pattern=False):
+def build(code, region="JUE", name="RETROCLAWD PROBE", size=0, pattern=False, vectors_at=()):
     if len(code) % 2:
         code += b"\x00"
     stub_addr = 0x200 + len(code)
@@ -29,6 +29,8 @@ def build(code, region="JUE", name="RETROCLAWD PROBE", size=0, pattern=False):
             rom[i] = (i >> 12) & 0xFF
     vectors = struct.pack(">II", 0x00FFFE00, 0x200) + struct.pack(">I", stub_addr) * 62
     rom[0:len(vectors)] = vectors
+    for n, addr in vectors_at:
+        rom[4 * n:4 * n + 4] = struct.pack(">I", addr)
     rom[0x200:0x200 + len(body)] = body
     header = (field("SEGA MEGA DRIVE", 16) + field("(C)RCLW 2026.OCT", 16) + field(name, 48) + field(name, 48)
               + field("GM 00000000-00", 14) + b"\x00\x00" + field("J", 16)
@@ -49,5 +51,7 @@ if __name__ == "__main__":
     ap.add_argument("--name", default="RETROCLAWD PROBE")
     ap.add_argument("--size", type=lambda v: int(v, 0), default=0, help="pad the ROM to this many bytes")
     ap.add_argument("--pattern", action="store_true", help="fill the padding with the block number of each 4 KB")
+    ap.add_argument("--vector", action="append", default=[], help="N=ADDR: exception vector N points at ADDR (28 = level 4, 30 = level 6)")
     a = ap.parse_args()
-    open(a.out, "wb").write(build(open(a.code, "rb").read(), a.region, a.name, a.size, a.pattern))
+    vecs = [(int(v.split("=")[0], 0), int(v.split("=")[1], 0)) for v in a.vector]
+    open(a.out, "wb").write(build(open(a.code, "rb").read(), a.region, a.name, a.size, a.pattern, vecs))

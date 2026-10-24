@@ -152,3 +152,16 @@ files = { rom = "sega/software/roms/altered-beast/ab.smd", rom-tmss = "sega/soft
 golden = "genesis/S1T-tmss-120.png"
 golden_sha256 = "fb6e4efc3862cc9ebc7b4d4cb606885fb65826ddc28134f92400d29de69b9d14"
 compare = { mode = "similarity", max_mad = 3.0, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+# P22: how many iterations of a 42-cycle loop fit in 20 lines (V counter 60 to 80), display off then on: 229 in Genesis Plus GX,
+# PicoDrive and BlastEm (a 488-cycle line would give 232; the 68000 loses 2 of every 130 cycles to the bus refresh, fact M16).
+# clownmdemu counts 232 (no refresh) and is not followed.
+[[scenario]]
+id = "P22"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p22_line_cycles.md" }
+start = 16711680
+len = 4
+golden = "genesis/p22_line_cycles.bin"
+golden_sha256 = "3db40f3b2432b37709586cd4489317f9d233bd786efcc306f558808feb93361a"

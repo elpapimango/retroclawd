@@ -18,7 +18,7 @@ use vdp::Vdp;
 const MAGIC: &[u8; 4] = b"RCST";
 const MACHINE_ID: &[u8] = b"genesis";
 /// The payload layout: bump when a field is added, removed or reordered.
-const SCHEMA: u16 = 1;
+const SCHEMA: u16 = 2;
 /// The most a state may hold (the machine's RAM and chips come to well under 2 MB).
 pub const MAX_STATE_BYTES: usize = 64 * 1024 * 1024;
 
@@ -65,6 +65,7 @@ impl std::error::Error for StateError {}
 struct Payload {
     cpu: Cpu,
     now: u64,
+    refresh_at: u64,
     ram: Vec<u8>,
     vdp: Vdp,
     io: Io,
@@ -94,6 +95,7 @@ pub fn save(cpu: &Cpu, bus: &Bus, rom_crc: u32) -> Vec<u8> {
     let payload = Payload {
         cpu: cpu.clone(),
         now: bus.now,
+        refresh_at: bus.refresh_at,
         ram: bus.ram().to_vec(),
         vdp: bus.vdp.clone(),
         io: bus.io.clone(),
@@ -176,6 +178,9 @@ pub fn load(
     if payload.vdp.is_pal() != region.is_pal() {
         return Err(StateError::OtherRegion);
     }
+    if payload.refresh_at > payload.now.saturating_add(crate::bus::REFRESH_INTERVAL) {
+        return Err(StateError::Corrupt("the bus refresh is too far ahead".to_string()));
+    }
     payload.vdp.validate().map_err(StateError::Corrupt)?;
     payload.z80.validate().map_err(StateError::Corrupt)?;
     payload.sound.validate().map_err(StateError::Corrupt)?;
@@ -195,6 +200,7 @@ pub fn load(
     Ok(Loaded {
         cpu: payload.cpu,
         now: payload.now,
+        refresh_at: payload.refresh_at,
         ram: payload.ram,
         vdp: payload.vdp,
         io: payload.io,
@@ -209,6 +215,7 @@ pub fn load(
 pub struct Loaded {
     pub cpu: Cpu,
     pub now: u64,
+    pub refresh_at: u64,
     pub ram: Vec<u8>,
     pub vdp: Vdp,
     pub io: Io,

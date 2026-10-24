@@ -14,6 +14,9 @@ for src in "$here"/probes/*.s; do
         python -I "$here/bin2dc.py" "$out/$name.z80.bin" "$out/$name.z80.inc"
     fi
     "$rcasm" -c 68000 -f bin --force -I "$out" -o "$out/$name.bin" "$src"
-    python -I "$here/mkrom.py" "$out/$name.bin" "$out/$name.md" --name "$name"
+    extra=$(sed -n 's/^; mkrom: *//p' "$src" | tr '
+' ' ')
+    # shellcheck disable=SC2086
+    python -I "$here/mkrom.py" "$out/$name.bin" "$out/$name.md" --name "$name" $extra
 done
 ls -l "$out"/*.md
