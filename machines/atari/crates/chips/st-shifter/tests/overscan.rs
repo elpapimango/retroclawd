@@ -82,5 +82,6 @@ fn the_mono_monitor_has_no_colour_picture() {
     let (s, ram) = screen();
     let mut out = Vec::new();
     s.render_overscan(Monitor::Mono, PIXEL_START, &|a| ram[a as usize], &mut out);
-    assert_eq!(pixel(&out, 300, 100), BLUE);
+    // [D] ST spec p.8: "In monochrome mode the border color is always black", whatever palette 0 holds
+    assert_eq!(pixel(&out, 300, 100), [0, 0, 0]);
 }

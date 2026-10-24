@@ -86,7 +86,12 @@ impl Shifter {
                     change_at += 1;
                 }
                 let clock = x0 + (x / 2) as i32;
-                let mut colour = rgb[0];
+                // [D] ST spec p.8: the border is palette colour 0 in a multi-plane mode and always black on the monochrome monitor
+                let mut colour = if monitor == Monitor::Mono {
+                    [0, 0, 0]
+                } else {
+                    rgb[0]
+                };
                 if let Some(row) = row_address {
                     let rel = clock - stream_start;
                     if rel >= 0 && (rel as u32) < 2 * bytes {

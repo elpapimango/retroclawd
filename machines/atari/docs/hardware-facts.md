@@ -28,25 +28,32 @@ inventing a value.
 | *WD177X* | Western Digital WD177X-00 data sheet, *1986 Storage Management Products Handbook* pp.1-1 to 1-26, https://bitsavers.org/components/westernDigital/_dataBooks/1986_Storage_Management_Products_Handbook.pdf (SHA-256 `72382885abfde5cdee875384aed7ca97c17112db047d7792d3a4b4d3ed0c895f`) |
 | *RP5C15* | Ricoh RP/RF/RJ5C15 Real-Time Clock, No. EK-086-9908, June 1995 (owner's copy `docs/RP5C15.pdf`, not committed; SHA-256 `70d5df25f6106491657460d9b88375b28b9cca8cc29bfe0cb59dea7ee8e35414`) |
 | *LMC1992* | National Semiconductor LMC1992/LMC1993 Computer Controlled Tone and Volume Circuits, advance information (owner's copy `docs/LMC1993.pdf`, not committed; SHA-256 `245647c3a2ca7e5d11cec36720f5da564746f1d86ed7145e23ec16b9064f07db`) |
+| *ST spec* | Atari Corp, *Engineering Hardware Specification of the Atari ST Computer System*, 7 January 1986, 38 pages, a scan (owner's copy `docs/Atari_ST_Engineering_Hardware_Specification.pdf`, not committed; SHA-256 `93b1670a4fedd0e8b664a8ab276ea95a229adf95207bc0b5f16e4eb9f10e8efe`); page numbers are the document's own (its page 1 is the third PDF page) |
+| *STe manual* | *Atari STe 520/1040 Computer Field Service Manual*, part C302481-001 Rev A, August 1991 (owner's copy `docs/520ste.pdf`, text; SHA-256 `5f0169321cd62e783096f3b6d50a737eeb004c9f7f002adcf6568633b72e5781`); section numbers |
+| *TT030 manual* | *Atari TT030 Hardware Reference Manual*, June 1990 (owner's copy `docs/Atari_TT030_Hardware_Reference_Manual.pdf`; SHA-256 `5d71eb8813ba130322bcd48e87a3df9cf60bdb316b5027d67603ee13adba0178`); only its ST-compatible register list was read |
 | *YM2149* | Yamaha YM2149 catalog, September 1992, https://bitsavers.org/components/yamaha/YM2149_199209.pdf (SHA-256 `a4b946bf525fc1a7c6dec9e7662ce2342d3a3c627f980c7c3b1a396df7e91d20`) |
 
-The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 403 from cpcwiki); every `[H?]` and
-`[O]` row below should be checked against it first.
+The Atari *Engineering Hardware Specification* (1986, *ST spec*) was added on 2026-10-24 and read page by page; the rows it settles
+are in "Engineering Hardware Specification" at the end of this file and a few labels were changed in place. The STe service manual
+and the TT030 manual were searched for the STE registers (they have no register list for the pads, the video extras or the
+Blitter). Two more documents were added and not used: the Mega STE schematic (Rev 2, SHA-256 `db28103077566c6af59ee70bbd6428d35d77510399560a0111c96f8e2571d2d0`,
+a TT-class board with the SCU and VME bus) and the STBook specification (`f243c769fe7822cf7552500bd1ebc08b63e473f9968baa2a4fa3ead8b5129b9c`, not read).
+Every `[H?]` and `[O]` row below not in that section is still unchecked.
 
 ## Memory map and decode (`io.rs`, `bus.rs`)
 
 | Fact | Value | Label | Source |
 |---|---|---|---|
-| I/O area | `$FF8000-$FFFFFF`, supervisor only, user access = bus error | `[H]` | *Internals* p.55 |
+| I/O area | `$FF8000-$FFFFFF`, supervisor only, user access = bus error | `[D]` | *ST spec* p.25 (the first 2 KB and the I/O space are protected for supervisor references; user state access is a bus error), *Internals* p.55 |
 | Device pages | `$FF8000` memory configuration, `$FF8200` video, `$FF8400` reserved, `$FF8600` DMA, `$FF8800` sound, `$FFFA00` MFP, `$FFFC00` ACIAs | `[H]` | *Internals* p.55 |
 | `$FF8006` | bus error | `[O]` | *Hatari io*: "Bus error reading at address $ffff8006 PC=$fc007c" |
 | `$FF8A3C` | bus error (no Blitter on the ST) | `[O]` | *Hatari io*: "Bus error reading at address $ffff8a3c PC=$fc0638" |
 | `$FF860F` byte | open: reads `$FF`, no bus error | `[O]` | *Hatari io*: "IO read.b $ffff860f = $ff pc=fc0638" |
 | `$FFFC21`, `$FFFC25`, `$FFFC27`, `$FFFC3B` bytes | open: read `$FF`, writes ignored, no bus error (EmuTOS's Mega ST clock probe) | `[O]` | *Hatari io* lines 5-12 |
 | Any other I/O address | unknown: the machine stops | — | — |
-| Cartridge window | `$FA0000-$FBFFFF`, up to 128 KB, read only | `[H]` | *Internals* p.96 |
+| Cartridge window | `$FA0000-$FBFFFF`, up to 128 KB, read only | `[D]` | *ST spec* p.24 (128 KB at most, 15 address lines, ROM3 and ROM4 selects), *Internals* p.96 |
 | Write to the cartridge window | bus error (the GLUE) | `[H]` | *Internals* p.96: "a write access to these addresses creates a bus error. The GLUE takes care of this." |
-| Empty cartridge slot, and the window past a shorter image | open bus: bytes read `$FF`, no bus error | `[H?]` | slice 1 choice; the document gives no level |
+| Empty cartridge slot, and the window past a shorter image | open bus: bytes read `$FF`, no bus error | `[H?]` | slice 1 choice; *ST spec* p.24 says "the disclosure of cartridge presence or memory size is not supported in hardware", which gives no level |
 | Application header | TOS compares the first long at `$FA0000` with `$ABCDEF42` and runs the application chain from there; the emulator does not check it | `[H]` | *Internals* ROM listing p.273 (`cmp.l #$ABCDEF42,(A0)+`). The `$FA52235F` of the Phase 2 plan was not found in any source read and is not used |
 | `$400000-$4FFFFF` with 4 MB | bus error | `[O]` | *Hatari io* `--memsize 4`: "Bus error reading at address $4fffff" (agrees with slice 1's nonexistent-memory rule) |
 
@@ -54,25 +61,25 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 
 | Fact | Value | Label | Source |
 |---|---|---|---|
-| Register | `$FF8001`, byte, read/write; bits 3-2 bank 0, bits 1-0 bank 1: `00` 128K, `01` 512K, `10` 2M, `11` reserved | `[H]` | *Internals* pp.55-56 |
+| Register | `$FF8001`, byte, read/write; bits 3-2 bank 0, bits 1-0 bank 1: `00` 128K, `01` 512K, `10` 2M, `11` reserved | `[D]` | *ST spec* p.27 (the table of the sixteen codes, `11xx` and `0011`, `0111`, `1011` reserved), *Internals* pp.55-56 |
 | Bits 7-4 | read back as 0 | `[H?]` | Hatari reads `$00` at power-on; nothing documents the upper bits |
-| Power-on value | `$00` | `[O]` | *Hatari io* line 1 "IO read.b $ffff8001 = $00" |
+| Power-on value | `$00` | `[D]` / `[O]` | *ST spec* p.4 "Memory Configuration Register (read/write, reset: all zeros)"; *Hatari io* line 1 "IO read.b $ffff8001 = $00" |
 | Banks fitted per RAM size | 256K = 128K + 128K, 512K = 512K + none, 1M = 512K + 512K, 2M = 2M + none, 2.5M = 2M + 512K, 4M = 2M + 2M | `[O]` | final `$FF8001` written by EmuTOS per `--memsize`: `$00`, `$04`, `$05`, `$08`, `$09`, `$0A` |
-| Address multiplexing | the word address splits into a column (low n bits) and a row (next n bits), n = 8/9/10 for a bank configured 128K/512K/2M; smaller chips ignore the top lines, so in a 2M bank `$408` aliases `$8` on 512K and `$208` on 128K | `[H?]` | DRAM row/column addressing (16 chips of 64K/256K/1M bits, *Internals* p.55); agrees with the offsets EmuTOS 1.4's sizing checks (`$40008`, `$208`, `$80008`, `$408`, `$8` at `$FC01BC-$FC0202`) and with Hatari's final value for all six sizes |
+| Address multiplexing | the word address splits into a column (low n bits) and a row (next n bits), n = 8/9/10 for a bank configured 128K/512K/2M; smaller chips ignore the top lines, so in a 2M bank `$408` aliases `$8` on 512K and `$208` on 128K | `[D]` for the aliasing, `[H?]` for the exact split | DRAM row/column addressing (16 chips of 64K/256K/1M bits, *Internals* p.55); agrees with the offsets EmuTOS 1.4's sizing checks (`$40008`, `$208`, `$80008`, `$408`, `$8` at `$FC01BC-$FC0202`) and with Hatari's final value for all six sizes |
 | No RAM at an address (above the configured total, or an empty bank) | reads `$FF`, writes ignored, no bus error | `[H?]` | slice 1 choice; a forum report says writes vanish and reads return bus noise |
 
 ## Shifter (`st-shifter`)
 
 | Fact | Value | Label | Source |
 |---|---|---|---|
-| Video base | `$FF8201` bits 23-16, `$FF8203` bits 15-8; 256-byte steps; read/write | `[H]` | *Internals* p.56 |
-| Video address counter | `$FF8205/7/9`, read only | `[H]` | *Internals* p.56 |
+| Video base | `$FF8201` bits 23-16, `$FF8203` bits 15-8; 256-byte steps; read/write; reset 0 | `[D]` | *ST spec* p.7 ("any 256 byte half page boundary", "reset: all zeros", RAM only), p.27; *Internals* p.56 |
+| Video address counter | `$FF8205/7/9`, read only; reset 0 | `[D]` | *ST spec* p.7, p.27; *Internals* p.56 |
 | Counter timing | unknown: an access stops | — | — |
-| Sync mode | `$FF820A` bit 1: 0 = 60 Hz, 1 = 50 Hz; bit 0: external sync | `[H]` | *Internals* p.57 |
-| Palette | 16 words `$FF8240-$FF825E`, `$0RGB` with 3 bits per gun (`$700`, `$070`, `$007`); medium resolution uses 0-3; read/write | `[H]` | *Internals* p.57 |
+| Sync mode | `$FF820A` bit 1: 0 = 60 Hz, 1 = 50 Hz; bit 0: 1 = external sync | `[D]` | *ST spec* p.27 ("External/_Internal Sync", "50 Hz/_60 Hz Field Rate"), *Internals* p.57 |
+| Palette | 16 words `$FF8240-$FF825E`, `$0RGB` with 3 bits per gun (`$700`, `$070`, `$007`); medium resolution uses 0-3; read/write; not changed by a reset | `[D]` | *ST spec* p.8 (nine bits an entry on low nibble boundaries, 512 colours; only the first four entries in medium resolution; reset "not affected"), *Internals* p.57 |
 | Unused bits read back | palette `$F888` bits and `$FF820A` bits 7-2 read as 0 | `[H?]` | not documented in *Internals* |
 | `$FF8260` bits 7-2 | read as 1 | `[O]` | Hatari reads `$FC` in low resolution (EmuTOS at `$FC69C2`) |
-| Resolution | `$FF8260` bits 1-0: 0 = 320×200 4 planes, 1 = 640×200 2 planes, 2 = 640×400 1 plane | `[H]` | *Internals* p.58 |
+| Resolution | `$FF8260` bits 1-0: 0 = 320×200 4 planes, 1 = 640×200 2 planes, 2 = 640×400 1 plane, 3 reserved; reset 0 | `[D]` | *ST spec* p.8, p.28; *Internals* p.58 |
 | Resolution 3 | treated as a black picture | `[H?]` | reserved |
 | High resolution colour | palette 0 bit 0: set = a set bit is black on white (EmuTOS leaves palette 0 at `$777`), clear = inverted | `[O]` | Hatari 2.6.1 mono desktop (S15) shows EmuTOS' `$777` as black on white; *Internals* p.58 says clear = black on white, so the book is taken to be wrong here |
 | Bitplanes | each 16-pixel group is N consecutive words (plane 0 first), most significant bit = leftmost pixel | `[H]` | *Internals* video RAM chapter ("Video display"), and the screen formats in *TOS hyp* |
@@ -86,15 +93,15 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Colour frame | 50 Hz: 512 clocks × 313 lines; 60 Hz: 508 × 263 | `[H]` | *forum*, cited in `scheduler.rs` |
 | Mono line | 224 clocks | `[H]` | *forum* |
 | Mono lines per frame | 501 (224 clocks each, a frame of 112 224 clocks); the picture is 400 lines of 80 bytes from raster line 34 to 433, with the fetch of a line starting at clock 8 | `[O]` | Hatari 2.6.1 `--monitor mono`, probes P14 (501 HBLs a frame, a counted loop fills 112 224 clocks) and P15 (video counter at every HBL: first line 34, last 433, 80 bytes a line, the fetch start fitted to the counter inside a line) |
-| Sync mode at power-on | 50 Hz on a PAL machine, 60 Hz on an NTSC one | `[H?]` | TOS writes the register before showing anything (*Hatari io* line 39) |
-| HBL | level 2 autovector, vector `$68` | `[H]` | *TOS hyp* |
-| VBL | level 4 autovector, vector `$70` | `[H]` | *TOS hyp* |
-| MFP | level 6, vectored | `[H]` | *TOS hyp* (`$78` "Level 6, MFP"), *Internals* p.33 |
-| MFP channels | 0 BUSY, 1 DCD, 2 CTS, 3 Blitter done, 4 Timer D, 5 Timer C (200 Hz), 6 ACIA, 7 FDC/ACSI, 8 Timer B (display enable), 9-12 USART, 13 Timer A, 14 RI, 15 mono detect | `[H]` | *TOS hyp* vectors `$100-$13C`; *MC68901* §3 channel order |
+| Sync mode at power-on | 50 Hz on a PAL machine, 60 Hz on an NTSC one | `[H?]` (a choice that differs from `[D]`) | *ST spec* p.14 and p.27: the register resets to all zeros, which is 60 Hz and internal sync, on every machine; the emulator keeps the region's rate because the bare-metal tests, the recorded fast-mode table and the EmuTOS trace comparisons assume it, and TOS writes the register early (*Hatari io* line 39) |
+| HBL | level 2 autovector, vector `$68` | `[D]` | *ST spec* p.31, *TOS hyp* |
+| VBL | level 4 autovector, vector `$70` | `[D]` | *ST spec* p.31, *TOS hyp* |
+| MFP | level 6, vectored | `[D]` | *ST spec* p.31 (NMI 7, MFP 6, VBL 4, HBL 2), *TOS hyp* (`$78` "Level 6, MFP"), *Internals* p.33 |
+| MFP channels | 0 BUSY, 1 DCD, 2 CTS, 3 Blitter done, 4 Timer D, 5 Timer C (200 Hz), 6 ACIA, 7 FDC/ACSI, 8 Timer B (display enable), 9-12 USART, 13 Timer A, 14 RI, 15 mono detect | `[D]` (*ST spec* p.31, the priority table; channel 3 "GPU operation done" is the Blitter's on the STE) | *TOS hyp* vectors `$100-$13C`; *MC68901* §3 channel order |
 | MFP timer clock | 2 457 600 Hz | `[H]` | *ST-Log 34*: "the 68901 timers count cycles of a 2.4576 MHz input clock"; consistent with TOS's 200 Hz Timer C programmed ÷64 × 192 (*Hatari io* lines 70-74) |
 | TBI | display enable; not connected yet (its timing is unknown) | — | *TOS hyp* `$120` |
 | GPIP wiring | I0 Centronics BUSY, I1 DCD, I2 CTS, I3 reserved, I4 keyboard and MIDI ACIAs, I5 FDC and HDC, I6 RI, I7 mono detect; Timer B input counts lines with display enable | `[H]` | *Internals* p.61 |
-| GPIP I7 | mono detect: low = mono monitor | `[H]` | *Internals* p.~95 (video connector pin 4) |
+| GPIP I7 | mono detect: low = mono monitor; a change interrupts when enabled | `[D]` | *ST spec* p.14 (video connector pin 4, "active low, any change will generate the interrupt if enabled"), *Internals* p.~95 |
 | GPIP I5 | FDC/ACSI interrupt, high when idle | `[O]` | GPIP read `$A1` (*Hatari io* line 67) |
 | GPIP I0 | Centronics BUSY, high with nothing attached | `[O]` | same read |
 | GPIP I1-I3, I6 | low | `[O]` | same read |
@@ -123,7 +130,7 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Registers | R0-R15 widths and meaning | `[D]` | *YM2149* Table 3 |
 | Port direction | R7 bit 6 port A, bit 7 port B: 1 = output; an output port reads back its latch | `[D]` | *YM2149* "Mixer" |
 | Input port read | `$FF`, drives nothing | `[H?]` | the ST wires port A and B as outputs |
-| Port A | bit 0 side select, 1 drive 0 select, 2 drive 1 select, 3 RTS, 4 DTR, 5 Centronics strobe, 6 general output, 7 reserved | `[H]` | *Internals* p.60 (read with `pdftotext -raw`; the layout text shifts the rows) |
+| Port A | bit 0 side select, 1 drive 0 select, 2 drive 1 select, 3 RTS, 4 DTR, 5 Centronics strobe, 6 general output, 7 reserved; output only | `[D]` | *ST spec* p.29 ("I/O Port A (Output Only)"), *Internals* p.60 (read with `pdftotext -raw`; the layout text shifts the rows) |
 | Clock | "2 MHz" at the YM's CLOCK pin | `[H]` | *Internals* schematic (figure 2.3-2) |
 | Clock ratio | CPU clock / 4, SEL keeping the master clock equal to the input | `[H?]` | the 2 MHz label and the 8 MHz CPU |
 | Tone, noise, envelope | `fT = fM/(16 TP)`, `fN = fM/(16 NP)`, `fE = fM/(256 EP)` with 32 steps; shapes per Table 4 | `[D]` | *YM2149* sections (1), (2), (5), (6), Table 4 |
@@ -139,9 +146,9 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Odd and word accesses | no fact: the machine stops | — | — |
 | Registers | control, status, master reset, TDR/shift register, RDRF/overrun sequence, CTS/DCD | `[D]` | *MC6850* |
 | Power-up | in master reset until software resets it | `[D]` | *MC6850* "Master Reset" ("must be set immediately after power-up") |
-| Clock | 500 kHz | `[H]` | *Internals* p.47 |
+| Clock | 500 kHz | `[D]` | *ST spec* pp.12, 17 (transmit and receive clock inputs of 500 KHz), *Internals* p.47 |
 | Clock ratio | CPU clock / 16; a bit is `divide × 16` CPU cycles | `[H?]` | 8 MHz / 16 = 500 kHz; Hatari uses 501 327 Hz, the same ratio |
-| Line speeds | keyboard ÷64 (7812.5 baud), MIDI ÷16 (31 250 baud), 8N1 | `[H]` | *Internals* p.47 (set by software through the control register) |
+| Line speeds | keyboard ÷64 (7812.5 baud), MIDI ÷16 (31 250 baud), 8N1 | `[D]` | *ST spec* pp.12, 17 (7812.5 bits/s by dividing by 64; 31.25 Kbaud by dividing by 16, eight data bits, one start and one stop bit), *Internals* p.47 (set by software through the control register) |
 | CTS, DCD, RTS | not connected; CTS and DCD read low | `[H]` | *Internals* p.47; `[O]` status `$02` after the reset |
 | Interrupt | both IRQs on GPIP I4, MFP channel 6 | `[H]` | *Internals* p.61, *TOS hyp* `$118` |
 | Transmit start | the transmitter takes a written character at its next bit-clock edge | `[O]` | Hatari: TDRE back within one bit after the write (`--trace acia`) |
@@ -155,7 +162,7 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Commands, reports, defaults | §3-§9 (relative mouse default, threshold 1, Y=0 at top, joystick 1 events, port 0 a joystick after any joystick command) | `[H]` | *IKBD* |
 | Relative mouse record | `%111110LR` (bit 1 left, bit 0 right), dx, dy; split beyond -128..127 | `[H]` | *IKBD* §4.1 (page image) |
 | Joystick event | `$FE`/`$FF` (joystick 0/1), then `%x000yyyy` (x trigger) | `[H]` | *IKBD* §5.1 |
-| Mouse buttons in joystick mode | fire buttons, no mouse records: right = joystick 1, left = joystick 0 | `[H]` §8 for joystick mode, `[H?]` for which button | *Internals* p.69 (the buttons share the fire lines) |
+| Mouse buttons in joystick mode | fire buttons, no mouse records: right = joystick 1, left = joystick 0 | `[D]` | *ST spec* p.13 (port 0 pin 6 "Left Button / Fire Button", pin 9 "Right Button / Joy1 Fire"); *Internals* p.69; the STe manual's prose has them the other way round but its pin list agrees with the spec |
 | Stick bits | bit 0 up, 1 down, 2 left, 3 right | `[H?]` | the document and *Internals* p.77 say only "a bit for each direction" |
 | Scan codes | Appendix A, 95 keys | `[H]` | *IKBD* Appendix A (page images) |
 | Version code | `$F1` | `[O]` | *Hatari io* line 148; *IKBD* §8 allows `$F0` (first release) or `$F1` (second) |
@@ -201,13 +208,13 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 |---|---|---|---|
 | `$FF8604` | FDC register (A1/A0 from the mode) or the sector count, read and write | `[H]` | *Internals* p.59 |
 | `$FF8604` read, upper byte | reads as 1s | `[H]` | *Internals* p.59 ("consistently read 1"); Hatari shows `$00` — a known oracle difference, masked in the comparisons |
-| `$FF8606` write (mode) | bit 1 A0, bit 2 A1, bit 3 HDC, bit 4 sector count, bit 6 DMA off, bit 8 write | `[H]` | *Internals* p.59 (with `pdftotext -raw`) |
-| Mode bit 7 | described as FDC/HDC as well; not decoded | `[H?]` | *Internals* lists bits 3 and 7 both as FDC/HDC |
+| `$FF8606` write (mode) | bit 1 A0, bit 2 A1, bit 3 HDC, bit 4 sector count, bit 6 DMA off, bit 8 write | `[D]` | *ST spec* p.28 (bit 5 reserved, 0), *Internals* p.59 (with `pdftotext -raw`) |
+| Mode bit 7 | "FDC/_HDC": set selects the floppy controller as the DMA's device, clear the hard disk; not decoded (the device is the one bit 3 selected) | `[D]` for the meaning, `[H?]` for not decoding it | *ST spec* p.28; *Internals* lists bits 3 and 7 both as FDC/HDC |
 | `$FF8606` read (status) | bit 0 set = no error, bit 1 sector count not zero, bit 2 FDC DRQ; other bits 0 | bits 1-2 `[H]`, bit 0 `[O]`, the rest `[H?]` | *Internals* p.58 prints bit 0 "0=no error"; Hatari reads `$..b1` after a good transfer and EmuTOS retries a read when bit 0 is clear, so the book is taken to be wrong here. Hatari's upper bits are leftovers (`$79b1`), masked in the comparisons |
-| DMA address | `$FF8609` high, `$FF860B` mid, `$FF860D` low; read and write; written low first | `[H]` | *Internals* p.59 |
-| FIFO | 16 bytes, written to memory a burst at a time; no bus stall in Phase 1 | `[H?]` | design §8 |
+| DMA address | `$FF8609` high, `$FF860B` mid, `$FF860D` low; read and write; written low first | `[D]` | *ST spec* p.36 note 841017B ("must be loaded in low, mid, high order"), p.29; *Internals* p.59 |
+| FIFO | written to memory a burst at a time; the burst is 16 bytes and holds the CPU for 32 clocks | `[O]` | P16; *ST spec* p.5 says the FIFO is 32 bytes (the second 16 bytes are not modelled: no probe separates them) |
 | Sector count | 8 bits, counts 512-byte sectors; the DMA stops taking bytes at 0 | `[H?]` | — |
-| Write bit toggled | clears the FIFO and the error bit | `[H?]` | EmuTOS's `$0190`/`$0090` pattern |
+| Write bit toggled | clears the FIFO and the error bit | `[D]` for the status, `[H?]` for the FIFO | *ST spec* p.5 (the status is "cleared by toggling Write/_Read in the DMA Mode Control Register"), p.18; EmuTOS's `$0190`/`$0090` pattern |
 | DMA into ROM or the cartridge | ignored | `[H?]` | as a CPU write |
 | DMA into I/O or nonexistent memory | no fact: the machine stops | — | — |
 | FDC | WD1772, clocked by the CPU clock (8 MHz), so its times are the data sheet's | `[D]` *WD177X*; the clock `[H?]` | — |
@@ -228,7 +235,7 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 
 | Fact | Value | Label | Source |
 |---|---|---|---|
-| Selects | PSG port A bit 1 drive 0, bit 2 drive 1, active low; bit 0 side (clear = side 1) | `[H]` *Internals* p.60; polarity `[H?]` | `[O]` TOS writes `$07` to deselect, `$05` for drive A |
+| Selects | PSG port A bit 1 drive 0, bit 2 drive 1, active low; bit 0 side (clear = side 1) | `[D]` | *ST spec* p.21, p.29 (Side0 select active high, drive selects active low, high at reset); `[O]` TOS writes `$07` to deselect, `$05` for drive A |
 | Revolution | 6250 byte times | `[H?]` | 300 rpm, 250 kbit/s |
 | Index pulse | the first 64 byte times of a revolution, only with a disk | `[H?]` | — |
 | No disk | no index pulses, no data, write-protected | `[O]` | status `$E4` |
@@ -302,10 +309,10 @@ The Atari *ST Hardware Specification* (1986) is not available from here (HTTP 40
 | Interrupt channels | 9 transmit error (UE, END), 10 transmit buffer empty, 11 receive error, 12 receive buffer full; an overrun uses 12 when 11 is disabled | `[D]` | *MC68901* Table 3-1, §6.2.1 |
 | Reset | UCR, RSR, SCR cleared, words in flight stopped; UDR and TSR keep their values | `[D]` / `[H?]` | §2.2.3 lists TSR among the registers reset leaves alone; Figure 6-4 says reset clears TE: the register list is followed |
 | Synchronous format | not modelled: a transmitter in it never finishes a word | `[H?]` | the ST does not use it |
-| MIDI line | the MIDI ACIA at ÷16: 256 CPU cycles a bit, 2560 a character | `[H]` | *Internals* p.47 and section 2.5 (31 250 baud, 500 kHz / 16) |
-| Centronics | data lines are PSG port B; the strobe is PSG port A bit 5, a low pulse; BUSY is GPIP I0, high when the printer cannot take a byte | `[H]` | *Internals* p.59 (port A list, read one position down: the page's column is shifted), pp.88-89, p.61 |
+| MIDI line | the MIDI ACIA at ÷16: 256 CPU cycles a bit, 2560 a character | `[D]` | *ST spec* p.17 (31.25 Kbaud, ÷16 of 500 kHz, 8 data bits, a start and a stop bit), *Internals* p.47 and section 2.5 |
+| Centronics | data lines are PSG port B; the strobe is PSG port A bit 5, a low pulse; BUSY is GPIP I0, high when the printer cannot take a byte | `[D]` (*ST spec* p.16: strobe "TTL levels, active low", BUSY "active high, 1 Kohm pullup resistor to +5 VDC") and `[H]` | *Internals* p.59 (port A list, read one position down: the page's column is shifted), pp.88-89, p.61 |
 | Strobe edge | the byte on port B is taken when port A bit 5 falls between two states in which port A is an output | `[H?]` | the document says only that a low pulse marks the data valid; either edge sees the same byte |
-| BUSY | low with a printer connected, high without; no busy time after a byte | `[H?]` | the document gives no timing |
+| BUSY | low with a printer connected, high without; no busy time after a byte | `[D]` for "high without" (the pull-up), `[H?]` for the rest | *ST spec* p.16: BUSY is active high with a 1 kohm pull-up, so an open port reads busy; the document gives no timing |
 
 ## Timing (Phase 3)
 
@@ -470,3 +477,36 @@ or `rw`) stops the machine after the first *data* access that touches a watched 
 fetches (function codes 2 and 6) and the Blitter and DMA do not trip it. The stop is the machine's ordinary one (`StopReason::Watch`):
 the access is made, the report names the access, address, value, PC and cycle. The list is configuration, not state: a loaded
 state keeps the list of the machine it is loaded into. With no watch the bus checks one flag.
+
+## Engineering Hardware Specification (2026-10-24)
+
+Facts from the *ST spec* (page numbers are the document's own) that the sections above do not already carry, and what they leave
+open. `[D]` means the document states it for the original ST; the STE and Mega ST rows say so.
+
+| Fact | Value | Label | Source |
+|---|---|---|---|
+| RAM test at power-up | the RAM configuration is found by writing `$000a` to the memory configuration register, writing a pattern at `$000000-$0001FF` and reading `$000200`, `$000400` and `$000000` back: a match at `$200` means a 128K bank, at `$400` 512K, at `$0` 2M; the same on `$200000` for bank 1, a miss meaning no bank 1 | `[D]` | *ST spec* pp.4-5; the aliasing of the DRAM rows above is what this test sees |
+| RAM and video share the bus | RAM cycles are interleaved between the CPU and the video controller, "the MPU still maintains full memory bandwidth" | `[D]` | *ST spec* p.5; the 4-clock alignment of the `accurate` mode is observed `[O]` |
+| DMA | one counter and one channel: a single DMA operation at a time; the bus goes to the DMA and the CPU first come, first served, and the access stays until the operation is complete or control is relinquished | `[D]` | *ST spec* pp.5-6 |
+| DMA registers at reset | base address and counter 0, sector count 0, status 1 (error bit set = no error), mode control not affected | `[D]` | *ST spec* p.5 |
+| DMA status bits | bit 0 "_Error Status", bit 1 "_Sector Count Zero Status", bit 2 "_Data Request Inactive Status": a name with a leading underscore is active low, so 1 = no error, 1 = count not zero, 1 = data request active | `[D]` | *ST spec* p.28; agrees with the observed `[O]` polarity of bit 0 above (*Internals* p.58 has it the other way round) |
+| Video planes | plane 0 is the least significant bit of the colour index; display memory holds the words of the planes in turn (4 planes: 0 1 2 3, 2 planes: 0 1, 1 plane: 0); the screen origin is bit 15 of the first word | `[D]` | *ST spec* pp.7-9 |
+| Monochrome | the palette is bypassed; bit 0 of palette entry 0 inverts the picture ("normal video is black 0, white 1"); the border is always black; in multi-plane modes the border is palette entry 0 | `[D]` | *ST spec* p.8 (the emulator draws the border black on the mono monitor since 2026-10-24) |
+| Video mode register | the shift mode should be selected during vertical blanking | `[D]` (advice) | *ST spec* p.15 |
+| Horizontal blanking counter | MFP timer B in event count mode counts display enable, "the first of which occurs at the end of the first display line"; timer A is reserved for applications on the ST, and on the STE its event input counts DMA sound frames | `[D]` | *ST spec* pp.14-15; *STe manual* §2.8.2 |
+| Interrupt priorities | MFP channels, highest first: 15 mono detect, 14 RI, 13 timer A (the table calls it "System Clock / BUSY"), 12 receive buffer full, 11 receive error, 10 transmit buffer empty, 9 transmit error, 8 timer B, 7 FDC (I5), 6 keyboard and MIDI (I4), 5 timer C, 4 timer D, 3 GPU done (I3), 2 CTS, 1 DCD, 0 Centronics BUSY (I0); the ACIA's IRQ status bit tells the keyboard from MIDI | `[D]` | *ST spec* p.31 |
+| PSG | register select is write only ("reset: registers all zeros"); `$FF8800` read gives the selected register, which for port B is the parallel interface data | `[D]` | *ST spec* pp.10, 29 |
+| RS232 | RTS and DTR out of PSG port A, CTS, DCD and RI into the MFP; the baud rate generator is timer D with the MFP's 2.4576 MHz, 50 to 19200 baud; one byte buffers in each direction | `[D]` | *ST spec* p.16 |
+| DMA programming notes | the sector count register should be selected (mode bit 4) before the status error bit is tested; the end of a floppy command is found by polling GPIP I5 (the FDC interrupt), not the FDC busy bit or the DMA sector count zero bit; the 30 ms settle bit must not be set on type II and III commands; a force interrupt should follow a time-out; the motor-on status must go low before a drive is deselected | `[D]` (advice) | *ST spec* p.36 notes 841017F-J; the first one is not modelled: the error bit is the same whichever register is selected |
+| Floppy | two daisy-chained drives; 512-byte sectors on floppy and hard disk; "the detection of floppy disk removal is not supported in hardware"; the controller is a WD1772 | `[D]` | *ST spec* pp.18-19 |
+| Floppy lines | index pulse, track 00 and write protect are active low with 1 kohm pull-ups (a missing drive reads inactive); motor on, direction, step, write data and write gate are inverted | `[D]` | *ST spec* p.21 |
+| ACSI commands | the six-byte block: byte 0 operation code (bits 4-0) and controller number (bits 7-5), byte 1 block address high (bits 4-0) and device number (bits 7-5), bytes 2 and 3 block address, byte 4 block count, byte 5 control; the opcodes of 1986: `$00` test unit ready, `$05` verify track, `$06` format track, `$08` read, `$0A` write, `$0B` seek, `$0D` correction pattern, `$15` mode select, `$1A` mode sense ("subject to change"); `$05`, `$06`, `$08` and `$0A` are multi-sector transfers with an implied seek. Not implemented here: `$05`, `$06`, `$0D`, `$15` answer "invalid command" | `[D]` | *ST spec* pp.19-20 |
+| Keyboard | the ikbd is a 1 MHz HD6301V1; the mouse is 100 counts per inch (4 per mm) at most 10 inches a second; two joystick ports, port 0 shared with the mouse | `[D]` | *ST spec* pp.12-13 |
+| System startup (STe) | after a reset the GSTMCU maps the first 8 bytes of the ROM at `$E00000` to 0-7; TOS then reads the longword at `$FA0000` and runs the cartridge when it is the magic number, checks for a warm start, initialises the PSG and deselects the drives, sets the palette and the screen address, zeroes memory on a cold start, sets up its variables, the vectors and the MFP, sets the resolution, boots a floppy then a hard disk | `[D]` | *STe manual* §2.13 |
+| STE sound path | the DMA fetches its samples during horizontal blanking, transparent to the CPU; the DAC output goes through a four-pole switched low-pass filter at 40 % of the sample rate and a two-pole fixed 16 kHz filter before the LMC1992; the stereo output is also mixed into the monitor's audio and the PSG into both | `[D]` / not modelled | *STe manual* §2.10; the filters are not modelled (the output is a zero-order hold) |
+| STE joystick ports | four ports read by the CPU; directions of joystick 0 and 2 are read/write: written values are driven until a read, and not driven after a read until a write; paddles on joysticks 0 and 1, their triggers are bits 1 and 2 of `$FF9202`; a light gun or pen on joystick 0 reports X in pixels of the 320-wide mode (shift left once for 640x200, twice for 640x400) | `[D]` prose, `[H?]` for the exact bits | *STe manual* §2.12.8; the register list the manual refers to is not in it, so the pad bit assignments above stay as observed |
+| STE video | 16 intensity levels a gun (4 bits, 4096 colours); the video base may start on any word boundary | `[D]` | *STe manual* §2.9.1, §2.9.2 |
+
+What the document leaves open: the level an empty cartridge slot reads, the DMA FIFO's second half, how a reserved I/O address
+is decoded (it says only "a bus error"), the YM2149 and the input port read-back, the STE and Mega ST registers (it is older than both),
+the Blitter.

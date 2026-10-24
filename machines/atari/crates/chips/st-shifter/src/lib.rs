@@ -548,9 +548,10 @@ impl Shifter {
     /// palette as it is now on every line.
     ///
     /// Screen layout (pp.207-209): 16-pixel groups of N consecutive big-endian words, one per plane, the most
-    /// significant bit the leftmost pixel; plane 0 (the first word) is bit 0 of the colour index ([H?] the book
-    /// names the words but not the bit order of the index). High resolution: a set bit is dark while palette 0
-    /// bit 0 is set (observed in Hatari; the book, p.58, says the opposite). A colour monitor shows nothing in high resolution, a mono monitor nothing in low or
+    /// significant bit the leftmost pixel; plane 0 (the first word) is bit 0 of the colour index ([D] ST spec
+    /// p.8: "plane 0 is the least significant bit"). High resolution: a set bit is dark while palette 0 bit 0 is set
+    /// ([D] ST spec p.8: palette 0 bit 0 inverts the monochrome picture, "normal video is black 0, white 1"; the book, p.58,
+    /// has it the other way round). A colour monitor shows nothing in high resolution, a mono monitor nothing in low or
     /// medium ([H?] they cannot sync to it, p.57).
     pub fn render(&self, monitor: Monitor, ram: &dyn Fn(u32) -> u8, out: &mut Vec<u8>) {
         let palette = self.palette;
