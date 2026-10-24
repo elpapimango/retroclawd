@@ -109,7 +109,7 @@ No real hardware is available, so these stay parked until someone has it; everyt
 ## Atari ST: Phase 4 done except the items below (2026-10-23)
 
 Phase 4 (spec Status 2026-10-23): the Blitter, the STE (Shifter, DMA sound, ports), the Mega ST clock, watchpoints, fuzz runs, ACSI `--disk-save`.
-Second look at the 13 `known-gap` probes done 2026-10-23 (evidence in the manifest rows; none closed: Hatari jitter and quirks, and an arbitrary spindle phase for P16/P17 that would need a motor-start hook in the shared Floppy trait). Open: Hatari's other wake-up states (ws1, ws2, ws4: P04 differs). Done since (Phase 5): S17, S17S, S18, S19, USART error flags, the RomM games on the new models; see machines/atari/CLAUDE.md.
+Second look at the 13 `known-gap` probes done 2026-10-23 (evidence in the manifest rows; none closed: Hatari jitter and quirks, and an arbitrary spindle phase for P16/P17 that would need a motor-start hook in the shared Floppy trait). Open: Hatari's other wake-up states (ws1, ws2, ws4: P04 differs; no hardware source); the STE pad button bits and the other `[H?]` rows that need the *ST Hardware Specification* (not in hand); P29's counter ramp and P30's shift rate are Hatari's own (known gaps). Done since (Phase 5, 2026-10-24): S17, S17S, S18, S19, S20, S21, the USART flags from the MC68901 sheet, the RP5C15 and LMC1992 data sheets (clock, Microwire stream, silent power-up, bass and treble), mid-line resolution (P35, P45), the host ACSI save action; see machines/atari/CLAUDE.md.
 
 ### Atari ST: Phase 3 done (kept for the record, 2026-10-23)
 
