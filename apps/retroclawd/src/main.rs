@@ -11,6 +11,7 @@ mod firmware;
 mod gui;
 mod host_files;
 mod inputs;
+mod listing;
 mod overrides;
 mod playlist;
 mod plugin_bridge;
@@ -1820,6 +1821,7 @@ fn render_all_machine_options_overview(profiles: &[MachineProfile]) -> String {
     let mut profiles: Vec<&MachineProfile> = profiles.iter().collect();
     profiles.sort_by(|a, b| a.machine_id.cmp(&b.machine_id));
 
+    let width = listing::text_width();
     let mut out = String::new();
     out.push_str("\nMachine options (run `retroclawd <machine> --help` for just one):\n");
     for profile in profiles {
@@ -1828,12 +1830,13 @@ fn render_all_machine_options_overview(profiles: &[MachineProfile]) -> String {
         }
         out.push_str(&format!("\n{} options:\n", profile.machine_id));
         for opt in &profile.options {
-            out.push_str(&format!(
-                "      --{} <{}>\n          {}\n",
-                opt.flag,
-                machine_option_value_hint(&opt.kind),
-                opt.description
-            ));
+            listing::option_entry(
+                &mut out,
+                &format!("--{} <{}>", opt.flag, machine_option_value_hint(&opt.kind)),
+                &opt.description,
+                width,
+                "  ",
+            );
         }
     }
     out
@@ -2004,75 +2007,12 @@ fn main() -> ExitCode {
     }
 
     if args.list_plugins {
-        println!(
-            "host compatibility: plugin ABI {}.{} (plugins need the same major and at least this minor), protocol {}, machine profile contract {}",
-            plugin_api::ABI_MAJOR_V1,
-            plugin_api::ABI_MINOR_V1,
-            plugin_api::PROTOCOL_VERSION,
-            plugin_api::MACHINE_PROFILE_CONTRACT_VERSION
-        );
-        println!("machine plugins:");
-        match &machine_report {
-            Ok(report) => {
-                if report.plugins.is_empty() {
-                    println!("- (none)");
-                } else {
-                    for plugin in &report.plugins {
-                        println!(
-                            "- {} {} (ABI {}.{}) [{}] machines: {}",
-                            plugin.plugin_id,
-                            build_info::Info::parse(&plugin.plugin_version),
-                            plugin.abi.0,
-                            plugin.abi.1,
-                            plugin.source,
-                            plugin.machine_ids.join(", ")
-                        );
-                    }
-                }
-                if report.profiles.iter().any(|p| !p.options.is_empty()) {
-                    println!("machine options:");
-                    for profile in &report.profiles {
-                        if profile.options.is_empty() {
-                            continue;
-                        }
-                        println!("- {}:", profile.machine_id);
-                        for opt in &profile.options {
-                            println!(
-                                "    --{} ({}) {}",
-                                opt.flag,
-                                machine_option_value_hint(&opt.kind),
-                                opt.description
-                            );
-                        }
-                    }
-                }
-                for warning in &report.warnings {
-                    eprintln!("machine plugin scan warning: {warning}");
-                }
-            }
-            Err(e) => eprintln!("machine plugin discovery failed: {e}"),
-        }
-
-        println!("debuggers (built into this executable, selected with --plugin):");
         let debuggers = debuggers::built_in();
-        if debuggers.is_empty() {
-            println!("- (none: this build has no debug-ui, debug-zrcp or debug-log feature)");
-        }
-        for info in &debuggers {
-            println!("- {} ({})", info.selector, info.display_name);
-            println!("    {}", info.summary);
-            if info.options.is_empty() {
-                println!("    options: (none)");
-            } else {
-                println!("    options:");
-                for opt in &info.options {
-                    println!(
-                        "      - {} ({}) {}",
-                        opt.key, opt.value_hint, opt.description
-                    );
-                }
-            }
-        }
+        let report = machine_report.as_ref().map_err(String::as_str);
+        print!(
+            "{}",
+            listing::plugins(report, &debuggers, listing::text_width())
+        );
         return ExitCode::SUCCESS;
     }
 

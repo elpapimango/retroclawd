@@ -5023,6 +5023,7 @@ dependencies = [
  "serde_json",
  "sha1",
  "tempfile",
+ "terminal_size",
  "test-machine-plugin",
  "tiny_http",
  "toml 0.8.23",

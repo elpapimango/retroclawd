@@ -8,6 +8,7 @@ license = "GPL-3.0-or-later"
 build-info = { path = "../../shared/crates/build-info" }
 clap = { version = "4", features = ["derive", "wrap_help", "string"] }
 png = "0.18"
+terminal_size = "0.4"
 winit = "0.30"
 cpal = "0.17"
 rfd = "0.17"
