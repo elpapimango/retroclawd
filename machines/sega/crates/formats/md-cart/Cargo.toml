@@ -1,0 +1,8 @@
+[package]
+name = "md-cart"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Mega Drive cartridge images: ROM header, region field, .smd de-interleaving"
+
+[dependencies]

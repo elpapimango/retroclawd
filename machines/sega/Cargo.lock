@@ -52,6 +52,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "md-cart"
+version = "0.1.0"
+
+[[package]]
 name = "plugin-api"
 version = "0.1.0"
 source = "git+https://github.com/elpapimango/retroclawd-crates?rev=0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac#0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac"
