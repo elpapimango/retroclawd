@@ -1818,27 +1818,9 @@ fn machine_option_value_hint(kind: &MachineOptionKind) -> String {
 /// this text is display-only regardless (real parsing only ever merges
 /// the ONE selected machine's options, via `build_command`).
 fn render_all_machine_options_overview(profiles: &[MachineProfile]) -> String {
-    let mut profiles: Vec<&MachineProfile> = profiles.iter().collect();
-    profiles.sort_by(|a, b| a.machine_id.cmp(&b.machine_id));
-
-    let width = listing::text_width();
     let mut out = String::new();
-    out.push_str("\nMachine options (run `retroclawd <machine> --help` for just one):\n");
-    for profile in profiles {
-        if profile.options.is_empty() {
-            continue;
-        }
-        out.push_str(&format!("\n{} options:\n", profile.machine_id));
-        for opt in &profile.options {
-            listing::option_entry(
-                &mut out,
-                &format!("--{} <{}>", opt.flag, machine_option_value_hint(&opt.kind)),
-                &opt.description,
-                width,
-                "  ",
-            );
-        }
-    }
+    out.push_str("\nMachine options (run `retroclawd <machine> --help` for just one;\nmachines listed together take the same options):\n\n");
+    listing::machine_options_into(&mut out, profiles, listing::text_width(), "", "  ");
     out
 }
 

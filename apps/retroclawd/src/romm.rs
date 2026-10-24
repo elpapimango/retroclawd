@@ -785,12 +785,13 @@ usage:
 
 <platform> is a RomM platform id, slug or name. `platforms` hides platforms
 with no ROMs and no firmware unless --all is given. Lists are aligned tables
-(ID, NAME, SIZE in bytes, SHA1); `romm match` shows, per machine option, which
-firmware on the server satisfies it (the `--firmware auto` lookup). Use `romm:<id>` or `romm:fw/<id>`
-wherever a file is expected. ROMM_URL / ROMM_TOKEN (or [romm] in
-retroclawd.toml) name the server; RETROCLAWD_CACHE_DIR moves the cache.
-Behind a proxy: HTTP_PROXY / HTTPS_PROXY / NO_PROXY are honoured (as is
-user:password@ in the proxy URL).";
+(ID, NAME, SIZE in bytes, SHA1); `romm match` shows, per machine option,
+which firmware on the server satisfies it (the `--firmware auto` lookup).
+Use `romm:<id>` or `romm:fw/<id>` wherever a file is expected.
+ROMM_URL / ROMM_TOKEN (or [romm] in retroclawd.toml) name the server;
+RETROCLAWD_CACHE_DIR moves the cache. Behind a proxy: HTTP_PROXY /
+HTTPS_PROXY / NO_PROXY are honoured (as is user:password@ in the proxy
+URL).";
 
 /// Runs `retroclawd romm ...` / `retroclawd cache ...` (`args` = argv after the
 /// program name, first element the verb).

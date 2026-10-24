@@ -1227,6 +1227,7 @@ impl Hotkeys {
 
     /// Plain-text table for `--list-hotkeys`.
     pub(crate) fn describe(&self) -> String {
+        let width = crate::listing::text_width();
         let mut out = String::new();
         if let Some(key) = self.modifier {
             out.push_str(&format!(
@@ -1254,7 +1255,13 @@ impl Hotkeys {
             } else {
                 chords.join(", ")
             };
-            out.push_str(&format!("{:<16} {:<24} {}\n", info.name, bound, info.help));
+            crate::listing::wrap_into(
+                &mut out,
+                info.help,
+                width,
+                &format!("{:<16} {:<24} ", info.name, bound),
+                &" ".repeat(42),
+            );
         }
         out
     }

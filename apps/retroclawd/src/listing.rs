@@ -4,6 +4,8 @@
 
 use std::fmt::Write;
 
+use plugin_api::MachineProfile;
+
 use crate::plugin_bridge::StartupReport;
 
 /// Width used when output is not a terminal (and `COLUMNS` is not set).
@@ -59,6 +61,117 @@ pub(crate) fn option_entry(
     wrap_into(out, description, width, &body, &body);
 }
 
+/// One declared option as printed: the flag without `--`, its value hint and its description.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct OptLine {
+    flag: String,
+    hint: String,
+    desc: String,
+}
+
+/// `acsi3` -> (`acsi`, 3).
+fn split_index(flag: &str) -> Option<(&str, u32)> {
+    let stem = flag.trim_end_matches(|c: char| c.is_ascii_digit());
+    let digits = &flag[stem.len()..];
+    if stem.is_empty() || digits.is_empty() || digits.len() > 3 {
+        return None;
+    }
+    Some((stem, digits.parse().ok()?))
+}
+
+/// The description with the word `index` (alone, or followed by punctuation) written as `N`.
+fn generic_desc(desc: &str, index: u32) -> String {
+    let digits = index.to_string();
+    desc.split_whitespace()
+        .map(|word| match word.strip_prefix(digits.as_str()) {
+            Some(rest) if !rest.starts_with(|c: char| c.is_ascii_alphanumeric()) => {
+                format!("N{rest}")
+            }
+            _ => word.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// `(flag line, description)` pairs; a run of three or more numbered options that differ only in their number
+/// (`--acsi0` to `--acsi7`) becomes one entry.
+fn collapse(opts: &[OptLine]) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < opts.len() {
+        let o = &opts[i];
+        if let Some((stem, first)) = split_index(&o.flag) {
+            let generic = generic_desc(&o.desc, first);
+            let mut last = first;
+            let mut j = i + 1;
+            while let Some(next) = opts.get(j) {
+                let fits = split_index(&next.flag).is_some_and(|(s, n)| {
+                    s == stem
+                        && n == last + 1
+                        && next.hint == o.hint
+                        && generic_desc(&next.desc, n) == generic
+                });
+                if !fits {
+                    break;
+                }
+                last += 1;
+                j += 1;
+            }
+            if j - i >= 3 {
+                out.push((
+                    format!("--{stem}{first} .. --{stem}{last} <{}>", o.hint),
+                    format!("{generic} (N = {first}-{last})"),
+                ));
+                i = j;
+                continue;
+            }
+        }
+        out.push((format!("--{} <{}>", o.flag, o.hint), o.desc.clone()));
+        i += 1;
+    }
+    out
+}
+
+/// Machines grouped by identical option lists, in machine-id order of each group's first member.
+fn option_groups(profiles: &[MachineProfile]) -> Vec<(Vec<String>, Vec<OptLine>)> {
+    let mut sorted: Vec<&MachineProfile> =
+        profiles.iter().filter(|p| !p.options.is_empty()).collect();
+    sorted.sort_by(|a, b| a.machine_id.cmp(&b.machine_id));
+    let mut groups: Vec<(Vec<String>, Vec<OptLine>)> = Vec::new();
+    for profile in sorted {
+        let lines: Vec<OptLine> = profile
+            .options
+            .iter()
+            .map(|o| OptLine {
+                flag: o.flag.clone(),
+                hint: crate::machine_option_value_hint(&o.kind),
+                desc: o.description.clone(),
+            })
+            .collect();
+        match groups.iter_mut().find(|(_, l)| *l == lines) {
+            Some((names, _)) => names.push(profile.machine_id.clone()),
+            None => groups.push((vec![profile.machine_id.clone()], lines)),
+        }
+    }
+    groups
+}
+
+/// Every machine's options: one block per distinct option list, headed by the machines that share it.
+pub(crate) fn machine_options_into(
+    out: &mut String,
+    profiles: &[MachineProfile],
+    width: usize,
+    heading: &str,
+    indent: &str,
+) {
+    for (names, lines) in option_groups(profiles) {
+        wrap_into(out, &names.join(", "), width, heading, heading);
+        for (flag_line, desc) in collapse(&lines) {
+            option_entry(out, &flag_line, &desc, width, indent);
+        }
+    }
+}
+
 /// The `--list-plugins` text for a startup report (or the error that stopped the scan) and the built-in debuggers.
 pub(crate) fn plugins(
     report: Result<&StartupReport, &str>,
@@ -112,24 +225,7 @@ pub(crate) fn plugins(
             }
             if report.profiles.iter().any(|p| !p.options.is_empty()) {
                 out.push_str("\nMachine options\n");
-                let mut profiles: Vec<_> = report.profiles.iter().collect();
-                profiles.sort_by(|a, b| a.machine_id.cmp(&b.machine_id));
-                for profile in profiles.iter().filter(|p| !p.options.is_empty()) {
-                    let _ = writeln!(out, "  {}", profile.machine_id);
-                    for opt in &profile.options {
-                        option_entry(
-                            &mut out,
-                            &format!(
-                                "--{} <{}>",
-                                opt.flag,
-                                crate::machine_option_value_hint(&opt.kind)
-                            ),
-                            &opt.description,
-                            width,
-                            "    ",
-                        );
-                    }
-                }
+                machine_options_into(&mut out, &report.profiles, width, "  ", "    ");
             }
             for warning in &report.warnings {
                 wrap_into(
@@ -244,5 +340,39 @@ mod tests {
         for l in out.lines() {
             assert!(l.chars().count() <= 60, "{l:?}");
         }
+    }
+
+    fn opt(flag: &str, desc: &str) -> OptLine {
+        OptLine {
+            flag: flag.into(),
+            hint: "file path".into(),
+            desc: desc.into(),
+        }
+    }
+
+    #[test]
+    fn numbered_options_that_differ_only_in_their_number_collapse() {
+        let opts: Vec<OptLine> = (0..8)
+            .map(|n| {
+                opt(
+                    &format!("acsi{n}"),
+                    &format!("disk behind target {n}: 512 MiB"),
+                )
+            })
+            .chain([opt("rom", "the ROM")])
+            .collect();
+        let c = collapse(&opts);
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[0].0, "--acsi0 .. --acsi7 <file path>");
+        assert_eq!(c[0].1, "disk behind target N: 512 MiB (N = 0-7)");
+        assert_eq!(c[1].0, "--rom <file path>");
+    }
+
+    #[test]
+    fn two_numbered_options_or_different_texts_stay_separate() {
+        let two = [opt("a1", "x 1"), opt("a2", "x 2")];
+        assert_eq!(collapse(&two).len(), 2);
+        let differ = [opt("a1", "x 1"), opt("a2", "x 2"), opt("a3", "other 3")];
+        assert_eq!(collapse(&differ).len(), 3);
     }
 }
