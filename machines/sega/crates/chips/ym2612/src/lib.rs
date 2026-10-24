@@ -402,6 +402,52 @@ impl Ym2612 {
         }
     }
 
+    /// Whether a value read back from a saved state is usable: every field the code uses as an index or a shift is in range.
+    pub fn validate(&self) -> Result<(), String> {
+        let bad = |what: &str| Err(format!("YM2612 {what} is out of range"));
+        if self.cycles >= 24 || self.channel >= 6 || self.channel != self.cycles % 6 {
+            return bad("cycle");
+        }
+        if self.lfo_freq > 7
+            || self.eg_cycle > 15
+            || self.eg_timer_low_lock > 3
+            || self.eg_shift > 15
+            || self.eg_shift_lock > 16
+        {
+            return bad("counter");
+        }
+        if self.eg_quotient > 2 || self.eg_timer > 0xFFF || self.timer_b_subcnt > 0x10 {
+            return bad("timer");
+        }
+        if self.connect.iter().any(|v| *v > 7)
+            || self.fb.iter().any(|v| *v > 7)
+            || self.pms.iter().any(|v| *v > 7)
+            || self.ams.iter().any(|v| *v > 3)
+            || self.ks.iter().any(|v| *v > 3)
+            || self.dt.iter().any(|v| *v > 7)
+            || self.block.iter().any(|v| *v > 7)
+            || self.block_3ch.iter().any(|v| *v > 7)
+            || self.eg_level.iter().any(|v| *v > 0x3FF)
+            || self.eg_out.iter().any(|v| *v > 0x3FF)
+            || self.pg_phase.iter().any(|v| *v > 0xF_FFFF)
+            || self.pg_inc.iter().any(|v| *v > 0xF_FFFF)
+            || self.multi.iter().any(|v| *v > 30)
+            || self.sl.iter().any(|v| *v > 31)
+            || self.eg_sl.iter().any(|v| *v > 31)
+        {
+            return bad("register");
+        }
+        if self.pg_block > 7
+            || self.pg_fnum > 0x7FF
+            || self.eg_lfo_am > 0xFF
+            || self.eg_rate > 0x3F
+            || self.eg_ksv > 0x1F
+        {
+            return bad("generator value");
+        }
+        Ok(())
+    }
+
     pub fn kind(&self) -> Chip {
         self.kind
     }

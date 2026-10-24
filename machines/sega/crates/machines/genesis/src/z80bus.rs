@@ -88,6 +88,10 @@ impl Bus {
     /// Runs the Z80 until its clock reaches `until` (it may overshoot by the instruction in progress). A Z80 that is in
     /// reset or whose bus the 68000 holds loses the time.
     pub fn run_z80(&mut self, until: u64) {
+        // A Z80 far behind (a damaged state) loses the time instead of running through all of it.
+        if until > self.z80.time + 4 * 1_070_460 {
+            self.z80.time = until - 4 * 1_070_460;
+        }
         while self.z80.time < until {
             if !self.z80.running(self.z80.time) {
                 self.z80.time = until;

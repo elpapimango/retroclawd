@@ -14,6 +14,8 @@ pub struct Genesis {
     bus: Bus,
     region: Region,
     stop_reported: bool,
+    /// The CRC of the ROM: states carry it, and load only into the same cartridge.
+    rom_crc: u32,
 }
 
 impl Genesis {
@@ -26,6 +28,7 @@ impl Genesis {
             bus: Bus::new(&config),
             region: config.region,
             stop_reported: false,
+            rom_crc: crc32fast::hash(&config.rom),
         };
         machine.reset();
         Ok(machine)
@@ -41,6 +44,20 @@ impl Genesis {
 
     pub fn cpu(&self) -> &Cpu {
         &self.cpu
+    }
+
+    /// The Z80's registers, for the debugger.
+    pub fn z80_registers(&self) -> Vec<(&'static str, u64)> {
+        self.bus.z80.cpu.registers()
+    }
+
+    pub fn z80_pc(&self) -> u16 {
+        self.bus.z80.cpu.pc
+    }
+
+    /// A byte of the Z80's address space with no side effects.
+    pub fn z80_peek(&self, addr: u16) -> u8 {
+        self.bus.z80_peek(addr)
     }
 
     /// Presses or releases a pad button by its name (`Up`, `A`, `Start`, `Mode`, ...) on port 0 or 1.
@@ -174,11 +191,23 @@ impl Machine for Genesis {
     }
 
     fn save_state(&self) -> Vec<u8> {
-        Vec::new()
+        crate::state::save(&self.cpu, &self.bus, self.rom_crc)
     }
 
-    fn load_state(&mut self, _bytes: &[u8]) -> Result<(), String> {
-        Err("the Genesis has no save state yet".to_string())
+    fn load_state(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let (cpu, now, ram, vdp, io, z80, sound) =
+            crate::state::load(bytes, self.rom_crc, self.region, self.bus.sound.ym().kind())
+                .map_err(|e| e.to_string())?;
+        self.cpu = cpu;
+        self.bus.now = now;
+        self.bus.ram_mut().copy_from_slice(&ram);
+        self.bus.vdp = vdp;
+        self.bus.io = io;
+        self.bus.z80 = z80;
+        self.bus.sound = sound;
+        self.bus.take_stop();
+        self.stop_reported = false;
+        Ok(())
     }
 
     fn reset(&mut self) {
@@ -260,5 +289,104 @@ mod tests {
     #[test]
     fn an_empty_rom_is_refused() {
         assert!(Genesis::new(Config::new(Vec::new(), Region::Usa)).is_err());
+    }
+
+    fn busy_machine() -> Genesis {
+        // MOVE.W #$BEEF,$FF0000 ; ADDQ.W #1,$FF0002 ; BRA.S back to the add
+        let mut g = machine(&[
+            0x33FC, 0xBEEF, 0x00FF, 0x0000, 0x5279, 0x00FF, 0x0002, 0x60F8,
+        ]);
+        for _ in 0..200 {
+            g.step();
+        }
+        g
+    }
+
+    #[test]
+    fn a_saved_state_continues_exactly_like_the_machine_it_came_from() {
+        let mut a = busy_machine();
+        let state = a.save_state();
+        let mut b = machine(&[
+            0x33FC, 0xBEEF, 0x00FF, 0x0000, 0x5279, 0x00FF, 0x0002, 0x60F8,
+        ]);
+        b.load_state(&state).unwrap();
+        assert_eq!(a.registers(), b.registers());
+        for _ in 0..500 {
+            assert_eq!(a.step(), b.step());
+        }
+        assert_eq!(a.registers(), b.registers());
+        assert_eq!(a.bus().ram(), b.bus().ram());
+        assert_eq!(a.save_state(), b.save_state());
+    }
+
+    #[test]
+    fn a_state_from_another_cartridge_region_or_a_damaged_file_is_refused_and_changes_nothing() {
+        let mut a = busy_machine();
+        let state = a.save_state();
+        let other_rom = {
+            let mut r = rom(&[0x4E71, 0x60FE]);
+            r[0x300] = 1;
+            r
+        };
+        let mut b = Genesis::new(Config::new(other_rom, Region::Usa)).unwrap();
+        assert!(b.load_state(&state).unwrap_err().contains("cartridge"));
+        let mut p = Genesis::new(Config::new(rom(&[0x4E71, 0x60FE]), Region::Europe)).unwrap();
+        assert!(p.load_state(&state).is_err());
+        let before = a.save_state();
+        for len in [0, 3, 10, state.len() / 2, state.len() - 1] {
+            assert!(a.load_state(&state[..len]).is_err(), "{len}");
+        }
+        let mut bad = state.clone();
+        let mid = bad.len() / 2;
+        bad[mid] ^= 0x55;
+        assert!(a.load_state(&bad).unwrap_err().contains("damaged"));
+        let mut magic = state.clone();
+        magic[0] = b'X';
+        assert!(a.load_state(&magic).is_err());
+        assert_eq!(a.save_state(), before, "a refused state changes nothing");
+    }
+
+    #[test]
+    fn a_state_that_claims_a_huge_payload_is_refused() {
+        let mut a = busy_machine();
+        let mut state = a.save_state();
+        // the payload length field: 4 magic + 1 + 7 id + 2 schema + 4 crc + 1 region + 1 chip = 20
+        state[20..28].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert!(a.load_state(&state).unwrap_err().contains("limit"));
+    }
+
+    #[test]
+    fn random_damage_to_a_state_never_panics_even_with_a_matching_checksum() {
+        let a = busy_machine();
+        let state = a.save_state();
+        // header: 4 magic + 1 + 7 id + 2 schema + 4 rom crc + 1 region + 1 chip + 8 length = 28, then the payload checksum
+        let body_at = 32;
+        let mut seed = 12345u32;
+        let mut accepted = 0;
+        let sweep: usize = std::env::var("RC_SWEEP")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1);
+        for round in 0..400 * sweep {
+            let mut bad = state.clone();
+            for _ in 0..(1 + round % 6) {
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let i = body_at + (seed >> 8) as usize % (bad.len() - body_at);
+                bad[i] = (seed >> 3) as u8;
+            }
+            let crc = crc32fast::hash(&bad[body_at..]);
+            bad[28..32].copy_from_slice(&crc.to_le_bytes());
+            let mut b = busy_machine();
+            if b.load_state(&bad).is_ok() {
+                accepted += 1;
+            }
+            // whatever happened, the machine still runs and can be drained
+            for _ in 0..200 {
+                b.step();
+            }
+            let _ = b.drain_audio();
+            let _ = b.render_frame();
+        }
+        assert!(accepted > 0, "some damage lands where it is harmless");
     }
 }

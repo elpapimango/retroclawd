@@ -28,6 +28,10 @@ impl Timing {
         }
     }
 
+    pub(crate) fn is_pal(&self) -> bool {
+        self.lines == 313
+    }
+
     pub(crate) fn frame_clocks(&self) -> u64 {
         u64::from(self.lines) * LINE_CLOCKS
     }

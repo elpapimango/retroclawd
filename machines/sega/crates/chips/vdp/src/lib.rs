@@ -100,6 +100,27 @@ impl Vdp {
         }
     }
 
+    /// Whether a value read back from a saved state can be used: every size and index the code relies on holds.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.vram.len() != VRAM_BYTES
+            || self.cram.len() != CRAM_WORDS
+            || self.vsram.len() != VSRAM_WORDS
+        {
+            return Err("a video memory has the wrong size".to_string());
+        }
+        if self.frame_buf.len() != frame::blank_frame().len() {
+            return Err("the picture buffer has the wrong size".to_string());
+        }
+        let (w, h) = self.shown_size;
+        if w > 320 || h > 240 || self.shown.len() != (w * h * 3) as usize {
+            return Err("the shown picture does not fit its size".to_string());
+        }
+        if self.pal != self.timing.is_pal() {
+            return Err("the timing does not match the region".to_string());
+        }
+        Ok(())
+    }
+
     pub fn is_pal(&self) -> bool {
         self.pal
     }

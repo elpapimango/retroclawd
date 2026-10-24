@@ -44,6 +44,8 @@ pub struct Sound {
 /// The high-pass pole: a corner of about 5 Hz at the output rate (fact S11: the analogue output of the console is coupled
 /// through capacitors; the exact corner depends on the model).
 const DC_POLE: f32 = 0.9994;
+/// The longest stretch of master clocks the chips are run through when behind (about 8 frames of sound).
+const MAX_LAG: u64 = 8 * 1_070_460;
 
 impl Sound {
     pub fn new(chip: Chip) -> Self {
@@ -62,6 +64,19 @@ impl Sound {
             dc_out: [0.0; 2],
             out: Vec::new(),
         }
+    }
+
+    /// Whether a value read back from a saved state is usable.
+    pub fn validate(&self) -> Result<(), String> {
+        self.ym.validate()?;
+        self.psg.validate()?;
+        if self.ym_cycle >= CYCLES_PER_SAMPLE || self.out.len() > 1 << 20 {
+            return Err("the sound state is out of range".to_string());
+        }
+        if self.psg_next <= self.psg_time || self.psg_next - self.psg_time > STEP_MASTER_CLOCKS {
+            return Err("the PSG clock is out of range".to_string());
+        }
+        Ok(())
     }
 
     pub fn ym(&self) -> &Ym2612 {
@@ -89,6 +104,22 @@ impl Sound {
 
     /// Runs both chips up to master clock `t`; finished samples go to the output queue.
     pub fn run_to(&mut self, t: u64) {
+        // A chip far behind the clock (a machine that is never drained, or a damaged state) skips the time instead of
+        // making every sample of it: sound that nobody collected is not worth computing.
+        if t > self.ym_time + MAX_LAG {
+            let skip = (t - MAX_LAG - self.ym_time) / SAMPLE_MASTER_CLOCKS * SAMPLE_MASTER_CLOCKS;
+            self.ym_time += skip;
+            self.psg_time = self.psg_time.max(self.ym_time);
+            self.psg_next = self
+                .psg_next
+                .max(self.psg_time + 1)
+                .min(self.psg_time + STEP_MASTER_CLOCKS);
+            self.psg_integral = 0.0;
+            self.ym_cycle = 0;
+            self.sum_l = 0;
+            self.sum_r = 0;
+            self.out.clear();
+        }
         while self.ym_time + CYCLE_MASTER_CLOCKS <= t {
             let (l, r) = self.ym.clock();
             self.sum_l += i32::from(l);

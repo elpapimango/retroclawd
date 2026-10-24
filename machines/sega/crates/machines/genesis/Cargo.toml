@@ -15,3 +15,4 @@ mc68000 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "077
 z80 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
 serde = { version = "1", features = ["derive"] }
 bincode = { version = "2", features = ["serde"] }
+crc32fast = "1"

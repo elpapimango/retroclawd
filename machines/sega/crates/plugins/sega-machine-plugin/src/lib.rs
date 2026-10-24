@@ -339,6 +339,104 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     Ok(MachineCreateResponse { instance, metadata })
 }
 
+/// 68000 instructions from `start`.
+fn disassembly_68k(machine: &Genesis, start: u64, lines: u32) -> Vec<DisassemblyLine> {
+    let mut cursor = start & 0xFF_FFFF;
+    let mut out = Vec::with_capacity(lines as usize);
+    for _ in 0..lines {
+        let raw: Vec<u8> = (0..10u64)
+            .map(|i| machine.read_memory(cursor + i))
+            .collect();
+        let (text, len) = genesis::mc68000::disassemble::disassemble(&raw, cursor as u32);
+        let len = len.clamp(2, 10);
+        out.push(DisassemblyLine {
+            address: cursor,
+            bytes: raw[..len].to_vec(),
+            text,
+        });
+        cursor = (cursor + len as u64) & 0xFF_FFFF;
+    }
+    out
+}
+
+/// Z80 instructions from `start`.
+fn disassembly_z80(machine: &Genesis, start: u64, lines: u32) -> Vec<DisassemblyLine> {
+    let mut cursor = (start & 0xFFFF) as u16;
+    let mut out = Vec::with_capacity(lines as usize);
+    for _ in 0..lines {
+        let raw: Vec<u8> = (0..4u16)
+            .map(|i| machine.z80_peek(cursor.wrapping_add(i)))
+            .collect();
+        let (text, len) = genesis::z80::disassemble::disassemble_at(&raw, cursor);
+        let len = len.clamp(1, 4);
+        out.push(DisassemblyLine {
+            address: u64::from(cursor),
+            bytes: raw[..len].to_vec(),
+            text,
+        });
+        cursor = cursor.wrapping_add(len as u16);
+    }
+    out
+}
+
+fn z80_register_snapshot(machine: &Genesis) -> RegisterSnapshot {
+    let registers = machine
+        .z80_registers()
+        .into_iter()
+        .map(|(name, value)| RegisterField {
+            bank: "z80".to_string(),
+            name: name.to_string(),
+            value,
+            width_bits: match name {
+                "I" | "R" | "IM" | "IFF1" | "IFF2" | "HALT" => 8,
+                _ => 16,
+            },
+        })
+        .collect();
+    RegisterSnapshot {
+        cpu_family: CpuFamily::Z80,
+        registers,
+        flags: Vec::new(),
+    }
+}
+
+/// A debug command addressed to the Z80 (`OnCpu { cpu: "z80", .. }`).
+fn handle_z80_debug(
+    record: &mut InstanceRecord,
+    command: DebugCommand,
+) -> Result<DebugResponse, String> {
+    match command {
+        DebugCommand::GetRegisters => Ok(DebugResponse::Registers(z80_register_snapshot(
+            &record.machine,
+        ))),
+        DebugCommand::ReadMemory { address, len, .. } => Ok(DebugResponse::Memory(
+            (0..len as u64)
+                .map(|i| {
+                    record
+                        .machine
+                        .z80_peek((address.wrapping_add(i) & 0xFFFF) as u16)
+                })
+                .collect(),
+        )),
+        DebugCommand::GetDisassembly { start, lines } => {
+            Ok(DebugResponse::Disassembly(disassembly_z80(
+                &record.machine,
+                start.unwrap_or(u64::from(record.machine.z80_pc())),
+                lines,
+            )))
+        }
+        DebugCommand::GetAddressSpaces => {
+            Ok(DebugResponse::AddressSpaces(vec![AddressSpaceInfo {
+                name: "z80".to_string(),
+                addr_width_bits: 16,
+                bank_context: Vec::new(),
+            }]))
+        }
+        DebugCommand::Pause | DebugCommand::Resume => Ok(DebugResponse::Ack),
+        _ => Err("unsupported: this debug command is not implemented for the Z80 yet".to_string()),
+    }
+}
+
 fn register_snapshot(machine: &Genesis) -> RegisterSnapshot {
     let registers = machine
         .registers()
@@ -408,12 +506,14 @@ fn handle_debug_command(
                 .map(|i| record.machine.read_memory(address.wrapping_add(i)))
                 .collect(),
         )),
-        DebugCommand::GetDisassembly { .. } => {
-            Ok(DebugResponse::Disassembly(Vec::<DisassemblyLine>::new()))
-        }
+        DebugCommand::GetDisassembly { start, lines } => Ok(DebugResponse::Disassembly(
+            disassembly_68k(&record.machine, start.unwrap_or(record.machine.pc()), lines),
+        )),
         DebugCommand::OnCpu { cpu, command } => {
-            if cpu == "main" || cpu == "z80" {
+            if cpu == "main" {
                 handle_debug_command(record, *command)
+            } else if cpu == "z80" {
+                handle_z80_debug(record, *command)
             } else {
                 Err(format!(
                     "unknown cpu \"{cpu}\" (this machine has \"main\" and \"z80\")"
@@ -476,6 +576,11 @@ fn handle_machine_command(
             let (port, button) =
                 pad_key(&key).ok_or_else(|| format!("unknown key \"{key}\" (try --list-keys)"))?;
             record.machine.set_pad_button(port, button, pressed)?;
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::SaveState => Ok(MachineResponse::StateBlob(record.machine.save_state())),
+        MachineCommand::LoadState { bytes } => {
+            record.machine.load_state(&bytes)?;
             Ok(MachineResponse::Ack)
         }
         MachineCommand::RenderFrame => {
@@ -770,6 +875,88 @@ mod tests {
             },
         );
         assert!(bad.is_err());
+    }
+
+    #[test]
+    fn a_state_saved_through_the_plugin_loads_again() {
+        let created = create_machine(request(Vec::new())).unwrap();
+        let mut state = state().lock().unwrap();
+        let record = state.record_mut(created.instance).unwrap();
+        for _ in 0..50 {
+            record.machine.step();
+        }
+        let Ok(MachineResponse::StateBlob(blob)) =
+            handle_machine_command(record, MachineCommand::SaveState)
+        else {
+            panic!("no state");
+        };
+        assert!(blob.starts_with(b"RCST"));
+        assert!(matches!(
+            handle_machine_command(record, MachineCommand::LoadState { bytes: blob }),
+            Ok(MachineResponse::Ack)
+        ));
+        assert!(
+            handle_machine_command(
+                record,
+                MachineCommand::LoadState {
+                    bytes: vec![1, 2, 3]
+                }
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn both_cpus_answer_the_debugger() {
+        let created = create_machine(request(Vec::new())).unwrap();
+        let mut state = state().lock().unwrap();
+        let record = state.record_mut(created.instance).unwrap();
+        let Ok(DebugResponse::Disassembly(lines)) = handle_debug_command(
+            record,
+            DebugCommand::GetDisassembly {
+                start: Some(0x200),
+                lines: 2,
+            },
+        ) else {
+            panic!("no 68000 disassembly");
+        };
+        assert_eq!(lines[0].address, 0x200);
+        assert!(
+            lines[0].text.to_ascii_uppercase().contains("MOVE"),
+            "{}",
+            lines[0].text
+        );
+        let z80 = |c| DebugCommand::OnCpu {
+            cpu: "z80".to_string(),
+            command: Box::new(c),
+        };
+        let Ok(DebugResponse::Registers(regs)) =
+            handle_debug_command(record, z80(DebugCommand::GetRegisters))
+        else {
+            panic!("no Z80 registers");
+        };
+        assert_eq!(regs.cpu_family, CpuFamily::Z80);
+        assert!(regs.registers.iter().any(|r| r.name == "PC"));
+        let Ok(DebugResponse::Disassembly(zl)) = handle_debug_command(
+            record,
+            z80(DebugCommand::GetDisassembly {
+                start: Some(0),
+                lines: 1,
+            }),
+        ) else {
+            panic!("no Z80 disassembly");
+        };
+        assert_eq!(zl.len(), 1);
+        assert!(
+            handle_debug_command(
+                record,
+                DebugCommand::OnCpu {
+                    cpu: "nope".to_string(),
+                    command: Box::new(DebugCommand::GetRegisters)
+                }
+            )
+            .is_err()
+        );
     }
 
     #[test]

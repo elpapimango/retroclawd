@@ -50,6 +50,12 @@ impl Vdp {
     /// before anything reads or writes the VDP, so the registers a line is drawn with are the ones in force at its time.
     pub fn advance(&mut self, now: u64) {
         let lines = u64::from(self.timing_lines());
+        // A line count that is far behind the clock (a damaged state) is caught up by skipping, not by looping.
+        let behind = now / LINE_CLOCKS;
+        if behind > self.line_abs + 4 * lines {
+            self.line_abs = behind - lines;
+            self.vint_at = None;
+        }
         loop {
             let line_start = Self::line_time(self.line_abs);
             let mut next = line_start;

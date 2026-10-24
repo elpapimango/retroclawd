@@ -7,6 +7,7 @@ mod config;
 mod io;
 mod machine;
 mod sound;
+mod state;
 mod z80bus;
 mod z80sys;
 
@@ -16,5 +17,7 @@ pub use io::{BUTTONS, Io, PadKind};
 pub use machine::Genesis;
 pub use mc68000;
 pub use sound::{SAMPLE_MASTER_CLOCKS, Sound};
+pub use state::{MAX_STATE_BYTES, StateError};
 pub use ym2612::Chip as FmChip;
+pub use z80;
 pub use z80sys::Z80Sys;

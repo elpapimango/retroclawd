@@ -126,6 +126,22 @@ impl Bus {
         }
     }
 
+    /// A byte of the Z80's address space as the debugger sees it: no side effects.
+    pub fn z80_peek(&self, addr: u16) -> u8 {
+        match addr {
+            0x0000..=0x3FFF => self.z80.ram[usize::from(addr & 0x1FFF)],
+            0x8000..=0xFFFF => {
+                let a = u32::from(self.z80.bank) << 15 | u32::from(addr & 0x7FFF);
+                if a < 0x40_0000 {
+                    self.rom_byte(a)
+                } else {
+                    0xFF
+                }
+            }
+            _ => 0xFF,
+        }
+    }
+
     pub fn ram(&self) -> &[u8] {
         &self.ram[..]
     }

@@ -45,6 +45,14 @@ impl Z80Sys {
         }
     }
 
+    /// Whether a value read back from a saved state is usable.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.ram.len() != Z80_RAM_SIZE || self.bank > 0x1FF {
+            return Err("the Z80 RAM or bank register is out of range".to_string());
+        }
+        Ok(())
+    }
+
     /// The 68000 wrote the bus request register.
     pub fn write_bus_request(&mut self, request: bool, now: u64) {
         if request && !self.requested {

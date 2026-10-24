@@ -156,6 +156,18 @@ impl Psg {
         sum
     }
 
+    /// Whether a value read back from a saved state is usable.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.latch > 7
+            || self.noise > 7
+            || self.attenuation.iter().any(|a| *a > 15)
+            || self.tone.iter().any(|t| *t > 0x3FF)
+        {
+            return Err("a PSG register is out of range".to_string());
+        }
+        Ok(())
+    }
+
     pub fn tone_period(&self, channel: usize) -> u16 {
         self.tone[channel]
     }
