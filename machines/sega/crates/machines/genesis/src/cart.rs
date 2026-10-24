@@ -108,7 +108,11 @@ pub struct Cart {
 
 impl Cart {
     pub fn new(rom: Vec<u8>, header: &md_cart::Header) -> Self {
-        let mirror_floor = if header.overseas_name.contains("SONIC & KNUCKLES") { 0x40_0000 } else { 2 };
+        let mirror_floor = if header.overseas_name.contains("SONIC & KNUCKLES") {
+            0x40_0000
+        } else {
+            2
+        };
         let size = rom.len().max(mirror_floor).next_power_of_two();
         let mapped = rom.len() > 0x40_0000 || header.console.starts_with("SEGA SSF");
         Self {
