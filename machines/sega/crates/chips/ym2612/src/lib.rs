@@ -1308,3 +1308,48 @@ mod tests {
         assert_eq!(notes, vec![0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 3, 3, 3, 3, 3, 3]);
     }
 }
+
+#[cfg(test)]
+mod bench {
+    use super::*;
+
+    fn reg(ym: &mut Ym2612, part: u32, reg: u8, value: u8) {
+        ym.write(part * 2, reg);
+        for _ in 0..40 {
+            ym.clock();
+        }
+        ym.write(part * 2 + 1, value);
+        for _ in 0..40 {
+            ym.clock();
+        }
+    }
+
+    /// `cargo test --release -p ym2612 bench -- --ignored --nocapture`: time of one chip cycle with all channels playing.
+    #[test]
+    #[ignore]
+    fn cost_of_a_cycle() {
+        let mut ym = Ym2612::new(Chip::Ym2612);
+        for ch in 0..6u8 {
+            let (part, c) = (u32::from(ch / 3), ch % 3);
+            for op in 0..4u8 {
+                let base = 0x30 + c + 4 * op;
+                reg(&mut ym, part, base, 0x01);
+                reg(&mut ym, part, base + 0x10, 0x10);
+                reg(&mut ym, part, base + 0x40, 0x1F);
+                reg(&mut ym, part, base + 0x50, 0x10);
+            }
+            reg(&mut ym, part, 0xA4 + c, 0x22);
+            reg(&mut ym, part, 0xA0 + c, 0x69);
+        }
+        for ch in [0u8, 1, 2, 4, 5, 6] {
+            reg(&mut ym, 0, 0x28, 0xF0 | ch);
+        }
+        let start = std::time::Instant::now();
+        let mut sum = 0i64;
+        for _ in 0..10_000_000 {
+            let (l, r) = ym.clock();
+            sum += i64::from(l) + i64::from(r);
+        }
+        eprintln!("{:?} per cycle, sum {sum}", start.elapsed() / 10_000_000);
+    }
+}

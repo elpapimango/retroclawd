@@ -243,6 +243,9 @@ fn machine_profile() -> MachineProfile {
                 None,
                 "A cartridge to lock onto a Sonic & Knuckles cartridge (Sonic 3 for the combined game): its ROM shows from $200000. Ignored unless the main cartridge is Sonic & Knuckles",
             ),
+            plugin_api::ExecutionMode::option(
+                "Execution policy: accurate (the default: the 68000's bus refresh, the Z80's accesses to the 68000's bus and the VDP's FIFO slots hold the 68000 up, as Genesis Plus GX and BlastEm do) or fast (none of these: slightly faster, and the way emulators without them behave, MAME among them)",
+            ),
             option(
                 "port1",
                 MachineOptionKind::Enum {
@@ -466,6 +469,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             ("interlace_output", DebugValue::Text(v)) => weave = v == "weave",
             ("cheats", DebugValue::Text(v)) => cheats = crate_cheats(v)?,
             ("sram_file", DebugValue::Text(v)) => sram_file = Some(std::path::PathBuf::from(v)),
+            ("execution_mode", _) => {}
             (key, _) => {
                 return Err(format!(
                     "unsupported machine-create option \"{key}\" for {MACHINE_ID}"
@@ -494,6 +498,9 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         }
         config.lock_on_chip = Some(chip.to_vec());
     }
+    config.exact_timing = plugin_api::ExecutionMode::from_options(&req.options)?
+        .unwrap_or(plugin_api::ExecutionMode::Accurate)
+        == plugin_api::ExecutionMode::Accurate;
     config.cheats = cheats;
     config.interlace_weave = weave;
     config.pads = pads;

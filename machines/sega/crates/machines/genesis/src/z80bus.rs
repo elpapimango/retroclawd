@@ -90,6 +90,9 @@ impl Bus {
     /// The Z80 reaches into the 68000's bus (fact Z13): it waits until a VDP DMA from that bus is over and then for the
     /// arbitration, and the 68000 loses cycles while the Z80 holds the bus.
     fn z80_takes_68k_bus(&mut self) {
+        if !self.exact {
+            return;
+        }
         let t = self.z80_access_clock();
         let mut wait = Z80_BUS_WAIT;
         if t < self.dma_hold_until {

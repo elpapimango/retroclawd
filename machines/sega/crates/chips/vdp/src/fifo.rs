@@ -36,7 +36,7 @@ impl Vdp {
     /// A word written to the data port by the 68000 at `now`: the master clock at which it is accepted, later than `now`
     /// when the FIFO is full. Writes while the picture is not drawn are not held up.
     pub(crate) fn fifo_accept(&mut self, now: u64) -> u64 {
-        if self.line_is_blank(self.timing.phase(now).line) {
+        if !self.fifo_stalls || self.line_is_blank(self.timing.phase(now).line) {
             return now;
         }
         let idx = self.fifo_idx & 3;

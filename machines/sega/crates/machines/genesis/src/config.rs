@@ -118,6 +118,9 @@ pub struct Config {
     pub cheats: Vec<crate::cheats::Cheat>,
     /// Interlace mode 2 shows both fields woven into a 448-line picture instead of one field.
     pub interlace_weave: bool,
+    /// The bus timing a 68000 bus has beyond its instructions: the refresh delay, the cost of the Z80's accesses to its bus
+    /// and the VDP's FIFO slots. Off, the machine runs the way emulators without these did (fact V33).
+    pub exact_timing: bool,
 }
 
 impl Config {
@@ -132,6 +135,7 @@ impl Config {
             lock_on_chip: None,
             cheats: Vec::new(),
             interlace_weave: false,
+            exact_timing: true,
         }
     }
 }

@@ -6,7 +6,7 @@ use crate::Vdp;
 
 /// A pixel of one layer: palette and colour index (`pppp cccc` in the low 6 bits), whether it is drawn, and its priority bit.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
-struct Px {
+pub(crate) struct Px {
     color: u8,
     opaque: bool,
     priority: bool,
@@ -14,7 +14,7 @@ struct Px {
 
 /// What a sprite pixel does to the layers under it in shadow/highlight mode.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
-enum Operator {
+pub(crate) enum Operator {
     #[default]
     None,
     Highlight,
@@ -22,7 +22,7 @@ enum Operator {
 }
 
 #[derive(Clone, Copy, Default, Debug)]
-struct SpritePx {
+pub(crate) struct SpritePx {
     px: Px,
     operator: Operator,
     /// Colour 14 of any palette: never darkened.
@@ -41,20 +41,38 @@ fn plane_cells(field: u8) -> usize {
 /// 3-bit colour components to 8-bit output levels for the three brightness levels (fact V24: the analogue levels are `2n`
 /// for normal pixels, `n` for shadow and `7 + n` for highlight on a 0-15 scale).
 fn level(n: u16, brightness: Brightness) -> u8 {
-    let n = n & 7;
-    let v = match brightness {
-        Brightness::Normal => 2 * n,
-        Brightness::Shadow => n,
-        Brightness::Highlight => 7 + n,
-    };
-    (v * 255 / 15) as u8
+    // (2n, n, 7 + n) on a 0-15 scale, as 8-bit levels
+    const LEVELS: [[u8; 8]; 3] = [
+        [0, 34, 68, 102, 136, 170, 204, 238],
+        [0, 17, 34, 51, 68, 85, 102, 119],
+        [119, 136, 153, 170, 187, 204, 221, 238],
+    ];
+    LEVELS[brightness as usize][usize::from(n & 7)]
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub(crate) enum Brightness {
     Normal,
     Shadow,
     Highlight,
+}
+
+/// The eight pixels of one row of a plane's tile, as drawn (flips applied), and which tile that was.
+#[derive(Clone, Copy)]
+struct TileRow {
+    /// (column of the tile in plane pixels >> 3, row of the plane in pixels, plane base) the pixels belong to
+    key: (usize, usize, usize),
+    px: [Px; 8],
+}
+
+impl TileRow {
+    fn empty() -> Self {
+        TileRow {
+            key: (usize::MAX, 0, 0),
+            px: [Px::default(); 8],
+        }
+    }
 }
 
 impl Vdp {
@@ -90,25 +108,53 @@ impl Vdp {
         u16::from(self.vram[a]) << 8 | u16::from(self.vram[a + 1])
     }
 
-    /// The pixel of a plane whose name table is at `base`, `wc` x `hc` cells, at plane position (`px`, `py`).
-    fn plane_px(&self, base: usize, wc: usize, hc: usize, px: usize, py: usize) -> Px {
+    /// The pixel of a plane at plane position (`px`, `py`), through a cache of the tile row it is in: consecutive pixels of
+    /// a tile share a name table entry and a pattern row.
+    fn plane_px_cached(
+        &self,
+        cache: &mut TileRow,
+        base: usize,
+        wc: usize,
+        hc: usize,
+        px: usize,
+        py: usize,
+    ) -> Px {
+        let key = (px >> 3, py, base);
+        if cache.key != key {
+            self.plane_tile_row(cache, base, wc, hc, px & !7, py);
+            cache.key = key;
+        }
+        cache.px[px & 7]
+    }
+
+    /// Fills `cache` with the eight pixels of the tile row of the plane that starts at plane position (`px`, `py`).
+    fn plane_tile_row(
+        &self,
+        cache: &mut TileRow,
+        base: usize,
+        wc: usize,
+        hc: usize,
+        px: usize,
+        py: usize,
+    ) {
         let (shift, last) = if self.im2() { (4, 15) } else { (3, 7) };
         let col = (px >> 3) % wc;
         let row = (py >> shift) % hc;
         let entry = self.name_entry(base + 2 * (row * wc + col));
-        let mut x = px & 7;
         let mut y = py & last;
-        if entry & 0x0800 != 0 {
-            x = 7 - x;
-        }
         if entry & 0x1000 != 0 {
             y = last - y;
         }
-        let idx = self.pattern_row(usize::from(entry & 0x7FF), y)[x];
-        Px {
-            color: (((entry >> 13) & 3) as u8) << 4 | idx,
-            opaque: idx != 0,
-            priority: entry & 0x8000 != 0,
+        let pattern = self.pattern_row(usize::from(entry & 0x7FF), y);
+        let hi = (((entry >> 13) & 3) as u8) << 4;
+        let priority = entry & 0x8000 != 0;
+        for (i, out) in cache.px.iter_mut().enumerate() {
+            let idx = pattern[if entry & 0x0800 != 0 { 7 - i } else { i }];
+            *out = Px {
+                color: hi | idx,
+                opaque: idx != 0,
+                priority,
+            };
         }
     }
 
@@ -185,7 +231,9 @@ impl Vdp {
                 break;
             }
         }
-        let mut out = vec![SpritePx::default(); width];
+        let mut out = std::mem::take(&mut self.sprite_scratch);
+        out.clear();
+        out.resize(width, SpritePx::default());
         let mut pixels_left = max_pixels as isize;
         let mut first = true;
         for &idx in &visible {
@@ -286,12 +334,24 @@ impl Vdp {
         let base_w = usize::from(self.regs[3] & if self.h40() { 0x3C } else { 0x3E }) << 10;
         let (wa, ha) = (plane_cells(self.regs[16]), plane_cells(self.regs[16] >> 4));
         let blank_left = self.regs[0] & 0x20 != 0;
+        let (mut cache_a, mut cache_b, mut cache_w) =
+            (TileRow::empty(), TileRow::empty(), TileRow::empty());
+        let column_scroll = self.regs[11] & 4 != 0;
+        let (mut vs_a, mut vs_b) = self.vscroll(0);
+        let (wb, hb) = (plane_cells(self.regs[16]), plane_cells(self.regs[16] >> 4));
+        let mut in_window = false;
         for x in 0..width {
-            let (vs_a, vs_b) = self.vscroll(x);
-            let a = if self.in_window(x >> 3, line >> 3) {
-                self.plane_px(base_w, wc, 32, x, row)
+            if x & 15 == 0 && column_scroll {
+                (vs_a, vs_b) = self.vscroll(x);
+            }
+            if x & 7 == 0 {
+                in_window = self.in_window(x >> 3, line >> 3);
+            }
+            let a = if in_window {
+                self.plane_px_cached(&mut cache_w, base_w, wc, 32, x, row)
             } else {
-                self.plane_px(
+                self.plane_px_cached(
+                    &mut cache_a,
                     base_a,
                     wa,
                     ha,
@@ -299,12 +359,13 @@ impl Vdp {
                     (row + vs_a) & (ha * cell_rows - 1),
                 )
             };
-            let b = self.plane_px(
+            let b = self.plane_px_cached(
+                &mut cache_b,
                 base_b,
-                plane_cells(self.regs[16]),
-                plane_cells(self.regs[16] >> 4),
-                (x + 1024 - hs_b) & (plane_cells(self.regs[16]) * 8 - 1),
-                (row + vs_b) & (plane_cells(self.regs[16] >> 4) * cell_rows - 1),
+                wb,
+                hb,
+                (x + 1024 - hs_b) & (wb * 8 - 1),
+                (row + vs_b) & (hb * cell_rows - 1),
             );
             let s = sprites[x];
             let color = if blank_left && x < 8 {
@@ -354,5 +415,6 @@ impl Vdp {
             let rgb = self.rgb(color, brightness);
             out[3 * x..3 * x + 3].copy_from_slice(&rgb);
         }
+        self.sprite_scratch = sprites;
     }
 }

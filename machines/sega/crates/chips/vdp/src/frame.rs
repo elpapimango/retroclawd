@@ -44,6 +44,13 @@ impl Vdp {
     /// Brings the VDP up to master clock `now`: lines whose time has come are drawn and their events happen. Call it
     /// before anything reads or writes the VDP, so the registers a line is drawn with are the ones in force at its time.
     pub fn advance(&mut self, now: u64) {
+        // nothing is due: the next line starts, or the vertical interrupt happens, later than `now`
+        if let Some(line_start) = self.line_abs.checked_mul(LINE_CLOCKS)
+            && now < line_start
+            && self.vint_at.is_none_or(|t| now < t)
+        {
+            return;
+        }
         let lines = u64::from(self.timing_lines());
         // A line count that is far behind the clock (a damaged state) is caught up by skipping, not by looping.
         let behind = now / LINE_CLOCKS;

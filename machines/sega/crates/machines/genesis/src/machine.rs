@@ -49,6 +49,7 @@ impl Genesis {
             }
         }
         machine.bus.vdp.set_weave(config.interlace_weave);
+        machine.bus.vdp.set_fifo_stalls(config.exact_timing);
         machine.reset();
         Ok(machine)
     }
@@ -255,6 +256,7 @@ impl Machine for Genesis {
         self.bus.ram_mut().copy_from_slice(&loaded.ram);
         self.bus.vdp = loaded.vdp;
         self.bus.vdp.set_weave(self.weave);
+        self.bus.vdp.set_fifo_stalls(self.bus.exact);
         self.bus.io = loaded.io;
         self.bus.z80 = loaded.z80;
         self.bus.sound = loaded.sound;

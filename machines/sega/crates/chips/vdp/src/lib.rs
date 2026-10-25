@@ -56,6 +56,12 @@ pub struct Vdp {
     /// Interlace mode 2 shows both fields woven into a picture twice as tall instead of one field.
     #[serde(skip)]
     pub(crate) weave: bool,
+    /// The FIFO holds the 68000 up (off: every write is accepted at once).
+    #[serde(skip)]
+    pub(crate) fifo_stalls: bool,
+    /// A buffer the sprite pass of a line reuses.
+    #[serde(skip)]
+    pub(crate) sprite_scratch: Vec<render::SpritePx>,
     /// A light gun's screen position, and whether the controller port's HL pin lets it latch the counters (input state,
     /// not saved).
     #[serde(skip)]
@@ -107,6 +113,8 @@ impl Vdp {
             odd_frame: false,
             was_interlaced: false,
             weave: false,
+            fifo_stalls: true,
+            sprite_scratch: Vec::new(),
             gun: None,
             gun_enabled: false,
             ext_pending: false,
@@ -177,6 +185,11 @@ impl Vdp {
     pub fn set_gun(&mut self, position: Option<(u32, u32)>, enabled: bool) {
         self.gun = position;
         self.gun_enabled = enabled;
+    }
+
+    /// Chooses whether the data port's FIFO holds the 68000 up (the default) or accepts every write at once.
+    pub fn set_fifo_stalls(&mut self, stalls: bool) {
+        self.fifo_stalls = stalls;
     }
 
     pub fn set_weave(&mut self, weave: bool) {

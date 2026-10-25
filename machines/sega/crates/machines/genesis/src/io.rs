@@ -236,6 +236,8 @@ pub struct Io {
     /// 4 Way Play: the latched TH, TR and TL levels of port 2 (TR and TL pick the pad, TH high is the adapter's id).
     way_latch: u8,
     four_way: bool,
+    /// A Menacer is plugged in (the VDP must be told where it points).
+    has_gun: bool,
 }
 
 impl Io {
@@ -260,6 +262,7 @@ impl Io {
             ],
             way_latch: 0,
             four_way: pad1 == PadKind::FourWay,
+            has_gun: pad2 == PadKind::Menacer,
         }
     }
 
@@ -409,6 +412,9 @@ impl Io {
     /// Where a Menacer points and whether the port's HL pin (control register bit 7) lets it latch the VDP's counters. The
     /// raw position is stretched to the gun's own aim (games scale it up by 289/320).
     pub fn gun(&self, width: u32, height: u32) -> Option<((u32, u32), bool)> {
+        if !self.has_gun {
+            return None;
+        }
         let p = self.ports[..2].iter().find(|p| p.pad == PadKind::Menacer)?;
         let x = ((p.gun.0 as u32) * 289 / 320).min(width.saturating_sub(1));
         let y = (p.gun.1 as u32).min(height.saturating_sub(1));

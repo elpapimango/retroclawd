@@ -68,6 +68,8 @@ pub struct Bus {
     pub pc: u32,
     /// The master clock at which the next bus refresh holds the 68000.
     pub refresh_at: u64,
+    /// Whether the refresh delay and the Z80's bus contention are modelled (`Config::exact_timing`).
+    pub(crate) exact: bool,
     /// Work RAM pokes of the cheat codes, written once a frame.
     pub(crate) pokes: Vec<(u32, u16, bool)>,
     /// Master clocks the 68000 owes for the Z80's accesses to its bus, paid at the next catch-up.
@@ -138,6 +140,7 @@ impl Bus {
             refresh_at: REFRESH_INTERVAL,
             z80_delay: 0,
             dma_hold_until: 0,
+            exact: config.exact_timing,
             pokes: config
                 .cheats
                 .iter()
@@ -153,7 +156,9 @@ impl Bus {
     fn bus_cycle(&mut self) {
         if self.now >= self.refresh_at {
             self.refresh_at = self.now + REFRESH_INTERVAL;
-            self.now += REFRESH_DELAY;
+            if self.exact {
+                self.now += REFRESH_DELAY;
+            }
         }
         self.now += BUS_CYCLE;
     }
