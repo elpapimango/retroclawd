@@ -113,6 +113,9 @@ impl Bus {
             && header.overseas_name.contains("SONIC & KNUCKLES")
         {
             cart.lock_on(upper.clone(), &md_cart::parse_header(upper).0);
+            if let Some(chip) = &config.lock_on_chip {
+                cart.set_lock_on_chip(chip.clone());
+            }
         }
         Self {
             now: 0,

@@ -112,6 +112,8 @@ pub struct Config {
     pub fm_chip: ym2612::Chip,
     /// A second cartridge locked onto a Sonic & Knuckles cartridge (its ROM as the 68000 sees it): it shows from `$200000`.
     pub lock_on: Option<Vec<u8>>,
+    /// The 256 KB chip of a Sonic & Knuckles cartridge that Sonic 2 uses (a dump of it).
+    pub lock_on_chip: Option<Vec<u8>>,
     /// Cheat codes (Game Genie and raw patches).
     pub cheats: Vec<crate::cheats::Cheat>,
     /// Interlace mode 2 shows both fields woven into a 448-line picture instead of one field.
@@ -127,6 +129,7 @@ impl Config {
             tmss: None,
             fm_chip: ym2612::Chip::Ym2612,
             lock_on: None,
+            lock_on_chip: None,
             cheats: Vec::new(),
             interlace_weave: false,
         }

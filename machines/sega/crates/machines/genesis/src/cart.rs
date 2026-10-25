@@ -111,6 +111,11 @@ struct LockOn {
     rom: Vec<u8>,
     #[serde(skip)]
     mask: usize,
+    /// The 256 KB chip inside a Sonic & Knuckles cartridge that Sonic 2 uses: it shows in `$300000-$3FFFFF` (mirrored)
+    /// while register `$A130F1` bit 0 is set, and after a reset it is off.
+    #[serde(skip)]
+    chip: Vec<u8>,
+    chip_on: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -172,7 +177,19 @@ impl Cart {
         let mask = rom.len().max(2).next_power_of_two() - 1;
         self.sram = header.sram.map(Sram::new);
         self.sram_off_at_power_on = is_sonic_3(header);
-        self.lock = Some(LockOn { rom, mask });
+        self.lock = Some(LockOn {
+            rom,
+            mask,
+            chip: Vec::new(),
+            chip_on: false,
+        });
+    }
+
+    /// Gives a locked-on Sonic & Knuckles its 256 KB Sonic 2 chip (fact H11).
+    pub fn set_lock_on_chip(&mut self, chip: Vec<u8>) {
+        if let Some(l) = &mut self.lock {
+            l.chip = chip;
+        }
     }
 
     /// A cartridge from a bare ROM with no header facts (tests, headerless programs).
@@ -203,6 +220,9 @@ impl Cart {
     pub fn adopt(&mut self, mut state: Cart) {
         std::mem::swap(&mut state.rom, &mut self.rom);
         state.rom_mask = self.rom_mask;
+        if let (Some(new), Some(old)) = (&mut state.lock, &mut self.lock) {
+            std::mem::swap(&mut new.chip, &mut old.chip);
+        }
         state.patches = std::mem::take(&mut self.patches);
         if let (Some(new), Some(old)) = (&mut state.lock, &mut self.lock) {
             std::mem::swap(&mut new.rom, &mut old.rom);
@@ -234,6 +254,13 @@ impl Cart {
     }
 
     fn rom_plain_at(&self, addr: u32) -> u8 {
+        if let Some(l) = &self.lock
+            && l.chip_on
+            && !l.chip.is_empty()
+            && addr >= 0x30_0000
+        {
+            return l.chip[addr as usize % l.chip.len()];
+        }
         if let Some(l) = &self.lock
             && addr >= 0x20_0000
         {
@@ -325,6 +352,9 @@ impl Cart {
 
     /// The reset line: boards that remap the cartridge area go back to their power-on mapping.
     pub fn reset(&mut self) {
+        if let Some(l) = &mut self.lock {
+            l.chip_on = false;
+        }
         if let Some(e) = &mut self.eeprom {
             e.reset();
         }
@@ -335,6 +365,9 @@ impl Cart {
     pub fn write_register(&mut self, addr: u32, value: u8) -> bool {
         match addr & 0xFF {
             0xF1 => {
+                if let Some(l) = &mut self.lock {
+                    l.chip_on = value & 1 != 0;
+                }
                 if let Some(s) = &mut self.sram {
                     let was_mapped = s.mapped;
                     s.mapped = value & 1 != 0;
@@ -456,6 +489,30 @@ mod tests {
 
     fn sram_info(kind: u8, start: u32, end: u32) -> SramInfo {
         SramInfo { kind, start, end }
+    }
+
+    #[test]
+    fn the_sonic_2_chip_shows_at_300000_while_the_register_says_so() {
+        let mut sk_header = header("SEGA MEGA DRIVE", None);
+        sk_header.overseas_name = "SONIC & KNUCKLES".into();
+        let mut cart = Cart::new(vec![0x11; 0x20_0000], &sk_header);
+        cart.lock_on(vec![0x22; 0x10_0000], &header("SEGA MEGA DRIVE", None));
+        cart.set_lock_on_chip((0..0x4_0000u32).map(|i| (i >> 10) as u8).collect());
+        assert_eq!(
+            cart.read(0x30_0000),
+            0x22,
+            "the locked cartridge's ROM at first"
+        );
+        cart.write_register(0xA1_30F1, 1);
+        assert_eq!(cart.read(0x30_0000), 0);
+        assert_eq!(cart.read(0x34_0400), 1, "the chip repeats every 256 KB");
+        assert_eq!(
+            cart.read(0x20_0000),
+            0x22,
+            "the lower half is still the ROM"
+        );
+        cart.reset();
+        assert_eq!(cart.read(0x30_0000), 0x22, "off after a reset");
     }
 
     #[test]

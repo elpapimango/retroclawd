@@ -280,6 +280,12 @@ fn machine_profile() -> MachineProfile {
                 "Cheat codes separated by commas: Game Genie codes (XXXX-YYYY, patching a word of the ROM), AAAAAA:DDDD (a ROM word patch below $400000) and FFxxxx:DD or FFxxxx:DDDD (work RAM written once a frame, as an Action Replay does). The Game Genie's own menus are not emulated",
             ),
             option(
+                "lock_on_chip",
+                MachineOptionKind::File,
+                None,
+                "The 256 KB chip of a Sonic & Knuckles cartridge that Sonic 2 uses when locked on (a dump, sk2chip.bin); mapped at $300000 while $A130F1 bit 0 is set",
+            ),
+            option(
                 "rom_tmss",
                 MachineOptionKind::File,
                 None,
@@ -479,6 +485,15 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         ));
     }
     let mut config = Config::new(cartridge.rom, region);
+    if let Some(chip) = blob(&req.roms, "lock_on_chip") {
+        if chip.len() != 0x4_0000 {
+            return Err(format!(
+                "option \"lock_on_chip\": the chip is 262144 bytes, this file has {}",
+                chip.len()
+            ));
+        }
+        config.lock_on_chip = Some(chip.to_vec());
+    }
     config.cheats = cheats;
     config.interlace_weave = weave;
     config.pads = pads;
