@@ -20,7 +20,7 @@ const HBLANK_H32: (u64, u64) = (280, 860);
 
 /// The widest picture and the tallest.
 const MAX_WIDTH: usize = 320;
-const MAX_HEIGHT: usize = 240;
+const MAX_HEIGHT: usize = 480;
 
 /// The 8 (4) lowest bits of the V counter of the last lines jump to the top of the range (fact V19).
 fn vcounter_max(pal: bool, v30: bool) -> u32 {
@@ -114,11 +114,25 @@ impl Vdp {
         }
     }
 
+    /// Whether the picture is the two fields of interlace mode 2 woven into one (`set_weave`).
+    fn weaving(&self) -> bool {
+        self.weave && self.regs[12] & 0x06 == 0x06
+    }
+
+    /// The row of the output picture a line of the current field goes to.
+    fn output_row(&self, line: usize) -> usize {
+        if self.weaving() {
+            2 * line + usize::from(self.odd_frame)
+        } else {
+            line
+        }
+    }
+
     fn draw_line(&mut self, vl: u32) {
         let width = self.width() as usize;
         let mut row = [0u8; MAX_WIDTH * 3];
         self.render_line(vl, &mut row[..width * 3]);
-        let at = vl as usize * MAX_WIDTH * 3;
+        let at = self.output_row(vl as usize) * MAX_WIDTH * 3;
         if at + width * 3 <= self.frame_buf.len() {
             self.frame_buf[at..at + width * 3].copy_from_slice(&row[..width * 3]);
         }
@@ -126,7 +140,10 @@ impl Vdp {
 
     /// The picture is complete: it becomes the one `frame` returns.
     fn finish_frame(&mut self) {
-        let (w, h) = (self.width() as usize, self.active_lines() as usize);
+        let (w, mut h) = (self.width() as usize, self.active_lines() as usize);
+        if self.weaving() {
+            h *= 2;
+        }
         let mut shown = Vec::with_capacity(w * h * 3);
         for y in 0..h {
             let at = y * MAX_WIDTH * 3;
@@ -329,6 +346,19 @@ mod tests {
         assert_eq!(at(780), 0);
         assert_eq!(at(780 + 16 * 159), 0x9F);
         assert!(at(0) >= 0xA5);
+    }
+
+    #[test]
+    fn interlace_mode_2_can_show_both_fields_woven() {
+        let mut v = vdp();
+        v.regs[12] = 0x87;
+        v.regs[16] = 0x01;
+        v.advance(2 * 262 * LINE_CLOCKS);
+        assert_eq!(v.frame().unwrap().1, 224, "one field by default");
+        v.set_weave(true);
+        v.advance(3 * 262 * LINE_CLOCKS);
+        let (w, h, rgb) = v.frame().unwrap();
+        assert_eq!((w, h, rgb.len()), (320, 448, 320 * 448 * 3));
     }
 
     #[test]

@@ -53,6 +53,9 @@ pub struct Vdp {
     pub(crate) odd_frame: bool,
     /// Interlace was on at the end of the previous frame.
     pub(crate) was_interlaced: bool,
+    /// Interlace mode 2 shows both fields woven into a picture twice as tall instead of one field.
+    #[serde(skip)]
+    pub(crate) weave: bool,
     pub(crate) timing: timing::Timing,
     /// The next absolute line (V-counter line since power on) whose start has not happened yet.
     pub(crate) line_abs: u64,
@@ -92,6 +95,7 @@ impl Vdp {
             sprite_collision: false,
             odd_frame: false,
             was_interlaced: false,
+            weave: false,
             timing: timing::Timing::new(pal),
             line_abs: 0,
             hint_counter: 0,
@@ -119,7 +123,7 @@ impl Vdp {
             return Err("the picture buffer has the wrong size".to_string());
         }
         let (w, h) = self.shown_size;
-        if w > 320 || h > 240 || self.shown.len() != (w * h * 3) as usize {
+        if w > 320 || h > 480 || self.shown.len() != (w * h * 3) as usize {
             return Err("the shown picture does not fit its size".to_string());
         }
         if self.timing.lines() != if self.pal { 313 } else { 262 } {
@@ -151,6 +155,11 @@ impl Vdp {
             return Err("the vertical interrupt is scheduled too far ahead".to_string());
         }
         Ok(())
+    }
+
+    /// Chooses what interlace mode 2 shows: one field per frame (the default) or both fields woven into a 448-line picture.
+    pub fn set_weave(&mut self, weave: bool) {
+        self.weave = weave;
     }
 
     pub fn is_pal(&self) -> bool {

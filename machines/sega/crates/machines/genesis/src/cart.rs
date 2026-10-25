@@ -463,7 +463,11 @@ mod tests {
         let mut cart = Cart::new(vec![1, 2, 3, 4], &header("SEGA MEGA DRIVE", None));
         cart.patch_word(0, 0xABCD);
         assert_eq!((cart.read(0), cart.read(1), cart.read(2)), (0xAB, 0xCD, 3));
-        assert_eq!(cart.read(4), 1, "a patch is at its address only, not in the ROM's mirrors");
+        assert_eq!(
+            cart.read(4),
+            1,
+            "a patch is at its address only, not in the ROM's mirrors"
+        );
     }
 
     #[test]

@@ -17,6 +17,7 @@ pub struct Genesis {
     /// The CRC of the ROM: states carry it, and load only into the same cartridge.
     rom_crc: u32,
     poked_frame: u64,
+    weave: bool,
 }
 
 impl Genesis {
@@ -30,6 +31,7 @@ impl Genesis {
             region: config.region,
             stop_reported: false,
             poked_frame: 0,
+            weave: config.interlace_weave,
             rom_crc: {
                 let mut h = crc32fast::Hasher::new();
                 h.update(&config.rom);
@@ -46,6 +48,7 @@ impl Genesis {
                 machine.bus.vdp.set_register(reg, value);
             }
         }
+        machine.bus.vdp.set_weave(config.interlace_weave);
         machine.reset();
         Ok(machine)
     }
@@ -247,6 +250,7 @@ impl Machine for Genesis {
         self.bus.refresh_at = loaded.refresh_at;
         self.bus.ram_mut().copy_from_slice(&loaded.ram);
         self.bus.vdp = loaded.vdp;
+        self.bus.vdp.set_weave(self.weave);
         self.bus.io = loaded.io;
         self.bus.z80 = loaded.z80;
         self.bus.sound = loaded.sound;

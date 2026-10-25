@@ -244,6 +244,14 @@ fn machine_profile() -> MachineProfile {
                 "A cartridge to lock onto a Sonic & Knuckles cartridge (Sonic 3 for the combined game): its ROM shows from $200000. Ignored unless the main cartridge is Sonic & Knuckles",
             ),
             option(
+                "interlace_output",
+                MachineOptionKind::Enum {
+                    choices: ["field", "weave"].iter().map(|c| c.to_string()).collect(),
+                },
+                Some(DebugValue::Text("field".to_string())),
+                "What interlace mode 2 shows: one field per frame (field, 224 lines, as Genesis Plus GX does) or both fields woven into a 448-line picture (weave)",
+            ),
+            option(
                 "cheats",
                 MachineOptionKind::Text,
                 None,
@@ -407,6 +415,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let mut diag_file = None;
     let mut sram_file = None;
     let mut cheats = Vec::new();
+    let mut weave = false;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
             ("tmss", DebugValue::Text(v)) if matches!(v.as_str(), "auto" | "off" | "on") => {
@@ -420,6 +429,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
                     })?);
             }
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(std::path::PathBuf::from(v)),
+            ("interlace_output", DebugValue::Text(v)) => weave = v == "weave",
             ("cheats", DebugValue::Text(v)) => cheats = crate_cheats(v)?,
             ("sram_file", DebugValue::Text(v)) => sram_file = Some(std::path::PathBuf::from(v)),
             (key, _) => {
@@ -442,6 +452,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     }
     let mut config = Config::new(cartridge.rom, region);
     config.cheats = cheats;
+    config.interlace_weave = weave;
     if let Some(bytes) = blob(&req.roms, "lock_on") {
         config.lock_on = Some(
             md_cart::Cartridge::parse(bytes)

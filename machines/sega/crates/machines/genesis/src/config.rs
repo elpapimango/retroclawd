@@ -114,6 +114,8 @@ pub struct Config {
     pub lock_on: Option<Vec<u8>>,
     /// Cheat codes (Game Genie and raw patches).
     pub cheats: Vec<crate::cheats::Cheat>,
+    /// Interlace mode 2 shows both fields woven into a 448-line picture instead of one field.
+    pub interlace_weave: bool,
 }
 
 impl Config {
@@ -126,6 +128,7 @@ impl Config {
             fm_chip: ym2612::Chip::Ym2612,
             lock_on: None,
             cheats: Vec::new(),
+            interlace_weave: false,
         }
     }
 }
