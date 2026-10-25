@@ -154,6 +154,8 @@ impl Bus {
         match addr {
             0..=0x3F_FFFF => self.rom_byte(addr),
             0xE0_0000..=0xFF_FFFF => self.ram[(addr & 0xFFFF) as usize],
+            // the Z80's RAM as the debugger sees it, whoever has the bus
+            0xA0_0000..=0xA0_3FFF => self.z80.ram[(addr & 0x1FFF) as usize],
             _ => 0xFF,
         }
     }
