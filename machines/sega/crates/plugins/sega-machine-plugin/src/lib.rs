@@ -238,6 +238,12 @@ fn machine_profile() -> MachineProfile {
                 )
             },
             option(
+                "lock_on",
+                MachineOptionKind::File,
+                None,
+                "A cartridge to lock onto a Sonic & Knuckles cartridge (Sonic 3 for the combined game): its ROM shows from $200000. Ignored unless the main cartridge is Sonic & Knuckles",
+            ),
+            option(
                 "rom_tmss",
                 MachineOptionKind::File,
                 None,
@@ -421,6 +427,13 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         ));
     }
     let mut config = Config::new(cartridge.rom, region);
+    if let Some(bytes) = blob(&req.roms, "lock_on") {
+        config.lock_on = Some(
+            md_cart::Cartridge::parse(bytes)
+                .map_err(|e| format!("option \"lock_on\": {e}"))?
+                .rom,
+        );
+    }
     config.tmss = match tmss_choice.as_str() {
         "on" => Some(Tmss { boot_rom }),
         "auto" if boot_rom.is_some() => Some(Tmss { boot_rom }),

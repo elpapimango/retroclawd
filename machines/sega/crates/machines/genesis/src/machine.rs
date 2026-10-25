@@ -28,7 +28,14 @@ impl Genesis {
             bus: Bus::new(&config),
             region: config.region,
             stop_reported: false,
-            rom_crc: crc32fast::hash(&config.rom),
+            rom_crc: {
+                let mut h = crc32fast::Hasher::new();
+                h.update(&config.rom);
+                if let Some(upper) = &config.lock_on {
+                    h.update(upper);
+                }
+                h.finalize()
+            },
         };
         // A TMSS console without its boot ROM: the registers the boot ROM sets are set here (mode 5, display off, 40 cells,
         // increment 2), as the reference emulators do.

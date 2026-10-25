@@ -94,6 +94,25 @@ impl Sram {
     }
 }
 
+/// Whether the header names Sonic the Hedgehog 3 (the name is padded with spaces to the width of two lines).
+fn is_sonic_3(header: &md_cart::Header) -> bool {
+    header
+        .overseas_name
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .contains("SONIC THE HEDGEHOG 3")
+}
+
+/// A cartridge locked onto the connector of a Sonic & Knuckles cartridge: its ROM answers from `$200000`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+struct LockOn {
+    #[serde(skip)]
+    rom: Vec<u8>,
+    #[serde(skip)]
+    mask: usize,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Cart {
     #[serde(skip)]
@@ -105,6 +124,9 @@ pub struct Cart {
     /// The page each 512 KB bank shows, when the mapper is in use.
     banks: Option<[u8; 8]>,
     pub sram: Option<Sram>,
+    lock: Option<LockOn>,
+    /// The battery RAM is not mapped at power on although the ROM leaves room for it (Sonic 3 shows its ROM mirror there).
+    sram_off_at_power_on: bool,
     /// A serial EEPROM board (the games that save to one have no battery RAM).
     pub eeprom: Option<Eeprom>,
 }
@@ -125,8 +147,18 @@ impl Cart {
             banks: mapped.then_some([0, 1, 2, 3, 4, 5, 6, 7]),
             sram: header.sram.filter(|_| eeprom.is_none()).map(Sram::new),
             eeprom,
+            lock: None,
+            sram_off_at_power_on: is_sonic_3(header),
             rom,
         }
+    }
+
+    /// Locks another cartridge onto this one: its ROM shows from `$200000` and its header's battery RAM replaces ours (fact H11).
+    pub fn lock_on(&mut self, rom: Vec<u8>, header: &md_cart::Header) {
+        let mask = rom.len().max(2).next_power_of_two() - 1;
+        self.sram = header.sram.map(Sram::new);
+        self.sram_off_at_power_on = is_sonic_3(header);
+        self.lock = Some(LockOn { rom, mask });
     }
 
     /// A cartridge from a bare ROM with no header facts (tests, headerless programs).
@@ -138,6 +170,8 @@ impl Cart {
             banks: None,
             sram: None,
             eeprom: None,
+            lock: None,
+            sram_off_at_power_on: false,
             rom,
         }
     }
@@ -153,6 +187,10 @@ impl Cart {
     pub fn adopt(&mut self, mut state: Cart) {
         std::mem::swap(&mut state.rom, &mut self.rom);
         state.rom_mask = self.rom_mask;
+        if let (Some(new), Some(old)) = (&mut state.lock, &mut self.lock) {
+            std::mem::swap(&mut new.rom, &mut old.rom);
+            new.mask = old.mask;
+        }
         *self = state;
     }
 
@@ -161,6 +199,11 @@ impl Cart {
     }
 
     fn rom_at(&self, addr: u32) -> u8 {
+        if let Some(l) = &self.lock
+            && addr >= 0x20_0000
+        {
+            return l.rom.get(addr as usize & l.mask).copied().unwrap_or(0xFF);
+        }
         let a = match self.banks {
             Some(banks) => {
                 let page = usize::from(banks[(addr as usize >> 19) & 7]);
@@ -173,7 +216,11 @@ impl Cart {
     }
 
     fn sram_active(&self, s: &Sram) -> bool {
-        s.mapped || (self.rom.len() as u32) <= s.start
+        let rom_end = match &self.lock {
+            Some(l) => 0x20_0000 + l.rom.len() as u32,
+            None => self.rom.len() as u32,
+        };
+        s.mapped || (!self.sram_off_at_power_on && rom_end <= s.start)
     }
 
     /// A byte of the cartridge area (`addr` below `$400000`).

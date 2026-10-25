@@ -101,10 +101,16 @@ impl DmaBus for DmaMemory<'_> {
 impl Bus {
     pub fn new(config: &Config) -> Self {
         let header = md_cart::parse_header(&config.rom).0;
+        let mut cart = Cart::new(config.rom.clone(), &header);
+        if let Some(upper) = &config.lock_on
+            && header.overseas_name.contains("SONIC & KNUCKLES")
+        {
+            cart.lock_on(upper.clone(), &md_cart::parse_header(upper).0);
+        }
         Self {
             now: 0,
             region: config.region,
-            cart: Cart::new(config.rom.clone(), &header),
+            cart,
             sram_flush: false,
             ram: Box::new([0; RAM_SIZE]),
             vdp: Vdp::new(config.region.is_pal()),

@@ -110,6 +110,8 @@ pub struct Config {
     pub tmss: Option<Tmss>,
     /// The FM chip: the discrete YM2612 of the first consoles or the YM3438 core of the later ones.
     pub fm_chip: ym2612::Chip,
+    /// A second cartridge locked onto a Sonic & Knuckles cartridge (its ROM as the 68000 sees it): it shows from `$200000`.
+    pub lock_on: Option<Vec<u8>>,
 }
 
 impl Config {
@@ -120,6 +122,7 @@ impl Config {
             pads: [crate::io::PadKind::Six; 2],
             tmss: None,
             fm_chip: ym2612::Chip::Ym2612,
+            lock_on: None,
         }
     }
 }
