@@ -5,6 +5,7 @@
 mod bus;
 mod cart;
 mod config;
+mod eeprom;
 mod io;
 mod machine;
 mod sound;

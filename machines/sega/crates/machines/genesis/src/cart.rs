@@ -8,6 +8,7 @@
 //!   is on the even bytes, the odd bytes or both. Register `$A130F1` bit 0 maps it over the ROM, bit 1 write-protects it;
 //!   when the ROM ends below the RAM's start the RAM is there whatever the register says (Plutiedev "Saving progress with SRAM").
 
+use crate::eeprom::{self, Eeprom};
 use md_cart::SramInfo;
 use serde::{Deserialize, Serialize};
 
@@ -104,6 +105,8 @@ pub struct Cart {
     /// The page each 512 KB bank shows, when the mapper is in use.
     banks: Option<[u8; 8]>,
     pub sram: Option<Sram>,
+    /// A serial EEPROM board (the games that save to one have no battery RAM).
+    pub eeprom: Option<Eeprom>,
 }
 
 impl Cart {
@@ -115,11 +118,13 @@ impl Cart {
         };
         let size = rom.len().max(mirror_floor).next_power_of_two();
         let mapped = rom.len() > 0x40_0000 || header.console.starts_with("SEGA SSF");
+        let eeprom = eeprom::lookup(&header.serial).map(|(b, c)| Eeprom::new(b, c));
         Self {
             rom_mask: size - 1,
             mirror_floor,
             banks: mapped.then_some([0, 1, 2, 3, 4, 5, 6, 7]),
-            sram: header.sram.map(Sram::new),
+            sram: header.sram.filter(|_| eeprom.is_none()).map(Sram::new),
+            eeprom,
             rom,
         }
     }
@@ -132,6 +137,7 @@ impl Cart {
             mirror_floor: 2,
             banks: None,
             sram: None,
+            eeprom: None,
             rom,
         }
     }
@@ -172,6 +178,12 @@ impl Cart {
 
     /// A byte of the cartridge area (`addr` below `$400000`).
     pub fn read(&self, addr: u32) -> u8 {
+        if let Some(e) = &self.eeprom
+            && e.visible
+            && self.eeprom_covers(addr)
+        {
+            return e.read_byte(addr).unwrap_or(0);
+        }
         if let Some(s) = &self.sram
             && s.covers(addr)
             && self.sram_active(s)
@@ -186,6 +198,12 @@ impl Cart {
 
     /// A write into the cartridge area: it reaches battery RAM when that is mapped and writable, else nothing.
     pub fn write(&mut self, addr: u32, value: u8) {
+        if self.eeprom_covers(addr) {
+            if let Some(e) = &mut self.eeprom {
+                e.write_byte(addr, value);
+            }
+            return;
+        }
         let active = self.sram.as_ref().is_some_and(|s| self.sram_active(s));
         if let Some(s) = &mut self.sram
             && active
@@ -196,6 +214,34 @@ impl Cart {
         {
             s.data[i] = value;
             s.dirty = true;
+        }
+    }
+
+    /// Whether the EEPROM answers at `addr`: `$200000-$3FFFFF`, or the lower half of it while an Acclaim 4 MB board has switched
+    /// the chip in. Writes reach the chip's board whenever they fall in the area it decodes.
+    fn eeprom_covers(&self, addr: u32) -> bool {
+        self.eeprom.as_ref().is_some_and(|e| match e.board() {
+            eeprom::Board::Acclaim32 => (0x20_0000..0x30_0000).contains(&addr),
+            _ => (0x20_0000..0x40_0000).contains(&addr),
+        })
+    }
+
+    /// A word written into the cartridge area that a board decodes as one write (both byte strobes at once). `false` when no
+    /// such board answers there and the word goes as two bytes.
+    pub fn write_word(&mut self, addr: u32, value: u16) -> bool {
+        if self.eeprom_covers(addr)
+            && let Some(e) = &mut self.eeprom
+        {
+            e.write_word(addr, value);
+            return true;
+        }
+        false
+    }
+
+    /// The reset line: boards that remap the cartridge area go back to their power-on mapping.
+    pub fn reset(&mut self) {
+        if let Some(e) = &mut self.eeprom {
+            e.reset();
         }
     }
 
@@ -227,11 +273,20 @@ impl Cart {
 
     /// The battery RAM's contents and whether it is saved between sessions.
     pub fn sram_data(&self) -> Option<(&[u8], bool)> {
+        if let Some(e) = &self.eeprom {
+            return Some((&e.data[..], true));
+        }
         self.sram.as_ref().map(|s| (&s.data[..], s.battery))
     }
 
     /// Loads battery RAM from a file's contents (as many bytes as fit).
     pub fn load_sram(&mut self, bytes: &[u8]) {
+        if let Some(e) = &mut self.eeprom {
+            let n = bytes.len().min(e.data.len());
+            e.data[..n].copy_from_slice(&bytes[..n]);
+            e.dirty = false;
+            return;
+        }
         if let Some(s) = &mut self.sram {
             let n = bytes.len().min(s.data.len());
             s.data[..n].copy_from_slice(&bytes[..n]);
@@ -240,10 +295,13 @@ impl Cart {
     }
 
     pub fn sram_dirty(&self) -> bool {
-        self.sram.as_ref().is_some_and(|s| s.dirty)
+        self.eeprom.as_ref().is_some_and(|e| e.dirty) || self.sram.as_ref().is_some_and(|s| s.dirty)
     }
 
     pub fn mark_sram_saved(&mut self) {
+        if let Some(e) = &mut self.eeprom {
+            e.dirty = false;
+        }
         if let Some(s) = &mut self.sram {
             s.dirty = false;
         }
@@ -255,6 +313,9 @@ impl Cart {
             && banks.iter().any(|b| *b > 0x3F)
         {
             return Err("a mapper bank is out of range".to_string());
+        }
+        if let Some(e) = &self.eeprom {
+            e.validate()?;
         }
         if let Some(s) = &self.sram
             && (s.data.is_empty() || s.data.len() > MAX_SRAM_BYTES)

@@ -479,6 +479,7 @@ impl M68kBus for Bus {
                 self.z80_area_write(addr & !1, (value >> 8) as u8);
                 true
             }
+            Size::Word if addr < 0x40_0000 && self.cart.write_word(addr, value as u16) => true,
             Size::Word => {
                 self.write_byte(addr, (value >> 8) as u8) && self.write_byte(addr | 1, value as u8)
             }

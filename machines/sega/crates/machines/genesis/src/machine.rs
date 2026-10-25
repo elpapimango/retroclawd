@@ -246,6 +246,7 @@ impl Machine for Genesis {
     fn reset(&mut self) {
         self.stop_reported = false;
         self.bus.take_stop();
+        self.bus.cart.reset();
         self.cpu.reset(&mut self.bus);
     }
 }
