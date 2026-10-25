@@ -310,6 +310,9 @@ impl Bus {
     /// Brings the Z80 and the VDP up to the 68000's clock: the Z80 first, because it must see the VDP as it was.
     pub fn catch_up(&mut self) {
         self.run_z80(self.now);
+        if let Some((position, enabled)) = self.io.gun(self.vdp.width(), self.vdp.active_lines()) {
+            self.vdp.set_gun(Some(position), enabled);
+        }
         self.now += std::mem::take(&mut self.z80_delay);
         self.vdp.advance(self.now);
     }
@@ -548,7 +551,7 @@ impl M68kBus for Bus {
 
     fn iack(&mut self, level: u8) -> IackResponse {
         // The VDP and the external devices answer with an autovector.
-        if level == 4 || level == 6 {
+        if matches!(level, 2 | 4 | 6) {
             self.catch_up();
             self.vdp.acknowledge();
         }

@@ -10,7 +10,7 @@ use genesis::{Config, Genesis, Region, Tmss};
 use machine::Machine;
 use plugin_api::{
     ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, CodecError, CpuFamily, CpuInfo, DebugCommand,
-    DebugResponse, DebugValue, DisassemblyLine, MACHINE_PROFILE_CONTRACT_VERSION,
+    DebugResponse, DebugValue, DisassemblyLine, HostMouseButton, MACHINE_PROFILE_CONTRACT_VERSION,
     MachineCapability, MachineCommand, MachineCreateRequest, MachineCreateResponse,
     MachineInstanceCallRequest, MachineInstanceCallResponse, MachineInstanceHandle, MachineKeyInfo,
     MachineMetadata, MachineOptionInfo, MachineOptionKind, MachinePluginVTableV1, MachineProfile,
@@ -244,6 +244,28 @@ fn machine_profile() -> MachineProfile {
                 "A cartridge to lock onto a Sonic & Knuckles cartridge (Sonic 3 for the combined game): its ROM shows from $200000. Ignored unless the main cartridge is Sonic & Knuckles",
             ),
             option(
+                "port1",
+                MachineOptionKind::Enum {
+                    choices: ["six", "three", "mouse", "none", "4way"]
+                        .iter()
+                        .map(|c| c.to_string())
+                        .collect(),
+                },
+                Some(DebugValue::Text("six".to_string())),
+                "What is plugged into controller port 1: a 6-button pad, a 3-button pad, a Sega Mouse (host mouse and buttons), nothing, or an EA 4 Way Play adapter (four pads on Joy1-Joy4; port 2 is its selector)",
+            ),
+            option(
+                "port2",
+                MachineOptionKind::Enum {
+                    choices: ["six", "three", "mouse", "none", "menacer"]
+                        .iter()
+                        .map(|c| c.to_string())
+                        .collect(),
+                },
+                Some(DebugValue::Text("six".to_string())),
+                "What is plugged into controller port 2 (see port1; menacer is Sega's light gun: aim with the host mouse, the left button is the trigger)",
+            ),
+            option(
                 "interlace_output",
                 MachineOptionKind::Enum {
                     choices: ["field", "weave"].iter().map(|c| c.to_string()).collect(),
@@ -416,6 +438,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let mut sram_file = None;
     let mut cheats = Vec::new();
     let mut weave = false;
+    let mut pads = [genesis::PadKind::Six; 2];
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
             ("tmss", DebugValue::Text(v)) if matches!(v.as_str(), "auto" | "off" | "on") => {
@@ -429,6 +452,11 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
                     })?);
             }
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(std::path::PathBuf::from(v)),
+            ("port1" | "port2", DebugValue::Text(v)) => {
+                let kind = genesis::PadKind::parse(v)
+                    .ok_or_else(|| format!("option \"{}\": unknown device \"{v}\"", option.key))?;
+                pads[usize::from(option.key == "port2")] = kind;
+            }
             ("interlace_output", DebugValue::Text(v)) => weave = v == "weave",
             ("cheats", DebugValue::Text(v)) => cheats = crate_cheats(v)?,
             ("sram_file", DebugValue::Text(v)) => sram_file = Some(std::path::PathBuf::from(v)),
@@ -453,6 +481,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let mut config = Config::new(cartridge.rom, region);
     config.cheats = cheats;
     config.interlace_weave = weave;
+    config.pads = pads;
     if let Some(bytes) = blob(&req.roms, "lock_on") {
         config.lock_on = Some(
             md_cart::Cartridge::parse(bytes)
@@ -733,6 +762,24 @@ fn handle_machine_command(
             record.machine.set_pc(address);
             Ok(MachineResponse::Ack)
         }
+        MachineCommand::MouseMotion { dx, dy } => {
+            record
+                .machine
+                .bus_mut()
+                .io
+                .mouse_motion(i32::from(dx), i32::from(dy));
+            Ok(MachineResponse::Ack)
+        }
+        MachineCommand::MouseButton { button, pressed } => {
+            let index = match button {
+                HostMouseButton::Left => 0,
+                HostMouseButton::Right => 1,
+                HostMouseButton::Middle => 2,
+                HostMouseButton::Other(_) => return Ok(MachineResponse::Ack),
+            };
+            record.machine.bus_mut().io.mouse_button(index, pressed);
+            Ok(MachineResponse::Ack)
+        }
         MachineCommand::KeyEvent { key, pressed } => {
             let (port, button) =
                 pad_key(&key).ok_or_else(|| format!("unknown key \"{key}\" (try --list-keys)"))?;
@@ -1011,7 +1058,8 @@ mod tests {
         assert_eq!(pad_key("Joy2Start"), Some((1, "Start")));
         assert_eq!(pad_key("Joy1Fire1"), Some((0, "B")));
         assert_eq!(pad_key("joy1up"), Some((0, "Up")));
-        assert!(pad_key("Joy3Up").is_none());
+        assert_eq!(pad_key("Joy3Up"), Some((2, "Up")));
+        assert!(pad_key("Joy5Up").is_none());
         assert!(pad_key("Space").is_none());
     }
 

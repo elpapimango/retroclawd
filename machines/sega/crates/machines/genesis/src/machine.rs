@@ -57,6 +57,10 @@ impl Genesis {
         self.region
     }
 
+    pub fn bus_mut(&mut self) -> &mut Bus {
+        &mut self.bus
+    }
+
     pub fn bus(&self) -> &Bus {
         &self.bus
     }

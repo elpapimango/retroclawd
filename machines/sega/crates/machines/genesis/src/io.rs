@@ -16,6 +16,13 @@ pub enum PadKind {
     None,
     Three,
     Six,
+    /// The Sega Mouse: ten nibbles per packet, fetched with a TR handshake (fact I7).
+    Mouse,
+    /// Electronic Arts' 4 Way Play: port 1 reads four pads, port 2 only selects (fact I8). Only valid for port 1.
+    FourWay,
+    /// Sega's Menacer light gun in port 2: three buttons and a start button, and a position that makes the VDP latch its
+    /// counters (fact I9).
+    Menacer,
 }
 
 impl PadKind {
@@ -24,6 +31,9 @@ impl PadKind {
             "none" => Some(PadKind::None),
             "three" | "3" => Some(PadKind::Three),
             "six" | "6" => Some(PadKind::Six),
+            "mouse" => Some(PadKind::Mouse),
+            "menacer" => Some(PadKind::Menacer),
+            "4way" | "fourway" => Some(PadKind::FourWay),
             _ => None,
         }
     }
@@ -59,6 +69,15 @@ struct Port {
     counter: u8,
     th: bool,
     last_rise: u64,
+    /// Mouse: the TH/TR levels the mouse last saw, the position in the packet, reads left of the handshake delay, the
+    /// motion since the last packet and the motion of the packet being read.
+    m_state: u8,
+    m_counter: u8,
+    m_wait: u8,
+    m_acc: (i32, i32),
+    m_packet: (i32, i32),
+    /// Menacer: where it points, in screen pixels.
+    gun: (i32, i32),
 }
 
 impl Port {
@@ -74,6 +93,12 @@ impl Port {
             counter: 0,
             th: true,
             last_rise: 0,
+            m_state: 0x60,
+            m_counter: 0,
+            m_wait: 0,
+            m_acc: (0, 0),
+            m_packet: (0, 0),
+            gun: (160, 112),
         }
     }
 
@@ -86,8 +111,60 @@ impl Port {
         }
     }
 
+    /// A write to the data or control register of a port with a mouse: the mouse sees TH and TR where they are outputs.
+    fn mouse_write(&mut self) {
+        let new = (self.m_state & !self.control) | (self.data & self.control);
+        let changed = self.m_state ^ new;
+        if changed & 0x20 != 0 {
+            // TR toggled: the next nibble, after a short delay before the mouse answers
+            if self.m_counter > 0 && self.m_counter < 9 {
+                self.m_counter += 1;
+            }
+            self.m_wait = 2;
+        }
+        if changed & 0x40 != 0 {
+            // TH falling starts a packet (the motion so far goes into it), TH rising ends it; the motion is spent once a
+            // whole packet has been read
+            let finished = self.m_counter >= 9;
+            self.m_counter = (self.m_state >> 6) & 1;
+            if self.m_counter == 1 {
+                self.m_packet = (self.m_acc.0.clamp(-255, 255), self.m_acc.1.clamp(-255, 255));
+            } else if finished {
+                self.m_acc = (0, 0);
+            }
+        }
+        self.m_state = new;
+    }
+
+    /// The pins a mouse drives: the nibble of the packet on D3-D0 and TL (D4), which follows TR once the mouse has answered.
+    fn mouse_pins(&mut self) -> u8 {
+        let (x, y) = self.m_packet;
+        let nibble = match self.m_counter {
+            1 => 0x0B,
+            2 | 3 => 0x0F,
+            4 => u8::from(x < 0) | u8::from(y < 0) << 1,
+            5 => ((self.buttons >> 4) & 0x0F) as u8,
+            6 => ((x >> 4) & 0x0F) as u8,
+            7 => (x & 0x0F) as u8,
+            8 => ((y >> 4) & 0x0F) as u8,
+            9 => (y & 0x0F) as u8,
+            _ => 0,
+        };
+        let tl = if self.m_wait > 0 {
+            self.m_wait -= 1;
+            !self.m_state & 0x20
+        } else {
+            self.m_state & 0x20
+        } >> 1;
+        nibble | tl
+    }
+
     /// Notes the pin's new level; a rising edge advances a 6-button pad.
     fn update_th(&mut self, now: u64) {
+        if self.pad == PadKind::Mouse {
+            self.mouse_write();
+            return;
+        }
         let th = self.th_level();
         if th && !self.th && self.control & 0x40 != 0 {
             if self.pad == PadKind::Six && self.counter < 8 {
@@ -136,6 +213,16 @@ impl Port {
 
     fn read_data(&mut self, now: u64) -> u8 {
         self.expire(now);
+        if self.pad == PadKind::Menacer {
+            // D0 B, D1 trigger (A), D2 C, D3 start, active high; TL and TR read low, TH high
+            let b = (self.buttons >> 4) as u8;
+            let pins = (b & 0x09) | ((b >> 1) & 0x02) | ((b << 1) & 0x04) | 0x40;
+            return (self.data & self.control) | (pins & !self.control);
+        }
+        if self.pad == PadKind::Mouse {
+            let pins = self.mouse_pins() | 0x60;
+            return (self.data & self.control) | (pins & !self.control);
+        }
         let pins = self.pad_pins() | if self.th_level() { 0x40 } else { 0 };
         (self.data & self.control) | (pins & !self.control)
     }
@@ -145,7 +232,10 @@ impl Port {
 pub struct Io {
     version: u8,
     /// The two controller ports, the expansion port, and the two pads of a J-Cart cartridge.
-    ports: [Port; 5],
+    ports: [Port; 6],
+    /// 4 Way Play: the latched TH, TR and TL levels of port 2 (TR and TL pick the pad, TH high is the adapter's id).
+    way_latch: u8,
+    four_way: bool,
 }
 
 impl Io {
@@ -157,12 +247,19 @@ impl Io {
                 region.version_register()
             },
             ports: [
-                Port::new(pad1),
+                Port::new(if pad1 == PadKind::FourWay {
+                    PadKind::Six
+                } else {
+                    pad1
+                }),
                 Port::new(pad2),
                 Port::new(PadKind::None),
                 Port::new(PadKind::Three),
                 Port::new(PadKind::Three),
+                Port::new(PadKind::Three),
             ],
+            way_latch: 0,
+            four_way: pad1 == PadKind::FourWay,
         }
     }
 
@@ -170,6 +267,20 @@ impl Io {
     pub fn read(&mut self, index: usize, now: u64) -> u8 {
         match index & 0x0F {
             0 => self.version,
+            1 if self.four_way => {
+                if self.way_latch & 4 != 0 {
+                    // the adapter's identification: D1 and D0 low
+                    let p = &self.ports[0];
+                    (p.data & p.control) | (0x7C & !p.control)
+                } else {
+                    let sel = self.way_pad(self.way_latch & 3);
+                    self.ports[sel].read_data(now)
+                }
+            }
+            2 if self.four_way => {
+                let p = &self.ports[1];
+                (p.data & p.control) | (0x7F & !p.control)
+            }
             i @ 1..=3 => self.ports[i - 1].read_data(now),
             i @ 4..=6 => self.ports[i - 4].control,
             7 => self.ports[0].tx,
@@ -192,12 +303,14 @@ impl Io {
                 p.expire(now);
                 p.data = value;
                 p.update_th(now);
+                self.four_way_follow(i - 1, now);
             }
             i @ 4..=6 => {
                 let p = &mut self.ports[i - 4];
                 p.expire(now);
                 p.control = value;
                 p.update_th(now);
+                self.four_way_follow(i - 4, now);
             }
             7 => self.ports[0].tx = value,
             8 => {}
@@ -208,6 +321,39 @@ impl Io {
             13 => self.ports[2].tx = value,
             14 => {}
             _ => self.ports[2].serial_control = value & 0xF8,
+        }
+    }
+
+    /// The index in `ports` of pad `n` (0-3) of a 4 Way Play adapter: the first controller port's own pad, then the three
+    /// spare ones.
+    fn way_pad(&self, n: u8) -> usize {
+        [0, 3, 4, 5][usize::from(n & 3)]
+    }
+
+    /// 4 Way Play: what port 1 is written goes to the selected pad; what port 2 is written latches the selection.
+    fn four_way_follow(&mut self, port: usize, now: u64) {
+        if !self.four_way {
+            return;
+        }
+        match port {
+            0 if self.way_latch & 4 == 0 => {
+                let sel = self.way_pad(self.way_latch & 3);
+                if sel != 0 {
+                    let (data, control) = (self.ports[0].data, self.ports[0].control);
+                    let p = &mut self.ports[sel];
+                    p.data = data;
+                    p.control = control;
+                    p.update_th(now);
+                }
+            }
+            1 => {
+                let p = &self.ports[1];
+                let d = p.data | !p.control;
+                if d & 0x03 == 0 {
+                    self.way_latch = (d >> 4) & 7;
+                }
+            }
+            _ => {}
         }
     }
 
@@ -230,9 +376,59 @@ impl Io {
         }
     }
 
+    /// The mouse moves by (`dx`, `dy`) host pixels (right and down positive); the first port with a mouse takes it.
+    pub fn mouse_motion(&mut self, dx: i32, dy: i32) {
+        if let Some(p) = self.ports[..2]
+            .iter_mut()
+            .find(|p| p.pad == PadKind::Menacer)
+        {
+            p.gun = ((p.gun.0 + dx).clamp(0, 319), (p.gun.1 + dy).clamp(0, 239));
+            return;
+        }
+        if let Some(p) = self.ports[..2].iter_mut().find(|p| p.pad == PadKind::Mouse) {
+            p.m_acc.0 += dx;
+            // the mouse counts up as positive
+            p.m_acc.1 -= dy;
+        }
+    }
+
+    /// A mouse button (0 left, 1 right, 2 middle).
+    pub fn mouse_button(&mut self, button: usize, pressed: bool) {
+        if let Some(port) = self.ports[..2].iter().position(|p| p.pad == PadKind::Mouse) {
+            self.set_button(port, 0x10u16 << button.min(2), pressed);
+        } else if let Some(port) = self.ports[..2]
+            .iter()
+            .position(|p| p.pad == PadKind::Menacer)
+        {
+            // the trigger is A, the others B and C
+            let mask = [0x0040, 0x0010, 0x0020][button.min(2)];
+            self.set_button(port, mask, pressed);
+        }
+    }
+
+    /// Where a Menacer points and whether the port's HL pin (control register bit 7) lets it latch the VDP's counters. The
+    /// raw position is stretched to the gun's own aim (games scale it up by 289/320).
+    pub fn gun(&self, width: u32, height: u32) -> Option<((u32, u32), bool)> {
+        let p = self.ports[..2].iter().find(|p| p.pad == PadKind::Menacer)?;
+        let x = ((p.gun.0 as u32) * 289 / 320).min(width.saturating_sub(1));
+        let y = (p.gun.1 as u32).min(height.saturating_sub(1));
+        Some(((x, y), p.control & 0x80 != 0))
+    }
+
+    /// Whether a mouse is plugged in.
+    pub fn has_mouse(&self) -> bool {
+        self.ports[..2].iter().any(|p| p.pad == PadKind::Mouse)
+    }
+
     /// A key of a pad: `port` 0 and 1 are the controller ports, 2 and 3 the pads of a J-Cart.
     pub fn set_button(&mut self, port: usize, mask: u16, pressed: bool) {
-        let port = if port >= 2 { port + 1 } else { port };
+        let port = if self.four_way {
+            self.way_pad(port as u8)
+        } else if port >= 2 {
+            port + 1
+        } else {
+            port
+        };
         if let Some(p) = self.ports.get_mut(port) {
             if pressed {
                 p.buttons |= mask;
@@ -255,6 +451,73 @@ mod tests {
     fn read_at(io: &mut Io, th: bool, now: u64) -> u8 {
         io.write(1, if th { 0x40 } else { 0x00 }, now);
         io.read(1, now)
+    }
+
+    /// Reads one packet from a mouse in port 1 the way a game does: TH low starts it, every TR toggle asks for the next nibble
+    /// and TL follows TR when the nibble is ready.
+    fn mouse_packet(io: &mut Io) -> Vec<u8> {
+        io.write(4, 0x60, 0);
+        io.write(1, 0x60, 0);
+        io.write(1, 0x20, 0);
+        let mut tr = 0x20u8;
+        let mut out = Vec::new();
+        for _ in 0..9 {
+            let mut v = io.read(1, 0);
+            for _ in 0..8 {
+                if (v >> 4) & 1 == (tr >> 5) & 1 {
+                    break;
+                }
+                v = io.read(1, 0);
+            }
+            out.push(v & 0x0F);
+            tr ^= 0x20;
+            io.write(1, tr, 0);
+        }
+        io.write(1, 0x60, 0);
+        out
+    }
+
+    #[test]
+    fn a_mouse_sends_its_motion_and_buttons_in_nine_nibbles() {
+        let mut io = Io::new(Region::Usa, PadKind::Mouse, PadKind::Six, false);
+        assert!(io.has_mouse());
+        // what Genesis Plus GX returns for a move of 5 right and 3 up with the left button held
+        io.mouse_motion(5, -3);
+        io.mouse_button(0, true);
+        assert_eq!(
+            mouse_packet(&mut io),
+            [0x0B, 0x0F, 0x0F, 0x00, 0x01, 0x00, 0x05, 0x00, 0x03]
+        );
+        // and for 20 left, 40 down with the right button: signs in the fourth nibble, two's complement bytes
+        io.mouse_button(0, false);
+        io.mouse_button(1, true);
+        io.mouse_motion(-20, 40);
+        assert_eq!(
+            mouse_packet(&mut io),
+            [0x0B, 0x0F, 0x0F, 0x03, 0x02, 0x0E, 0x0C, 0x0D, 0x08]
+        );
+        // the motion is spent: an idle mouse sends zeros
+        let idle = mouse_packet(&mut io);
+        assert_eq!(&idle[3..], [0, 2, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn four_way_play_selects_one_of_four_pads_through_port_2() {
+        let mut io = Io::new(Region::Usa, PadKind::FourWay, PadKind::Six, false);
+        io.write(4, 0x40, 0); // port 1: TH is an output
+        io.write(5, 0x7F, 0); // port 2: every pin an output, the selector
+        io.write(1, 0x40, 0);
+        // TH high on port 2's data: the adapter answers with its identification on D1-D0
+        io.write(2, 0x7C, 0);
+        assert_eq!(io.read(1, 0) & 0x03, 0x00);
+        // select pad 3 (TR high, TL low, UP and DOWN low), then give the selected pad its TH level
+        io.set_button(2, 0x0004, true); // Joy3 Left
+        io.write(2, 0x20, 0);
+        io.write(1, 0x40, 0);
+        assert_eq!(io.read(1, 0) & 0x0F, 0x0B, "pad 3 has Left pressed");
+        io.write(2, 0x00, 0); // pad 1
+        io.write(1, 0x40, 0);
+        assert_eq!(io.read(1, 0) & 0x0F, 0x0F, "pad 1 is idle");
     }
 
     #[test]

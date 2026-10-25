@@ -56,6 +56,17 @@ pub struct Vdp {
     /// Interlace mode 2 shows both fields woven into a picture twice as tall instead of one field.
     #[serde(skip)]
     pub(crate) weave: bool,
+    /// A light gun's screen position, and whether the controller port's HL pin lets it latch the counters (input state,
+    /// not saved).
+    #[serde(skip)]
+    pub(crate) gun: Option<(u32, u32)>,
+    #[serde(skip)]
+    pub(crate) gun_enabled: bool,
+    /// The external interrupt (level 2), raised by a light gun.
+    pub(crate) ext_pending: bool,
+    /// The HV counter a light gun latched: its value, whether the latch is held (register 0 bit 1) and the line it was
+    /// taken on (a latch that is not held only shows on that line).
+    pub(crate) hv_latch: Option<(u16, bool, u32)>,
     pub(crate) timing: timing::Timing,
     /// The next absolute line (V-counter line since power on) whose start has not happened yet.
     pub(crate) line_abs: u64,
@@ -96,6 +107,10 @@ impl Vdp {
             odd_frame: false,
             was_interlaced: false,
             weave: false,
+            gun: None,
+            gun_enabled: false,
+            ext_pending: false,
+            hv_latch: None,
             timing: timing::Timing::new(pal),
             line_abs: 0,
             hint_counter: 0,
@@ -158,6 +173,12 @@ impl Vdp {
     }
 
     /// Chooses what interlace mode 2 shows: one field per frame (the default) or both fields woven into a 448-line picture.
+    /// Where a light gun points (screen pixels) and whether the port's HL pin is enabled.
+    pub fn set_gun(&mut self, position: Option<(u32, u32)>, enabled: bool) {
+        self.gun = position;
+        self.gun_enabled = enabled;
+    }
+
     pub fn set_weave(&mut self, weave: bool) {
         self.weave = weave;
     }

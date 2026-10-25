@@ -75,6 +75,7 @@ impl Vdp {
             let active = self.active_lines();
             if vl < active {
                 self.draw_line(vl);
+                self.gun_step(vl);
                 self.hint_step(false);
             } else if vl == active {
                 self.finish_frame();
@@ -171,6 +172,8 @@ impl Vdp {
             6
         } else if self.hint_pending && self.regs[0] & 0x10 != 0 {
             4
+        } else if self.ext_pending && self.regs[11] & 0x08 != 0 {
+            2
         } else {
             0
         }
@@ -181,8 +184,32 @@ impl Vdp {
         if self.vint_pending && self.regs[1] & 0x20 != 0 {
             self.vint_pending = false;
             self.vint_flag = false;
-        } else {
+        } else if self.hint_pending && self.regs[0] & 0x10 != 0 {
             self.hint_pending = false;
+        } else {
+            self.ext_pending = false;
+        }
+    }
+
+    /// A light gun that points at line `vl` raises the external interrupt and latches the counters at its column (fact I9).
+    fn gun_step(&mut self, vl: u32) {
+        let Some((x, y)) = self.gun else {
+            return;
+        };
+        if self.gun_enabled && y == vl && y < self.active_lines() {
+            self.ext_pending = true;
+            let dot = x as usize / 2;
+            // the H counter skips a stretch at the end of the line (fact V19)
+            let h = if self.h40() {
+                let i = dot % 210;
+                if i <= 0xB6 { i } else { 0xE5 + (i - 0xB7) }
+            } else {
+                let i = dot % 171;
+                if i <= 0x93 { i } else { 0xE9 + (i - 0x94) }
+            };
+            self.hv_latch = Some((((y as u16) << 8) | h as u16, self.regs[0] & 0x02 != 0, vl));
+        } else if self.hv_latch.is_some_and(|(_, held, _)| !held) {
+            self.hv_latch = None;
         }
     }
 
@@ -205,6 +232,12 @@ impl Vdp {
     /// The HV counter: vertical counter in the high byte, horizontal in the low byte (fact V19; positions are the
     /// approximation described at the top of this file).
     pub fn read_hv(&self, now: u64) -> u16 {
+        if let Some((value, held, line)) = self.hv_latch {
+            let current = self.timing.phase(now).line;
+            if (held && self.regs[0] & 0x02 != 0) || (!held && current == line) {
+                return value;
+            }
+        }
         let lines = u64::from(self.timing_lines());
         let in_frame = now % (lines * LINE_CLOCKS);
         let vl = (in_frame / LINE_CLOCKS) as u32;
@@ -346,6 +379,34 @@ mod tests {
         assert_eq!(at(780), 0);
         assert_eq!(at(780 + 16 * 159), 0x9F);
         assert!(at(0) >= 0xA5);
+    }
+
+    #[test]
+    fn a_light_gun_latches_the_counters_and_raises_the_external_interrupt_on_its_line() {
+        let mut v = vdp();
+        v.regs[0] = 0x06;
+        v.regs[11] = 0x08;
+        v.regs[12] = 0x81;
+        v.set_gun(Some((90, 120)), true);
+        v.advance(119 * LINE_CLOCKS + 1000);
+        assert_eq!(v.irq_level(), 0, "not yet");
+        v.advance(121 * LINE_CLOCKS);
+        assert_eq!(v.irq_level(), 2);
+        assert_eq!(v.read_hv(130 * LINE_CLOCKS), 0x782D, "the latch holds");
+        v.acknowledge();
+        assert_eq!(v.irq_level(), 0);
+        v.regs[0] = 0x04;
+        assert_ne!(
+            v.read_hv(130 * LINE_CLOCKS),
+            0x782D,
+            "released with the latch bit"
+        );
+        // the port's HL pin off: nothing happens
+        let mut v = vdp();
+        v.regs[11] = 0x08;
+        v.set_gun(Some((90, 120)), false);
+        v.advance(130 * LINE_CLOCKS);
+        assert_eq!(v.irq_level(), 0);
     }
 
     #[test]
