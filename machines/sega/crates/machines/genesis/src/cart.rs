@@ -125,6 +125,9 @@ pub struct Cart {
     banks: Option<[u8; 8]>,
     pub sram: Option<Sram>,
     lock: Option<LockOn>,
+    /// Words of the ROM that cheat codes replace, by even address.
+    #[serde(skip)]
+    patches: std::collections::BTreeMap<u32, u16>,
     /// A J-Cart: two more pads at `$380000-$3FFFFF` (fact H12).
     jcart: bool,
     /// The battery RAM is not mapped at power on although the ROM leaves room for it (Sonic 3 shows its ROM mirror there).
@@ -157,6 +160,7 @@ impl Cart {
             sram: header.sram.filter(|_| eeprom.is_none()).map(Sram::new),
             eeprom,
             lock: None,
+            patches: Default::default(),
             jcart: codemasters.is_some_and(|(j, _)| j),
             sram_off_at_power_on: is_sonic_3(header),
             rom,
@@ -181,6 +185,7 @@ impl Cart {
             sram: None,
             eeprom: None,
             lock: None,
+            patches: Default::default(),
             jcart: false,
             sram_off_at_power_on: false,
             rom,
@@ -198,6 +203,7 @@ impl Cart {
     pub fn adopt(&mut self, mut state: Cart) {
         std::mem::swap(&mut state.rom, &mut self.rom);
         state.rom_mask = self.rom_mask;
+        state.patches = std::mem::take(&mut self.patches);
         if let (Some(new), Some(old)) = (&mut state.lock, &mut self.lock) {
             std::mem::swap(&mut new.rom, &mut old.rom);
             new.mask = old.mask;
@@ -209,7 +215,25 @@ impl Cart {
         &self.rom
     }
 
+    /// Makes the word of the ROM at `addr` read as `data` (a Game Genie code).
+    pub fn patch_word(&mut self, addr: u32, data: u16) {
+        self.patches.insert(addr & !1, data);
+    }
+
     fn rom_at(&self, addr: u32) -> u8 {
+        if !self.patches.is_empty()
+            && let Some(w) = self.patches.get(&(addr & !1))
+        {
+            return if addr & 1 == 0 {
+                (*w >> 8) as u8
+            } else {
+                *w as u8
+            };
+        }
+        self.rom_plain_at(addr)
+    }
+
+    fn rom_plain_at(&self, addr: u32) -> u8 {
         if let Some(l) = &self.lock
             && addr >= 0x20_0000
         {
@@ -432,6 +456,14 @@ mod tests {
 
     fn sram_info(kind: u8, start: u32, end: u32) -> SramInfo {
         SramInfo { kind, start, end }
+    }
+
+    #[test]
+    fn a_patched_word_reads_as_the_code_says() {
+        let mut cart = Cart::new(vec![1, 2, 3, 4], &header("SEGA MEGA DRIVE", None));
+        cart.patch_word(0, 0xABCD);
+        assert_eq!((cart.read(0), cart.read(1), cart.read(2)), (0xAB, 0xCD, 3));
+        assert_eq!(cart.read(4), 1, "a patch is at its address only, not in the ROM's mirrors");
     }
 
     #[test]

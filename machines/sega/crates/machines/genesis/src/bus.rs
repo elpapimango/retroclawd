@@ -68,6 +68,8 @@ pub struct Bus {
     pub pc: u32,
     /// The master clock at which the next bus refresh holds the 68000.
     pub refresh_at: u64,
+    /// Work RAM pokes of the cheat codes, written once a frame.
+    pub(crate) pokes: Vec<(u32, u16, bool)>,
     /// Master clocks the 68000 owes for the Z80's accesses to its bus, paid at the next catch-up.
     pub(crate) z80_delay: u64,
     /// The 68000's bus is held by a VDP DMA until this master clock (the Z80 cannot use it before).
@@ -102,6 +104,11 @@ impl Bus {
     pub fn new(config: &Config) -> Self {
         let header = md_cart::parse_header(&config.rom).0;
         let mut cart = Cart::new(config.rom.clone(), &header);
+        for c in &config.cheats {
+            if let crate::cheats::Cheat::RomWord { addr, data } = *c {
+                cart.patch_word(addr, data);
+            }
+        }
         if let Some(upper) = &config.lock_on
             && header.overseas_name.contains("SONIC & KNUCKLES")
         {
@@ -128,6 +135,14 @@ impl Bus {
             refresh_at: REFRESH_INTERVAL,
             z80_delay: 0,
             dma_hold_until: 0,
+            pokes: config
+                .cheats
+                .iter()
+                .filter_map(|c| match *c {
+                    crate::cheats::Cheat::Poke { addr, data, word } => Some((addr, data, word)),
+                    _ => None,
+                })
+                .collect(),
         }
     }
 
@@ -138,6 +153,20 @@ impl Bus {
             self.now += REFRESH_DELAY;
         }
         self.now += BUS_CYCLE;
+    }
+
+    /// Writes the cheat codes' work RAM values (once a frame).
+    pub(crate) fn apply_pokes(&mut self) {
+        for i in 0..self.pokes.len() {
+            let (addr, data, word) = self.pokes[i];
+            let at = (addr & 0xFFFF) as usize;
+            if word {
+                self.ram[at & !1] = (data >> 8) as u8;
+                self.ram[(at & !1) + 1] = data as u8;
+            } else {
+                self.ram[at] = data as u8;
+            }
+        }
     }
 
     pub fn stop(&self) -> Option<&Stop> {

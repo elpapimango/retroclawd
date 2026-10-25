@@ -4,6 +4,7 @@
 
 mod bus;
 mod cart;
+mod cheats;
 mod config;
 mod eeprom;
 mod io;
@@ -16,6 +17,7 @@ mod z80sys;
 
 pub use bus::{Bus, Stop};
 pub use cart::Cart;
+pub use cheats::{Cheat, parse as parse_cheats};
 pub use config::{Config, LINE_CLOCKS, M68K_DIVIDER, Region, Tmss, Z80_DIVIDER, frame_clocks};
 pub use io::{BUTTONS, Io, PadKind};
 pub use machine::Genesis;

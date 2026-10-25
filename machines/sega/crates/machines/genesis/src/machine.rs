@@ -16,6 +16,7 @@ pub struct Genesis {
     stop_reported: bool,
     /// The CRC of the ROM: states carry it, and load only into the same cartridge.
     rom_crc: u32,
+    poked_frame: u64,
 }
 
 impl Genesis {
@@ -28,6 +29,7 @@ impl Genesis {
             bus: Bus::new(&config),
             region: config.region,
             stop_reported: false,
+            poked_frame: 0,
             rom_crc: {
                 let mut h = crc32fast::Hasher::new();
                 h.update(&config.rom);
@@ -167,6 +169,11 @@ impl Machine for Genesis {
         self.cpu.set_ipl(self.bus.vdp.irq_level());
         self.cpu.step(&mut self.bus);
         self.bus.catch_up();
+        let frames = self.bus.vdp.frames();
+        if frames != self.poked_frame {
+            self.poked_frame = frames;
+            self.bus.apply_pokes();
+        }
         (self.bus.now - start) as u32
     }
 
@@ -286,6 +293,30 @@ mod tests {
         assert_eq!(p.frame_rate().num, 53_203_424);
         assert_eq!(p.frame_rate().den, 1_070_460);
         assert_eq!(g.audio_format().channels, 2);
+    }
+
+    #[test]
+    fn a_ram_cheat_is_written_once_a_frame() {
+        let mut config = Config::new(rom(&[0x60FE]), Region::Usa);
+        config.cheats = crate::cheats::parse("FF0010:BEEF, FF0020:7F").unwrap();
+        let mut g = Genesis::new(config).unwrap();
+        assert_eq!(
+            g.read_memory(0xFF_0010),
+            0,
+            "not before the first frame ends"
+        );
+        let mut spent = 0u64;
+        while spent < 1_000_000 {
+            spent += u64::from(g.step());
+        }
+        assert_eq!(
+            (
+                g.read_memory(0xFF_0010),
+                g.read_memory(0xFF_0011),
+                g.read_memory(0xFF_0020)
+            ),
+            (0xBE, 0xEF, 0x7F)
+        );
     }
 
     #[test]

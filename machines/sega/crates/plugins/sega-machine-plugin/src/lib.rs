@@ -244,6 +244,12 @@ fn machine_profile() -> MachineProfile {
                 "A cartridge to lock onto a Sonic & Knuckles cartridge (Sonic 3 for the combined game): its ROM shows from $200000. Ignored unless the main cartridge is Sonic & Knuckles",
             ),
             option(
+                "cheats",
+                MachineOptionKind::Text,
+                None,
+                "Cheat codes separated by commas: Game Genie codes (XXXX-YYYY, patching a word of the ROM), AAAAAA:DDDD (a ROM word patch below $400000) and FFxxxx:DD or FFxxxx:DDDD (work RAM written once a frame, as an Action Replay does). The Game Genie's own menus are not emulated",
+            ),
+            option(
                 "rom_tmss",
                 MachineOptionKind::File,
                 None,
@@ -364,6 +370,10 @@ fn pad_key(name: &str) -> Option<(usize, &'static str)> {
         .map(|&(_, b)| (port, b))
 }
 
+fn crate_cheats(text: &str) -> Result<Vec<genesis::Cheat>, String> {
+    genesis::parse_cheats(text).map_err(|e| format!("option \"cheats\": {e}"))
+}
+
 fn metadata(machine: &Genesis) -> MachineMetadata {
     let rate = machine.frame_rate();
     MachineMetadata {
@@ -396,6 +406,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let mut tmss_choice = "auto".to_string();
     let mut diag_file = None;
     let mut sram_file = None;
+    let mut cheats = Vec::new();
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
             ("tmss", DebugValue::Text(v)) if matches!(v.as_str(), "auto" | "off" | "on") => {
@@ -409,6 +420,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
                     })?);
             }
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(std::path::PathBuf::from(v)),
+            ("cheats", DebugValue::Text(v)) => cheats = crate_cheats(v)?,
             ("sram_file", DebugValue::Text(v)) => sram_file = Some(std::path::PathBuf::from(v)),
             (key, _) => {
                 return Err(format!(
@@ -429,6 +441,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         ));
     }
     let mut config = Config::new(cartridge.rom, region);
+    config.cheats = cheats;
     if let Some(bytes) = blob(&req.roms, "lock_on") {
         config.lock_on = Some(
             md_cart::Cartridge::parse(bytes)
