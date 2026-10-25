@@ -108,19 +108,28 @@ No real hardware is available, so these stay parked until someone has it; everyt
 
 ## Sega Mega Drive / Genesis (2026-10-24): working, accuracy work continues
 
-Done: the machine (68000 + Z80, VDP, YM2612, SN76489, I/O, pads), cartridges (mirroring, SSF2, battery SRAM, TMSS), save states,
-the plugin and its debugger (two CPUs), probes `p00`-`p30` against Genesis Plus GX, PicoDrive, BlastEm and clownmdemu, a manifest of
-15 scenarios (one `known-gap`), a 30-game RomM sweep (no stops, no crashes) and a frame comparison against Genesis Plus GX
-(`scenarios/batch_compare.py`: many games identical at every sampled frame, the rest differ in animation phase).
+Done: the machine (68000 + Z80, VDP, YM2612, SN76489, I/O, pads), cartridges (mirroring, SSF2, battery SRAM, serial EEPROM boards,
+Sonic & Knuckles lock-on, TMSS), interlace modes 1 and 2 (single field output), save states, the plugin and its debugger (two CPUs),
+probes `p00`-`p44` against Genesis Plus GX, PicoDrive, BlastEm and clownmdemu (and MAME as a tie-break for game logic), a manifest of
+26 scenarios (one `known-gap`), a 30-game RomM sweep (no stops, no crashes) and a frame comparison against Genesis Plus GX
+(`scenarios/batch_compare.py`: most games identical at most sampled frames, the rest differ in animation phase).
+
+Frame offsets in title animations (Ecco, Aladdin, Sonic 3D Blast, Golden Axe at 600+ frames): analysed on Aladdin
+(`scenarios/ramscan.py`, `mame_probe.py`). Our work RAM equals Genesis Plus GX's, one frame apart, for 60 frames; the offset then
+changes by one at the end of the loading phase, where the game's wait for the vertical interrupt turns a lag of well under 1% into
+a whole frame. The loops the loading phase spends its time in agree with Genesis Plus GX to 0.04% (`p44*`), refresh, FIFO and DMA
+agree (`p22`, `p29`, `p34`); what is left is below what the probes resolve. MAME models none of the refresh, FIFO or Z80 contention
+(its `p22`/`p29`/`p30` results show it), so it cannot arbitrate those; it agrees with Genesis Plus GX on the game logic.
 
 Open, each with what it needs:
-- **Frame offsets in some title animations** (Ecco, Sonic 2, Sonic 3D Blast, Golden Axe at 600+ frames): the cores disagree with
-  each other as well (Ecco: Genesis Plus GX, BlastEm and PicoDrive hold different state at frame 139); fact V30. Needs hardware captures or a cycle-exact reference (MAME is installed and not yet used as a tie-break).
 - **FIFO slots** are fitted to Genesis Plus GX (about 16 clocks); **DMA slot interleave with the 68000, mid-line palette and register
-  effects** (`render_exact`), pixel-level HBLANK flags: not modelled beyond the per-line rates; needs probes that write CRAM/registers at known H positions and read the picture back.
-- **Interlace modes 1 and 2** (Sonic 2 2-player, Combat Cars): the VDP accepts the register bits and draws one field.
-- **EEPROM cartridges** (NBA Jam, Wonder Boy V, Micro Machines, Sega Sports titles), **Sonic & Knuckles lock-on** (`sk.bin`, `sk2chip.bin`
-  on RomM), Game Genie / Action Replay, Sega CD, 32X, Menacer, mouse, 4-way play, Pico: not started.
+  effects** (`render_exact`), pixel-level HBLANK flags: not modelled beyond the per-line rates; needs probes that write CRAM/registers
+  at known H positions and read the picture back.
+- **Z80 access to the 68000's bus**: 10 CPU cycles lost by the 68000 (Genesis Plus GX 10.3 on average, BlastEm 8): `P30B` known gap.
+- **Codemasters J-Cart boards** (Micro Machines, Brian Lara Cricket), Sonic 2's lock-on chip (no dump), Game Genie / Action Replay,
+  Sega CD, 32X, Menacer, mouse, 4-way play, Pico, weaving the two fields of interlace mode 2: not started.
+- **EEPROM**: tested against the data sheets' sequences and by booting NBA Jam (no oracle sets the lines; a game that saves to it
+  was not played through).
 - **Speed**: about 5x real time headless with sound on this machine; no profile-driven optimisation has been done.
 - **`--accuracy fast|accurate`**: there is one mode (per-bus-cycle 68000, instruction-granular Z80).
 

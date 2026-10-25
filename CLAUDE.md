@@ -195,8 +195,8 @@ die-level pipeline, cycle-identical to the Nuked OPN2 reference harness on 80 ra
 open), SSF2 mapper (> 4 MB or header `SEGA SSF`), battery SRAM (`sram_file`, saved when the guest locks it and on drop), TMSS boot ROM
 (`--tmss auto|off|on`, `--rom-tmss`). Timing: bus refresh (2 of every 130 CPU cycles), Z80 access to the 68000's bus (3 Z80 clocks
 wait, 10 CPU cycles lost by the 68000, waits for DMA), VDP DMA holds the 68000. Save states are `RCST` v2 (ROM CRC, region, chip,
-full validation, fuzzed by `RC_SWEEP`). Not done: interlace modes, EEPROM carts, Sonic & Knuckles lock-on, Game Genie, Sega CD/32X,
-mouse and the 4-way adapter; see `TODO.md` "Sega Mega Drive". Oracles for comparison are the libretro cores in a RetroArch install
+full validation, fuzzed by `RC_SWEEP`). Interlace modes 1 and 2 (single field), serial EEPROM boards (EA, Sega, Acclaim) and the Sonic & Knuckles lock-on (`--lock-on`)
+are done. Not done: J-Cart boards, Game Genie, Sega CD/32X, mouse and the 4-way adapter; see `TODO.md` "Sega Mega Drive". Oracles for comparison are the libretro cores in a RetroArch install
 (`retroclawd-tools/scripts/libretro_run.py`; Genesis Plus GX is the main reference); `machines/sega/scenarios/` has the probes
 (`probe.py`), the frame comparison against Genesis Plus GX (`compare_frames.py`, `batch_compare.py`) and `sweep.py` (every game of
 `software/roms/` for N frames). Manifest: `machines/sega/genesis.manifest.toml` (`rc-scenarios`).
