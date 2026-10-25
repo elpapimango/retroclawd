@@ -324,7 +324,7 @@ const FIRE_KEYS: [(&str, &str); 3] = [("Fire1", "B"), ("Fire2", "A"), ("Fire3", 
 
 fn key_names() -> Vec<MachineKeyInfo> {
     let mut keys = Vec::new();
-    for port in 1..=2 {
+    for port in 1..=4 {
         for (button, aliases) in PAD1_KEYBOARD {
             let aliases = if port == 1 { aliases } else { &[] };
             keys.push(MachineKeyInfo::with_aliases(
@@ -348,6 +348,8 @@ fn pad_key(name: &str) -> Option<(usize, &'static str)> {
     let port = match rest.as_bytes().first()? {
         b'1' => 0,
         b'2' => 1,
+        b'3' => 2,
+        b'4' => 3,
         _ => return None,
     };
     let button = &rest[1..];

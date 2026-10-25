@@ -307,3 +307,15 @@ start = 16711680
 len = 24
 golden = "genesis/p42_interlace_counter.bin"
 golden_sha256 = "ee012563d08222c0f7a2a22996ba1a848ff9f28d429681fc238026d6a1697c3b"
+
+# P45: a J-Cart (Micro Machines 2's header): the extra pads at $380000 with TH high and low. Genesis Plus GX's dump is the golden; the
+# other cores have no J-Cart.
+[[scenario]]
+id = "P45"
+kind = "memory"
+frames = 5
+files = { rom = "sega/software/scenarios/p45_jcart.md" }
+start = 16711680
+len = 8
+golden = "genesis/p45_jcart.bin"
+golden_sha256 = "e447fe1421185ba24fe2179312c6f7f8a5f261bcf761fcc699348341acab4674"

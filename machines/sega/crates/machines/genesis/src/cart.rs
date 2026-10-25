@@ -125,6 +125,8 @@ pub struct Cart {
     banks: Option<[u8; 8]>,
     pub sram: Option<Sram>,
     lock: Option<LockOn>,
+    /// A J-Cart: two more pads at `$380000-$3FFFFF` (fact H12).
+    jcart: bool,
     /// The battery RAM is not mapped at power on although the ROM leaves room for it (Sonic 3 shows its ROM mirror there).
     sram_off_at_power_on: bool,
     /// A serial EEPROM board (the games that save to one have no battery RAM).
@@ -140,7 +142,14 @@ impl Cart {
         };
         let size = rom.len().max(mirror_floor).next_power_of_two();
         let mapped = rom.len() > 0x40_0000 || header.console.starts_with("SEGA SSF");
-        let eeprom = eeprom::lookup(&header.serial).map(|(b, c)| Eeprom::new(b, c));
+        let first_long = rom
+            .get(..4)
+            .map_or(0, |b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]));
+        let codemasters = eeprom::lookup_codemasters(&header.serial, first_long, header.checksum);
+        let eeprom = match codemasters {
+            Some((_, chip)) => chip.map(|c| Eeprom::new(eeprom::Board::Codemasters, c)),
+            None => eeprom::lookup(&header.serial).map(|(b, c)| Eeprom::new(b, c)),
+        };
         Self {
             rom_mask: size - 1,
             mirror_floor,
@@ -148,6 +157,7 @@ impl Cart {
             sram: header.sram.filter(|_| eeprom.is_none()).map(Sram::new),
             eeprom,
             lock: None,
+            jcart: codemasters.is_some_and(|(j, _)| j),
             sram_off_at_power_on: is_sonic_3(header),
             rom,
         }
@@ -171,6 +181,7 @@ impl Cart {
             sram: None,
             eeprom: None,
             lock: None,
+            jcart: false,
             sram_off_at_power_on: false,
             rom,
         }
@@ -227,7 +238,8 @@ impl Cart {
     pub fn read(&self, addr: u32) -> u8 {
         if let Some(e) = &self.eeprom
             && e.visible
-            && self.eeprom_covers(addr)
+            && (self.eeprom_covers(addr)
+                || (e.board() == eeprom::Board::Codemasters && addr >= 0x38_0000))
         {
             return e.read_byte(addr).unwrap_or(0);
         }
@@ -245,7 +257,7 @@ impl Cart {
 
     /// A write into the cartridge area: it reaches battery RAM when that is mapped and writable, else nothing.
     pub fn write(&mut self, addr: u32, value: u8) {
-        if self.eeprom_covers(addr) {
+        if self.eeprom_covers(addr) || self.codemasters_upper(addr) {
             if let Some(e) = &mut self.eeprom {
                 e.write_byte(addr, value);
             }
@@ -269,6 +281,8 @@ impl Cart {
     fn eeprom_covers(&self, addr: u32) -> bool {
         self.eeprom.as_ref().is_some_and(|e| match e.board() {
             eeprom::Board::Acclaim32 => (0x20_0000..0x30_0000).contains(&addr),
+            // writes in the lower half (the upper half belongs to the J-Cart when there is one: see the bus)
+            eeprom::Board::Codemasters => (0x30_0000..0x38_0000).contains(&addr),
             _ => (0x20_0000..0x40_0000).contains(&addr),
         })
     }
@@ -276,7 +290,7 @@ impl Cart {
     /// A word written into the cartridge area that a board decodes as one write (both byte strobes at once). `false` when no
     /// such board answers there and the word goes as two bytes.
     pub fn write_word(&mut self, addr: u32, value: u16) -> bool {
-        if self.eeprom_covers(addr)
+        if (self.eeprom_covers(addr) || self.codemasters_upper(addr))
             && let Some(e) = &mut self.eeprom
         {
             e.write_word(addr, value);
@@ -312,6 +326,27 @@ impl Cart {
             _ => {}
         }
         false
+    }
+
+    /// A Codemasters board without a J-Cart decodes writes in its upper half too (Brian Lara Cricket).
+    fn codemasters_upper(&self, addr: u32) -> bool {
+        !self.jcart
+            && addr >= 0x38_0000
+            && self
+                .eeprom
+                .as_ref()
+                .is_some_and(|e| e.board() == eeprom::Board::Codemasters)
+    }
+
+    pub fn has_jcart(&self) -> bool {
+        self.jcart
+    }
+
+    /// The EEPROM's data line as a bit for a J-Cart read at D7 (the pads share the byte).
+    pub fn eeprom_sda_bit7(&self) -> u8 {
+        self.eeprom
+            .as_ref()
+            .map_or(0, |e| (e.read_word() & 0x80) as u8)
     }
 
     pub fn has_mapper(&self) -> bool {

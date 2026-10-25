@@ -16,7 +16,7 @@ def field(text, size):
     return data + b" " * (size - len(data))
 
 
-def build(code, region="JUE", name="RETROCLAWD PROBE", size=0, pattern=False, vectors_at=()):
+def build(code, region="JUE", name="RETROCLAWD PROBE", size=0, pattern=False, vectors_at=(), serial="00000000-00"):
     if len(code) % 2:
         code += b"\x00"
     stub_addr = 0x200 + len(code)
@@ -33,7 +33,7 @@ def build(code, region="JUE", name="RETROCLAWD PROBE", size=0, pattern=False, ve
         rom[4 * n:4 * n + 4] = struct.pack(">I", addr)
     rom[0x200:0x200 + len(body)] = body
     header = (field("SEGA MEGA DRIVE", 16) + field("(C)RCLW 2026.OCT", 16) + field(name, 48) + field(name, 48)
-              + field("GM 00000000-00", 14) + b"\x00\x00" + field("J", 16)
+              + field("GM " + serial, 14) + b"\x00\x00" + field("J", 16)
               + struct.pack(">IIII", 0, size - 1, 0xFF0000, 0xFFFFFF) + field("", 12) + field("", 12) + field("", 40)
               + field(region, 3) + field("", 13))
     assert len(header) == 0x100, len(header)
@@ -51,7 +51,8 @@ if __name__ == "__main__":
     ap.add_argument("--name", default="RETROCLAWD PROBE")
     ap.add_argument("--size", type=lambda v: int(v, 0), default=0, help="pad the ROM to this many bytes")
     ap.add_argument("--pattern", action="store_true", help="fill the padding with the block number of each 4 KB")
+    ap.add_argument("--serial", default="00000000-00", help="the product number after GM (11 characters)")
     ap.add_argument("--vector", action="append", default=[], help="N=ADDR: exception vector N points at ADDR (28 = level 4, 30 = level 6)")
     a = ap.parse_args()
     vecs = [(int(v.split("=")[0], 0), int(v.split("=")[1], 0)) for v in a.vector]
-    open(a.out, "wb").write(build(open(a.code, "rb").read(), a.region, a.name, a.size, a.pattern, vecs))
+    open(a.out, "wb").write(build(open(a.code, "rb").read(), a.region, a.name, a.size, a.pattern, vecs, a.serial))

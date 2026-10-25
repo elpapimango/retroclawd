@@ -104,7 +104,7 @@ impl Genesis {
             .find(|(n, _)| n.eq_ignore_ascii_case(name))
             .map(|&(_, m)| m)
             .ok_or_else(|| format!("unknown pad button \"{name}\""))?;
-        if port > 1 {
+        if port > 3 {
             return Err(format!("no pad port {port}"));
         }
         self.bus.io.set_button(port, mask, pressed);

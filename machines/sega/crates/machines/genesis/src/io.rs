@@ -144,7 +144,8 @@ impl Port {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Io {
     version: u8,
-    ports: [Port; 3],
+    /// The two controller ports, the expansion port, and the two pads of a J-Cart cartridge.
+    ports: [Port; 5],
 }
 
 impl Io {
@@ -155,7 +156,13 @@ impl Io {
             } else {
                 region.version_register()
             },
-            ports: [Port::new(pad1), Port::new(pad2), Port::new(PadKind::None)],
+            ports: [
+                Port::new(pad1),
+                Port::new(pad2),
+                Port::new(PadKind::None),
+                Port::new(PadKind::Three),
+                Port::new(PadKind::Three),
+            ],
         }
     }
 
@@ -204,8 +211,28 @@ impl Io {
         }
     }
 
-    /// A key of a pad: `port` 0 or 1.
+    /// What a J-Cart shows at `$380000-$3FFFFF`: pad 3's pins in the low byte, pad 4's (six pins) in the high byte, and
+    /// D14 low (fact H12).
+    pub fn jcart_read(&mut self, now: u64) -> u16 {
+        let low = self.ports[3].read_data(now);
+        let high = self.ports[4].read_data(now) & 0x3F;
+        u16::from(high) << 8 | u16::from(low)
+    }
+
+    /// A write to a J-Cart's area: bit 0 drives TH of both its pads (fact H12).
+    pub fn jcart_write(&mut self, value: u16, now: u64) {
+        let th = u8::from(value & 1 != 0) << 6;
+        for p in &mut self.ports[3..] {
+            p.expire(now);
+            p.control = 0x40;
+            p.data = th;
+            p.update_th(now);
+        }
+    }
+
+    /// A key of a pad: `port` 0 and 1 are the controller ports, 2 and 3 the pads of a J-Cart.
     pub fn set_button(&mut self, port: usize, mask: u16, pressed: bool) {
+        let port = if port >= 2 { port + 1 } else { port };
         if let Some(p) = self.ports.get_mut(port) {
             if pressed {
                 p.buttons |= mask;
@@ -228,6 +255,23 @@ mod tests {
     fn read_at(io: &mut Io, th: bool, now: u64) -> u8 {
         io.write(1, if th { 0x40 } else { 0x00 }, now);
         io.read(1, now)
+    }
+
+    #[test]
+    fn a_jcart_shows_two_more_pads_and_th_comes_from_bit_zero_of_a_write() {
+        let mut io = io(PadKind::Three);
+        io.jcart_write(1, 0);
+        assert_eq!(io.jcart_read(0), 0x3F7F, "idle pads, TH high");
+        io.jcart_write(0, 0);
+        assert_eq!(
+            io.jcart_read(0),
+            0x3333,
+            "TH low: left and right read low, start and A high"
+        );
+        io.set_button(2, 0x0001, true); // pad 3, Up
+        io.set_button(3, 0x0020, true); // pad 4, C
+        io.jcart_write(1, 0);
+        assert_eq!(io.jcart_read(0), 0x1F7E);
     }
 
     #[test]

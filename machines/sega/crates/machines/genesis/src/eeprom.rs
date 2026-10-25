@@ -62,6 +62,9 @@ pub enum Board {
     /// Acclaim, 4 MB games: an odd byte write sets SDA from D0, an even one SCL from D0, a word write chooses with D0 whether
     /// `$200000-$2FFFFF` shows the chip (0) or the ROM (1); the ROM shows again after a reset.
     Acclaim32,
+    /// Codemasters: writes anywhere in `$300000-$37FFFF` set SCL from D1 and SDA from D0; SDA is read on D7 in
+    /// `$380000-$3FFFFF`, where a J-Cart's pads share the area.
+    Codemasters,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -130,6 +133,35 @@ pub fn lookup(serial: &str) -> Option<(Board, Chip)> {
         .map(|&(_, b, c)| (b, c))
 }
 
+/// The Codemasters boards: some games carry no serial number, so the first long of the vectors and the header checksum name
+/// them. `(has a J-Cart, the chip if any)`; the Brian Lara Cricket games have the chip but no J-Cart.
+pub fn lookup_codemasters(
+    serial: &str,
+    first_long: u32,
+    checksum: u16,
+) -> Option<(bool, Option<Chip>)> {
+    const BY_SERIAL: &[(&str, bool, Option<Chip>)] = &[
+        ("T-120106", false, Some(Chip::C24C08)),
+        ("T-120096", true, Some(Chip::C24C16)),
+        ("T-120146", false, Some(Chip::C24C65)),
+        ("T-120066", true, None),
+        ("T-123456", true, None),
+    ];
+    if let Some(&(_, jcart, chip)) = BY_SERIAL.iter().find(|(id, _, _)| serial.contains(id)) {
+        return Some((jcart, chip));
+    }
+    match (first_long, checksum) {
+        (0x444E_4C44, 0x168B) => Some((true, Some(Chip::C24C08))),
+        (0x444E_4C44, 0x165E) => Some((true, Some(Chip::C24C16))),
+        (0xFFFF_FFFC, 0x168B | 0x165E) | (_, 0xDF39)
+            if serial.trim().is_empty() || serial.contains("XXXXXXXX") =>
+        {
+            Some((true, None))
+        }
+        _ => None,
+    }
+}
+
 impl Eeprom {
     pub fn new(board: Board, chip: Chip) -> Self {
         Self {
@@ -174,7 +206,7 @@ impl Eeprom {
     fn bits(&self) -> (u8, u8) {
         match self.board {
             Board::Ea => (6, 7),
-            Board::Sega | Board::Acclaim16 => (1, 0),
+            Board::Sega | Board::Acclaim16 | Board::Codemasters => (1, 0),
             Board::Acclaim32 => (0, 0),
         }
     }
@@ -182,7 +214,7 @@ impl Eeprom {
     /// The bit position the board shows SDA at when the game reads.
     fn out_bit(&self) -> u8 {
         match self.board {
-            Board::Ea => 7,
+            Board::Ea | Board::Codemasters => 7,
             Board::Sega | Board::Acclaim32 => 0,
             Board::Acclaim16 => 1,
         }
@@ -195,7 +227,7 @@ impl Eeprom {
                 // both byte strobes: the data bit chooses the ROM or the chip for reads
                 self.visible = value & 1 == 0;
             }
-            Board::Acclaim16 => self.drive(value),
+            Board::Acclaim16 | Board::Codemasters => self.drive(value),
             Board::Ea | Board::Sega => {
                 let _ = addr;
                 self.drive(value);
@@ -211,7 +243,7 @@ impl Eeprom {
                     self.drive(u16::from(value));
                 }
             }
-            Board::Acclaim16 => self.drive(u16::from(value)),
+            Board::Acclaim16 | Board::Codemasters => self.drive(u16::from(value)),
             Board::Acclaim32 => {
                 if addr & 1 != 0 {
                     self.sda = value & 1 != 0;

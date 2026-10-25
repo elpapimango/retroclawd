@@ -424,6 +424,18 @@ impl M68kBus for Bus {
             Size::Byte if (0xC0_0000..0xC0_0010).contains(&addr) => self
                 .vdp_read_word(addr & !1)
                 .map(|w| u32::from(if addr & 1 == 0 { w >> 8 } else { w & 0xFF })),
+            // a J-Cart's pads (and the EEPROM's data line on D7) answer in the top half of the cartridge area
+            Size::Byte | Size::Word
+                if self.cart.has_jcart() && (0x38_0000..0x40_0000).contains(&addr) =>
+            {
+                self.catch_up();
+                let pads = self.io.jcart_read(self.now) | u16::from(self.cart.eeprom_sda_bit7());
+                Some(match size {
+                    Size::Word => u32::from(pads),
+                    _ if addr & 1 != 0 => u32::from(pads & 0xFF),
+                    _ => u32::from(pads >> 8),
+                })
+            }
             Size::Byte => self.read_byte(addr).map(u32::from),
             Size::Word if (0xC0_0000..0xC0_0020).contains(&addr) => {
                 self.vdp_read_word(addr).map(u32::from)
@@ -457,6 +469,13 @@ impl M68kBus for Bus {
     ) -> Result<(), BusFault> {
         self.bus_cycle();
         let ok = match size {
+            Size::Byte | Size::Word
+                if self.cart.has_jcart() && (0x38_0000..0x40_0000).contains(&addr) =>
+            {
+                self.catch_up();
+                self.io.jcart_write(value as u16, self.now);
+                true
+            }
             Size::Byte | Size::Word
                 if (0xC0_0000..0xC0_0020).contains(&addr)
                     && self.vdp_locked(true, addr, size, value) =>
