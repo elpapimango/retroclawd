@@ -51,6 +51,8 @@ pub struct Vdp {
     pub(crate) sprite_overflow: bool,
     pub(crate) sprite_collision: bool,
     pub(crate) odd_frame: bool,
+    /// Interlace was on at the end of the previous frame.
+    pub(crate) was_interlaced: bool,
     pub(crate) timing: timing::Timing,
     /// The next absolute line (V-counter line since power on) whose start has not happened yet.
     pub(crate) line_abs: u64,
@@ -89,6 +91,7 @@ impl Vdp {
             sprite_overflow: false,
             sprite_collision: false,
             odd_frame: false,
+            was_interlaced: false,
             timing: timing::Timing::new(pal),
             line_abs: 0,
             hint_counter: 0,

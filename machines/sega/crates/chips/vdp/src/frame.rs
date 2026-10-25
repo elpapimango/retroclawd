@@ -78,6 +78,10 @@ impl Vdp {
                 self.hint_step(false);
             } else if vl == active {
                 self.finish_frame();
+                // the field flag alternates in the interlaced modes, starting with the even field when they are switched on
+                let interlaced = self.regs[12] & 0x02 != 0;
+                self.odd_frame = interlaced && self.was_interlaced && !self.odd_frame;
+                self.was_interlaced = interlaced;
                 self.hint_step(true);
                 let delay = if self.h40() {
                     VINT_DELAY_H40
@@ -191,6 +195,11 @@ impl Vdp {
         let mut v = vl;
         if v > vcounter_max(self.pal, self.v30()) {
             v = v.wrapping_sub(lines as u32);
+        }
+        if self.regs[12] & 0x02 != 0 {
+            // interlaced: in mode 2 the counter counts double rows, and bit 0 shows bit 8 (fact V31)
+            v <<= u32::from(self.regs[12] & 0x04 != 0);
+            v = (v & !1) | ((v >> 8) & 1);
         }
         let offset = self.picture_offset();
         let h = if self.h40() {

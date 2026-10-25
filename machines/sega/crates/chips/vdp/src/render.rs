@@ -58,8 +58,24 @@ pub(crate) enum Brightness {
 }
 
 impl Vdp {
+    /// Interlace mode 2: tiles are 8x16 (64 bytes) and a field shows every other row of a picture twice as tall (fact V31).
+    fn im2(&self) -> bool {
+        self.regs[12] & 0x06 == 0x06
+    }
+
+    /// The row of the full-height picture the output line `line` shows: its own, or in interlace mode 2 the row of the
+    /// current field.
+    fn picture_row(&self, line: usize) -> usize {
+        if self.im2() {
+            line * 2 + usize::from(self.odd_frame)
+        } else {
+            line
+        }
+    }
+
     fn pattern_row(&self, pattern: usize, row: usize) -> [u8; 8] {
-        let base = (pattern * 32 + row * 4) & 0xFFFF;
+        let size = if self.im2() { 64 } else { 32 };
+        let base = (pattern * size + row * 4) & 0xFFFF;
         let mut out = [0u8; 8];
         for i in 0..4 {
             let b = self.vram[(base + i) & 0xFFFF];
@@ -76,16 +92,17 @@ impl Vdp {
 
     /// The pixel of a plane whose name table is at `base`, `wc` x `hc` cells, at plane position (`px`, `py`).
     fn plane_px(&self, base: usize, wc: usize, hc: usize, px: usize, py: usize) -> Px {
+        let (shift, last) = if self.im2() { (4, 15) } else { (3, 7) };
         let col = (px >> 3) % wc;
-        let row = (py >> 3) % hc;
+        let row = (py >> shift) % hc;
         let entry = self.name_entry(base + 2 * (row * wc + col));
         let mut x = px & 7;
-        let mut y = py & 7;
+        let mut y = py & last;
         if entry & 0x0800 != 0 {
             x = 7 - x;
         }
         if entry & 0x1000 != 0 {
-            y = 7 - y;
+            y = last - y;
         }
         let idx = self.pattern_row(usize::from(entry & 0x7FF), y)[x];
         Px {
@@ -142,15 +159,21 @@ impl Vdp {
         let (max_sprites, max_per_line, max_pixels) =
             if h40 { (80, 20, 320) } else { (64, 16, 256) };
         let mut visible: Vec<usize> = Vec::with_capacity(max_per_line);
+        // sprite coordinates count from 128 above the picture, or in interlace mode 2 from 256 in rows twice as many
+        let (cell, ymask, ybias) = if self.im2() {
+            (16, 0x3FF, 0x100)
+        } else {
+            (8, 0x1FF, 0x80)
+        };
+        let picture_row = self.picture_row(line);
         let mut index = 0usize;
         for _ in 0..max_sprites {
             let entry = base + index * 8;
-            let y = usize::from(self.name_entry(entry) & 0x1FF);
+            let y = usize::from(self.name_entry(entry) & ymask);
             let size = self.name_entry(entry + 2);
             let height = usize::from((size >> 8) & 3) + 1;
-            let top = y as isize - 128;
-            let row = line as isize - top;
-            if (0..(height * 8) as isize).contains(&row) {
+            let row = (picture_row + ybias) as isize - y as isize;
+            if (0..(height * cell) as isize).contains(&row) {
                 if visible.len() == max_per_line {
                     self.sprite_overflow = true;
                     break;
@@ -167,7 +190,7 @@ impl Vdp {
         let mut first = true;
         for &idx in &visible {
             let entry = base + idx * 8;
-            let y = usize::from(self.name_entry(entry) & 0x1FF) as isize - 128;
+            let y = usize::from(self.name_entry(entry) & ymask) as isize - ybias as isize;
             let size = self.name_entry(entry + 2);
             let attr = self.name_entry(entry + 4);
             let raw_x = usize::from(self.name_entry(entry + 6) & 0x1FF);
@@ -178,9 +201,9 @@ impl Vdp {
             let wt = usize::from((size >> 10) & 3) + 1;
             let ht = usize::from((size >> 8) & 3) + 1;
             let x0 = raw_x as isize - 128;
-            let mut row = (line as isize - y) as usize;
+            let mut row = (picture_row as isize - y) as usize;
             if attr & 0x1000 != 0 {
-                row = ht * 8 - 1 - row;
+                row = ht * cell - 1 - row;
             }
             let hflip = attr & 0x0800 != 0;
             let palette = ((attr >> 13) & 3) as u8;
@@ -191,8 +214,8 @@ impl Vdp {
                     break;
                 }
                 let tile_col = if hflip { wt - 1 - col } else { col };
-                let pattern = usize::from(attr & 0x7FF) + tile_col * ht + row / 8;
-                let mut pixels = self.pattern_row(pattern, row & 7);
+                let pattern = usize::from(attr & 0x7FF) + tile_col * ht + row / cell;
+                let mut pixels = self.pattern_row(pattern, row % cell);
                 if hflip {
                     pixels.reverse();
                 }
@@ -254,6 +277,8 @@ impl Vdp {
         }
         let line = line as usize;
         let sprites = self.sprite_line(line, width);
+        let row = self.picture_row(line);
+        let cell_rows = if self.im2() { 16 } else { 8 };
         let wc = if self.h40() { 64 } else { 32 };
         let (hs_a, hs_b) = self.hscroll(line);
         let base_a = usize::from(self.regs[2] & 0x38) << 10;
@@ -264,14 +289,14 @@ impl Vdp {
         for x in 0..width {
             let (vs_a, vs_b) = self.vscroll(x);
             let a = if self.in_window(x >> 3, line >> 3) {
-                self.plane_px(base_w, wc, 32, x, line)
+                self.plane_px(base_w, wc, 32, x, row)
             } else {
                 self.plane_px(
                     base_a,
                     wa,
                     ha,
                     (x + 1024 - hs_a) & (wa * 8 - 1),
-                    (line + vs_a) & (ha * 8 - 1),
+                    (row + vs_a) & (ha * cell_rows - 1),
                 )
             };
             let b = self.plane_px(
@@ -279,7 +304,7 @@ impl Vdp {
                 plane_cells(self.regs[16]),
                 plane_cells(self.regs[16] >> 4),
                 (x + 1024 - hs_b) & (plane_cells(self.regs[16]) * 8 - 1),
-                (line + vs_b) & (plane_cells(self.regs[16] >> 4) * 8 - 1),
+                (row + vs_b) & (plane_cells(self.regs[16] >> 4) * cell_rows - 1),
             );
             let s = sprites[x];
             let color = if blank_left && x < 8 {

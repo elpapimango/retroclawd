@@ -266,3 +266,44 @@ start = 16711680
 len = 2
 golden = "genesis/p34_copy_h40_on.bin"
 golden_sha256 = "f3a5441d11e0c900d8957d0e72f4a82f1490c4a0a4d9e1c0f3b29328e3898ed0"
+
+# P40-im2-10: interlace mode 2 (probe p40_im2), frame 10: Genesis Plus GX's single field output; frames 10 and 11 are different fields.
+[[scenario]]
+id = "P40-im2-10"
+kind = "screen"
+frames = 10
+files = { rom = "sega/software/scenarios/p40_im2.md" }
+golden = "genesis/P40-im2-10.png"
+golden_sha256 = "bc5a44b49da709cd21d5cfb574f0e6f899322df9c2fd8b6f16736c6eeeb48447"
+compare = { mode = "similarity", max_mad = 3.0, reason = "another emulator's colour levels" }
+
+# P40-im2-11: interlace mode 2 (probe p40_im2), frame 11: Genesis Plus GX's single field output; frames 10 and 11 are different fields.
+[[scenario]]
+id = "P40-im2-11"
+kind = "screen"
+frames = 11
+files = { rom = "sega/software/scenarios/p40_im2.md" }
+golden = "genesis/P40-im2-11.png"
+golden_sha256 = "c1a48ad96b09db02b412ea2ee03c7f25d4d1cc1646b0d47f672098872e931ade"
+compare = { mode = "similarity", max_mad = 3.0, reason = "another emulator's colour levels" }
+
+# P41-im1-10: interlace mode 1 (probe p41_im1), frame 10: Genesis Plus GX's single field output; frames 10 and 11 are different fields.
+[[scenario]]
+id = "P41-im1-10"
+kind = "screen"
+frames = 10
+files = { rom = "sega/software/scenarios/p41_im1.md" }
+golden = "genesis/P41-im1-10.png"
+golden_sha256 = "f846290131e2510787621806b1ab680144b87bc14dfe1a041e1799854155d349"
+compare = { mode = "similarity", max_mad = 3.0, reason = "another emulator's colour levels" }
+
+# P42: the V counter and the field flag in the interlaced modes (Genesis Plus GX and BlastEm agree).
+[[scenario]]
+id = "P42"
+kind = "memory"
+frames = 200
+files = { rom = "sega/software/scenarios/p42_interlace_counter.md" }
+start = 16711680
+len = 24
+golden = "genesis/p42_interlace_counter.bin"
+golden_sha256 = "ee012563d08222c0f7a2a22996ba1a848ff9f28d429681fc238026d6a1697c3b"
