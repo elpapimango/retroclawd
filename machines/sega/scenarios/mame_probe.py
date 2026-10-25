@@ -7,11 +7,12 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 MAME = os.environ.get("RC_MAME", r"C:\Users\matti\Workspace\Emulators\Mame")
-LUA = os.path.join(ROOT, "software", "out", "mame", "dump.lua")
+LUA = os.path.join(HERE, "mame_dump.lua")
 
 
 def run(rom, frames, length, driver="genesis"):
     out = os.path.join(ROOT, "software", "out", "mame")
+    os.makedirs(out, exist_ok=True)
     env = dict(os.environ, MAME_FRAMES=str(frames), MAME_OUT=out)
     subprocess.run([os.path.join(MAME, "mame.exe"), driver, "-cart", os.path.abspath(rom), "-video", "none", "-sound", "none",
                     "-nothrottle", "-seconds_to_run", "120", "-autoboot_script", LUA], cwd=MAME, env=env,
