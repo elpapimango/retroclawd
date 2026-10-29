@@ -319,3 +319,48 @@ start = 16711680
 len = 8
 golden = "genesis/p45_jcart.bin"
 golden_sha256 = "e447fe1421185ba24fe2179312c6f7f8a5f261bcf761fcc699348341acab4674"
+
+# p49_pal_bus_vram_v28: 1000 units of bus-to-VRAM DMA from line 20 on a PAL console, V28 (PAL header; Genesis Plus GX, PicoDrive and BlastEm agree within a line).
+[[scenario]]
+id = "P49-pal-v28"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p49_pal_bus_vram_v28.md" }
+start = 16711680
+len = 2
+golden = "genesis/p49_pal_bus_vram_v28.bin"
+golden_sha256 = "f3a5441d11e0c900d8957d0e72f4a82f1490c4a0a4d9e1c0f3b29328e3898ed0"
+
+# p49b_pal_bus_vram_v30: the same with V30 (240 active lines): the same 111 lines, the DMA ends inside the picture (PAL header; Genesis Plus GX, PicoDrive and BlastEm agree within a line).
+[[scenario]]
+id = "P49b-pal-v30"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p49b_pal_bus_vram_v30.md" }
+start = 16711680
+len = 2
+golden = "genesis/p49b_pal_bus_vram_v30.bin"
+golden_sha256 = "f3a5441d11e0c900d8957d0e72f4a82f1490c4a0a4d9e1c0f3b29328e3898ed0"
+
+# p49c_pal_cross_v28: the same from line 200, crossing the end of a 224-line picture (PAL header; Genesis Plus GX, PicoDrive and BlastEm agree within a line).
+[[scenario]]
+id = "P49c-pal-cross-v28"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p49c_pal_cross_v28.md" }
+start = 16711680
+len = 2
+golden = "genesis/p49c_pal_cross_v28.bin"
+golden_sha256 = "d8f7720bd76b8e048289b3eeebc5d41e20c35822d4652364a429ab7cb7ea6b1f"
+
+# p49c_pal_cross_v30: the same from line 200, crossing the end of a 240-line picture (PAL header; Genesis Plus GX, PicoDrive and BlastEm agree within a line).
+[[scenario]]
+id = "P49c-pal-cross-v30"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p49c_pal_cross_v30.md" }
+start = 16711680
+len = 2
+golden = "genesis/p49c_pal_cross_v30.bin"
+golden_sha256 = "3639618e90314d0feb7ce289d97468263ca4af996ffc621399d092e1f12aa1dd"
+
