@@ -5,7 +5,7 @@ Guidance for Claude Code working in this repository.
 ## What this is
 
 The Sega family of [retroclawd](https://github.com/elpapimango/retroclawd), a submodule of the application at
-`machines/sega`: the Mega Drive / Genesis (`genesis`) as the machine plugin `sega_machine_plugin`. The design is
+`machines/sega`: the Mega Drive / Genesis (`genesis`) as the machine plugin `sega_machine_plugin` (ids `genesis` and `segacd`). The design is
 `docs/superpowers/specs/2026-10-24-sega-genesis-design.md` and the plan `docs/superpowers/plans/2026-10-24-sega-genesis.md`,
 both in the application repository: read them first.
 
@@ -29,6 +29,9 @@ Rules that apply to every change:
 
 ```
 crates/machines/genesis/            the machine (Machine impl, bus, scheduler)
+crates/machines/segacd/             the Mega-CD as an Expansion on the Genesis bus: sub-CPU, PRG/word/backup RAM
+crates/chips/mcd-gate-array/        Mega-CD gate array registers, mailboxes, timers, interrupts
+crates/formats/disc/                cue/BIN/ISO discs, sectors, TOC, test-disc builder
 crates/plugins/sega-machine-plugin/ profile, options, commands (lib `sega_machine_plugin_impl`)
 crates/plugin-dlls/genesis/         the cdylib (`sega_machine_plugin`), only `export_plugin!`
 docs/                               hardware-facts.md, sources.md

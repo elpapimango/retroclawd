@@ -287,6 +287,7 @@ impl SegaCdExp {
     }
 
     fn main_byte(&mut self, addr: u32, side_effects: bool) -> Option<u8> {
+        let addr = alias(addr);
         let gate = &self.side.gate;
         match addr {
             0..=0x01_FFFF => Some(self.side.bios[addr as usize]),
@@ -319,6 +320,7 @@ impl SegaCdExp {
     }
 
     fn main_write_byte(&mut self, addr: u32, v: u8) -> bool {
+        let addr = alias(addr);
         match addr {
             0..=0x01_FFFF => true, // the BIOS is ROM
             0x02_0000..=0x03_FFFF => {
@@ -380,7 +382,20 @@ impl SegaCdExp {
     }
 }
 
+/// The cartridge-boot (mode 1) windows of fact C16 show the same memory as the CD-boot map: the BIOS at `$400000`, the program
+/// RAM window at `$420000`, word RAM at `$600000`.
+fn alias(addr: u32) -> u32 {
+    match addr {
+        0x40_0000..=0x43_FFFF | 0x60_0000..=0x63_FFFF => addr - 0x40_0000,
+        _ => addr,
+    }
+}
+
 impl Expansion for SegaCdExp {
+    fn claims(&self, addr: u32) -> bool {
+        addr < 0x80_0000 || (0xA1_2000..=0xA1_20FF).contains(&addr)
+    }
+
     fn read(&mut self, addr: u32, size: Size, now: u64) -> Option<u32> {
         self.advance(now);
         if (0xA1_2000..=0xA1_20FF).contains(&addr) && size == Size::Word {
@@ -427,6 +442,7 @@ impl Expansion for SegaCdExp {
 
     fn peek(&self, addr: u32) -> u8 {
         let copy_free = |a: u32| -> u8 {
+            let a = alias(a);
             match a {
                 0..=0x01_FFFF => self.side.bios[a as usize],
                 0x02_0000..=0x03_FFFF => {
@@ -501,6 +517,23 @@ mod tests {
     fn run_master(e: &mut SegaCdExp, master_clocks: u64) {
         let t = e.last_master + master_clocks;
         e.advance(t);
+    }
+
+    #[test]
+    fn the_cartridge_boot_windows_show_the_same_memory() {
+        let mut bios = vec![0u8; BIOS_SIZE];
+        bios[0x100..0x104].copy_from_slice(b"SEGA");
+        let mut e = SegaCdExp::new(bios, NTSC).unwrap();
+        assert_eq!(e.read(0x40_0100, Size::Word, 0), Some(0x5345));
+        assert_eq!(e.read(0x00_0100, Size::Word, 0), Some(0x5345));
+        assert!(e.write(0x42_0010, Size::Word, 0xABCD, 0));
+        assert_eq!(e.prg_ram()[0x10], 0xAB);
+        assert!(e.write(0x60_0000, Size::Word, 0x1234, 0));
+        assert_eq!(e.word_ram()[1], 0x34);
+        assert_eq!(e.read(0x20_0000, Size::Word, 0), Some(0x1234));
+        // the rest of the cartridge space is not answered
+        assert_eq!(e.read(0x50_0000, Size::Word, 0), None);
+        assert_eq!(e.peek(0x40_0100), b'S');
     }
 
     #[test]
@@ -647,8 +680,7 @@ mod tests {
         {
             bios[0x200 + 2 * i..0x202 + 2 * i].copy_from_slice(&w.to_be_bytes());
         }
-        let mut m = new_machine(SegaCdConfig::new(bios, Region::Usa))
-        .unwrap();
+        let mut m = new_machine(SegaCdConfig::new(bios, Region::Usa)).unwrap();
         for _ in 0..10 {
             m.step();
         }
@@ -664,8 +696,7 @@ mod tests {
         for (i, w) in [0x3039u16, 0x0030, 0x0000, 0x60FE].iter().enumerate() {
             stop[0x200 + 2 * i..0x202 + 2 * i].copy_from_slice(&w.to_be_bytes());
         }
-        let mut m = new_machine(SegaCdConfig::new(stop, Region::Usa))
-        .unwrap();
+        let mut m = new_machine(SegaCdConfig::new(stop, Region::Usa)).unwrap();
         m.step();
         assert!(m.halted());
         assert!(m.take_stop_report().unwrap().contains("$300000"));
@@ -691,8 +722,7 @@ mod tests {
         for (i, w) in words.iter().enumerate() {
             bios[0x200 + 2 * i..0x202 + 2 * i].copy_from_slice(&w.to_be_bytes());
         }
-        let mut m = new_machine(SegaCdConfig::new(bios, Region::Usa))
-        .unwrap();
+        let mut m = new_machine(SegaCdConfig::new(bios, Region::Usa)).unwrap();
         let mut spent = 0u64;
         while spent < 400_000 {
             spent += u64::from(m.step());
