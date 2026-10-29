@@ -78,6 +78,13 @@ struct SubSide {
     watch: (u32, u32),
 }
 
+/// The sub-CPU's address lines A1-A19 only are connected: the map repeats every 1 MB. The top 128 KB of the megabyte (backup RAM,
+/// PCM chip, registers) is shown at `$FE0000-$FFFFFF` in the manual and used here at that place (fact C20).
+fn sub_address(addr: u32) -> u32 {
+    let a = addr & 0x000F_FFFF;
+    if a >= 0x0E_0000 { 0x00F0_0000 | a } else { a }
+}
+
 /// The cell image the main CPU sees at `$220000-$23FFFF` in 1M mode (fact C19): five stretches of its bank, each a bitmap of
 /// 512 dot wide lines (256 bytes a line) that reads as 8x8 dot cells of 32 bytes stacked in columns of `cells` cells. Returns
 /// the offset in the bank's 128 KB of the byte that the cell image byte at `off` (from `$220000`) shows.
@@ -311,7 +318,7 @@ impl SubSide {
 
 impl M68kBus for SubSide {
     fn read(&mut self, addr: u32, size: Size, _fc: FunctionCode) -> Result<u32, BusFault> {
-        let addr = addr & 0x00FF_FFFF;
+        let addr = sub_address(addr);
         match self.sub_read(addr, size) {
             Some(v) => {
                 if (0xFF_8004..=0xFF_800B).contains(&addr)
@@ -336,7 +343,7 @@ impl M68kBus for SubSide {
         value: u32,
         _fc: FunctionCode,
     ) -> Result<(), BusFault> {
-        let addr = addr & 0x00FF_FFFF;
+        let addr = sub_address(addr);
         let watched = (0xFF_8000..=0xFF_81FF).contains(&addr)
             || (self.watch.0..=self.watch.1).contains(&addr);
         if watched
@@ -426,6 +433,17 @@ impl SegaCdExp {
         })
     }
 
+    /// The 8 KB of internal backup RAM (the sub-CPU sees it on odd addresses only, fact C2).
+    pub fn backup_ram(&self) -> &[u8] {
+        &self.side.backup
+    }
+
+    /// Loads the backup RAM from a saved image (shorter images fill the start, longer ones are cut).
+    pub fn load_backup_ram(&mut self, bytes: &[u8]) {
+        let n = bytes.len().min(BACKUP_RAM_SIZE);
+        self.side.backup[..n].copy_from_slice(&bytes[..n]);
+    }
+
     /// Puts a disc into the drive (fact E14).
     pub fn insert_disc(&mut self, disc: disc::Disc) {
         self.side
@@ -494,7 +512,7 @@ impl SegaCdExp {
     /// A byte of the sub-CPU's address space as the debugger sees it: no side effects, `$FF` where nothing is mapped or the
     /// RAM belongs to the other CPU.
     pub fn sub_peek(&self, addr: u32) -> u8 {
-        let addr = addr & 0x00FF_FFFF;
+        let addr = sub_address(addr);
         match addr {
             0..=0x07_FFFF => self.side.prg[addr as usize],
             0x08_0000..=0x0B_FFFF
@@ -669,7 +687,9 @@ impl SegaCdExp {
 /// RAM window at `$420000`, word RAM at `$600000`.
 fn alias(addr: u32) -> u32 {
     match addr {
-        0x40_0000..=0x43_FFFF | 0x60_0000..=0x63_FFFF => addr - 0x40_0000,
+        0x40_0000..=0x43_FFFF => addr - 0x40_0000,
+        // word RAM repeats every 256 KB up to the end of its megabyte, in both places (fact C21)
+        0x24_0000..=0x3F_FFFF | 0x60_0000..=0x7F_FFFF => 0x20_0000 | (addr & 0x3_FFFF),
         _ => addr,
     }
 }
@@ -953,11 +973,11 @@ mod tests {
     fn an_unmapped_sub_address_stops_with_a_report_naming_the_sub_cpu() {
         let mut e = exp();
         // MOVE.W $0F0000,D0
-        start_sub(&mut e, &[0x3039, 0x000F, 0x0000, 0x60FE]);
+        start_sub(&mut e, &[0x3039, 0x000E, 0x4000, 0x60FE]);
         run_master(&mut e, 10_000);
         let report = e.stop_report().unwrap();
         assert!(
-            report.contains("sub-CPU") && report.contains("$0F0000"),
+            report.contains("sub-CPU") && report.contains("$FE4000"),
             "{report}"
         );
         assert!(report.contains("pc $000100"), "{report}");
@@ -1042,13 +1062,13 @@ mod tests {
         let mut stop = vec![0u8; BIOS_SIZE];
         stop[0..4].copy_from_slice(&0x00FF_FE00u32.to_be_bytes());
         stop[4..8].copy_from_slice(&0x200u32.to_be_bytes());
-        for (i, w) in [0x3039u16, 0x0030, 0x0000, 0x60FE].iter().enumerate() {
+        for (i, w) in [0x3039u16, 0x0050, 0x0000, 0x60FE].iter().enumerate() {
             stop[0x200 + 2 * i..0x202 + 2 * i].copy_from_slice(&w.to_be_bytes());
         }
         let mut m = new_machine(SegaCdConfig::new(stop, Region::Usa)).unwrap();
         m.step();
         assert!(m.halted());
-        assert!(m.take_stop_report().unwrap().contains("$300000"));
+        assert!(m.take_stop_report().unwrap().contains("$500000"));
     }
 
     #[test]

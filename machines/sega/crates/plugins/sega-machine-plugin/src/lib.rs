@@ -72,6 +72,8 @@ struct InstanceRecord {
     diag_file: Option<std::path::PathBuf>,
     /// Where battery RAM is kept between sessions (only for a cartridge with battery RAM).
     sram_path: Option<std::path::PathBuf>,
+    /// A Sega CD's internal backup RAM file, and what was loaded from it (saved again only when it changed).
+    backup: Option<(std::path::PathBuf, Vec<u8>)>,
 }
 
 /// The most a battery RAM file may hold when it is read.
@@ -139,8 +141,32 @@ impl InstanceRecord {
     }
 }
 
+impl InstanceRecord {
+    /// Writes the Sega CD's backup RAM to its file when the guest changed it.
+    fn save_backup(&self) {
+        let (Some((path, loaded)), Some(side)) = (&self.backup, sub_side(&self.machine)) else {
+            return;
+        };
+        if side.backup_ram() == loaded.as_slice() {
+            return;
+        }
+        let write = || -> std::io::Result<()> {
+            if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+                std::fs::create_dir_all(dir)?;
+            }
+            let temp = path.with_extension("brm.tmp");
+            std::fs::write(&temp, side.backup_ram())?;
+            std::fs::rename(&temp, path)
+        };
+        if let Err(e) = write() {
+            eprintln!("segacd: cannot save backup RAM to {}: {e}", path.display());
+        }
+    }
+}
+
 impl Drop for InstanceRecord {
     fn drop(&mut self) {
+        self.save_backup();
         if self.machine.sram_dirty() {
             self.save_sram();
         }
@@ -376,6 +402,15 @@ fn segacd_profile() -> MachineProfile {
         },
     );
     profile.options.insert(
+        2,
+        option(
+            "backup_ram",
+            MachineOptionKind::Text,
+            None,
+            "Where the internal backup RAM (8 KB) is kept between sessions (default saves/segacd-backup.brm); read at start, written at exit when the game changed it. The BIOS asks to format an empty one; a formatted image (scd_U.brm on RomM) can be copied there",
+        ),
+    );
+    profile.options.insert(
         1,
         option(
             "disc",
@@ -598,6 +633,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             breakpoints: Vec::new(),
             diag_file,
             sram_path,
+            backup: None,
         },
     );
     Ok(MachineCreateResponse { instance, metadata })
@@ -612,8 +648,10 @@ fn create_segacd(req: MachineCreateRequest) -> Result<MachineCreateResponse, Str
     let mut diag_file = None;
     let mut pads = [genesis::PadKind::Six; 2];
     let mut disc_path = None;
+    let mut backup_file = None;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
+            ("backup_ram", DebugValue::Text(v)) => backup_file = Some(std::path::PathBuf::from(v)),
             ("console_region", DebugValue::Text(v)) if v == "auto" => {}
             ("console_region", DebugValue::Text(v)) => {
                 region = Region::parse(v)
@@ -640,7 +678,22 @@ fn create_segacd(req: MachineCreateRequest) -> Result<MachineCreateResponse, Str
     config.exact_timing = plugin_api::ExecutionMode::from_options(&req.options)?
         .unwrap_or(plugin_api::ExecutionMode::Accurate)
         == plugin_api::ExecutionMode::Accurate;
-    let machine = segacd::new_machine(config)?;
+    let mut machine = segacd::new_machine(config)?;
+    let backup_path =
+        backup_file.unwrap_or_else(|| std::path::PathBuf::from("saves/segacd-backup.brm"));
+    let loaded = match std::fs::read(&backup_path) {
+        Ok(bytes) if bytes.len() <= 1 << 20 => {
+            if let Some(exp) = machine
+                .bus_mut()
+                .expansion_mut()
+                .and_then(|e| e.as_any_mut().downcast_mut::<segacd::SegaCdExp>())
+            {
+                exp.load_backup_ram(&bytes);
+            }
+            sub_side(&machine).map_or_else(Vec::new, |s| s.backup_ram().to_vec())
+        }
+        _ => sub_side(&machine).map_or_else(Vec::new, |s| s.backup_ram().to_vec()),
+    };
     let metadata = metadata(&machine, SEGACD_ID);
     let mut state = state()
         .lock()
@@ -654,6 +707,7 @@ fn create_segacd(req: MachineCreateRequest) -> Result<MachineCreateResponse, Str
             breakpoints: Vec::new(),
             diag_file,
             sram_path: None,
+            backup: Some((backup_path, loaded)),
         },
     );
     Ok(MachineCreateResponse { instance, metadata })
