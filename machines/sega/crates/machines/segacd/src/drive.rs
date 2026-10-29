@@ -53,7 +53,13 @@ pub struct DiscDrive {
 
 impl DiscDrive {
     pub fn new(disc: Disc) -> Self {
-        let tracks = disc.tracks().to_vec();
+        // a track with no sectors in the image (a truncated copy) is not on the disc
+        let tracks: Vec<Track> = disc
+            .tracks()
+            .iter()
+            .copied()
+            .filter(|t| t.sectors > 0)
+            .collect();
         let lead_out = disc.lead_out();
         Self {
             disc,
@@ -78,8 +84,13 @@ impl DiscDrive {
         }
     }
 
+    /// The track under the head; a head in the lead-in is on the first track.
     fn track_of(&self, lba: i32) -> Option<&Track> {
-        self.tracks.iter().rev().find(|t| lba >= t.start_lba as i32)
+        self.tracks
+            .iter()
+            .rev()
+            .find(|t| lba >= t.start_lba as i32)
+            .or_else(|| self.tracks.first())
     }
 
     /// Minutes, seconds, frames of the absolute time of `lba` (which may lie in the lead-in, before sector 0).
@@ -181,7 +192,7 @@ impl DiscDrive {
     fn seek(&mut self, lba: i32, then: After) {
         self.lba = lba.clamp(-(LEAD_IN as i32), self.lead_out as i32 - 1);
         self.mode = Mode::Seeking {
-            periods_left: 3,
+            periods_left: 12,
             then,
         };
     }
@@ -283,19 +294,20 @@ impl Drive for DiscDrive {
             Mode::Reading if self.start_delay > 0 => self.start_delay -= 1,
             Mode::Reading => {
                 let mut raw = [0u8; RAW_SECTOR];
-                // sectors before the program area (the lead-in) are not on the image: the drive reads through them
-                if self.lba >= 0 {
-                    if self.disc.read_raw(self.lba as u32, &mut raw).is_err() {
-                        raw = [0; RAW_SECTOR];
-                    }
-                    // the header carries the sector's own address (the drive reports it, whatever the image holds)
-                    let (m, sec, f) = Self::msf_of(self.lba);
-                    let bcd = |v: u8| ((v / 10) << 4) | (v % 10);
-                    raw[12] = bcd(m);
-                    raw[13] = bcd(sec);
-                    raw[14] = bcd(f);
-                    cdc.deliver_sector(&raw);
+                // the sectors before the program area (the lead-in) are not on the image: the drive still passes them under the
+                // head, so the controller sees their headers (software seeks a few sectors early and waits for the time it wants)
+                if self.lba < 0 || self.disc.read_raw(self.lba as u32, &mut raw).is_err() {
+                    raw = [0; RAW_SECTOR];
+                    raw[1..11].fill(0xFF);
+                    raw[15] = 1;
                 }
+                // the header carries the sector's own address (the drive reports it, whatever the image holds)
+                let (m, sec, f) = Self::msf_of(self.lba);
+                let bcd = |v: u8| ((v / 10) << 4) | (v % 10);
+                raw[12] = bcd(m);
+                raw[13] = bcd(sec);
+                raw[14] = bcd(f);
+                cdc.deliver_sector(&raw);
                 self.lba += 1;
                 if self.lba >= self.lead_out as i32 {
                     self.mode = Mode::Paused;
@@ -306,6 +318,13 @@ impl Drive for DiscDrive {
             }
             _ => {}
         }
+    }
+
+    fn music_playing(&self) -> bool {
+        matches!(self.mode, Mode::Playing | Mode::Scanning)
+            && self
+                .track_of(self.lba)
+                .is_some_and(|t| t.kind == disc::cue::TrackKind::Audio)
     }
 
     fn box_clone(&self) -> Box<dyn Drive> {
@@ -404,7 +423,7 @@ mod tests {
         // seek to 00:02:10: ten sectors into the disc
         let rs = d.command(&cmd(command::SEEK, &[(5, 2), (6, 1)]));
         assert_eq!((rs[0], rs[1]), (status::SEEK, 0xF));
-        for _ in 0..3 {
+        for _ in 0..12 {
             d.period(&mut cdc);
         }
         let rs = d.command(&cmd(command::REPORT_REQUEST, &[(3, 0)]));
@@ -425,7 +444,7 @@ mod tests {
         let rs = d.command(&cmd(command::READ, &[(5, 2), (7, 5)]));
         assert_eq!(rs[0], status::SEEK);
         let mut delivered = 0;
-        for _ in 0..12 {
+        for _ in 0..24 {
             d.period(&mut cdc);
             if cdc.int_edge() {
                 delivered += 1;
@@ -442,7 +461,7 @@ mod tests {
                 }
             }
         }
-        assert!((5..=8).contains(&delivered), "{delivered}");
+        assert!((5..=12).contains(&delivered), "{delivered}");
         let rs = d.command(&cmd(command::NOP, &[]));
         assert_eq!(rs[0], status::PLAY);
     }

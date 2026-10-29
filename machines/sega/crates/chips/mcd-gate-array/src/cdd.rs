@@ -48,6 +48,10 @@ pub trait Drive: Send {
     fn command(&mut self, tc: &[u8; 10]) -> [u8; 9];
     /// A period of 1/75 s passed: the drive may hand a sector to the controller.
     fn period(&mut self, cdc: &mut Cdc);
+    /// Whether audio is being played: bit 8 of the control register (data or music) reads 0 then and 1 otherwise.
+    fn music_playing(&self) -> bool {
+        false
+    }
     fn box_clone(&self) -> Box<dyn Drive>;
 }
 
@@ -108,6 +112,8 @@ pub struct Cdd {
     drive: Box<dyn Drive>,
     /// Sub clocks times 75, not yet a whole period.
     acc: u64,
+    /// Debugging aid: the commands received and the answers given.
+    log: Vec<([u8; 10], [u8; 10])>,
 }
 
 impl Default for Cdd {
@@ -145,6 +151,7 @@ impl Cdd {
             command_pending: false,
             drive: Box::new(NoDisc::new()),
             acc: 0,
+            log: Vec::new(),
         }
     }
 
@@ -162,6 +169,11 @@ impl Cdd {
         let rising = on && !self.hock;
         self.hock = on;
         rising
+    }
+
+    /// Bit 8 of `$FF8036`: 1 when the drive is not playing music (stopped, paused or reading data; fact E16).
+    pub fn data_mode(&self) -> bool {
+        !self.drive.music_playing()
     }
 
     pub fn rs(&self, i: usize) -> u8 {
@@ -189,6 +201,14 @@ impl Cdd {
         let rs = self.drive.command(&self.tc);
         self.rs[..9].copy_from_slice(&rs);
         self.rs[9] = checksum(&self.rs);
+        if self.log.len() < 4000 {
+            self.log.push((self.tc, self.rs));
+        }
+    }
+
+    /// The commands received and the answers given so far (a debugging aid).
+    pub fn log(&self) -> &[([u8; 10], [u8; 10])] {
+        &self.log
     }
 
     /// Advances by `sub_clocks`; returns how many 1/75 s periods ended.

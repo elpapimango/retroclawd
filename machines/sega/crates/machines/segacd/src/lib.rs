@@ -74,6 +74,28 @@ struct SubSide {
     pc: u32,
     /// Debugging aid: the sub-CPU's writes to the gate array registers, `(pc, address, size, value)`.
     io_log: Option<Vec<(u32, u32, Size, u32)>>,
+    /// Debugging aid: an address range besides the registers whose writes are logged.
+    watch: (u32, u32),
+}
+
+/// The cell image the main CPU sees at `$220000-$23FFFF` in 1M mode (fact C19): five stretches of its bank, each a bitmap of
+/// 512 dot wide lines (256 bytes a line) that reads as 8x8 dot cells of 32 bytes stacked in columns of `cells` cells. Returns
+/// the offset in the bank's 128 KB of the byte that the cell image byte at `off` (from `$220000`) shows.
+fn cell_image_source(off: u32) -> usize {
+    // (cell image start, bitmap start in the bank, cells in a column)
+    const AREAS: [(u32, u32, u32); 5] = [
+        (0x0_0000, 0x0_0000, 32),
+        (0x1_0000, 0x1_0000, 16),
+        (0x1_8000, 0x1_8000, 8),
+        (0x1_C000, 0x1_C000, 4),
+        (0x1_E000, 0x1_E000, 4),
+    ];
+    let &(start, src, cells) = AREAS.iter().rev().find(|a| off >= a.0).unwrap_or(&AREAS[0]);
+    let o = off - start;
+    let (cell, within) = (o / 32, o % 32);
+    let (col, row) = (cell / cells, cell % cells);
+    let (line, byte) = (row * 8 + within / 4, within % 4);
+    (src + line * 256 + col * 4 + byte) as usize
 }
 
 impl SubSide {
@@ -123,6 +145,12 @@ impl SubSide {
         match addr {
             0..=0x07_FFFF => Some(self.prg[addr as usize]),
             0x08_0000..=0x0B_FFFF => self.word_ram_byte(addr - 0x08_0000),
+            // in 2M mode the range of the 1M mode bank repeats the first 128 KB of word RAM (fact C18)
+            0x0C_0000..=0x0D_FFFF if self.gate.mode_1m() => {
+                let bank = 1 - self.gate.main_bank_1m();
+                Some(self.word[bank * 0x2_0000 + (addr - 0x0C_0000) as usize])
+            }
+            0x0C_0000..=0x0D_FFFF => self.word_ram_byte(addr - 0x0C_0000),
             0xFE_0000..=0xFE_3FFF => {
                 // the battery RAM answers on odd addresses only (fact C2); even ones are not decoded (open bus, [H?])
                 Some(if addr & 1 == 1 {
@@ -147,7 +175,10 @@ impl SubSide {
     /// A byte of word RAM for the sub-CPU in 2M mode; `None` in 1M mode (not modelled, fact C8).
     fn word_ram_byte(&mut self, off: u32) -> Option<u8> {
         if self.gate.mode_1m() {
-            return None;
+            // the dot image of the sub-CPU's bank: one dot a byte, the left dot of each stored byte first (fact C19)
+            let bank = 1 - self.gate.main_bank_1m();
+            let byte = self.word[bank * 0x2_0000 + (off >> 1) as usize];
+            return Some(if off & 1 == 0 { byte >> 4 } else { byte & 0xF });
         }
         if self.gate.word_ram_owner() != WordRamOwner::Sub {
             self.hung = true;
@@ -162,7 +193,32 @@ impl SubSide {
                 self.prg[addr as usize] = v;
                 true
             }
-            0x08_0000..=0x0B_FFFF => {
+            0x0C_0000..=0x0D_FFFF if self.gate.mode_1m() => {
+                let bank = 1 - self.gate.main_bank_1m();
+                self.word[bank * 0x2_0000 + (addr - 0x0C_0000) as usize] = v;
+                true
+            }
+            0x08_0000..=0x0B_FFFF if self.gate.mode_1m() => {
+                // a dot written into the dot image goes into a nibble, under the write priority mode (fact G8)
+                let bank = 1 - self.gate.main_bank_1m();
+                let at = bank * 0x2_0000 + ((addr - 0x08_0000) >> 1) as usize;
+                let (old, shift) = if addr & 1 == 0 {
+                    (self.word[at] >> 4, 4)
+                } else {
+                    (self.word[at] & 0xF, 0)
+                };
+                let new = v & 0xF;
+                let write = match self.gate.priority_mode() {
+                    1 => old == 0,
+                    2 => new != 0,
+                    _ => true,
+                };
+                if write {
+                    self.word[at] = (self.word[at] & !(0xF << shift)) | (new << shift);
+                }
+                true
+            }
+            0x08_0000..=0x0D_FFFF => {
                 if self.gate.mode_1m() {
                     return false;
                 }
@@ -170,7 +226,12 @@ impl SubSide {
                     self.hung = true;
                     return true;
                 }
-                self.word[(addr - 0x08_0000) as usize] = v;
+                let base = if addr >= 0x0C_0000 {
+                    0x0C_0000
+                } else {
+                    0x08_0000
+                };
+                self.word[(addr - base) as usize] = v;
                 true
             }
             0xFE_0000..=0xFE_3FFF => {
@@ -252,7 +313,15 @@ impl M68kBus for SubSide {
     fn read(&mut self, addr: u32, size: Size, _fc: FunctionCode) -> Result<u32, BusFault> {
         let addr = addr & 0x00FF_FFFF;
         match self.sub_read(addr, size) {
-            Some(v) => Ok(v),
+            Some(v) => {
+                if (0xFF_8004..=0xFF_800B).contains(&addr)
+                    && let Some(log) = self.io_log.as_mut()
+                    && log.len() < 4000
+                {
+                    log.push((self.pc, addr | 0x8000_0000, size, v));
+                }
+                Ok(v)
+            }
             None => {
                 self.fail("sub-CPU", false, addr, size, 0);
                 Ok(0)
@@ -268,7 +337,9 @@ impl M68kBus for SubSide {
         _fc: FunctionCode,
     ) -> Result<(), BusFault> {
         let addr = addr & 0x00FF_FFFF;
-        if (0xFF_8000..=0xFF_81FF).contains(&addr)
+        let watched = (0xFF_8000..=0xFF_81FF).contains(&addr)
+            || (self.watch.0..=self.watch.1).contains(&addr);
+        if watched
             && let Some(log) = self.io_log.as_mut()
             && log.len() < 4000
         {
@@ -339,6 +410,7 @@ impl SegaCdExp {
                 stop: None,
                 pc: 0,
                 io_log: None,
+                watch: (1, 0),
             },
             sub: Cpu::new(),
             master_hz,
@@ -381,6 +453,11 @@ impl SegaCdExp {
     }
 
     /// Starts logging the sub-CPU's register writes (a debugging aid).
+    /// Also logs the sub-CPU's writes to this address range (a debugging aid).
+    pub fn watch_sub_writes(&mut self, from: u32, to: u32) {
+        self.side.watch = (from, to);
+    }
+
     pub fn log_sub_io(&mut self) {
         self.side.io_log = Some(Vec::new());
     }
@@ -450,6 +527,14 @@ impl SegaCdExp {
                 let at = usize::from(gate.prg_bank()) * 0x2_0000 + (addr & 0x1_FFFF) as usize;
                 Some(self.side.prg[at])
             }
+            // 1M mode: the main CPU's bank (128 KB); the cell image view above it is not modelled
+            0x20_0000..=0x21_FFFF if gate.mode_1m() => {
+                Some(self.side.word[gate.main_bank_1m() * 0x2_0000 + (addr - 0x20_0000) as usize])
+            }
+            0x22_0000..=0x23_FFFF if gate.mode_1m() => {
+                let at = cell_image_source(addr - 0x22_0000);
+                Some(self.side.word[gate.main_bank_1m() * 0x2_0000 + at])
+            }
             0x20_0000..=0x23_FFFF => {
                 if gate.mode_1m() {
                     return None;
@@ -483,6 +568,17 @@ impl SegaCdExp {
                         self.side.prg[sub_addr as usize] = v;
                     }
                 }
+                true
+            }
+            0x20_0000..=0x21_FFFF if self.side.gate.mode_1m() => {
+                let bank = self.side.gate.main_bank_1m();
+                self.side.word[bank * 0x2_0000 + (addr - 0x20_0000) as usize] = v;
+                true
+            }
+            0x22_0000..=0x23_FFFF if self.side.gate.mode_1m() => {
+                let bank = self.side.gate.main_bank_1m();
+                let at = cell_image_source(addr - 0x22_0000);
+                self.side.word[bank * 0x2_0000 + at] = v;
                 true
             }
             0x20_0000..=0x23_FFFF => {
@@ -746,6 +842,47 @@ mod tests {
         assert_eq!(e.dma_read_word(0x60_0004), Some(0x2222));
         // the BIOS area is not delayed
         assert_eq!(e.dma_read_word(0x00_0004), Some(0));
+    }
+
+    #[test]
+    fn one_megabit_mode_gives_each_cpu_a_bank_and_the_dot_and_cell_views_show_it() {
+        let mut e = exp();
+        // the sub-CPU switches to 1M mode (MODE = bit 2 of the memory mode register): bank 0 is the main CPU's
+        assert!(e.side.gate.sub_write_word(0x02, 0x0004));
+        assert!(e.write(0x20_0000, Size::Word, 0xABCD, 0));
+        assert_eq!(e.read(0x20_0000, Size::Word, 0), Some(0xABCD));
+        // the cell image: bitmap line 1 (256 bytes on) is the second row of 4 bytes of cell 0 of column 0
+        assert!(e.write(0x20_0100, Size::Word, 0x1122, 0));
+        assert_eq!(e.read(0x22_0004, Size::Word, 0), Some(0x1122));
+        // the second column of 8 dots (bytes 4-7 of a line) starts the next cell column, 32 cells further on
+        assert!(e.write(0x20_0004, Size::Word, 0x5566, 0));
+        assert_eq!(e.read(0x22_0400, Size::Word, 0), Some(0x5566));
+        // the sub-CPU's bank is the other one: a write through its dot image lands in bank 1
+        let mut side = &mut e.side;
+        assert!(side.sub_write_byte(0x08_0000, 0x7));
+        assert!(side.sub_write_byte(0x08_0001, 0x3));
+        assert_eq!(side.word[0x2_0000], 0x73);
+        assert_eq!(side.sub_byte(0x08_0000), Some(7));
+        assert_eq!(side.sub_byte(0x0C_0000), Some(0x73));
+        // a swap: the main CPU asks, the sub-CPU answers by writing RET
+        side = &mut e.side;
+        assert!(side.gate.main_write_byte(3, 0x02));
+        assert_eq!(
+            side.gate.main_read_byte(3).unwrap() & 3,
+            0b10,
+            "request pending"
+        );
+        assert!(side.gate.sub_write_word(0x02, 0x0005));
+        assert_eq!(
+            side.gate.main_read_byte(3).unwrap() & 3,
+            0b01,
+            "done, bank 1 is the main CPU's"
+        );
+        assert_eq!(
+            side.sub_byte(0x0C_0000),
+            Some(0xAB),
+            "and the sub-CPU has what the main CPU wrote"
+        );
     }
 
     #[test]

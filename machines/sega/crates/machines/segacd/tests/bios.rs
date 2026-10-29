@@ -87,12 +87,47 @@ fn where_are_both_cpus() {
             .downcast_mut::<SegaCdExp>()
             .unwrap()
             .log_sub_io();
+        if let Ok(w) = std::env::var("RC_SUBWATCH") {
+            let (a, b) = w.split_once('-').unwrap();
+            m.bus_mut()
+                .expansion_mut()
+                .unwrap()
+                .as_any_mut()
+                .downcast_mut::<SegaCdExp>()
+                .unwrap()
+                .watch_sub_writes(
+                    u32::from_str_radix(a, 16).unwrap(),
+                    u32::from_str_radix(b, 16).unwrap(),
+                );
+        }
     }
     let (mut main_hist, mut sub_hist) = (BTreeMap::new(), BTreeMap::new());
     let main_watch = list_env("RC_MAINWATCH");
+    let ram_watch = std::env::var("RC_RAMWATCH").ok().map(|v| {
+        let (a, n) = v.split_once(',').unwrap();
+        (
+            u64::from_str_radix(a, 16).unwrap(),
+            n.parse::<u64>().unwrap(),
+        )
+    });
+    let mut last_frame = u64::MAX;
+    let mut last_ram: Vec<u8> = Vec::new();
     let mut watched: BTreeMap<u32, u32> = BTreeMap::new();
     while spent < budget {
         spent += u64::from(m.step());
+        if let Some(range) = &ram_watch {
+            let frame = spent / (m.clock_hz() / m.frame_hz());
+            if frame != last_frame {
+                last_frame = frame;
+                let now: Vec<u8> = (range.0..range.0 + range.1)
+                    .map(|a| m.read_memory(0xFF0000 + a))
+                    .collect();
+                if now != last_ram {
+                    println!("  ram frame {frame}: {now:02X?}");
+                    last_ram = now;
+                }
+            }
+        }
         if main_watch.contains(&(m.pc() as u32)) {
             *watched.entry(m.pc() as u32).or_default() += 1;
         }
@@ -109,7 +144,21 @@ fn where_are_both_cpus() {
         }
     }
     println!("main watch hits {watched:X?}");
+    if let Ok(path) = std::env::var("RC_DUMP_RAM") {
+        std::fs::write(path, m.bus().ram()).unwrap();
+    }
     println!("stop: {:?}", m.take_stop_report());
+    {
+        let regs = m.registers();
+        let a7 = regs.iter().find(|(n, _)| *n == "A7").map_or(0, |(_, v)| *v) as u32;
+        let stack: Vec<u32> = (0..12)
+            .map(|i| {
+                let at = u64::from(a7) + 4 * i;
+                (0..4).fold(0u32, |w, k| w << 8 | u32::from(m.read_memory(at + k)))
+            })
+            .collect();
+        println!("main a7 {a7:06X} stack {stack:06X?}");
+    }
     println!("main pc {:06X}, hot {:X?}", m.pc(), top(main_hist, 8));
     let pc = m.pc() as u32;
     println!("{}", listing(|a| m.read_memory(u64::from(a)), pc, 14));
@@ -157,15 +206,42 @@ fn where_are_both_cpus() {
         .iter()
         .filter(|(_, a, _, _)| {
             let (lo, hi) = io_filter();
-            (lo..=hi).contains(a)
+            (lo..=hi).contains(&(a & 0xFF_FFFF))
         })
         .take(400)
     {
-        println!("  io pc {pc:06X} {addr:06X} {size:?} {value:X}");
+        let kind = if addr & 0x8000_0000 != 0 { "R" } else { "W" };
+        println!(
+            "  io pc {pc:06X} {kind} {:06X} {size:?} {value:X}",
+            addr & 0xFF_FFFF
+        );
     }
     if std::env::var("RC_MAINIO").is_ok() {
         for (t, addr, size, value) in e.main_io_log().iter().take(3000) {
             println!("  main io t {t} {addr:06X} {size:?} {value:X}");
+        }
+    }
+    if std::env::var("RC_CDDLOG").is_ok() {
+        let mut last = None;
+        for (i, (tc, rs)) in e.gate_array().cdd_log().iter().enumerate() {
+            let line = if std::env::var("RC_CDDLOG").unwrap() == "short" {
+                format!(
+                    "cmd {:X}{:X}{:X}{:X} -> {:X}{:X} {:X?}",
+                    tc[0],
+                    tc[3],
+                    tc[4],
+                    tc[5],
+                    rs[0],
+                    rs[1],
+                    &rs[2..9]
+                )
+            } else {
+                format!("cmd {tc:X?} -> {rs:X?}")
+            };
+            if last.as_deref() != Some(line.as_str()) {
+                println!("  cdd #{i}: {line}");
+                last = Some(line);
+            }
         }
     }
     println!("asic trace {:04X?}", e.asic_trace());

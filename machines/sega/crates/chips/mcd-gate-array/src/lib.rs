@@ -31,6 +31,10 @@ pub struct GateArray {
     bank: u8,
     mode_1m: bool,
     owner: WordRamOwner,
+    /// 1M mode: which bank the main CPU has (RET: 0 gives it bank 0, 1 bank 1; the sub-CPU has the other, fact C8).
+    ret_1m: bool,
+    /// 1M mode: the main CPU asked for the banks to be swapped and the sub-CPU has not done it yet.
+    swap_request: bool,
     pm: u8,
     hint_vector: u16,
     flag_main: u8,
@@ -69,6 +73,8 @@ impl GateArray {
             bank: 0,
             mode_1m: false,
             owner: WordRamOwner::Main,
+            ret_1m: false,
+            swap_request: false,
             pm: 0,
             hint_vector: 0xFFFF,
             flag_main: 0,
@@ -131,6 +137,11 @@ impl GateArray {
         self.dma_address = self.dma_address.wrapping_add((bytes / 8) as u16);
     }
 
+    /// The commands and answers of the drive port so far (a debugging aid).
+    pub fn cdd_log(&self) -> &[([u8; 10], [u8; 10])] {
+        self.cdd.log()
+    }
+
     /// Plugs a drive into the CDD port.
     pub fn set_drive(&mut self, drive: Box<dyn cdd::Drive>) {
         self.cdd.set_drive(drive);
@@ -164,6 +175,11 @@ impl GateArray {
         self.pm
     }
 
+    /// 1M mode: the bank (0 or 1) the main CPU has; the sub-CPU has the other.
+    pub fn main_bank_1m(&self) -> usize {
+        usize::from(self.ret_1m)
+    }
+
     pub fn mode_1m(&self) -> bool {
         self.mode_1m
     }
@@ -187,9 +203,13 @@ impl GateArray {
     }
 
     fn memory_mode_low(&self) -> u8 {
-        let (dmna, ret) = match self.owner {
-            WordRamOwner::Main => (0, 1),
-            WordRamOwner::Sub => (1, 0),
+        let (dmna, ret) = if self.mode_1m {
+            (u8::from(self.swap_request), u8::from(self.ret_1m))
+        } else {
+            match self.owner {
+                WordRamOwner::Main => (0, 1),
+                WordRamOwner::Sub => (1, 0),
+            }
         };
         (self.bank << 6) | (u8::from(self.mode_1m) << 2) | (dmna << 1) | ret
     }
@@ -259,8 +279,12 @@ impl GateArray {
             0x03 => {
                 self.bank = v >> 6;
                 // DMNA (bit 1): writing 1 gives the 2M RAM to the sub-CPU (fact C7)
-                if v & 2 != 0 && !self.mode_1m {
-                    self.owner = WordRamOwner::Sub;
+                if v & 2 != 0 {
+                    if self.mode_1m {
+                        self.swap_request = true; // 1M mode: a request for the sub-CPU to swap the banks (fact C8)
+                    } else {
+                        self.owner = WordRamOwner::Sub;
+                    }
                 }
                 true
             }
@@ -273,11 +297,11 @@ impl GateArray {
                 true
             }
             // the high byte of the flag word is the main CPU's (CFM); the low byte is the sub-CPU's and is ignored here
-            0x0E => {
+            // either byte address writes the main CPU's flags: the strobes of the two halves are not decoded (fact C9)
+            0x0E | 0x0F => {
                 self.flag_main = v;
                 true
             }
-            0x0F => true,
             0x10..=0x1F => {
                 let i = ((off - 0x10) / 2) as usize;
                 let w = self.commands[i];
@@ -301,6 +325,10 @@ impl GateArray {
             let ok = self.main_write_byte(0x02, 0xFF) && self.main_write_byte(0x03, 0x00);
             self.reset_step = 1;
             return ok;
+        }
+        if off & !1 == 0x0E {
+            self.flag_main = (v >> 8) as u8; // a word write sets the main flags from its high byte
+            return true;
         }
         let ok_hi = self.main_write_byte(off & !1, (v >> 8) as u8);
         let ok_lo = self.main_write_byte(off | 1, v as u8);
@@ -340,7 +368,7 @@ impl GateArray {
                 w
             }
             0x34 => self.fader & 0x7FFF,
-            0x36 => u16::from(self.cdd.hock()) << 2,
+            0x36 => u16::from(self.cdd.data_mode()) << 8 | u16::from(self.cdd.hock()) << 2,
             0x38..=0x40 => {
                 let i = ((off - 0x38) / 2 * 2) as usize;
                 u16::from(self.cdd.rs(i)) << 8 | u16::from(self.cdd.rs(i + 1))
@@ -372,9 +400,19 @@ impl GateArray {
             0x00 => true,
             0x02 => {
                 self.pm = ((v >> 3) & 3) as u8;
-                self.mode_1m = v & 0x04 != 0;
-                // RET (bit 0): writing 1 gives the 2M RAM back to the main CPU (fact C7)
-                if v & 1 != 0 && !self.mode_1m {
+                let mode_1m = v & 0x04 != 0;
+                if mode_1m != self.mode_1m {
+                    // switching the mode starts with bank 0 at the main CPU and no swap pending; the contents are lost
+                    self.ret_1m = false;
+                    self.swap_request = false;
+                }
+                self.mode_1m = mode_1m;
+                if self.mode_1m {
+                    // 1M mode: RET chooses which bank the main CPU has, and answers a swap request (fact C8)
+                    self.ret_1m = v & 1 != 0;
+                    self.swap_request = false;
+                } else if v & 1 != 0 {
+                    // 2M mode: writing 1 gives the RAM back to the main CPU (fact C7)
                     self.owner = WordRamOwner::Main;
                 }
                 true
@@ -482,9 +520,7 @@ impl GateArray {
                 }
                 // the flag word is split by owner: the sub-CPU can only change its own (low) byte
                 if off & !1 == 0x0E {
-                    if off & 1 == 1 {
-                        self.flag_sub = v;
-                    }
+                    self.flag_sub = v;
                     return true;
                 }
                 self.sub_write_word(off, w)
@@ -664,8 +700,11 @@ mod tests {
         assert_eq!(g.main_read_word(0x0E), Some(0xAB00));
         g.sub_write_word(0x0E, 0xCD34); // the sub-CPU owns the low byte only
         assert_eq!(g.sub_read_word(0x0E), Some(0xAB34));
-        g.sub_write_byte(0x0E, 0xFF); // its high byte is not writable
-        assert_eq!(g.main_read_word(0x0E), Some(0xAB34));
+        g.sub_write_byte(0x0E, 0x55); // a write to either byte address sets the sub-CPU's flags
+        assert_eq!(g.main_read_word(0x0E), Some(0xAB55));
+        g.main_write_byte(0x0F, 0x66); // and the same for the main CPU's
+        assert_eq!(g.main_read_word(0x0E), Some(0x6655));
+        g.main_write_byte(0x0E, 0xAB);
         g.sub_write_byte(0x0F, 0x01);
         assert_eq!(g.main_read_byte(0x0F), Some(0x01));
     }
@@ -844,7 +883,11 @@ mod tests {
             Some(4),
             "the first packet arrives at once"
         );
-        assert_eq!(g.sub_read_word(0x36), Some(0x0004));
+        assert_eq!(
+            g.sub_read_word(0x36),
+            Some(0x0104),
+            "HOCK, and not playing music"
+        );
         g.ack_sub_irq(4);
         // 75 periods in a second, exactly, whatever the step size
         let mut count = 0;
