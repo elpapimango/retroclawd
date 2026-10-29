@@ -107,6 +107,35 @@ impl GateArray {
         self.dma_address
     }
 
+    /// Raises level 5 on a rising edge of the CD controller's interrupt output.
+    fn poll_cdc_int(&mut self) {
+        if self.cdc.int_edge() {
+            self.pending |= 1 << 5;
+        }
+    }
+
+    /// A sector the drive hands over, for the owner of the drive (fact E14).
+    pub fn cdc_mut(&mut self) -> &mut cdc::Cdc {
+        &mut self.cdc
+    }
+
+    /// A DMA transfer the CD controller has ready, to be written into memory the gate array does not own.
+    pub fn take_cdc_dma(&mut self) -> Option<cdc::Dma> {
+        let dma = self.cdc.take_dma();
+        self.poll_cdc_int();
+        dma
+    }
+
+    /// The DMA address register moves on by the bytes a transfer wrote (it counts in units of 8 bytes).
+    pub fn advance_dma_address(&mut self, bytes: usize) {
+        self.dma_address = self.dma_address.wrapping_add((bytes / 8) as u16);
+    }
+
+    /// Plugs a drive into the CDD port.
+    pub fn set_drive(&mut self, drive: Box<dyn cdd::Drive>) {
+        self.cdd.set_drive(drive);
+    }
+
     pub fn sub_halted(&self) -> bool {
         !self.run || self.sbrq
     }
@@ -172,6 +201,11 @@ impl GateArray {
             0x00 => self.read_a12000(),
             0x02 => (u16::from(self.wp) << 8) | u16::from(self.memory_mode_low()),
             0x04 => self.cdc.mode_word(),
+            0x08 => {
+                let w = self.cdc.host_word(cdc::Destination::MainRead).unwrap_or(0);
+                self.poll_cdc_int();
+                w
+            }
             0x06 => self.hint_vector,
             0x0C => self.stopwatch,
             0x0E => (u16::from(self.flag_main) << 8) | u16::from(self.flag_sub),
@@ -294,7 +328,17 @@ impl GateArray {
             0x32 => u16::from(self.mask),
             0x04 => self.cdc.mode_word(),
             // the data port: reading it steps the address register, so only a word access (or the low byte) counts
-            0x06 => u16::from(self.cdc.read()?),
+            0x06 => {
+                let v = u16::from(self.cdc.read()?);
+                self.poll_cdc_int();
+                v
+            }
+            // the host data port: the next word of a transfer to the sub-CPU (zero when nothing waits)
+            0x08 => {
+                let w = self.cdc.host_word(cdc::Destination::SubRead).unwrap_or(0);
+                self.poll_cdc_int();
+                w
+            }
             0x34 => self.fader & 0x7FFF,
             0x36 => u16::from(self.cdd.hock()) << 2,
             0x38..=0x40 => {
@@ -364,6 +408,7 @@ impl GateArray {
             }
             0x06 => {
                 self.cdc.write(v as u8);
+                self.poll_cdc_int();
                 true
             }
             0x0A => {
@@ -407,6 +452,7 @@ impl GateArray {
             0x06 => return true,
             0x07 => {
                 self.cdc.write(v);
+                self.poll_cdc_int();
                 return true;
             }
             0x0A => {
@@ -451,11 +497,13 @@ impl GateArray {
     /// Advances the stopwatch and the timer by `clocks` sub-CPU clocks.
     pub fn advance_sub_clocks(&mut self, clocks: u64) {
         for _ in 0..self.cdd.advance(clocks) {
+            self.cdd.drive_period(&mut self.cdc);
             if self.cdd.hock() {
                 self.cdd.deliver();
                 self.pending |= 1 << 4;
             }
         }
+        self.poll_cdc_int();
         self.tick_acc += clocks;
         let mut ticks = self.tick_acc / CLOCKS_PER_TICK;
         self.tick_acc %= CLOCKS_PER_TICK;
@@ -731,7 +779,7 @@ mod tests {
     #[test]
     fn unknown_registers_are_not_invented() {
         let mut g = GateArray::new();
-        for off in [0x08, 0x4C, 0x58, 0x100, 0x1FE] {
+        for off in [0x4C, 0x58, 0x100, 0x1FE] {
             assert_eq!(g.sub_read_word(off), None, "{off:#x}");
             assert!(!g.sub_write_word(off, 0), "{off:#x}");
         }
@@ -826,7 +874,7 @@ mod tests {
         g.ack_sub_irq(4);
         assert_eq!(cdd_status(&mut g)[0], cdd::status::NO_DISC);
         // open the door: TC1 = $D, TC9 = checksum
-        g.sub_write_byte(0x43, 0x0D);
+        g.sub_write_byte(0x42, 0x0D);
         g.sub_write_byte(0x4B, 0x02);
         assert_eq!(
             cdd_status(&mut g)[0],
@@ -840,12 +888,12 @@ mod tests {
         assert_eq!(rs[9], cdd::checksum(&rs));
         g.ack_sub_irq(4);
         // close it again
-        g.sub_write_byte(0x43, 0x0C);
+        g.sub_write_byte(0x42, 0x0C);
         g.sub_write_byte(0x4B, 0x03);
         g.advance_sub_clocks(166_667);
         assert_eq!(cdd_status(&mut g)[0], cdd::status::NO_DISC);
         // command nibbles read back, status is not writable
-        assert_eq!(g.sub_read_byte(0x43), Some(0x0C));
+        assert_eq!(g.sub_read_byte(0x42), Some(0x0C));
         g.sub_write_byte(0x38, 0x07);
         assert_eq!(cdd_status(&mut g)[0], cdd::status::NO_DISC);
     }

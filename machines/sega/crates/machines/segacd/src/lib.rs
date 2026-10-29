@@ -5,6 +5,8 @@
 //! addresses stop the machine with a report, as the project rule says for an address no fact covers.
 #![forbid(unsafe_code)]
 
+pub mod drive;
+
 use genesis::mc68000::{BusFault, Cpu, FunctionCode, IackResponse, M68kBus, Size};
 use genesis::{Config, Expansion, Genesis, Region};
 use mcd_gate_array::{GateArray, WordRamOwner};
@@ -18,6 +20,8 @@ pub const WORD_RAM_SIZE: usize = 0x4_0000;
 pub const BACKUP_RAM_SIZE: usize = 0x2000;
 
 pub struct SegaCdConfig {
+    /// A disc to put in the drive (a cue sheet or an ISO).
+    pub disc: Option<std::path::PathBuf>,
     /// The BIOS ROM (128 KB).
     pub bios: Vec<u8>,
     pub region: Region,
@@ -29,6 +33,7 @@ pub struct SegaCdConfig {
 impl SegaCdConfig {
     pub fn new(bios: Vec<u8>, region: Region) -> Self {
         Self {
+            disc: None,
             bios,
             region,
             pads: [genesis::PadKind::Six; 2],
@@ -39,7 +44,11 @@ impl SegaCdConfig {
 
 /// A Genesis with a Mega-CD on its cartridge port.
 pub fn new_machine(config: SegaCdConfig) -> Result<Genesis, String> {
-    let exp = SegaCdExp::new(config.bios, config.region.master_hz())?;
+    let mut exp = SegaCdExp::new(config.bios, config.region.master_hz())?;
+    if let Some(path) = &config.disc {
+        let disc = disc::Disc::open(path).map_err(|e| format!("disc: {e}"))?;
+        exp.insert_disc(disc);
+    }
     // The cartridge slot is empty in CD-boot mode (the BIOS answers the whole cartridge area); the Genesis needs some ROM to start.
     let rom = vec![0u8; 0x400];
     let mut genesis_config = Config::new(rom, config.region);
@@ -68,6 +77,30 @@ struct SubSide {
 }
 
 impl SubSide {
+    /// Carries out the CD controller's DMA transfers into program RAM, word RAM or the PCM chip's wave RAM (fact E13): the
+    /// DMA address register counts in units of 8 bytes and moves on by what was transferred.
+    fn apply_cdc_dma(&mut self) {
+        use mcd_gate_array::cdc::Destination;
+        while let Some(dma) = self.gate.take_cdc_dma() {
+            let start = usize::from(self.gate.dma_address()) * 8;
+            for (i, b) in dma.bytes.iter().enumerate() {
+                let at = start + i;
+                match dma.destination {
+                    Destination::ProgramRam => self.prg[at & (PRG_RAM_SIZE - 1)] = *b,
+                    Destination::WordRam if !self.gate.mode_1m() => {
+                        self.word[at & (WORD_RAM_SIZE - 1)] = *b;
+                    }
+                    // the chip's address space: the wave RAM window starts at $1000 (fact P2)
+                    Destination::Pcm if (0x1000..0x2000).contains(&at) => {
+                        self.pcm.bank_mut()[at - 0x1000] = *b;
+                    }
+                    _ => {}
+                }
+            }
+            self.gate.advance_dma_address(dma.bytes.len());
+        }
+    }
+
     fn fail(&mut self, who: &str, write: bool, addr: u32, size: Size, value: u32) {
         if self.stop.is_some() {
             return;
@@ -244,6 +277,7 @@ impl M68kBus for SubSide {
         if !self.sub_write(addr, size, value) {
             self.fail("sub-CPU", true, addr, size, value);
         }
+        self.apply_cdc_dma();
         Ok(())
     }
 
@@ -268,6 +302,8 @@ pub struct SegaCdExp {
     /// How many times the main CPU started the sub-CPU from reset.
     starts: u32,
     run_clocks: u64,
+    /// Debugging aid: the main CPU's writes to the gate array, `(sub clocks due, address, size, value)`.
+    main_log: Option<Vec<(u64, u32, Size, u32)>>,
     /// Debugging aid: the last sub-CPU instruction addresses, frozen when the sub-CPU reaches an address in `trace_stop`.
     trace: Option<SubTrace>,
 }
@@ -313,8 +349,16 @@ impl SegaCdExp {
             was_running: false,
             starts: 0,
             run_clocks: 0,
+            main_log: None,
             trace: None,
         })
+    }
+
+    /// Puts a disc into the drive (fact E14).
+    pub fn insert_disc(&mut self, disc: disc::Disc) {
+        self.side
+            .gate
+            .set_drive(Box::new(drive::DiscDrive::new(disc)));
     }
 
     /// Sub-CPU clocks that have come due since power on.
@@ -325,6 +369,15 @@ impl SegaCdExp {
     /// Sub-CPU clocks it actually ran instructions for (the rest it spent halted or waiting).
     pub fn sub_clocks_run(&self) -> u64 {
         self.run_clocks
+    }
+
+    /// Starts logging the main CPU's gate array writes (a debugging aid).
+    pub fn log_main_io(&mut self) {
+        self.main_log = Some(Vec::new());
+    }
+
+    pub fn main_io_log(&self) -> &[(u64, u32, Size, u32)] {
+        self.main_log.as_deref().unwrap_or(&[])
     }
 
     /// Starts logging the sub-CPU's register writes (a debugging aid).
@@ -551,6 +604,12 @@ impl Expansion for SegaCdExp {
 
     fn write(&mut self, addr: u32, size: Size, value: u32, now: u64) -> bool {
         self.advance(now);
+        if (0xA1_2000..=0xA1_20FF).contains(&addr)
+            && let Some(log) = self.main_log.as_mut()
+            && log.len() < 20000
+        {
+            log.push((self.due, addr, size, value));
+        }
         if (0xA1_2000..=0xA1_20FF).contains(&addr) && size == Size::Word {
             let ok = self
                 .side

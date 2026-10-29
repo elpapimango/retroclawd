@@ -1,29 +1,102 @@
 //! The CD drive's microcontroller as the gate array's CDD port sees it: ten status nibbles in, ten command nibbles out, a
 //! level 4 interrupt every 1/75 s while the host clock runs (facts E1-E6 in `docs/hardware-facts.md`).
 //!
-//! Slice 3a: the drive has no disc (or its tray is open); a disc comes with slice 3b.
+//! The port itself (the packets, the checksum, the handshake) lives here; what the drive does with a command is a `Drive`, which
+//! the machine plugs in: `NoDisc` here, a disc-backed one in the machine crate.
 
-/// Sub-CPU clocks per second (fact C10) and drive status periods per second (the CD frame rate).
+use crate::cdc::Cdc;
+
+/// Sub clocks per second (fact C10) and drive periods per second (the CD frame rate).
 const SUB_CLOCK_HZ: u64 = 12_500_000;
 const PERIODS_PER_SECOND: u64 = 75;
 
 /// Drive status nibbles (RS0), from the drive firmware's own list.
 pub mod status {
     pub const STOP: u8 = 0x0;
+    pub const PLAY: u8 = 0x1;
+    pub const SEEK: u8 = 0x2;
+    pub const SCAN: u8 = 0x3;
+    pub const PAUSE: u8 = 0x4;
     pub const DOOR_OPEN: u8 = 0x5;
+    pub const CHECKSUM_ERROR: u8 = 0x6;
+    pub const COMMAND_ERROR: u8 = 0x7;
+    pub const FUNCTION_ERROR: u8 = 0x8;
+    pub const TOC_READ: u8 = 0x9;
     pub const NO_DISC: u8 = 0xB;
 }
 
-/// Drive command nibbles (TC1).
+/// Drive command nibbles (TC0).
 pub mod command {
     pub const NOP: u8 = 0x0;
     pub const STOP: u8 = 0x1;
     pub const REPORT_REQUEST: u8 = 0x2;
+    pub const READ: u8 = 0x3;
+    pub const SEEK: u8 = 0x4;
+    pub const PAUSE: u8 = 0x6;
+    pub const PLAY: u8 = 0x7;
+    pub const FORWARD: u8 = 0x8;
+    pub const REVERSE: u8 = 0x9;
+    pub const TRACK_SKIP: u8 = 0xA;
+    pub const TRACK_CUE: u8 = 0xB;
     pub const DOOR_CLOSE: u8 = 0xC;
     pub const DOOR_OPEN: u8 = 0xD;
 }
 
+/// What sits in the drive. It answers commands and delivers sectors to the controller.
+pub trait Drive: Send {
+    /// A command arrived (TC0-TC9); returns the status values RS0-RS8 (the port adds the checksum as RS9).
+    fn command(&mut self, tc: &[u8; 10]) -> [u8; 9];
+    /// A period of 1/75 s passed: the drive may hand a sector to the controller.
+    fn period(&mut self, cdc: &mut Cdc);
+    fn box_clone(&self) -> Box<dyn Drive>;
+}
+
+impl Clone for Box<dyn Drive> {
+    fn clone(&self) -> Self {
+        self.box_clone()
+    }
+}
+
+/// An empty drive: every command is answered with "no disc", the tray commands move the tray.
 #[derive(Clone, Debug)]
+pub struct NoDisc {
+    status: u8,
+}
+
+impl NoDisc {
+    pub fn new() -> Self {
+        Self {
+            status: status::NO_DISC,
+        }
+    }
+}
+
+impl Default for NoDisc {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drive for NoDisc {
+    fn command(&mut self, tc: &[u8; 10]) -> [u8; 9] {
+        match tc[0] {
+            command::DOOR_OPEN => self.status = status::DOOR_OPEN,
+            command::DOOR_CLOSE => self.status = status::NO_DISC,
+            _ => {}
+        }
+        let mut rs = [0; 9];
+        rs[0] = self.status;
+        rs
+    }
+
+    fn period(&mut self, _cdc: &mut Cdc) {}
+
+    fn box_clone(&self) -> Box<dyn Drive> {
+        Box::new(self.clone())
+    }
+}
+
+#[derive(Clone)]
 pub struct Cdd {
     /// Status nibbles RS0-RS9 as the sub-CPU reads them.
     rs: [u8; 10],
@@ -32,7 +105,7 @@ pub struct Cdd {
     hock: bool,
     /// The host wrote the last command nibble since the drive last answered.
     command_pending: bool,
-    drive_status: u8,
+    drive: Box<dyn Drive>,
     /// Sub clocks times 75, not yet a whole period.
     acc: u64,
 }
@@ -40,6 +113,16 @@ pub struct Cdd {
 impl Default for Cdd {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl std::fmt::Debug for Cdd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Cdd")
+            .field("rs", &self.rs)
+            .field("tc", &self.tc)
+            .field("hock", &self.hock)
+            .finish()
     }
 }
 
@@ -60,16 +143,14 @@ impl Cdd {
             tc: [0; 10],
             hock: false,
             command_pending: false,
-            drive_status: status::NO_DISC,
+            drive: Box::new(NoDisc::new()),
             acc: 0,
         }
     }
 
-    /// Rebuilds the status packet from the drive state.
-    fn update_status(&mut self) {
-        self.rs = [0; 10];
-        self.rs[0] = self.drive_status;
-        self.rs[9] = checksum(&self.rs);
+    /// Plugs in another drive (a disc drive); the port keeps its state.
+    pub fn set_drive(&mut self, drive: Box<dyn Drive>) {
+        self.drive = drive;
     }
 
     pub fn hock(&self) -> bool {
@@ -99,32 +180,27 @@ impl Cdd {
         }
     }
 
-    /// The drive works on the pending command and builds the answer.
-    fn execute(&mut self) {
+    /// The status packet is delivered now: the drive works on a pending command first and builds the answer.
+    pub fn deliver(&mut self) {
         if !self.command_pending {
             return; // the same packet again until the host sends a command
         }
         self.command_pending = false;
-        match self.tc[1] {
-            command::DOOR_OPEN => self.drive_status = status::DOOR_OPEN,
-            command::DOOR_CLOSE => self.drive_status = status::NO_DISC,
-            // with no disc every other command leaves the drive as it is
-            command::NOP | command::STOP | command::REPORT_REQUEST => {}
-            _ => {}
-        }
-        self.update_status();
+        let rs = self.drive.command(&self.tc);
+        self.rs[..9].copy_from_slice(&rs);
+        self.rs[9] = checksum(&self.rs);
     }
 
-    /// The status packet is delivered now (the host clock is running and a period has come): the interrupt is due.
-    pub fn deliver(&mut self) {
-        self.execute();
-    }
-
-    /// Advances by `sub_clocks`; returns how many 1/75 s periods ended, to deliver while the host clock runs.
+    /// Advances by `sub_clocks`; returns how many 1/75 s periods ended.
     pub fn advance(&mut self, sub_clocks: u64) -> u64 {
         self.acc += sub_clocks * PERIODS_PER_SECOND;
         let periods = self.acc / SUB_CLOCK_HZ;
         self.acc %= SUB_CLOCK_HZ;
         periods
+    }
+
+    /// One period of the drive itself (sector delivery), whether or not the host clock runs.
+    pub fn drive_period(&mut self, cdc: &mut Cdc) {
+        self.drive.period(cdc);
     }
 }

@@ -27,6 +27,15 @@ fn top(hist: BTreeMap<u32, u32>, n: usize) -> Vec<(u32, u32)> {
     v
 }
 
+fn io_filter() -> (u32, u32) {
+    let v = std::env::var("RC_IOFILTER").unwrap_or_else(|_| "FF804C-FF8067".into());
+    let (a, b) = v.split_once('-').unwrap();
+    (
+        u32::from_str_radix(a, 16).unwrap(),
+        u32::from_str_radix(b, 16).unwrap(),
+    )
+}
+
 fn list_env(name: &str) -> Vec<u32> {
     std::env::var(name)
         .map(|v| {
@@ -48,7 +57,9 @@ fn where_are_both_cpus() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(600);
     let bios = std::fs::read(path).unwrap();
-    let mut m = new_machine(SegaCdConfig::new(bios, Region::Usa)).unwrap();
+    let mut config = SegaCdConfig::new(bios, Region::Usa);
+    config.disc = std::env::var("RC_DISC").ok().map(Into::into);
+    let mut m = new_machine(config).unwrap();
     let budget = frames * m.clock_hz() / m.frame_hz();
     let mut spent = 0u64;
     let stops = list_env("RC_TRACE");
@@ -68,11 +79,23 @@ fn where_are_both_cpus() {
             .as_any_mut()
             .downcast_mut::<SegaCdExp>()
             .unwrap()
+            .log_main_io();
+        m.bus_mut()
+            .expansion_mut()
+            .unwrap()
+            .as_any_mut()
+            .downcast_mut::<SegaCdExp>()
+            .unwrap()
             .log_sub_io();
     }
     let (mut main_hist, mut sub_hist) = (BTreeMap::new(), BTreeMap::new());
+    let main_watch = list_env("RC_MAINWATCH");
+    let mut watched: BTreeMap<u32, u32> = BTreeMap::new();
     while spent < budget {
         spent += u64::from(m.step());
+        if main_watch.contains(&(m.pc() as u32)) {
+            *watched.entry(m.pc() as u32).or_default() += 1;
+        }
         if spent > budget - 3_000_000 {
             *main_hist.entry(m.pc() as u32).or_default() += 1;
             let e = m
@@ -85,6 +108,7 @@ fn where_are_both_cpus() {
             *sub_hist.entry(e.sub_cpu().pc).or_default() += 1;
         }
     }
+    println!("main watch hits {watched:X?}");
     println!("stop: {:?}", m.take_stop_report());
     println!("main pc {:06X}, hot {:X?}", m.pc(), top(main_hist, 8));
     let pc = m.pc() as u32;
@@ -131,10 +155,18 @@ fn where_are_both_cpus() {
     for (pc, addr, size, value) in e
         .sub_io_log()
         .iter()
-        .filter(|(_, a, _, _)| (0xFF804C..=0xFF8067).contains(a))
-        .take(70)
+        .filter(|(_, a, _, _)| {
+            let (lo, hi) = io_filter();
+            (lo..=hi).contains(a)
+        })
+        .take(400)
     {
         println!("  io pc {pc:06X} {addr:06X} {size:?} {value:X}");
+    }
+    if std::env::var("RC_MAINIO").is_ok() {
+        for (t, addr, size, value) in e.main_io_log().iter().take(3000) {
+            println!("  main io t {t} {addr:06X} {size:?} {value:X}");
+        }
     }
     println!("asic trace {:04X?}", e.asic_trace());
     {

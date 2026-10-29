@@ -381,7 +381,7 @@ fn segacd_profile() -> MachineProfile {
             "disc",
             MachineOptionKind::Text,
             None,
-            "The disc to play: a .cue sheet (with its .bin files beside it) or an .iso. Opened at start-up; the drive itself is not emulated yet, so the BIOS reports no disc",
+            "The disc to play: a .cue sheet (with its .bin files beside it) or an .iso, put in the drive at start-up (CHD discs are not supported yet)",
         ),
     );
     profile.cpus.insert(
@@ -634,12 +634,8 @@ fn create_segacd(req: MachineCreateRequest) -> Result<MachineCreateResponse, Str
             }
         }
     }
-    // The drive is a later slice; the disc is opened now so a bad file is refused at start-up, not mid-game.
-    if let Some(path) = &disc_path {
-        disc::Disc::open(std::path::Path::new(path))
-            .map_err(|e| format!("option \"disc\": {e}"))?;
-    }
     let mut config = segacd::SegaCdConfig::new(bios, region);
+    config.disc = disc_path.map(std::path::PathBuf::from);
     config.pads = pads;
     config.exact_timing = plugin_api::ExecutionMode::from_options(&req.options)?
         .unwrap_or(plugin_api::ExecutionMode::Accurate)

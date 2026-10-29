@@ -70,6 +70,12 @@ impl Pcm {
         self.off_mask
     }
 
+    /// The wave RAM in the bank the control register chose, for DMA from the CD controller.
+    pub fn bank_mut(&mut self) -> &mut [u8] {
+        let at = usize::from(self.bank) * BANK_SIZE;
+        &mut self.wave[at..at + BANK_SIZE]
+    }
+
     pub fn wave_ram(&self) -> &[u8] {
         &self.wave
     }
