@@ -62,10 +62,30 @@ pub(crate) fn apply_game_config(config: &mut AppConfig, machine: &str, game: &Ga
         && game.layout.is_none()
         && game.hotkeys == game_config::GameHotkeys::default()
         && game.pads == game_config::GamePads::default()
+        && game.window_size.is_none()
+        && game.bezel.is_none()
+        && game.shader.is_none()
+        && game.shader_intensity.is_none()
+        && game.scanline_intensity.is_none()
     {
         return;
     }
     let section = config.machines.entry(machine.to_string()).or_default();
+    if game.window_size.is_some() {
+        section.window_size = game.window_size.clone();
+    }
+    if game.bezel.is_some() {
+        section.bezel = game.bezel.clone();
+    }
+    if game.shader.is_some() {
+        section.shader = game.shader.clone();
+    }
+    if game.shader_intensity.is_some() {
+        section.shader_intensity = game.shader_intensity;
+    }
+    if game.scanline_intensity.is_some() {
+        section.scanline_intensity = game.scanline_intensity;
+    }
     for (host_key, target) in &game.keys {
         section.keys.insert(host_key.clone(), convert(target));
     }
@@ -193,6 +213,36 @@ mod tests {
             "other bindings stay"
         );
         assert_eq!(section.input.layout.as_deref(), Some("symbolic"));
+    }
+
+    #[test]
+    fn a_game_config_sets_the_window_the_bezel_and_the_shader_for_its_machine() {
+        let mut config = app_config::parse(
+            r#"
+            [machines.c64]
+            window_size = "800x600"
+            shader = "crt"
+            "#,
+        )
+        .unwrap();
+        let game = game_config::parse(
+            r#"
+            window_size = "1024x768"
+            bezel = "default"
+            shader_intensity = 0.8
+            "#,
+        )
+        .unwrap();
+        apply_game_config(&mut config, "c64", &game);
+        let section = &config.machines["c64"];
+        assert_eq!(section.window_size.as_deref(), Some("1024x768"));
+        assert_eq!(section.bezel.as_deref(), Some("default"));
+        assert_eq!(section.shader_intensity, Some(0.8));
+        assert_eq!(
+            section.shader.as_deref(),
+            Some("crt"),
+            "what the game does not name stays"
+        );
     }
 
     #[test]

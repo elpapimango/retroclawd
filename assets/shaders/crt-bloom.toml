@@ -1,0 +1,19 @@
+# crt-bloom: a four-pass CRT. Pass 0 keeps the bright parts of the picture at half size, passes 1 and 2 blur them (horizontal,
+# then vertical), pass 3 draws the picture on screen with curvature, scanlines and a phosphor mask and adds the glow.
+name = "crt-bloom"
+
+[[pass]]
+shader = "bloom-prefilter"
+scale = 0.5
+filter = "linear"
+
+[[pass]]
+shader = "blur-h"
+filter = "linear"
+
+[[pass]]
+shader = "blur-v"
+filter = "linear"
+
+[[pass]]
+shader = "crt-bloom"

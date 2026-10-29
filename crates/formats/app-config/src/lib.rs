@@ -153,7 +153,13 @@ pub struct MachineSettings {
     pub shader: Option<String>,
     pub shader_intensity: Option<f32>,
     pub scanline_intensity: Option<f32>,
+    /// Superseded by `window_size` and the window-size ladder; still parsed so old files load, and ignored.
     pub window_scale_percent: Option<u32>,
+    /// The window's size at start-up, `WIDTHxHEIGHT` (same as `--window-size`); without it the first of 1440x1080, 1280x960,
+    /// 1024x768, 800x600, 640x480 that fits the monitor.
+    pub window_size: Option<String>,
+    /// A frame drawn over the window's edges: `off`, `default` or the path of a PNG with a transparent screen (same as `--bezel`).
+    pub bezel: Option<String>,
     /// Open the GUI window borderless-fullscreen (same as `--fullscreen`).
     pub fullscreen: Option<bool>,
     /// `false` disables display VSync (same as `--no-vsync`).
@@ -207,6 +213,8 @@ mod tests {
                 shader_intensity: Some(0.6),
                 scanline_intensity: Some(0.3),
                 window_scale_percent: Some(60),
+                window_size: None,
+                bezel: None,
                 fullscreen: None,
                 vsync: None,
                 max_fps: None,
@@ -262,6 +270,28 @@ mod tests {
         assert!(config.default.options.is_empty());
     }
     /// Merged (every check kept): `parses_default_section`, `parses_per_machine_sections`, `parses_window_and_frame_pacing_settings`.
+    #[test]
+    fn window_size_and_bezel_are_settings() {
+        let config = parse(
+            r#"
+            [default]
+            window_size = "1280x960"
+            bezel = "default"
+
+            [machines.c64]
+            window_size = "800x600"
+            bezel = "bezels/c64.png"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(config.default.window_size.as_deref(), Some("1280x960"));
+        assert_eq!(config.default.bezel.as_deref(), Some("default"));
+        let c64 = config.machines.get("c64").unwrap();
+        assert_eq!(c64.window_size.as_deref(), Some("800x600"));
+        assert_eq!(c64.bezel.as_deref(), Some("bezels/c64.png"));
+        assert!(!c64.options.contains_key("window_size"));
+    }
+
     #[test]
     fn parses_host_settings() {
         parses_default_section();

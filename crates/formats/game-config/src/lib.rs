@@ -47,6 +47,14 @@ pub struct GameConfig {
     /// resolver treats both sources uniformly.
     #[serde(default)]
     pub options: HashMap<String, toml::Value>,
+    /// Window size at start-up for this game, `WIDTHxHEIGHT` (`--window-size` still wins).
+    pub window_size: Option<String>,
+    /// The bezel for this game: `off`, `default` or a PNG path (`--bezel` still wins).
+    pub bezel: Option<String>,
+    /// The shader preset for this game (`--shader` still wins), and its intensities.
+    pub shader: Option<String>,
+    pub shader_intensity: Option<f32>,
+    pub scanline_intensity: Option<f32>,
     /// `[keys]`: host key (or chord) -> machine key name(s), layered over `retroclawd.toml`'s `[keys]` and the machine's own
     /// `[machines.<id>.keys]` for this game only. The host validates the names against the machine's key list, like the
     /// config file's.

@@ -628,7 +628,7 @@ pub(crate) fn hotkey_input(
     audio: Res<AudioControlRes>,
     mut overlay: ResMut<OverlayStateRes>,
     mut toast: ResMut<ToastRes>,
-    mut shaders: ResMut<Assets<Shader>>,
+    mut pipeline_request: ResMut<video::PipelineRequest>,
     mut shader_settings: ResMut<ShaderSettingsRes>,
     dialogs: Res<FileDialogs>,
     router: Res<KeyRouter>,
@@ -706,13 +706,16 @@ pub(crate) fn hotkey_input(
             Trigger::Pressed(action @ (Action::ShaderNext | Action::ShaderPrev)) => {
                 let delta = if action == Action::ShaderNext { 1 } else { -1 };
                 let name = shader::cycle(shader_settings.name.as_deref(), delta);
-                let switched = shader::resolve_source(Some(name))
-                    .is_ok_and(|source| video::switch_shader(&mut shaders, source));
-                if switched {
-                    shader_settings.name = Some(name.to_string());
-                    toast.push(format!("Shader: {name}"));
-                } else {
-                    toast.push("Shader switch failed");
+                match shader::resolve(Some(name)) {
+                    Ok(preset) => {
+                        pipeline_request.0 = Some(preset);
+                        shader_settings.name = Some(name.to_string());
+                        toast.push(format!("Shader: {name}"));
+                    }
+                    Err(e) => {
+                        tracing::warn!("shader switch failed: {e}");
+                        toast.push("Shader switch failed");
+                    }
                 }
             }
             // The file actions were handled above; hold actions other than

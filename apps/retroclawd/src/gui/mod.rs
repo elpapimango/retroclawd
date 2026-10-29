@@ -8,11 +8,13 @@ use crate::emu_thread;
 use crate::plugin_bridge::HostedMachine;
 
 mod audio;
+pub(crate) mod bezel;
 mod debug_overlay;
 mod fold;
 pub(crate) mod hotkeys;
 mod input;
 pub(crate) mod keys;
+pub(crate) mod layout;
 pub(crate) mod pads;
 pub(crate) mod paste;
 mod prompt;
@@ -25,8 +27,10 @@ use audio::{AudioControlRes, AudioQueueRes, RequestedCountRes, UnderrunCountRes}
 use debug_overlay::DebugSnapshotRes;
 use hotkeys::HotkeyState;
 use input::{AutoRunState, CommandTxRes, InputTxRes, MouseTxRes};
-use video::{BaseResolution, FrameBufferRes, ShaderSettingsRes};
-use window::WindowScalePercentRes;
+use video::{
+    BaseResolution, BezelRes, FrameBufferRes, Pipeline, PipelineRequest, ShaderSettingsRes,
+};
+use window::WindowSetupRes;
 
 use crate::AppSettings;
 
@@ -185,7 +189,20 @@ pub fn run_gui(
         height,
         pixel_aspect: machine::Machine::pixel_aspect(&machine),
     };
-    let initial_size = base_resolution.display_size() * video::INITIAL_SCALE;
+    let bezel = match bezel::load(&app_settings.bezel) {
+        Ok(bezel) => bezel,
+        Err(e) => {
+            eprintln!("{e}");
+            None
+        }
+    };
+    // The size the window is created with; `window::apply_initial_window_size` sets the real one once the monitor is known.
+    let initial_size = layout::startup_window(
+        Vec2::new(4096.0, 4096.0),
+        base_resolution.aspect(),
+        bezel.is_some(),
+        app_settings.window_size,
+    );
     tracing::info!(
         "run_gui: {width}x{height} @ {}Hz, clock_hz={}",
         machine.frame_hz(),
@@ -318,7 +335,7 @@ pub fn run_gui(
                 }),
                 ..default()
             }),
-        bevy::sprite_render::Material2dPlugin::<video::ScreenMaterial>::default(),
+        bevy::sprite_render::Material2dPlugin::<video::PassMaterial>::default(),
     ))
     .insert_resource(ClearColor(Color::BLACK))
     .insert_resource(base_resolution)
@@ -349,13 +366,20 @@ pub fn run_gui(
     .insert_resource(file_dialogs)
     .insert_resource(prompt::PromptRes::new(prompt_rx))
     .insert_resource(MouseTxRes(mouse_tx))
+    .insert_resource(PipelineRequest(Some(app_settings.preset)))
+    .insert_resource(Pipeline::default())
+    .insert_resource(BezelRes {
+        geometry: bezel.as_ref().map(|b| b.geometry),
+    })
     .insert_resource(ShaderSettingsRes {
-        source: app_settings.shader_source,
         name: app_settings.shader_name,
         shader_intensity: app_settings.shader_intensity,
         scanline_intensity: app_settings.scanline_intensity,
     })
-    .insert_resource(WindowScalePercentRes(app_settings.window_scale_percent))
+    .insert_resource(WindowSetupRes {
+        requested: app_settings.window_size,
+        bezel: bezel.is_some(),
+    })
     .insert_resource(GuiFpsLimiter::new(max_fps));
 
     if let Some(profile) = auto_run_profile {
@@ -388,11 +412,42 @@ pub fn run_gui(
                 toast::update_toast,
                 debug_overlay::update_debug_overlay,
                 input::auto_run_startup_sequence,
-                video::fit_screen,
+                (
+                    video::rebuild_pipeline,
+                    video::sync_pipeline,
+                    video::layout_screen,
+                )
+                    .chain()
+                    .after(video::render_screen),
                 window::set_window_icon,
                 window::apply_initial_window_size.run_if(move || !start_fullscreen),
             ),
         );
+
+    if let Some(bezel) = bezel {
+        // The bezel's pixels go in as an image; the sprite is placed by `video::layout_screen`.
+        app.add_systems(
+            Startup,
+            move |mut commands: Commands, mut images: ResMut<Assets<Image>>| {
+                use bevy::asset::RenderAssetUsages;
+                use bevy::image::ImageSampler;
+                use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+                let mut image = Image::new(
+                    Extent3d {
+                        width: bezel.width,
+                        height: bezel.height,
+                        depth_or_array_layers: 1,
+                    },
+                    TextureDimension::D2,
+                    bezel.rgba.clone(),
+                    TextureFormat::Rgba8UnormSrgb,
+                    RenderAssetUsages::RENDER_WORLD,
+                );
+                image.sampler = ImageSampler::linear();
+                video::spawn_bezel(&mut commands, images.add(image));
+            },
+        );
+    }
 
     app.run();
     // `handle` drops here: stops the emu thread and joins it before this

@@ -75,7 +75,8 @@ const MAX_DUMP_BYTES: u32 = 16 * 1024 * 1024;
 
 fn parse_dump_range(s: &str) -> Result<(u32, u32), String> {
     let (start, len) = s.split_once(':').ok_or("--dump-memory expects START:LEN")?;
-    let start = u32::from_str_radix(start.trim_start_matches("0x"), 16).map_err(|e| e.to_string())?;
+    let start =
+        u32::from_str_radix(start.trim_start_matches("0x"), 16).map_err(|e| e.to_string())?;
     let len: u32 = len
         .parse()
         .map_err(|e: std::num::ParseIntError| e.to_string())?;
@@ -642,13 +643,28 @@ struct CommonArgs {
     /// accurate curvature, beam scanlines, and aperture mask), `zfast-crt`
     /// (fast luminance-aware scanlines and mask), `crt-potato` (lightweight
     /// phosphor mask), `scanlines` (scanlines only, no curvature),
-    /// `sharp-bilinear` (smooth upscale, no CRT artifacts), or a filesystem
-    /// path to a custom `.wgsl` file. Defaults to plain passthrough (today's
-    /// exact nearest-neighbor look) if given neither here nor as `shader` in
-    /// --config. `crt-royale` and `mame_hlsl` are not included: their
-    /// upstream presets require multi-pass render targets.
+    /// `sharp-bilinear` (smooth upscale, no CRT artifacts), `crt-bloom` (a
+    /// four-pass CRT with glow), a path to a `.toml` multi-pass preset
+    /// (`[[pass]]` tables, see assets/shaders/crt-bloom.toml), or a path to a
+    /// custom `.wgsl` file. Defaults to plain passthrough (today's exact
+    /// nearest-neighbor look) if given neither here nor as `shader` in
+    /// --config. `crt-royale` and `mame_hlsl` are not bundled (the passes
+    /// would have to be ported).
     #[arg(long, conflicts_with = "headless")]
     shader: Option<String>,
+
+    /// Window size at start-up, WIDTHxHEIGHT (for example 1440x1080). Without it the window opens at the first of 1440x1080,
+    /// 1280x960, 1024x768, 800x600 and 640x480 that fits the monitor (all 4:3; 16:9 with a bezel). The picture inside is always
+    /// 4:3 unless the machine says otherwise, however large the window or the screen. Same as `window_size` in --config or a
+    /// game config.
+    #[arg(long, conflicts_with = "headless", value_name = "WIDTHxHEIGHT")]
+    window_size: Option<String>,
+
+    /// A frame drawn over the window's edges, like a RetroArch overlay: `off` (default), `default` (a television frame) or the
+    /// path of a PNG whose screen area is transparent. Makes the window 16:9; the picture stays 4:3 inside it, also in
+    /// fullscreen. Same as `bezel` in --config or a game config.
+    #[arg(long, conflicts_with = "headless")]
+    bezel: Option<String>,
 
     /// Overall strength of active --shader's effect (curvature/mask/bloom
     /// where supported). 0.0-1.0, defaults to 0.6 if given neither here nor
@@ -1323,7 +1339,9 @@ fn resolve_one_machine_option(
 
 /// Host settings that may sit beside a machine's own options in a
 /// `[machines.<id>]` section (typed fields of `app_config::MachineSettings`).
-const HOST_SETTING_KEYS: [&str; 6] = [
+const HOST_SETTING_KEYS: [&str; 8] = [
+    "window_size",
+    "bezel",
     "shader",
     "shader_intensity",
     "scanline_intensity",
@@ -1463,7 +1481,6 @@ fn missing_option_error(machine_id: &str, info: &MachineOptionInfo) -> String {
 
 const DEFAULT_SHADER_INTENSITY: f32 = 0.6;
 const DEFAULT_SCANLINE_INTENSITY: f32 = 0.3;
-const DEFAULT_WINDOW_SCALE_PERCENT: u32 = 60;
 
 /// Everything the GUI needs to render the picture, after merging `Args`
 /// with an optional --config file -- same "CLI beats file" shape as
@@ -1472,17 +1489,18 @@ const DEFAULT_WINDOW_SCALE_PERCENT: u32 = 60;
 /// passthrough default rather than defaulting to a name here, since
 /// `gui::shader` already treats "no shader selected" as its own case.
 pub(crate) struct AppSettings {
-    /// Already-resolved WGSL source text (see `gui::shader::resolve_source`)
-    /// -- resolved once here in `main`, not inside the GUI, so a bad
-    /// `--shader <path>` fails the same clean "print an error, exit
-    /// non-zero" way a bad `--rom` path already does, before any window
-    /// ever opens.
-    pub(crate) shader_source: String,
+    /// The shader preset (see `gui::shader::resolve`) -- resolved once here in `main`, not inside the GUI, so a bad `--shader
+    /// <path>` fails the same clean "print an error, exit non-zero" way a bad `--rom` path already does, before any window ever
+    /// opens.
+    pub(crate) preset: gui::shader::ResolvedPreset,
     /// The selected shader's name or path, `None` for the default.
     pub(crate) shader_name: Option<String>,
     pub(crate) shader_intensity: f32,
     pub(crate) scanline_intensity: f32,
-    pub(crate) window_scale_percent: u32,
+    /// The window size asked for (`--window-size`, `window_size`); `None` is the first of the 4:3 ladder that fits the monitor.
+    pub(crate) window_size: Option<(u32, u32)>,
+    /// The bezel shown over the picture (`--bezel`, `bezel`).
+    pub(crate) bezel: gui::bezel::BezelSource,
     /// `[keys]` / `[machines.<id>.keys]` resolved against the machine's key names.
     pub(crate) key_bindings: gui::keys::KeyBindings,
     /// Positional or symbolic host keyboard layout, and the machine's
@@ -1579,12 +1597,16 @@ fn validate_app_config(config: &AppConfig) -> Result<(), String> {
             return Err(format!("--config: [{name}].max_fps must be at least 1"));
         }
     }
-    for (name, settings) in &config.machines {
-        if settings.window_scale_percent.is_some() {
-            return Err(format!(
-                "--config: [machines.{name}].window_scale_percent is not supported -- \
-                 window size applies to every machine equally, set it under [default] instead"
-            ));
+    let sections = std::iter::once(("default".to_string(), &config.default)).chain(
+        config
+            .machines
+            .iter()
+            .map(|(name, settings)| (format!("machines.{name}"), settings)),
+    );
+    for (name, settings) in sections {
+        if let Some(size) = &settings.window_size {
+            gui::layout::parse_window_size(size)
+                .map_err(|e| format!("--config: [{name}].window_size: {e}"))?;
         }
     }
     Ok(())
@@ -1726,7 +1748,7 @@ fn resolve_app_settings(
         .clone()
         .or_else(|| machine_settings.and_then(|m| m.shader.clone()))
         .or_else(|| config.default.shader.clone());
-    let shader_source = gui::shader::resolve_source(shader.as_deref())?;
+    let preset = gui::shader::resolve(shader.as_deref())?;
 
     let shader_intensity = args
         .shader_intensity
@@ -1740,14 +1762,25 @@ fn resolve_app_settings(
         .or(config.default.scanline_intensity)
         .unwrap_or(DEFAULT_SCANLINE_INTENSITY);
 
-    // No per-machine override, no CLI flag either (only --config's
-    // [default] can set this) -- see `validate_app_config`'s own doc
-    // comment for why per-machine is rejected outright rather than just
-    // unread.
-    let window_scale_percent = config
-        .default
-        .window_scale_percent
-        .unwrap_or(DEFAULT_WINDOW_SCALE_PERCENT);
+    // The window's size and the bezel: CLI > game config > machine section > [default] (the game config was folded into the
+    // machine section by `overrides::apply_game_config`).
+    let window_size = args
+        .window_size
+        .clone()
+        .or_else(|| machine_settings.and_then(|m| m.window_size.clone()))
+        .or_else(|| config.default.window_size.clone())
+        .map(|text| {
+            gui::layout::parse_window_size(&text).map_err(|e| format!("--window-size: {e}"))
+        })
+        .transpose()?;
+    let bezel = args
+        .bezel
+        .clone()
+        .or_else(|| machine_settings.and_then(|m| m.bezel.clone()))
+        .or_else(|| config.default.bezel.clone())
+        .map_or(gui::bezel::BezelSource::Off, |text| {
+            gui::bezel::BezelSource::parse(&text)
+        });
 
     // Same "CLI beats file" order as the shader settings. A bool CLI switch
     // can only force the non-default value (`--fullscreen`, `--no-vsync`);
@@ -1775,11 +1808,12 @@ fn resolve_app_settings(
 
     Ok(AppSettings {
         hotkeys,
-        shader_source,
+        preset,
         shader_name: shader,
         shader_intensity,
         scanline_intensity,
-        window_scale_percent,
+        window_size,
+        bezel,
         key_bindings,
         layout,
         symbols,
@@ -3105,7 +3139,10 @@ fn run_headless(
     }
 
     if let Some((start, len)) = args.dump_memory {
-        println!("memory 0x{start:04X}..0x{:04X}:", u64::from(start) + u64::from(len));
+        println!(
+            "memory 0x{start:04X}..0x{:04X}:",
+            u64::from(start) + u64::from(len)
+        );
         for offset in 0..len {
             let addr = start.wrapping_add(offset);
             if offset % 16 == 0 {

@@ -4,43 +4,23 @@ use bevy::window::{
 };
 use bevy::winit::WinitWindows;
 
-use super::video::{self, BaseResolution};
+use super::layout;
+use super::video::BaseResolution;
 
-/// `--config`'s `window_scale_percent` (default 60, see
-/// `crate::AppSettings`'s own doc comment) -- read once by
-/// `apply_initial_window_size`.
+/// How the window opens: the size the user asked for (`--window-size`, `window_size`), and whether a bezel is shown (which makes
+/// the window 16:9, so the picture is not squeezed to fit it).
 #[derive(Resource)]
-pub(crate) struct WindowScalePercentRes(pub(crate) u32);
+pub(crate) struct WindowSetupRes {
+    pub(crate) requested: Option<(u32, u32)>,
+    pub(crate) bezel: bool,
+}
 
-/// Sizes the window to the largest whole-number multiple of the emulated
-/// picture's own resolution (`BaseResolution`) that still fits within
-/// `WindowScalePercentRes` percent of the primary monitor's physical
-/// resolution -- same size for every machine relative to *its own*
-/// picture, but each machine's own native aspect ratio (a 48K Spectrum's
-/// isn't a CPC's) decides the window's actual shape, once, the first
-/// frame a `Monitor` entity actually exists. Deliberately reuses
-/// `video::integer_scale` -- the exact same "largest integer scale that
-/// fits a bounding box" math `fit_screen` already runs every frame for
-/// live resizing -- rather than just clamping width/height to 60%
-/// independently: that earlier approach left an aspect-mismatched window
-/// with real letterboxing inside it (a monitor's own aspect ratio rarely
-/// matches an emulated machine's 4:3-ish picture). Picking an *exact*
-/// integer multiple instead means the window's aspect ratio always
-/// matches the picture's, and the picture fills it edge to edge with zero
-/// letterboxing at startup -- confirmed live, see `TODO.md`'s own entry
-/// for this fix. Monitor entities are populated by `bevy_winit` after
-/// `Startup`, not during it, same underlying reason (and same
-/// retry-via-`Local<bool>`-sentinel fix) as `set_window_icon` above
-/// needing `WinitWindows` to exist first.
-///
-/// Not scheduled at all when `--fullscreen` was given (see `run_gui`'s
-/// `.run_if`) -- there's no "60% of the monitor" size to apply when the
-/// window opens straight into `BorderlessFullscreen`. This system only
-/// ever runs once, at startup; after that, window size is entirely
-/// user/window-manager driven, and `video::fit_screen` scales the bitmap
-/// to whatever the current window size is.
+/// Sizes and centres the window once a `Monitor` entity exists (`bevy_winit` adds it after `Startup`, so this retries every
+/// `Update` until it does, like `set_window_icon`): the size asked for, or the first of `layout::LADDER` (1440x1080, 1280x960,
+/// 1024x768, 800x600, 640x480) that fits the monitor, in logical pixels -- on a 4K monitor the first. Not scheduled when the
+/// window opens fullscreen. After this the window size is the user's, and `video::layout_screen` fits the picture to it.
 pub(crate) fn apply_initial_window_size(
-    scale_percent: Res<WindowScalePercentRes>,
+    setup: Res<WindowSetupRes>,
     base: Res<BaseResolution>,
     monitors: Query<&Monitor, With<PrimaryMonitor>>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
@@ -57,23 +37,9 @@ pub(crate) fn apply_initial_window_size(
     };
     *done = true;
 
-    let percent = scale_percent.0 as f32 / 100.0;
-    // `fit_screen` compares `base_size` (the picture's native *texel*
-    // count) against the window's own *logical* size (`Window::width`/
-    // `height`, matching Bevy's 2D camera default of
-    // 1 world unit == 1 logical pixel) -- so the
-    // monitor's physical bounds need converting to logical here too
-    // (divide by its own scale factor) before the same comparison is
-    // valid, rather than mixing units the way an earlier version of this
-    // function did (computed the target size against physical monitor
-    // bounds, then wrote it back via `set_physical_resolution` -- correct
-    // by coincidence only at `scale_factor == 1.0`, wrong on any real
-    // HiDPI display).
-    let bounds = monitor.physical_size().as_vec2() / monitor.scale_factor as f32 * percent;
-    let base_size = base.display_size();
-    let scale = video::integer_scale(bounds, base_size);
-    let target = base_size * scale;
-    window.resolution.set(target.x, target.y);
+    let logical = monitor.physical_size().as_vec2() / monitor.scale_factor as f32;
+    let size = layout::startup_window(logical, base.aspect(), setup.bezel, setup.requested);
+    window.resolution.set(size.x, size.y);
     window.position = WindowPosition::Centered(MonitorSelection::Primary);
 }
 
@@ -136,14 +102,9 @@ pub(crate) fn set_window_icon(
     }
 }
 
-/// Toggles between windowed and fullscreen (the `fullscreen` hotkey, F11 by
-/// default; see `hotkeys`). `BorderlessFullscreen` rather than exclusive
-/// `Fullscreen`: it just uses the current monitor's own resolution/refresh
-/// rate directly, no separate display-mode negotiation, and `video::fit_screen`
-/// is what actually gets the "scale to 4K" vs "scale to 1080p" effect the
-/// user wants -- a bigger monitor doesn't force a bigger scale factor, it
-/// just leaves more (or less) letterboxed space around whatever integer
-/// factor fits.
+/// Toggles between windowed and fullscreen (the `fullscreen` hotkey, F11 by default; see `hotkeys`). `BorderlessFullscreen`
+/// rather than exclusive `Fullscreen`: it uses the current monitor's own resolution and refresh rate, no display-mode
+/// negotiation. The picture keeps its 4:3 shape (`video::layout_screen`): the rest of a 16:9 screen is black, or the bezel.
 pub(crate) fn toggle_fullscreen(window: &mut Window) {
     window.mode = match window.mode {
         WindowMode::Windowed => WindowMode::BorderlessFullscreen(MonitorSelection::Current),

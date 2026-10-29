@@ -1102,6 +1102,28 @@ guessing.
   system tests (ordering and pacing, cancel, modifier wait, errors), a config-resolution test; live
   under Xvfb with a python-xlib clipboard owner and XTest, the pasted `10 PRINT "Hello, c64!"` /
   `20 GOTO 10` / `RUN` ran on the C64.
+  **Display geometry, bezels and the shader pipeline (2026-10-29)**: `gui/layout.rs` (pure, unit-tested) decides the shape and
+  the sizes. The picture is **always 4:3** (`display_aspect`; a machine reporting a non-square `pixel_aspect` gives its own
+  shape) and is stretched to it whatever the machine draws; in a window or in fullscreen the rest of the screen is black or the
+  bezel -- the old "fill the window" stretch (16:9 on a 4K monitor) is gone. The window opens at the first of 1440x1080,
+  1280x960, 1024x768, 800x600, 640x480 whose size fits 90 % of the monitor's *logical* size (`startup_window`; a 4K monitor gets
+  1440x1080), or at `--window-size WxH` / `window_size = "WxH"` (`[default]`, `[machines.<id>]`, game config; CLI > game >
+  machine > default). `window_scale_percent` is still parsed and ignored. **Bezels** (`gui/bezel.rs`; `--bezel off|default|file.png`,
+  `bezel =` in the same places): an image with a transparent screen, drawn over the picture (z 10); the hole is the transparent
+  run through the image centre; `default` is a television frame drawn in code (`default_bezel`, nothing shipped). A bezel makes the
+  start-up window 16:9 (so the picture is not squeezed) and `layout::place` fits the 4:3 picture to the hole. A game config also
+  takes `shader`, `shader_intensity`, `scanline_intensity`, `window_size`, `bezel` (folded into the machine section by
+  `overrides::apply_game_config`). **Shader pipeline** (`gui/shader.rs`, `gui/video.rs`, `assets/shaders/README.md`): a preset is a
+  chain of passes (`ResolvedPreset`); every pass but the last draws a unit quad into an image through its own `Camera2d`
+  (`RenderTarget::Image`, render layer `index + 1`, camera order before the main one), the last draws on screen. One
+  `PassMaterial` serves every pass; its fragment shader is picked in `Material2d::specialize` from a never-reused slot in
+  `PASS_SHADERS` (the pipeline cache is keyed by the slot). `rebuild_pipeline` (on `PipelineRequest`, at start-up and when
+  `shader_next`/`shader_prev` switch) -> `sync_pipeline` (sizes: source/viewport/absolute scale, picture size changes, uniforms)
+  -> `layout_screen` (placement) run chained after `render_screen`. Bindings 0-2 and the first four uniform fields are the old
+  single-pass layout, so the six single-pass shaders were not touched; new ones are `crt-bloom.toml` (prefilter, two blurs,
+  composite). crt-royale and mame_hlsl are still not bundled: the engine can run them but their passes have to be ported.
+  Verified live on Windows (4K at 150 %): `crt-bloom` with `--bezel default` shows the glow and the framed 4:3 picture, every
+  single-pass shader starts; fullscreen was not looked at (the placement arithmetic is unit-tested).
   **Audio**: `bevy` needs the `bevy_audio` cargo feature (not implied by
   `"2d"` or any other feature already listed -- added explicitly). Bevy's
   audio API is built around `Handle<Source>` + `AudioPlayer` for decoding
