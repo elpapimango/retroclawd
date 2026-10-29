@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/chips/ym2612", "crates/chips/sn76489", "crates/chips/vdp", "crates/chips/mcd-gate-array", "crates/formats/md-cart", "crates/formats/disc", "crates/machines/genesis", "crates/plugins/sega-machine-plugin", "crates/plugin-dlls/genesis"]
+members = ["crates/chips/ym2612", "crates/chips/sn76489", "crates/chips/vdp", "crates/chips/mcd-gate-array", "crates/formats/md-cart", "crates/formats/disc", "crates/machines/genesis", "crates/machines/segacd", "crates/plugins/sega-machine-plugin", "crates/plugin-dlls/genesis"]
 
 # Same release profile as the retroclawd host.
 [profile.release]
