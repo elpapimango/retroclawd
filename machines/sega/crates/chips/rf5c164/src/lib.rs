@@ -3,7 +3,7 @@
 //! 64 KB wave RAM, and the on/off register.
 //!
 //! Slice 3 keeps the registers and the wave RAM only: nothing is played yet (slice 5), and the read-only address counters
-//! are not answered.
+//! only show the start address each channel was given.
 #![forbid(unsafe_code)]
 
 pub const WAVE_RAM_SIZE: usize = 0x1_0000;
@@ -18,6 +18,8 @@ struct Channel {
     fd: u16,
     loop_addr: u16,
     start: u8,
+    /// The address counter the read-only registers show (the integer part of the wave address).
+    counter: u16,
 }
 
 #[derive(Clone, Debug)]
@@ -84,7 +86,11 @@ impl Pcm {
                     3 => ch.fd = (ch.fd & 0x00FF) | (u16::from(v) << 8),
                     4 => ch.loop_addr = (ch.loop_addr & 0xFF00) | u16::from(v),
                     5 => ch.loop_addr = (ch.loop_addr & 0x00FF) | (u16::from(v) << 8),
-                    _ => ch.start = v,
+                    _ => {
+                        ch.start = v;
+                        // the counter starts from the start address (fact P3, [H?]: when exactly it is loaded)
+                        ch.counter = u16::from(v) << 8;
+                    }
                 }
                 true
             }
@@ -113,12 +119,20 @@ impl Pcm {
         }
     }
 
-    /// A read of the wave RAM window. The address counters (`$10-$1F`) are not answered yet (`None`).
+    /// A read of the wave RAM window or of the address counters (`$10-$1F`, low then high byte of each channel).
     pub fn read(&self, chip_addr: u16) -> Option<u8> {
         match chip_addr {
             0x1000..=0x1FFF => {
                 let at = usize::from(self.bank) * BANK_SIZE + usize::from(chip_addr - 0x1000);
                 Some(self.wave[at])
+            }
+            0x10..=0x1F => {
+                let ch = &self.channels[usize::from((chip_addr - 0x10) >> 1)];
+                Some(if chip_addr & 1 == 0 {
+                    ch.counter as u8
+                } else {
+                    (ch.counter >> 8) as u8
+                })
             }
             _ => None,
         }
@@ -148,6 +162,11 @@ mod tests {
         for (a, v) in [(0, 0xFF), (1, 0x77), (2, 0x00), (3, 0x04), (6, 0x10)] {
             assert!(p.write(a, v));
         }
+        assert_eq!(
+            (p.read(0x15), p.read(0x14)),
+            (Some(0x10), Some(0)),
+            "channel 3 counter from its start address"
+        );
         p.write(7, 0x40);
         assert!(p.write(8, 0xFE));
         assert_eq!(p.suspended_mask(), 0xFE);
@@ -166,10 +185,6 @@ mod tests {
         assert_eq!(p.read(0x1000), Some(0xBB));
         p.write(7, 0x03);
         assert_eq!(p.read(0x1000), Some(0xAA));
-        assert_eq!(
-            p.read(0x10),
-            None,
-            "the address counters are not answered yet"
-        );
+        assert_eq!(p.read(0x10), Some(0), "the counters start at zero");
     }
 }

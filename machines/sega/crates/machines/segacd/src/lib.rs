@@ -56,6 +56,9 @@ struct SubSide {
     backup: Box<[u8]>,
     gate: GateArray,
     pcm: rf5c164::Pcm,
+    asic: mcd_asic::Asic,
+    /// The sub-CPU clock at the instruction being executed (for the graphics unit's busy time).
+    clock: u64,
     /// The sub-CPU touched word RAM it does not own (fact C7): it waits forever, until a forced reset.
     hung: bool,
     stop: Option<String>,
@@ -153,6 +156,14 @@ impl SubSide {
 
     /// The registers take whole words, so a word access to them is not two byte accesses.
     fn sub_read(&mut self, addr: u32, size: Size) -> Option<u32> {
+        if (0xFF_8000..=0xFF_81FF).contains(&addr) && mcd_asic::Asic::owns(addr - 0xFF_8000) {
+            let word = self.asic.read_word(addr - 0xFF_8000, self.clock)?;
+            return Some(match size {
+                Size::Word => u32::from(word),
+                Size::Byte if addr & 1 == 0 => u32::from(word >> 8),
+                Size::Byte => u32::from(word & 0xFF),
+            });
+        }
         if (0xFF_8000..=0xFF_81FF).contains(&addr) && size == Size::Word {
             return self.gate.sub_read_word(addr - 0xFF_8000).map(u32::from);
         }
@@ -167,6 +178,30 @@ impl SubSide {
     }
 
     fn sub_write(&mut self, addr: u32, size: Size, value: u32) -> bool {
+        if (0xFF_8000..=0xFF_81FF).contains(&addr) && mcd_asic::Asic::owns(addr - 0xFF_8000) {
+            let off = addr - 0xFF_8000;
+            let word = match size {
+                Size::Word => value as u16,
+                // the trace vector register takes words only; the others merge a byte into their current value
+                Size::Byte => {
+                    let Some(old) = self.asic.read_word(off, self.clock) else {
+                        return false;
+                    };
+                    if off & 1 == 0 {
+                        (old & 0x00FF) | ((value as u16) << 8)
+                    } else {
+                        (old & 0xFF00) | (value as u16 & 0xFF)
+                    }
+                }
+            };
+            if self.gate.mode_1m() {
+                return false; // the graphics unit works in 2M mode only; 1M mode is not modelled (fact C8)
+            }
+            let pm = self.gate.priority_mode();
+            return self
+                .asic
+                .write_word(off, word, &mut self.word, pm, self.clock);
+        }
         if (0xFF_8000..=0xFF_81FF).contains(&addr) && size == Size::Word {
             return self.gate.sub_write_word(addr - 0xFF_8000, value as u16);
         }
@@ -262,6 +297,8 @@ impl SegaCdExp {
                 backup: vec![0; BACKUP_RAM_SIZE].into_boxed_slice(),
                 gate: GateArray::new(),
                 pcm: rf5c164::Pcm::new(),
+                asic: mcd_asic::Asic::new(),
+                clock: 0,
                 hung: false,
                 stop: None,
                 pc: 0,
@@ -297,6 +334,11 @@ impl SegaCdExp {
 
     pub fn sub_io_log(&self) -> &[(u32, u32, Size, u32)] {
         self.side.io_log.as_deref().unwrap_or(&[])
+    }
+
+    /// The first trace vector lines of the graphics unit's last operation (a debugging aid).
+    pub fn asic_trace(&self) -> &[[u16; 4]] {
+        self.side.asic.last_trace()
     }
 
     pub fn sub_starts(&self) -> u32 {
@@ -448,6 +490,7 @@ impl SegaCdExp {
                 return;
             }
             self.side.pc = self.sub.pc;
+            self.side.clock = self.spent;
             if let Some(t) = self.trace.as_mut()
                 && !t.frozen
             {
@@ -466,6 +509,9 @@ impl SegaCdExp {
             let clocks = self.sub.step(&mut self.side);
             self.spent += u64::from(clocks.max(4));
             self.run_clocks += u64::from(clocks.max(4));
+            if self.side.asic.take_finished(self.spent) {
+                self.side.gate.raise_level(1);
+            }
         }
     }
 }
@@ -523,6 +569,12 @@ impl Expansion for SegaCdExp {
     }
 
     fn dma_read_word(&mut self, addr: u32) -> Option<u16> {
+        // A VDP DMA from word RAM gets each word one cycle late: the word it delivers is the one before the address it asked
+        // for, which is why software starts such a transfer one word further on (fact C17).
+        let mut addr = addr;
+        if (0x20_0000..=0x23_FFFF).contains(&alias(addr)) && alias(addr) > 0x20_0000 {
+            addr -= 2;
+        }
         let hi = self.main_byte(addr, false)?;
         let lo = self.main_byte(addr | 1, false)?;
         Some(u16::from(hi) << 8 | u16::from(lo))
@@ -622,6 +674,19 @@ mod tests {
         // the rest of the cartridge space is not answered
         assert_eq!(e.read(0x50_0000, Size::Word, 0), None);
         assert_eq!(e.peek(0x40_0100), b'S');
+    }
+
+    #[test]
+    fn a_dma_from_word_ram_delivers_each_word_one_cycle_late() {
+        let mut e = exp();
+        for (i, w) in [0x1111u32, 0x2222, 0x3333].iter().enumerate() {
+            assert!(e.write(0x20_0000 + 2 * i as u32, Size::Word, *w, 0));
+        }
+        // asking for word 2 gives word 1; the cartridge-boot window behaves the same
+        assert_eq!(e.dma_read_word(0x20_0004), Some(0x2222));
+        assert_eq!(e.dma_read_word(0x60_0004), Some(0x2222));
+        // the BIOS area is not delayed
+        assert_eq!(e.dma_read_word(0x00_0004), Some(0));
     }
 
     #[test]

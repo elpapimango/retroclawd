@@ -9,6 +9,7 @@ description = "Sega CD / Mega-CD: the sub-CPU system on the Genesis cartridge po
 genesis = { path = "../genesis" }
 mcd-gate-array = { path = "../../chips/mcd-gate-array" }
 rf5c164 = { path = "../../chips/rf5c164" }
+mcd-asic = { path = "../../chips/mcd-asic" }
 disc = { path = "../../formats/disc" }
 mc68000 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
 machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }

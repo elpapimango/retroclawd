@@ -130,6 +130,11 @@ impl GateArray {
         addr < u32::from(self.wp) * 0x200
     }
 
+    /// The write priority mode bits of the memory mode register: 0 off, 1 underwrite, 2 overwrite (fact C6).
+    pub fn priority_mode(&self) -> u8 {
+        self.pm
+    }
+
     pub fn mode_1m(&self) -> bool {
         self.mode_1m
     }

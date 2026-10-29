@@ -128,8 +128,27 @@ fn where_are_both_cpus() {
     if let Ok(path) = std::env::var("RC_DUMP_PRG") {
         std::fs::write(path, e.prg_ram()).unwrap();
     }
-    for (pc, addr, size, value) in e.sub_io_log().iter().take(120) {
+    for (pc, addr, size, value) in e
+        .sub_io_log()
+        .iter()
+        .filter(|(_, a, _, _)| (0xFF804C..=0xFF8067).contains(a))
+        .take(70)
+    {
         println!("  io pc {pc:06X} {addr:06X} {size:?} {value:X}");
+    }
+    println!("asic trace {:04X?}", e.asic_trace());
+    {
+        let w = e.word_ram();
+        let entry = |row: usize, col: usize| {
+            let at = 0x20000 + (row * 256 + col) * 2;
+            u16::from_be_bytes([w[at], w[at + 1]])
+        };
+        for row in 6..11 {
+            println!(
+                "map row {row}: {:04X?}",
+                (0..22).map(|c| entry(row, c)).collect::<Vec<_>>()
+            );
+        }
     }
     println!(
         "sub starts {} ran {} of {}",
