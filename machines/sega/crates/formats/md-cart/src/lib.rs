@@ -437,4 +437,25 @@ mod tests {
             let _ = Cartridge::parse(&rom[..len]);
         }
     }
+
+    #[test]
+    fn random_headers_never_panic() {
+        let base = rom_with_header(b"JUE");
+        let mut seed = 99u32;
+        let sweep: usize = std::env::var("RC_SWEEP")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1);
+        for round in 0..2000 * sweep {
+            let mut rom = base.clone();
+            for _ in 0..(1 + round % 8) {
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let i = 0x100 + (seed >> 8) as usize % 0x100;
+                rom[i] = (seed >> 3) as u8;
+            }
+            if let Ok(c) = Cartridge::parse(&rom) {
+                let _ = c.checksum_ok();
+            }
+        }
+    }
 }

@@ -136,4 +136,24 @@ mod tests {
             ]
         );
     }
+    #[test]
+    fn random_text_never_panics_the_parser() {
+        let alphabet = b"ABCDEFGHJKLMNPRSTVWXYZ0123456789-:, ;iIoO";
+        let mut seed = 7u32;
+        let sweep: usize = std::env::var("RC_SWEEP")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1);
+        for _ in 0..20_000 * sweep {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let len = (seed >> 24) as usize % 20;
+            let mut text = String::new();
+            for _ in 0..len {
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                text.push(alphabet[(seed >> 8) as usize % alphabet.len()] as char);
+            }
+            let _ = parse(&text);
+            let _ = decode_genie(&text);
+        }
+    }
 }
