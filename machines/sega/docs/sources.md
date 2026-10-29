@@ -21,6 +21,10 @@ Short ids used in `hardware-facts.md`. Copies are fetched into `software/docs/<i
 | PD-LOCKON | Sonic & Knuckles lock-on, Plutiedev | https://plutiedev.com/lockon | |
 | KABUTO | SEGA Mega Drive / Genesis hardware notes, Kabuto of TiTAN, v1.5 | https://plutiedev.com/mirror/kabuto-hardware-notes | bus, VDP ports, HV counter, sprites, DMA/FIFO |
 | MD-PRM | MC68000 Programmer's Reference Manual | (already used by the Atari work) | |
+| MCD-HW | Mega-CD Hardware Manual, Sega, version 1.0, 14 Oct 1991 (confidential scan) | https://segaretro.org/images/5/51/Mega-CD_Hardware_Manual.pdf | maps, gate array registers, CDC, RF5C164 appendix; read as page images into `software/docs/segacd/` (git-ignored). Sega Retro's article pages need a browser (proof-of-work gate), the image host does not |
+| MCD-BIOS | Mega-CD BIOS manual (confidential scan) | https://segaretro.org/images/4/44/MCDBios.pdf | sub-CPU system structure, BIOS calls; not read yet |
+| PD-MODE1 | Using the Sub-CPU in mode 1, Plutiedev | https://plutiedev.com/subcpu-in-mode1 | gate array reset sequence, mode 1 map |
+| MD-WIKI-MCD | Mega CD, MegaDrive Wiki (2015) | https://md.railgun.works/index.php?title=Mega_CD | main-side register summary; partly wrong on the stopwatch side, cross-check only |
 
 ## Reference emulators (oracles)
 
