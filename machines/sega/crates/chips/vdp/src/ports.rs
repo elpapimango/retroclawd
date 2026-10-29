@@ -10,7 +10,11 @@ impl Vdp {
             self.addr = self.addr_latch | (value & 0x3FFF);
             self.code = (self.code & 0x3C) | ((value >> 14) & 3) as u8;
             if value & 0xC000 == 0x8000 {
-                self.write_register(usize::from((value >> 8) & 0x1F), value as u8);
+                let reg = usize::from((value >> 8) & 0x1F);
+                self.write_register(reg, value as u8);
+                if reg == 7 {
+                    self.log_line_event(now, crate::frame::LineEvent::Backdrop(value as u8));
+                }
             } else {
                 // Only mode 5 takes a two-word command.
                 self.pending = self.regs[1] & 0x04 != 0;
@@ -49,6 +53,21 @@ impl Vdp {
     pub fn write_data(&mut self, value: u16, now: u64) -> u64 {
         self.pending = false;
         let accepted = self.fifo_accept(now);
+        if self.code & 0x0F == 0x03 {
+            // the colour changes when the VDP takes the word from the FIFO, in its next access slot
+            let taken = if self.fifo_stalls {
+                self.fifo_done[self.fifo_idx & 3].max(accepted)
+            } else {
+                accepted
+            };
+            self.log_line_event(
+                taken,
+                crate::frame::LineEvent::Cram(
+                    usize::from(self.addr >> 1) & 0x3F,
+                    crate::memory::pack_colour(value),
+                ),
+            );
+        }
         self.bus_write(value);
         if self.dma.fill_pending {
             self.dma_fill(accepted, value);

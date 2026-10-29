@@ -38,6 +38,24 @@ fn plane_cells(field: u8) -> usize {
     }
 }
 
+pub(crate) fn brightness_of(index: u8) -> Brightness {
+    match index >> 6 {
+        1 => Brightness::Shadow,
+        2 => Brightness::Highlight,
+        _ => Brightness::Normal,
+    }
+}
+
+/// A colour of a palette (9-bit values `BBBGGGRRR`) as 8-bit RGB.
+pub(crate) fn rgb_of(cram: &[u16], color: u8, brightness: Brightness) -> [u8; 3] {
+    let c = cram[usize::from(color & 0x3F)];
+    [
+        level(c, brightness),
+        level(c >> 3, brightness),
+        level(c >> 6, brightness),
+    ]
+}
+
 /// 3-bit colour components to 8-bit output levels for the three brightness levels (fact V24: the analogue levels are `2n`
 /// for normal pixels, `n` for shadow and `7 + n` for highlight on a 0-15 scale).
 fn level(n: u16, brightness: Brightness) -> u8 {
@@ -302,25 +320,41 @@ impl Vdp {
         out
     }
 
+    #[cfg(test)]
     pub(crate) fn rgb(&self, color: u8, brightness: Brightness) -> [u8; 3] {
-        let c = self.cram[usize::from(color & 0x3F)];
-        [
-            level(c, brightness),
-            level(c >> 3, brightness),
-            level(c >> 6, brightness),
-        ]
+        rgb_of(&self.cram, color, brightness)
     }
 
-    /// Draws picture line `line` (0 is the first) into `out` as RGB, `width()` pixels. Lines past the picture are not drawn.
+    /// Draws picture line `line` (0 is the first) into `out` as RGB, `width()` pixels, with the palette as it is now.
     pub fn render_line(&mut self, line: u32, out: &mut [u8]) {
+        let width = self.width() as usize;
+        let mut idx = [0u8; 320];
+        let mut backdrop = [false; 320];
+        self.render_line_indexed(line, &mut idx, &mut backdrop);
+        let cram = self.cram.clone();
+        let regs7 = self.regs[7] & 0x3F;
+        for x in 0..width {
+            let color = if backdrop[x] { regs7 } else { idx[x] & 0x3F };
+            let rgb = rgb_of(&cram, color, brightness_of(idx[x]));
+            out[3 * x..3 * x + 3].copy_from_slice(&rgb);
+        }
+    }
+
+    /// Draws picture line `line` as palette indices: per pixel the colour (6 bits) and the brightness (the two bits above),
+    /// and whether it is the backdrop colour (which follows register 7, so a change of it in the middle of the line can
+    /// be applied afterwards).
+    pub(crate) fn render_line_indexed(
+        &mut self,
+        line: u32,
+        out: &mut [u8; 320],
+        is_backdrop: &mut [bool; 320],
+    ) {
         let width = self.width() as usize;
         let backdrop = self.regs[7] & 0x3F;
         let shadow_highlight = self.regs[12] & 0x08 != 0;
         if !self.display_enabled() {
-            let rgb = self.rgb(backdrop, Brightness::Normal);
-            for x in 0..width {
-                out[3 * x..3 * x + 3].copy_from_slice(&rgb);
-            }
+            out[..width].fill(backdrop);
+            is_backdrop[..width].fill(true);
             return;
         }
         let line = line as usize;
@@ -412,8 +446,9 @@ impl Vdp {
             } else {
                 Brightness::Normal
             };
-            let rgb = self.rgb(color, brightness);
-            out[3 * x..3 * x + 3].copy_from_slice(&rgb);
+            out[x] = color | (brightness as u8) << 6;
+            is_backdrop[x] = color == backdrop && !(s.px.opaque || a.opaque || b.opaque)
+                || (blank_left && x < 8);
         }
         self.sprite_scratch = sprites;
     }

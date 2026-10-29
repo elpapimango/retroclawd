@@ -8,6 +8,27 @@
 use crate::Vdp;
 use crate::timing::LINE_CLOCKS;
 
+/// A change of colour made while a line was being drawn.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum LineEvent {
+    /// CRAM entry, new 9-bit colour.
+    Cram(usize, u16),
+    /// Register 7 (the backdrop colour).
+    Backdrop(u8),
+}
+
+/// A line of the picture that has been worked out as palette indices and waits for its colours.
+#[derive(Clone, Debug)]
+pub(crate) struct PendingLine {
+    vl: u32,
+    width: usize,
+    idx: [u8; 320],
+    backdrop: [bool; 320],
+    cram: [u16; 64],
+    reg7: u8,
+    events: Vec<(usize, LineEvent)>,
+}
+
 /// Master clocks from the start of a V-counter line to the left edge of its picture, H40 and H32 (fact V25).
 const PICTURE_OFFSET_H40: u64 = 780;
 const PICTURE_OFFSET_H32: u64 = 760;
@@ -136,18 +157,76 @@ impl Vdp {
         }
     }
 
+    /// Starts line `vl` of the picture: its pixels are worked out (as palette indices) with the registers and memories as they
+    /// stand now, and turned into colours when the line is over, so that palette changes made during the line can show from the
+    /// pixel they happen at (fact V34).
     fn draw_line(&mut self, vl: u32) {
-        let width = self.width() as usize;
+        self.flush_line();
+        let mut p = Box::new(PendingLine {
+            vl,
+            width: self.width() as usize,
+            idx: [0; 320],
+            backdrop: [false; 320],
+            cram: [0; 64],
+            reg7: self.regs[7] & 0x3F,
+            events: Vec::new(),
+        });
+        self.render_line_indexed(vl, &mut p.idx, &mut p.backdrop);
+        p.cram.copy_from_slice(&self.cram[..64]);
+        self.line_pending = Some(p);
+    }
+
+    /// Turns the line that was started into colours, applying the palette writes that happened while it was drawn.
+    fn flush_line(&mut self) {
+        let Some(p) = self.line_pending.take() else {
+            return;
+        };
+        let mut cram = p.cram;
+        let mut backdrop = p.reg7;
         let mut row = [0u8; MAX_WIDTH * 3];
-        self.render_line(vl, &mut row[..width * 3]);
-        let at = self.output_row(vl as usize) * MAX_WIDTH * 3;
-        if at + width * 3 <= self.frame_buf.len() {
-            self.frame_buf[at..at + width * 3].copy_from_slice(&row[..width * 3]);
+        let mut next = 0;
+        for x in 0..p.width {
+            while next < p.events.len() && p.events[next].0 <= x {
+                match p.events[next].1 {
+                    LineEvent::Cram(i, v) => cram[i & 0x3F] = v,
+                    LineEvent::Backdrop(v) => backdrop = v & 0x3F,
+                }
+                next += 1;
+            }
+            let color = if p.backdrop[x] {
+                backdrop
+            } else {
+                p.idx[x] & 0x3F
+            };
+            let rgb = crate::render::rgb_of(&cram, color, crate::render::brightness_of(p.idx[x]));
+            row[3 * x..3 * x + 3].copy_from_slice(&rgb);
+        }
+        let at = self.output_row(p.vl as usize) * MAX_WIDTH * 3;
+        if at + p.width * 3 <= self.frame_buf.len() {
+            self.frame_buf[at..at + p.width * 3].copy_from_slice(&row[..p.width * 3]);
+        }
+    }
+
+    /// Notes a palette or backdrop write at master clock `now` for the line being drawn, at the pixel the beam is at.
+    pub(crate) fn log_line_event(&mut self, now: u64, event: LineEvent) {
+        let phase = self.timing.phase(now);
+        let offset = self.picture_offset();
+        let per_pixel = if self.h40() { 8 } else { 10 };
+        let Some(p) = &mut self.line_pending else {
+            return;
+        };
+        if p.vl != phase.line {
+            return;
+        }
+        let x = (phase.clock.saturating_sub(offset) / per_pixel) as usize;
+        if x < p.width {
+            p.events.push((x, event));
         }
     }
 
     /// The picture is complete: it becomes the one `frame` returns.
     fn finish_frame(&mut self) {
+        self.flush_line();
         let (w, mut h) = (self.width() as usize, self.active_lines() as usize);
         if self.weaving() {
             h *= 2;
@@ -386,6 +465,34 @@ mod tests {
         assert_eq!(at(780), 0);
         assert_eq!(at(780 + 16 * 159), 0x9F);
         assert!(at(0) >= 0xA5);
+    }
+
+    #[test]
+    fn a_palette_write_in_the_middle_of_a_line_shows_from_the_pixel_it_happens_at() {
+        struct NoBus;
+        impl crate::DmaBus for NoBus {
+            fn read_word(&mut self, _a: u32) -> u16 {
+                0
+            }
+        }
+        let mut v = vdp();
+        v.regs[12] = 0x81;
+        v.advance(10 * LINE_CLOCKS + 100); // line 10 has been started
+        v.write_control(0xC000, 10 * LINE_CLOCKS + 100, &mut NoBus);
+        v.write_control(0x0000, 10 * LINE_CLOCKS + 100, &mut NoBus);
+        v.fifo_stalls = false;
+        // colour 0 turns white 1500 clocks into the line: pixel (1500 - 780) / 8 = 90
+        v.write_data(0x0EEE, 10 * LINE_CLOCKS + 1500);
+        v.advance(300 * LINE_CLOCKS);
+        let (w, _, rgb) = v.frame().unwrap();
+        let at = |x: usize| rgb[(10 * w as usize + x) * 3];
+        assert_eq!((at(5), at(89)), (0, 0), "black before the write");
+        assert_eq!((at(90), at(300)), (238, 238), "white from it");
+        assert_eq!(
+            rgb[(11 * w as usize + 5) * 3],
+            238,
+            "the next line starts with the new colour"
+        );
     }
 
     #[test]

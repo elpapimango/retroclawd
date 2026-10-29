@@ -55,6 +55,8 @@ pub struct Vdp {
     pub(crate) was_interlaced: bool,
     /// Interlace mode 2 shows both fields woven into a picture twice as tall instead of one field.
     #[serde(skip)]
+    pub(crate) line_pending: Option<Box<frame::PendingLine>>,
+    #[serde(skip)]
     pub(crate) weave: bool,
     /// The FIFO holds the 68000 up (off: every write is accepted at once).
     #[serde(skip)]
@@ -112,6 +114,7 @@ impl Vdp {
             sprite_collision: false,
             odd_frame: false,
             was_interlaced: false,
+            line_pending: None,
             weave: false,
             fifo_stalls: true,
             sprite_scratch: Vec::new(),
