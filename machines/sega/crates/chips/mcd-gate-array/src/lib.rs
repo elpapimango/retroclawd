@@ -9,6 +9,9 @@
 //! which stops with a report when the RAM is touched.
 #![forbid(unsafe_code)]
 
+pub mod cdc;
+pub mod cdd;
+
 /// Sub-CPU clocks per tick of the stopwatch and the timer (30.72 us at 12.5 MHz, fact C10).
 pub const CLOCKS_PER_TICK: u64 = 384;
 
@@ -42,6 +45,11 @@ pub struct GateArray {
     pending: u8,
     /// Progress through the forced reset sequence of fact C5 (0 = not armed).
     reset_step: u8,
+    cdd: cdd::Cdd,
+    cdc: cdc::Cdc,
+    dma_address: u16,
+    /// Fader register of the audio output (fact E1): stored, not used until the audio slice.
+    fader: u16,
 }
 
 impl Default for GateArray {
@@ -74,6 +82,10 @@ impl GateArray {
             mask: 0,
             pending: 0,
             reset_step: 0,
+            cdd: cdd::Cdd::new(),
+            cdc: cdc::Cdc::new(),
+            dma_address: 0,
+            fader: 0,
         }
     }
 
@@ -90,6 +102,11 @@ impl GateArray {
     // ------------------------------------------------------------------ state for the buses
 
     /// The sub-CPU does not run (reset, or its bus given to the main CPU).
+    /// The DMA address register as written (fact C13), for the DMA paths of slice 3b.
+    pub fn dma_address(&self) -> u16 {
+        self.dma_address
+    }
+
     pub fn sub_halted(&self) -> bool {
         !self.run || self.sbrq
     }
@@ -149,6 +166,7 @@ impl GateArray {
         Some(match off {
             0x00 => self.read_a12000(),
             0x02 => (u16::from(self.wp) << 8) | u16::from(self.memory_mode_low()),
+            0x04 => self.cdc.mode_word(),
             0x06 => self.hint_vector,
             0x0C => self.stopwatch,
             0x0E => (u16::from(self.flag_main) << 8) | u16::from(self.flag_sub),
@@ -269,11 +287,27 @@ impl GateArray {
             0x20..=0x2E => self.status[((off - 0x20) / 2) as usize],
             0x30 => u16::from(self.timer_reload),
             0x32 => u16::from(self.mask),
+            0x04 => self.cdc.mode_word(),
+            // the data port: reading it steps the address register, so only a word access (or the low byte) counts
+            0x06 => u16::from(self.cdc.read()?),
+            0x34 => self.fader & 0x7FFF,
+            0x36 => u16::from(self.cdd.hock()) << 2,
+            0x38..=0x40 => {
+                let i = ((off - 0x38) / 2 * 2) as usize;
+                u16::from(self.cdd.rs(i)) << 8 | u16::from(self.cdd.rs(i + 1))
+            }
+            0x42..=0x4A => {
+                let i = ((off - 0x42) / 2 * 2) as usize;
+                u16::from(self.cdd.tc(i)) << 8 | u16::from(self.cdd.tc(i + 1))
+            }
             _ => return None,
         })
     }
 
     pub fn sub_read_byte(&mut self, off: u32) -> Option<u8> {
+        if off == 0x06 {
+            return Some(0); // the high byte of the data port is not connected
+        }
         let w = self.sub_read_word(off)?;
         Some(if off & 1 == 0 {
             (w >> 8) as u8
@@ -319,11 +353,67 @@ impl GateArray {
                 self.mask = (v as u8) & 0x7E;
                 true
             }
+            0x04 => {
+                self.cdc.write_mode(v);
+                true
+            }
+            0x06 => {
+                self.cdc.write(v as u8);
+                true
+            }
+            0x0A => {
+                self.dma_address = v;
+                true
+            }
+            0x34 => {
+                self.fader = v;
+                true
+            }
+            0x36 => {
+                // HOCK (bit 2) starts the communication: the first status packet and its level 4 interrupt follow at once
+                if self.cdd.set_hock(v & 0x04 != 0) {
+                    self.cdd.deliver();
+                    self.pending |= 1 << 4;
+                }
+                true
+            }
+            0x38..=0x40 => true, // received status is read only
+            0x42..=0x4A => {
+                let i = ((off - 0x42) / 2 * 2) as usize;
+                self.cdd.write_tc(i, (v >> 8) as u8);
+                self.cdd.write_tc(i + 1, v as u8);
+                true
+            }
             _ => false,
         }
     }
 
     pub fn sub_write_byte(&mut self, off: u32, v: u8) -> bool {
+        match off {
+            0x04 => {
+                self.cdc
+                    .write_mode(u16::from(v) << 8 | u16::from(self.cdc.address()));
+                return true;
+            }
+            0x05 => {
+                self.cdc.write_address(v);
+                return true;
+            }
+            0x06 => return true,
+            0x07 => {
+                self.cdc.write(v);
+                return true;
+            }
+            0x0A => {
+                self.dma_address = (self.dma_address & 0x00FF) | (u16::from(v) << 8);
+                return true;
+            }
+            0x0B => {
+                self.dma_address = (self.dma_address & 0xFF00) | u16::from(v);
+                return true;
+            }
+            _ => {}
+        }
         match self.sub_read_word(off) {
             None => false,
             Some(w) => {
@@ -332,6 +422,13 @@ impl GateArray {
                 } else {
                     (w & 0xFF00) | u16::from(v)
                 };
+                if (0x42..=0x4B).contains(&off) {
+                    self.cdd.write_tc((off - 0x42) as usize, v);
+                    return true;
+                }
+                if (0x38..=0x41).contains(&off) {
+                    return true;
+                }
                 // the flag word is split by owner: the sub-CPU can only change its own (low) byte
                 if off & !1 == 0x0E {
                     if off & 1 == 1 {
@@ -348,6 +445,12 @@ impl GateArray {
 
     /// Advances the stopwatch and the timer by `clocks` sub-CPU clocks.
     pub fn advance_sub_clocks(&mut self, clocks: u64) {
+        for _ in 0..self.cdd.advance(clocks) {
+            if self.cdd.hock() {
+                self.cdd.deliver();
+                self.pending |= 1 << 4;
+            }
+        }
         self.tick_acc += clocks;
         let mut ticks = self.tick_acc / CLOCKS_PER_TICK;
         self.tick_acc %= CLOCKS_PER_TICK;
@@ -623,12 +726,123 @@ mod tests {
     #[test]
     fn unknown_registers_are_not_invented() {
         let mut g = GateArray::new();
-        for off in [0x04, 0x08, 0x34, 0x36, 0x58, 0x100, 0x1FE] {
+        for off in [0x08, 0x4C, 0x58, 0x100, 0x1FE] {
             assert_eq!(g.sub_read_word(off), None, "{off:#x}");
             assert!(!g.sub_write_word(off, 0), "{off:#x}");
         }
         assert_eq!(g.main_read_word(0x40), None);
         assert!(!g.main_write_byte(0x40, 0));
+    }
+
+    fn cdd_status(g: &mut GateArray) -> [u8; 10] {
+        let mut rs = [0u8; 10];
+        for (i, n) in rs.iter_mut().enumerate() {
+            *n = g.sub_read_byte(0x38 + i as u32).unwrap();
+        }
+        rs
+    }
+
+    #[test]
+    fn the_cdd_checksum_is_the_inverted_sum_of_nine_nibbles() {
+        assert_eq!(cdd::checksum(&[0; 10]), 0xF);
+        assert_eq!(cdd::checksum(&[0xB, 0, 0, 0, 0, 0, 0, 0, 0, 0]), 0x4);
+        assert_eq!(
+            cdd::checksum(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 0]),
+            (!45u32 & 0xF) as u8
+        );
+        // the tenth nibble is not part of the sum
+        assert_eq!(cdd::checksum(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 7]), 0xE);
+    }
+
+    #[test]
+    fn the_cdd_starts_with_an_all_zero_packet_and_reports_no_disc_after_the_first_command() {
+        let mut g = GateArray::new();
+        let rs = cdd_status(&mut g);
+        assert_eq!(rs, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF], "power-on packet");
+        assert_eq!(g.sub_read_word(0x38), Some(0));
+        g.sub_write_word(0x32, 0x0010);
+        g.sub_write_byte(0x37, 0x04); // HOCK: the first packet is delivered as it is
+        assert_eq!(cdd_status(&mut g), rs);
+        // a NOP command (all zero, checksum F): the drive answers with its state
+        g.sub_write_byte(0x4B, 0x0F);
+        g.advance_sub_clocks(166_667);
+        let rs = cdd_status(&mut g);
+        assert_eq!(rs[0], cdd::status::NO_DISC);
+        assert_eq!(rs[9], cdd::checksum(&rs));
+        assert_eq!(g.sub_read_word(0x38), Some(0x0B00));
+        // with no new command the same packet comes again
+        g.advance_sub_clocks(166_667);
+        assert_eq!(cdd_status(&mut g), rs);
+    }
+
+    #[test]
+    fn host_clock_starts_the_communication_and_raises_level_4_once_per_period() {
+        let mut g = GateArray::new();
+        g.sub_write_word(0x32, 0x0010); // level 4 enabled
+        g.advance_sub_clocks(12_500_000);
+        assert_eq!(
+            g.sub_irq_level(),
+            None,
+            "nothing before the host clock runs"
+        );
+        g.sub_write_byte(0x37, 0x04); // HOCK
+        assert_eq!(
+            g.sub_irq_level(),
+            Some(4),
+            "the first packet arrives at once"
+        );
+        assert_eq!(g.sub_read_word(0x36), Some(0x0004));
+        g.ack_sub_irq(4);
+        // 75 periods in a second, exactly, whatever the step size
+        let mut count = 0;
+        for _ in 0..12_500 {
+            g.advance_sub_clocks(1000);
+            if let Some(l) = g.sub_irq_level() {
+                assert_eq!(l, 4);
+                g.ack_sub_irq(4);
+                count += 1;
+            }
+        }
+        assert_eq!(count, 75);
+        // setting HOCK again does not restart it; clearing it stops the interrupts
+        g.sub_write_byte(0x37, 0x00);
+        g.advance_sub_clocks(12_500_000);
+        assert_eq!(g.sub_irq_level(), None);
+    }
+
+    #[test]
+    fn the_last_command_nibble_makes_the_drive_answer_at_the_next_period() {
+        let mut g = GateArray::new();
+        g.sub_write_word(0x32, 0x0010);
+        g.sub_write_byte(0x37, 0x04);
+        g.ack_sub_irq(4);
+        g.sub_write_byte(0x4B, 0x0F); // NOP: the drive reports no disc
+        g.advance_sub_clocks(166_667);
+        g.ack_sub_irq(4);
+        assert_eq!(cdd_status(&mut g)[0], cdd::status::NO_DISC);
+        // open the door: TC1 = $D, TC9 = checksum
+        g.sub_write_byte(0x43, 0x0D);
+        g.sub_write_byte(0x4B, 0x02);
+        assert_eq!(
+            cdd_status(&mut g)[0],
+            cdd::status::NO_DISC,
+            "not before the period ends"
+        );
+        g.advance_sub_clocks(166_667);
+        assert_eq!(g.sub_irq_level(), Some(4));
+        let rs = cdd_status(&mut g);
+        assert_eq!(rs[0], cdd::status::DOOR_OPEN);
+        assert_eq!(rs[9], cdd::checksum(&rs));
+        g.ack_sub_irq(4);
+        // close it again
+        g.sub_write_byte(0x43, 0x0C);
+        g.sub_write_byte(0x4B, 0x03);
+        g.advance_sub_clocks(166_667);
+        assert_eq!(cdd_status(&mut g)[0], cdd::status::NO_DISC);
+        // command nibbles read back, status is not writable
+        assert_eq!(g.sub_read_byte(0x43), Some(0x0C));
+        g.sub_write_byte(0x38, 0x07);
+        assert_eq!(cdd_status(&mut g)[0], cdd::status::NO_DISC);
     }
 
     #[test]

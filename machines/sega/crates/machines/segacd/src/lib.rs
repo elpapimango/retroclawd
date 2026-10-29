@@ -55,10 +55,13 @@ struct SubSide {
     word: Box<[u8]>,
     backup: Box<[u8]>,
     gate: GateArray,
+    pcm: rf5c164::Pcm,
     /// The sub-CPU touched word RAM it does not own (fact C7): it waits forever, until a forced reset.
     hung: bool,
     stop: Option<String>,
     pc: u32,
+    /// Debugging aid: the sub-CPU's writes to the gate array registers, `(pc, address, size, value)`.
+    io_log: Option<Vec<(u32, u32, Size, u32)>>,
 }
 
 impl SubSide {
@@ -91,6 +94,14 @@ impl SubSide {
                 } else {
                     0xFF
                 })
+            }
+            // the PCM chip answers on odd addresses (fact C2), its 13-bit address is A12-A1
+            0xFF_0000..=0xFF_3FFF => {
+                if addr & 1 == 0 {
+                    Some(0xFF)
+                } else {
+                    self.pcm.read(((addr - 0xFF_0000) >> 1) as u16)
+                }
             }
             0xFF_8000..=0xFF_81FF => self.gate.sub_read_byte(addr - 0xFF_8000),
             _ => None,
@@ -131,6 +142,9 @@ impl SubSide {
                     self.backup[((addr - 0xFE_0000) >> 1) as usize] = v;
                 }
                 true
+            }
+            0xFF_0000..=0xFF_3FFF => {
+                addr & 1 == 0 || self.pcm.write(((addr - 0xFF_0000) >> 1) as u16, v)
             }
             0xFF_8000..=0xFF_81FF => self.gate.sub_write_byte(addr - 0xFF_8000, v),
             _ => false,
@@ -186,6 +200,12 @@ impl M68kBus for SubSide {
         _fc: FunctionCode,
     ) -> Result<(), BusFault> {
         let addr = addr & 0x00FF_FFFF;
+        if (0xFF_8000..=0xFF_81FF).contains(&addr)
+            && let Some(log) = self.io_log.as_mut()
+            && log.len() < 4000
+        {
+            log.push((self.pc, addr, size, value));
+        }
         if !self.sub_write(addr, size, value) {
             self.fail("sub-CPU", true, addr, size, value);
         }
@@ -210,6 +230,20 @@ pub struct SegaCdExp {
     due: u64,
     spent: u64,
     was_running: bool,
+    /// How many times the main CPU started the sub-CPU from reset.
+    starts: u32,
+    run_clocks: u64,
+    /// Debugging aid: the last sub-CPU instruction addresses, frozen when the sub-CPU reaches an address in `trace_stop`.
+    trace: Option<SubTrace>,
+}
+
+/// One traced sub-CPU instruction: address, data registers, address registers, status register.
+pub type TraceEntry = (u32, [u32; 8], [u32; 7], u16);
+
+struct SubTrace {
+    ring: std::collections::VecDeque<TraceEntry>,
+    stop_at: Vec<u32>,
+    frozen: bool,
 }
 
 impl SegaCdExp {
@@ -227,9 +261,11 @@ impl SegaCdExp {
                 word: vec![0; WORD_RAM_SIZE].into_boxed_slice(),
                 backup: vec![0; BACKUP_RAM_SIZE].into_boxed_slice(),
                 gate: GateArray::new(),
+                pcm: rf5c164::Pcm::new(),
                 hung: false,
                 stop: None,
                 pc: 0,
+                io_log: None,
             },
             sub: Cpu::new(),
             master_hz,
@@ -238,12 +274,33 @@ impl SegaCdExp {
             due: 0,
             spent: 0,
             was_running: false,
+            starts: 0,
+            run_clocks: 0,
+            trace: None,
         })
     }
 
     /// Sub-CPU clocks that have come due since power on.
     pub fn sub_clocks_due(&self) -> u64 {
         self.due
+    }
+
+    /// Sub-CPU clocks it actually ran instructions for (the rest it spent halted or waiting).
+    pub fn sub_clocks_run(&self) -> u64 {
+        self.run_clocks
+    }
+
+    /// Starts logging the sub-CPU's register writes (a debugging aid).
+    pub fn log_sub_io(&mut self) {
+        self.side.io_log = Some(Vec::new());
+    }
+
+    pub fn sub_io_log(&self) -> &[(u32, u32, Size, u32)] {
+        self.side.io_log.as_deref().unwrap_or(&[])
+    }
+
+    pub fn sub_starts(&self) -> u32 {
+        self.starts
     }
 
     pub fn sub_cpu(&self) -> &Cpu {
@@ -358,12 +415,29 @@ impl SegaCdExp {
         if running && !self.was_running {
             self.side.hung = false;
             self.side.pc = 0;
+            self.starts += 1;
             self.sub.reset(&mut self.side);
         }
         if !running {
             self.side.hung = false;
         }
         self.was_running = running;
+    }
+
+    /// Starts recording the sub-CPU's instruction addresses (with registers); recording freezes when it reaches one of `stop_at`.
+    pub fn trace_sub(&mut self, stop_at: Vec<u32>) {
+        self.trace = Some(SubTrace {
+            ring: std::collections::VecDeque::new(),
+            stop_at,
+            frozen: false,
+        });
+    }
+
+    /// The recorded trace: address, data registers, address registers and SR before each instruction.
+    pub fn sub_trace(&self) -> Option<(bool, Vec<TraceEntry>)> {
+        self.trace
+            .as_ref()
+            .map(|t| (t.frozen, t.ring.iter().copied().collect()))
     }
 
     fn run_sub(&mut self) {
@@ -374,10 +448,24 @@ impl SegaCdExp {
                 return;
             }
             self.side.pc = self.sub.pc;
+            if let Some(t) = self.trace.as_mut()
+                && !t.frozen
+            {
+                if t.stop_at.contains(&self.sub.pc) {
+                    t.frozen = true;
+                } else {
+                    if t.ring.len() >= 200 {
+                        t.ring.pop_front();
+                    }
+                    t.ring
+                        .push_back((self.sub.pc, self.sub.d, self.sub.a, self.sub.sr()));
+                }
+            }
             self.sub
                 .set_ipl(self.side.gate.sub_irq_level().unwrap_or(0));
             let clocks = self.sub.step(&mut self.side);
             self.spent += u64::from(clocks.max(4));
+            self.run_clocks += u64::from(clocks.max(4));
         }
     }
 }

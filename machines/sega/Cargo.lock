@@ -111,6 +111,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rf5c164"
+version = "0.1.0"
+
+[[package]]
 name = "sega-machine-plugin"
 version = "0.1.0"
 dependencies = [
@@ -141,6 +145,7 @@ dependencies = [
  "machine",
  "mc68000",
  "mcd-gate-array",
+ "rf5c164",
 ]
 
 [[package]]

@@ -23,6 +23,9 @@ Short ids used in `hardware-facts.md`. Copies are fetched into `software/docs/<i
 | MD-PRM | MC68000 Programmer's Reference Manual | (already used by the Atari work) | |
 | MCD-HW | Mega-CD Hardware Manual, Sega, version 1.0, 14 Oct 1991 (confidential scan) | https://segaretro.org/images/5/51/Mega-CD_Hardware_Manual.pdf | maps, gate array registers, CDC, RF5C164 appendix; read as page images into `software/docs/segacd/` (git-ignored). Sega Retro's article pages need a browser (proof-of-work gate), the image host does not |
 | MCD-BIOS | Mega-CD BIOS manual (confidential scan) | https://segaretro.org/images/4/44/MCDBios.pdf | sub-CPU system structure, BIOS calls; not read yet |
+| LC8950 | Sanyo LC8950/LC8951 real-time error correction and host interface processor, application note E89 and design manual | https://segaretro.org/images/5/55/Sanyo_LC8950_%26_LC8951.pdf, https://www.mirrorservice.org/sites/www.bitsavers.org/pdf/sony/cdrom/CDU535-88_SLCD/LC8950_LC8951_Design_Manual.pdf | register tables, interface, data transfer; the Sega copy is a clean scan, the bitsavers copy has a (noisy) text layer (`pdftotext`) |
+| CDD-INF | SegaCd CDD documentation v2.0, Stef and Gerrie, 2001 | quoted in https://gendev.spritesmind.net/forum/viewtopic.php?t=2061 | CDD packet layout and command list (community reverse engineering) |
+| CTRAC | C-Trac Mega-CD development card drive firmware equates (command and status nibbles) | quoted in https://gendev.spritesmind.net/forum/viewtopic.php?t=3020 | |
 | PD-MODE1 | Using the Sub-CPU in mode 1, Plutiedev | https://plutiedev.com/subcpu-in-mode1 | gate array reset sequence, mode 1 map |
 | MD-WIKI-MCD | Mega CD, MegaDrive Wiki (2015) | https://md.railgun.works/index.php?title=Mega_CD | main-side register summary; partly wrong on the stopwatch side, cross-check only |
 

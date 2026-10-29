@@ -1,0 +1,8 @@
+[package]
+name = "rf5c164"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Ricoh RF5C164 PCM sound source (the Sega CD's): registers and wave RAM"
+
+[dependencies]
