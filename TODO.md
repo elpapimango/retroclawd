@@ -110,8 +110,8 @@ No real hardware is available, so these stay parked until someone has it; everyt
 
 Done: the machine (68000 + Z80, VDP, YM2612, SN76489, I/O, pads), cartridges (mirroring, SSF2, battery SRAM, serial EEPROM boards,
 Sonic & Knuckles lock-on, TMSS), interlace modes 1 and 2 (single field output), save states, the plugin and its debugger (two CPUs),
-probes `p00`-`p44` against Genesis Plus GX, PicoDrive, BlastEm and clownmdemu (and MAME as a tie-break for game logic), a manifest of
-26 scenarios (one `known-gap`), a 30-game RomM sweep (no stops, no crashes) and a frame comparison against Genesis Plus GX
+probes `p00`-`p50` (PAL V28/V30 DMA `p49*`, HBLANK flag `p50`) against Genesis Plus GX, PicoDrive, BlastEm and clownmdemu (and MAME as a tie-break for game logic), a manifest of
+30 scenarios (one `known-gap`), a 30-game RomM sweep (no stops, no crashes) and a frame comparison against Genesis Plus GX
 (`scenarios/batch_compare.py`: most games identical at most sampled frames, the rest differ in animation phase).
 
 Frame offsets in title animations (Ecco, Aladdin, Sonic 3D Blast, Golden Axe at 600+ frames): analysed on Aladdin
@@ -128,7 +128,7 @@ Open, each with what it needs:
 - **Z80 access to the 68000's bus**: 10 CPU cycles lost by the 68000 (Genesis Plus GX 10.3 on average, BlastEm 8): `P30B` known gap.
 - **Done 2026-10-29**: J-Cart, cheat codes (Game Genie decode, raw patches), mouse, 4-way play, Menacer, weave interlace, Sonic 2
   lock-on chip mechanism (no dump, untested), `--execution-mode fast|accurate`, tile-row picture cache (`docs/benchmarks.md`), fuzz
-  tests for cheats and cartridge headers. Not started: Sega CD, 32X, Pico, real Game Genie/Action Replay ROMs, PAL V30 probes.
+  tests for cheats and cartridge headers, PAL V30 DMA verification (V35), HBLANK flag check (V36). P30B: GPGX is the outlier (PicoDrive, BlastEm and here agree within 2 %), so it stays a gap. Not started: Sega CD, 32X, Pico, real Game Genie/Action Replay ROMs.
 - **EEPROM**: tested against the data sheets' sequences and by booting NBA Jam (no oracle sets the lines; a game that saves to it
   was not played through).
 - **Speed**: about 5.2x real time headless (`docs/benchmarks.md`); YM2612 is 12 % of it.
