@@ -10,3 +10,52 @@ option = "rom_tmss"
 label = "Mega Drive TMSS boot ROM (bios_MD.bin)"
 sha1 = ["3f50b76b0529db7f79c396b5e808cc0786ffc311"]
 when = { tmss = "on" }
+
+# ---- Sega CD / Mega-CD BIOS (128 KB), by console region. Preferred first: the 1993 revision of each region, then older ones.
+# Region-free and hacked dumps on the server are not listed. Hashes are those of the RomM firmware list (2026-10-29).
+
+[[rom]]
+machines = ["segacd"]
+option = "rom_bios"
+label = "Sega CD BIOS (US)"
+when = { console_region = "usa" }
+sha1 = [
+  "5adb6c3af218c60868e6b723ec47e36bbdf5e6f0",
+  "f4f315adcef9b8feb0364c21ab7f0eaf5457f3ed",
+  "328a3228c29fba244b9db2055adc1ec4f7a87e6b",
+  "c5c24e6439a148b7f4c7ea269d09b7a23fe25075",
+]
+
+[[rom]]
+machines = ["segacd"]
+option = "rom_bios"
+label = "Mega-CD BIOS (Europe)"
+when = { console_region = "europe" }
+sha1 = [
+  "7063192ae9f6b696c5b81bc8f0a9fe6f0c400e58",
+  "f5f60f03501908962446ee02fc27d98694dd157d",
+  "f891e0ea651e2232af0c5c4cb46a0cae2ee8f356",
+  "9de4eda59f544db2d5fd7e6514601f7b648d8eb4",
+]
+
+[[rom]]
+machines = ["segacd"]
+option = "rom_bios"
+label = "Mega-CD BIOS (Japan)"
+when = { console_region = "japan" }
+sha1 = [
+  "d203cfe22c03ae479dd8ca33840cf8d9776eb3ff",
+  "e4193c6ae44c3cea002707d2a88f1fbcced664de",
+  "4846f448160059a7da0215a5df12ca160f26dd69",
+]
+
+# Without a console region (auto: the plugin runs a US console) the US BIOS is wanted.
+[[rom]]
+machines = ["segacd"]
+option = "rom_bios"
+label = "Sega CD BIOS (US, default region)"
+when = { console_region = "auto" }
+sha1 = [
+  "5adb6c3af218c60868e6b723ec47e36bbdf5e6f0",
+  "f4f315adcef9b8feb0364c21ab7f0eaf5457f3ed",
+]

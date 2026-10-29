@@ -21,6 +21,20 @@ pub struct SegaCdConfig {
     /// The BIOS ROM (128 KB).
     pub bios: Vec<u8>,
     pub region: Region,
+    pub pads: [genesis::PadKind; 2],
+    /// The Genesis side's bus timing effects (see the `execution_mode` option).
+    pub exact_timing: bool,
+}
+
+impl SegaCdConfig {
+    pub fn new(bios: Vec<u8>, region: Region) -> Self {
+        Self {
+            bios,
+            region,
+            pads: [genesis::PadKind::Six; 2],
+            exact_timing: true,
+        }
+    }
 }
 
 /// A Genesis with a Mega-CD on its cartridge port.
@@ -28,7 +42,10 @@ pub fn new_machine(config: SegaCdConfig) -> Result<Genesis, String> {
     let exp = SegaCdExp::new(config.bios, config.region.master_hz())?;
     // The cartridge slot is empty in CD-boot mode (the BIOS answers the whole cartridge area); the Genesis needs some ROM to start.
     let rom = vec![0u8; 0x400];
-    Genesis::with_expansion(Config::new(rom, config.region), Some(Box::new(exp)))
+    let mut genesis_config = Config::new(rom, config.region);
+    genesis_config.pads = config.pads;
+    genesis_config.exact_timing = config.exact_timing;
+    Genesis::with_expansion(genesis_config, Some(Box::new(exp)))
 }
 
 /// What the sub-CPU's bus reaches: everything but the CPU itself, so the CPU can borrow it while it runs.
@@ -243,6 +260,25 @@ impl SegaCdExp {
 
     pub fn word_ram(&self) -> &[u8] {
         &self.side.word
+    }
+
+    /// A byte of the sub-CPU's address space as the debugger sees it: no side effects, `$FF` where nothing is mapped or the
+    /// RAM belongs to the other CPU.
+    pub fn sub_peek(&self, addr: u32) -> u8 {
+        let addr = addr & 0x00FF_FFFF;
+        match addr {
+            0..=0x07_FFFF => self.side.prg[addr as usize],
+            0x08_0000..=0x0B_FFFF
+                if !self.side.gate.mode_1m()
+                    && self.side.gate.word_ram_owner() == WordRamOwner::Sub =>
+            {
+                self.side.word[(addr - 0x08_0000) as usize]
+            }
+            0xFE_0000..=0xFE_3FFF if addr & 1 == 1 => {
+                self.side.backup[((addr - 0xFE_0000) >> 1) as usize]
+            }
+            _ => 0xFF,
+        }
     }
 
     /// The sub-CPU waits forever on word RAM it does not own (fact C7).
@@ -611,10 +647,7 @@ mod tests {
         {
             bios[0x200 + 2 * i..0x202 + 2 * i].copy_from_slice(&w.to_be_bytes());
         }
-        let mut m = new_machine(SegaCdConfig {
-            bios,
-            region: Region::Usa,
-        })
+        let mut m = new_machine(SegaCdConfig::new(bios, Region::Usa))
         .unwrap();
         for _ in 0..10 {
             m.step();
@@ -631,10 +664,7 @@ mod tests {
         for (i, w) in [0x3039u16, 0x0030, 0x0000, 0x60FE].iter().enumerate() {
             stop[0x200 + 2 * i..0x202 + 2 * i].copy_from_slice(&w.to_be_bytes());
         }
-        let mut m = new_machine(SegaCdConfig {
-            bios: stop,
-            region: Region::Usa,
-        })
+        let mut m = new_machine(SegaCdConfig::new(stop, Region::Usa))
         .unwrap();
         m.step();
         assert!(m.halted());
@@ -661,10 +691,7 @@ mod tests {
         for (i, w) in words.iter().enumerate() {
             bios[0x200 + 2 * i..0x202 + 2 * i].copy_from_slice(&w.to_be_bytes());
         }
-        let mut m = new_machine(SegaCdConfig {
-            bios,
-            region: Region::Usa,
-        })
+        let mut m = new_machine(SegaCdConfig::new(bios, Region::Usa))
         .unwrap();
         let mut spent = 0u64;
         while spent < 400_000 {

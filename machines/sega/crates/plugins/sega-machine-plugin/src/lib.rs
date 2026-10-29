@@ -20,6 +20,7 @@ use plugin_api::{
 };
 
 const MACHINE_ID: &str = "genesis";
+const SEGACD_ID: &str = "segacd";
 const PLUGIN_ID: &[u8] = b"retroclawd.genesis.machine";
 const PLUGIN_VERSION: &[u8] = build_info::version_tag!().as_bytes();
 
@@ -66,6 +67,7 @@ struct PluginState {
 
 struct InstanceRecord {
     machine: Genesis,
+    machine_id: &'static str,
     breakpoints: Vec<u64>,
     diag_file: Option<std::path::PathBuf>,
     /// Where battery RAM is kept between sessions (only for a cartridge with battery RAM).
@@ -348,6 +350,52 @@ fn machine_profile() -> MachineProfile {
     }
 }
 
+/// The Sega CD: the Genesis profile with the CD's own options. No cartridge (the BIOS answers the whole cartridge area), a
+/// BIOS file, a disc path, and the sub-CPU as a third CPU.
+fn segacd_profile() -> MachineProfile {
+    let mut profile = machine_profile();
+    profile.machine_id = SEGACD_ID.to_string();
+    profile.display_name = "Sega CD / Mega-CD".to_string();
+    profile.media_kinds = vec![MediaKind::Other("disc-path".to_string())];
+    profile.options.retain(|o| {
+        matches!(
+            o.key.as_str(),
+            "execution_mode" | "port1" | "port2" | "console_region" | "diag_file"
+        )
+    });
+    profile.options.insert(
+        0,
+        MachineOptionInfo {
+            required: true,
+            ..option(
+                "rom_bios",
+                MachineOptionKind::File,
+                None,
+                "The Sega CD BIOS (131072 bytes), the one that matches the console region: US, EU or JP",
+            )
+        },
+    );
+    profile.options.insert(
+        1,
+        option(
+            "disc",
+            MachineOptionKind::Text,
+            None,
+            "The disc to play: a .cue sheet (with its .bin files beside it) or an .iso. Opened at start-up; the drive itself is not emulated yet, so the BIOS reports no disc",
+        ),
+    );
+    profile.cpus.insert(
+        1,
+        CpuInfo {
+            id: "sub".to_string(),
+            name: "MC68000 (Mega-CD)".to_string(),
+            family: CpuFamily::M68k,
+            address_space: "sub".to_string(),
+        },
+    );
+    profile
+}
+
 /// The host keyboard names a pad 1 button answers to by default (arrows, Z X C, A S D, Enter, Right Shift).
 const PAD1_KEYBOARD: [(&str, &[&str]); 12] = [
     ("Up", &["up"]),
@@ -413,10 +461,10 @@ fn crate_cheats(text: &str) -> Result<Vec<genesis::Cheat>, String> {
     genesis::parse_cheats(text).map_err(|e| format!("option \"cheats\": {e}"))
 }
 
-fn metadata(machine: &Genesis) -> MachineMetadata {
+fn metadata(machine: &Genesis, machine_id: &str) -> MachineMetadata {
     let rate = machine.frame_rate();
     MachineMetadata {
-        machine_id: MACHINE_ID.to_string(),
+        machine_id: machine_id.to_string(),
         region: Some(machine.region().name().to_string()),
         frame_rate: (rate.num, rate.den),
         audio_channels: machine.audio_format().channels,
@@ -432,9 +480,12 @@ fn blob<'a>(roms: &'a [plugin_api::BinaryBlob], key: &str) -> Option<&'a [u8]> {
 }
 
 fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, String> {
+    if req.machine_id == SEGACD_ID {
+        return create_segacd(req);
+    }
     if req.machine_id != MACHINE_ID {
         return Err(format!(
-            "unsupported machine id \"{}\" (plugin supports genesis)",
+            "unsupported machine id \"{}\" (plugin supports genesis and segacd)",
             req.machine_id
         ));
     }
@@ -534,7 +585,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         }
         machine.load_sram(&std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?);
     }
-    let metadata = metadata(&machine);
+    let metadata = metadata(&machine, MACHINE_ID);
     let mut state = state()
         .lock()
         .map_err(|_| "plugin state mutex poisoned".to_string())?;
@@ -543,12 +594,156 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         instance,
         InstanceRecord {
             machine,
+            machine_id: MACHINE_ID,
             breakpoints: Vec::new(),
             diag_file,
             sram_path,
         },
     );
     Ok(MachineCreateResponse { instance, metadata })
+}
+
+/// A Sega CD: the BIOS is the required file; the cartridge slot is empty (CD-boot mode).
+fn create_segacd(req: MachineCreateRequest) -> Result<MachineCreateResponse, String> {
+    let bios = blob(&req.roms, "rom_bios")
+        .ok_or_else(|| "missing required binary blob: rom_bios".to_string())?
+        .to_vec();
+    let mut region = Region::Usa;
+    let mut diag_file = None;
+    let mut pads = [genesis::PadKind::Six; 2];
+    let mut disc_path = None;
+    for option in &req.options {
+        match (option.key.as_str(), &option.value) {
+            ("console_region", DebugValue::Text(v)) if v == "auto" => {}
+            ("console_region", DebugValue::Text(v)) => {
+                region = Region::parse(v)
+                    .ok_or_else(|| format!("option \"console_region\": unknown value \"{v}\""))?;
+            }
+            ("diag_file", DebugValue::Text(v)) => diag_file = Some(std::path::PathBuf::from(v)),
+            ("port1" | "port2", DebugValue::Text(v)) => {
+                let kind = genesis::PadKind::parse(v)
+                    .ok_or_else(|| format!("option \"{}\": unknown device \"{v}\"", option.key))?;
+                pads[usize::from(option.key == "port2")] = kind;
+            }
+            ("disc", DebugValue::Text(v)) => disc_path = Some(v.clone()),
+            ("execution_mode", _) => {}
+            (key, _) => {
+                return Err(format!(
+                    "unsupported machine-create option \"{key}\" for {SEGACD_ID}"
+                ));
+            }
+        }
+    }
+    // The drive is a later slice; the disc is opened now so a bad file is refused at start-up, not mid-game.
+    if let Some(path) = &disc_path {
+        disc::Disc::open(std::path::Path::new(path))
+            .map_err(|e| format!("option \"disc\": {e}"))?;
+    }
+    let mut config = segacd::SegaCdConfig::new(bios, region);
+    config.pads = pads;
+    config.exact_timing = plugin_api::ExecutionMode::from_options(&req.options)?
+        .unwrap_or(plugin_api::ExecutionMode::Accurate)
+        == plugin_api::ExecutionMode::Accurate;
+    let machine = segacd::new_machine(config)?;
+    let metadata = metadata(&machine, SEGACD_ID);
+    let mut state = state()
+        .lock()
+        .map_err(|_| "plugin state mutex poisoned".to_string())?;
+    let instance = state.allocate_instance();
+    state.instances.insert(
+        instance,
+        InstanceRecord {
+            machine,
+            machine_id: SEGACD_ID,
+            breakpoints: Vec::new(),
+            diag_file,
+            sram_path: None,
+        },
+    );
+    Ok(MachineCreateResponse { instance, metadata })
+}
+
+/// The sub-CPU of a Sega CD, for the debugger.
+fn sub_side(machine: &Genesis) -> Option<&segacd::SegaCdExp> {
+    machine
+        .bus()
+        .expansion()?
+        .as_any()
+        .downcast_ref::<segacd::SegaCdExp>()
+}
+
+fn sub_register_snapshot(machine: &Genesis) -> RegisterSnapshot {
+    let mut registers = Vec::new();
+    if let Some(side) = sub_side(machine) {
+        let c = side.sub_cpu();
+        let named = |name: &str, value: u32, bits: u16| RegisterField {
+            bank: "sub".to_string(),
+            name: name.to_string(),
+            value: u64::from(value),
+            width_bits: bits,
+        };
+        for (i, v) in c.d.iter().enumerate() {
+            registers.push(named(&format!("D{i}"), *v, 32));
+        }
+        for (i, v) in c.a.iter().enumerate() {
+            registers.push(named(&format!("A{i}"), *v, 32));
+        }
+        registers.push(named("A7", c.a7(), 32));
+        registers.push(named("PC", c.pc, 24));
+        registers.push(named("SR", u32::from(c.sr()), 16));
+    }
+    RegisterSnapshot {
+        cpu_family: CpuFamily::M68k,
+        registers,
+        flags: Vec::new(),
+    }
+}
+
+/// A debug command addressed to the sub-CPU (`OnCpu { cpu: "sub", .. }`).
+fn handle_sub_debug(
+    record: &mut InstanceRecord,
+    command: DebugCommand,
+) -> Result<DebugResponse, String> {
+    let side = sub_side(&record.machine).ok_or("this machine has no sub-CPU")?;
+    match command {
+        DebugCommand::GetRegisters => Ok(DebugResponse::Registers(sub_register_snapshot(
+            &record.machine,
+        ))),
+        DebugCommand::ReadMemory { address, len, .. } => Ok(DebugResponse::Memory(
+            (0..len as u64)
+                .map(|i| side.sub_peek((address.wrapping_add(i) & 0xFF_FFFF) as u32))
+                .collect(),
+        )),
+        DebugCommand::GetDisassembly { start, lines } => {
+            let mut cursor = start.unwrap_or(u64::from(side.sub_cpu().pc)) & 0xFF_FFFF;
+            let mut out = Vec::with_capacity(lines as usize);
+            for _ in 0..lines {
+                let raw: Vec<u8> = (0..10u64)
+                    .map(|i| side.sub_peek((cursor + i) as u32))
+                    .collect();
+                let (text, len) = genesis::mc68000::disassemble::disassemble(&raw, cursor as u32);
+                let len = len.clamp(2, 10);
+                out.push(DisassemblyLine {
+                    address: cursor,
+                    bytes: raw[..len].to_vec(),
+                    text,
+                });
+                cursor = (cursor + len as u64) & 0xFF_FFFF;
+            }
+            Ok(DebugResponse::Disassembly(out))
+        }
+        DebugCommand::GetAddressSpaces => {
+            Ok(DebugResponse::AddressSpaces(vec![AddressSpaceInfo {
+                name: "sub".to_string(),
+                addr_width_bits: 24,
+                bank_context: Vec::new(),
+            }]))
+        }
+        DebugCommand::Pause | DebugCommand::Resume => Ok(DebugResponse::Ack),
+        _ => Err(
+            "unsupported: this debug command is not implemented for the sub-CPU yet".to_string(),
+        ),
+    }
 }
 
 /// 68000 instructions from `start`.
@@ -726,15 +921,23 @@ fn handle_debug_command(
                 handle_debug_command(record, *command)
             } else if cpu == "z80" {
                 handle_z80_debug(record, *command)
+            } else if cpu == "sub" && record.machine_id == SEGACD_ID {
+                handle_sub_debug(record, *command)
             } else {
                 Err(format!(
-                    "unknown cpu \"{cpu}\" (this machine has \"main\" and \"z80\")"
+                    "unknown cpu \"{cpu}\" (this machine has \"main\", \"z80\"{})",
+                    if record.machine_id == SEGACD_ID {
+                        " and \"sub\""
+                    } else {
+                        ""
+                    }
                 ))
             }
         }
-        DebugCommand::GetMachineMetadata => {
-            Ok(DebugResponse::MachineMetadata(metadata(&record.machine)))
-        }
+        DebugCommand::GetMachineMetadata => Ok(DebugResponse::MachineMetadata(metadata(
+            &record.machine,
+            record.machine_id,
+        ))),
         _ => Err(
             "unsupported: this debug command is not implemented for the genesis yet".to_string(),
         ),
@@ -864,7 +1067,7 @@ unsafe fn plugin_list_profiles_inner(req: RcSlice) -> RcCallResult {
         Err(e) => return e.into_call_result(),
     };
     encode_ok(&plugin_api::ListProfilesResponse {
-        profiles: vec![machine_profile()],
+        profiles: vec![machine_profile(), segacd_profile()],
     })
 }
 
@@ -1264,6 +1467,138 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    /// A BIOS whose reset vectors start `MOVE.W #$BEEF,$FF0000 ; BRA.S *` at $200.
+    fn bios() -> Vec<u8> {
+        let mut b = vec![0u8; 0x2_0000];
+        b[0..4].copy_from_slice(&0x00FF_FE00u32.to_be_bytes());
+        b[4..8].copy_from_slice(&0x200u32.to_be_bytes());
+        for (i, w) in [0x33FCu16, 0xBEEF, 0x00FF, 0x0000, 0x60FE]
+            .iter()
+            .enumerate()
+        {
+            b[0x200 + 2 * i..0x202 + 2 * i].copy_from_slice(&w.to_be_bytes());
+        }
+        b
+    }
+
+    fn cd_request(options: Vec<plugin_api::NamedValue>) -> MachineCreateRequest {
+        MachineCreateRequest {
+            machine_id: SEGACD_ID.to_string(),
+            region: None,
+            roms: vec![plugin_api::BinaryBlob {
+                key: "rom_bios".to_string(),
+                bytes: bios(),
+            }],
+            options,
+        }
+    }
+
+    #[test]
+    fn the_plugin_lists_both_profiles_and_the_cd_has_three_cpus_and_its_own_options() {
+        let p = segacd_profile();
+        assert_eq!(p.machine_id, "segacd");
+        let cpus: Vec<&str> = p.cpus.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(cpus, ["main", "sub", "z80"]);
+        let keys: Vec<&str> = p.options.iter().map(|o| o.key.as_str()).collect();
+        assert_eq!(keys[..2], ["rom_bios", "disc"]);
+        assert!(p.options[0].required);
+        assert!(
+            !keys.contains(&"rom") && !keys.contains(&"cheats"),
+            "no cartridge options: {keys:?}"
+        );
+        assert!(keys.contains(&"port1") && keys.contains(&"execution_mode"));
+        assert_eq!(
+            p.media_kinds,
+            vec![MediaKind::Other("disc-path".to_string())]
+        );
+    }
+
+    #[test]
+    fn a_sega_cd_boots_from_its_bios_and_a_wrong_sized_bios_or_unknown_option_is_refused() {
+        let created = create_machine(cd_request(Vec::new())).unwrap();
+        assert_eq!(created.metadata.machine_id, "segacd");
+        assert_eq!(created.metadata.region.as_deref(), Some("usa"));
+        for _ in 0..5 {
+            assert!(plugin_step_inner(created.instance) > 0);
+        }
+        assert_eq!(plugin_halted_v1(created.instance), 0);
+        let mut bad = cd_request(Vec::new());
+        bad.roms[0].bytes.truncate(1000);
+        assert!(create_machine(bad).unwrap_err().contains("131072"));
+        let mut none = cd_request(Vec::new());
+        none.roms.clear();
+        assert!(create_machine(none).unwrap_err().contains("rom_bios"));
+        let err = create_machine(cd_request(vec![plugin_api::NamedValue {
+            key: "lock_on".to_string(),
+            value: DebugValue::Text("x".to_string()),
+        }]))
+        .unwrap_err();
+        assert!(err.contains("lock_on"), "{err}");
+    }
+
+    #[test]
+    fn a_disc_option_is_checked_at_start_up() {
+        let err = create_machine(cd_request(vec![plugin_api::NamedValue {
+            key: "disc".to_string(),
+            value: DebugValue::Text("no/such/disc.cue".to_string()),
+        }]))
+        .unwrap_err();
+        assert!(err.contains("disc") && err.contains("disc.cue"), "{err}");
+        let dir = std::env::temp_dir().join(format!("sega-plugin-disc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cue = disc::builder::write_disc(
+            &dir,
+            "d",
+            &[disc::builder::BuildTrack {
+                kind: disc::cue::TrackKind::Mode1Raw,
+                sectors: 4,
+                fill: disc::builder::Fill::Pattern,
+            }],
+        )
+        .unwrap();
+        assert!(
+            create_machine(cd_request(vec![plugin_api::NamedValue {
+                key: "disc".to_string(),
+                value: DebugValue::Text(cue.to_string_lossy().to_string()),
+            }]))
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn the_sub_cpu_answers_the_debugger() {
+        let created = create_machine(cd_request(Vec::new())).unwrap();
+        let plain = create_machine(request(Vec::new())).unwrap();
+        let mut state = state().lock().unwrap();
+        let record = state.record_mut(created.instance).unwrap();
+        let sub = |c| DebugCommand::OnCpu {
+            cpu: "sub".to_string(),
+            command: Box::new(c),
+        };
+        let Ok(DebugResponse::Registers(regs)) =
+            handle_debug_command(record, sub(DebugCommand::GetRegisters))
+        else {
+            panic!("no sub-CPU registers");
+        };
+        assert!(regs.registers.iter().all(|r| r.bank == "sub"));
+        assert!(regs.registers.iter().any(|r| r.name == "PC"));
+        let Ok(DebugResponse::Memory(bytes)) = handle_debug_command(
+            record,
+            sub(DebugCommand::ReadMemory {
+                address: 0,
+                len: 4,
+                space: None,
+            }),
+        ) else {
+            panic!("no sub memory");
+        };
+        assert_eq!(bytes.len(), 4);
+        // a plain Genesis has no sub-CPU
+        let record = state.record_mut(plain.instance).unwrap();
+        assert!(handle_debug_command(record, sub(DebugCommand::GetRegisters)).is_err());
     }
 
     #[test]
