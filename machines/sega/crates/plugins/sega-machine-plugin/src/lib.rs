@@ -1589,6 +1589,52 @@ mod tests {
     }
 
     #[test]
+    fn the_backup_ram_is_read_at_start_and_written_at_exit_only_when_it_changed() {
+        let dir = std::env::temp_dir().join(format!("sega-plugin-brm-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("nested").join("backup.brm");
+        let option = |p: &std::path::Path| {
+            vec![plugin_api::NamedValue {
+                key: "backup_ram".to_string(),
+                value: DebugValue::Text(p.display().to_string()),
+            }]
+        };
+        // no file yet: the RAM starts empty and nothing is written when the machine goes away unchanged
+        let created = create_machine(cd_request(option(&path))).unwrap();
+        unsafe { plugin_destroy_instance_inner(created.instance) };
+        assert!(!path.exists());
+        // the game changes it: the file appears (with its folder) when the machine is destroyed
+        let created = create_machine(cd_request(option(&path))).unwrap();
+        {
+            let mut state = state().lock().unwrap();
+            let record = state.instances.get_mut(&created.instance).unwrap();
+            let exp = record
+                .machine
+                .bus_mut()
+                .expansion_mut()
+                .unwrap()
+                .as_any_mut()
+                .downcast_mut::<segacd::SegaCdExp>()
+                .unwrap();
+            exp.load_backup_ram(&[0xAB; 100]);
+        }
+        unsafe { plugin_destroy_instance_inner(created.instance) };
+        let saved = std::fs::read(&path).unwrap();
+        assert_eq!(saved.len(), 0x2000);
+        assert_eq!((saved[0], saved[99], saved[100]), (0xAB, 0xAB, 0));
+        // the next start reads it back
+        let created = create_machine(cd_request(option(&path))).unwrap();
+        {
+            let state = state().lock().unwrap();
+            let exp = sub_side(&state.instances[&created.instance].machine).unwrap();
+            assert_eq!(exp.backup_ram()[..101], saved[..101]);
+        }
+        unsafe { plugin_destroy_instance_inner(created.instance) };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn a_disc_option_is_checked_at_start_up() {
         let err = create_machine(cd_request(vec![plugin_api::NamedValue {
             key: "disc".to_string(),
