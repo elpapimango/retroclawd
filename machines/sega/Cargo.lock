@@ -28,10 +28,30 @@ version = "0.1.0"
 source = "git+https://github.com/elpapimango/retroclawd-crates?rev=0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac#0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac"
 
 [[package]]
+name = "cfg-if"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
+
+[[package]]
+name = "crc32fast"
+version = "1.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ba106e844045ddc02c20768ac4b0b7cb45f2cc2ecbd833ac9f5dacb183c2055"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
+name = "disc"
+version = "0.1.0"
+
+[[package]]
 name = "genesis"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "crc32fast",
  "machine",
  "mc68000",
  "md-cart",
@@ -54,6 +74,10 @@ source = "git+https://github.com/elpapimango/retroclawd-crates?rev=0777d5e2366e9
 dependencies = [
  "serde",
 ]
+
+[[package]]
+name = "mcd-gate-array"
+version = "0.1.0"
 
 [[package]]
 name = "md-cart"
@@ -91,10 +115,12 @@ name = "sega-machine-plugin"
 version = "0.1.0"
 dependencies = [
  "build-info",
+ "disc",
  "genesis",
  "machine",
  "md-cart",
  "plugin-api",
+ "segacd",
  "serde",
 ]
 
@@ -104,6 +130,17 @@ version = "0.1.0"
 dependencies = [
  "plugin-api",
  "sega-machine-plugin",
+]
+
+[[package]]
+name = "segacd"
+version = "0.1.0"
+dependencies = [
+ "disc",
+ "genesis",
+ "machine",
+ "mc68000",
+ "mcd-gate-array",
 ]
 
 [[package]]
