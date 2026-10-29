@@ -497,6 +497,22 @@ button goes down, a hold action (`fast_forward`) lasts while the chord is held, 
 until they are let go (the first one of two reaches the machine a moment before the second arrives, as a key would). `pad:` chords
 need no `modifier` key. `--list-hotkeys` shows them.
 
+**Ready-made layouts.** Nothing needs configuring: every machine has a layout that ships with the program
+(`assets/controllers/layouts.toml`, built into the executable), the same for any controller (Xbox, 8BitDo, DualShock, Switch pads).
+Buttons are named by position: bottom, right, left and top face button, shoulders, triggers, the two centre buttons, D-pad and left stick.
+
+| Machine | Layout |
+|---|---|
+| Mega Drive / Genesis, Sega CD | left face button = A, bottom = B, right = C, left shoulder = X, top = Y, right shoulder = Z, Start = Start, Select = Mode |
+| Atari STE | bottom button = joystick fire and pad A, right = pad B, left = pad C, Select = Option, Start = Pause |
+| Amstrad CPC / CPC+ / GX4000 | bottom = Fire1, right = Fire2, left = Fire3 (shoulders and triggers too) |
+| every other machine | every face button, shoulder and trigger is the one fire button |
+
+`retroclawd <machine> --list-keys` prints what each button does. When a pad is plugged in the program prints its slot and name
+(`pad 1: 8bitdo Ultimate Bluetooth Controller`), from the controller list in `assets/controllers/devices.toml`, which
+`tools/convert_autoconfig.py` makes from RetroArch's gamepad autoconfig profiles (`python tools/convert_autoconfig.py <RetroArch>/autoconfig`).
+Your own bindings below replace the layout one button at a time.
+
 `[pads]` rebinds buttons; `[machines.<id>.pads]` overrides per machine. Pad
 slots are `[pads.1]`..`[pads.4]` (first pad seen = 1; unplugging one does not
 renumber the others). A button can press any machine key, not only joystick

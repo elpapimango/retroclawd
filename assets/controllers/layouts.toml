@@ -1,0 +1,92 @@
+# Ready-made gamepad layouts, one per machine family. They sit underneath `[pads]` / `[machines.<id>.pads]` in
+# retroclawd.toml, so a user's own binding always wins. A layout applies to the machines in `machines`; the entry with
+# "*" is for every machine that has no entry of its own. Pad 1 and pad 2 get the layout (`{n}` is the pad number).
+#
+# Buttons are named by position, like the standard gamepad the app sees whatever the controller (an Xbox pad, an 8BitDo,
+# a DualShock, a Switch pad): south = bottom face button, east = right, west = left, north = top; l1/r1 the shoulder
+# buttons, l2/r2 the triggers, select/start the two centre buttons. A key a machine does not have is skipped, so one
+# layout can name more than the machine offers.
+
+# Mega Drive / Genesis and Sega CD: A B C along the bottom, X Y Z above them, as on the 6-button pad.
+[[layout]]
+machines = ["genesis", "segacd"]
+[layout.buttons]
+up = "Joy{n}Up"
+down = "Joy{n}Down"
+left = "Joy{n}Left"
+right = "Joy{n}Right"
+stick_up = "Joy{n}Up"
+stick_down = "Joy{n}Down"
+stick_left = "Joy{n}Left"
+stick_right = "Joy{n}Right"
+west = "Joy{n}A"
+south = "Joy{n}B"
+east = "Joy{n}C"
+l1 = "Joy{n}X"
+north = "Joy{n}Y"
+r1 = "Joy{n}Z"
+start = "Joy{n}Start"
+select = "Joy{n}Mode"
+
+# Atari STE: the joystick fire button on the bottom button, the enhanced pad's A B C and Option/Pause on the rest.
+[[layout]]
+machines = ["atari-ste"]
+[layout.buttons]
+up = "Joy{n}Up"
+down = "Joy{n}Down"
+left = "Joy{n}Left"
+right = "Joy{n}Right"
+stick_up = "Joy{n}Up"
+stick_down = "Joy{n}Down"
+stick_left = "Joy{n}Left"
+stick_right = "Joy{n}Right"
+south = ["Joy{n}Fire1", "Joy{n}PadA"]
+east = "Joy{n}PadB"
+west = "Joy{n}PadC"
+north = "Joy{n}Fire1"
+l1 = "Joy{n}PadA"
+r1 = "Joy{n}PadB"
+select = "Joy{n}PadOption"
+start = "Joy{n}PadPause"
+
+# Amstrad CPC and GX4000: two fire buttons (three on the digital pad of the Plus machines).
+[[layout]]
+machines = ["cpc464", "cpc664", "cpc6128", "cpc464plus", "cpc6128plus", "gx4000"]
+[layout.buttons]
+up = "Joy{n}Up"
+down = "Joy{n}Down"
+left = "Joy{n}Left"
+right = "Joy{n}Right"
+stick_up = "Joy{n}Up"
+stick_down = "Joy{n}Down"
+stick_left = "Joy{n}Left"
+stick_right = "Joy{n}Right"
+south = "Joy{n}Fire1"
+east = "Joy{n}Fire2"
+west = "Joy{n}Fire3"
+north = "Joy{n}Fire1"
+l1 = "Joy{n}Fire2"
+r1 = "Joy{n}Fire3"
+l2 = "Joy{n}Fire1"
+r2 = "Joy{n}Fire1"
+
+# Every other machine: a joystick with one fire button, which any face or shoulder button presses.
+[[layout]]
+machines = ["*"]
+[layout.buttons]
+up = "Joy{n}Up"
+down = "Joy{n}Down"
+left = "Joy{n}Left"
+right = "Joy{n}Right"
+stick_up = "Joy{n}Up"
+stick_down = "Joy{n}Down"
+stick_left = "Joy{n}Left"
+stick_right = "Joy{n}Right"
+south = "Joy{n}Fire1"
+east = "Joy{n}Fire1"
+west = "Joy{n}Fire1"
+north = "Joy{n}Fire1"
+l1 = "Joy{n}Fire1"
+r1 = "Joy{n}Fire1"
+l2 = "Joy{n}Fire1"
+r2 = "Joy{n}Fire1"

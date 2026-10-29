@@ -9,12 +9,14 @@ use crate::plugin_bridge::HostedMachine;
 
 mod audio;
 pub(crate) mod bezel;
+mod controllers;
 mod debug_overlay;
 mod fold;
 pub(crate) mod hotkeys;
 mod input;
 pub(crate) mod keys;
 pub(crate) mod layout;
+mod pad_layouts;
 pub(crate) mod pads;
 pub(crate) mod paste;
 mod prompt;
@@ -406,6 +408,7 @@ pub fn run_gui(
                 input::record_logical_keys.before(input::keyboard_input),
                 input::keyboard_input.after(input::hotkey_input),
                 input::pad_input.after(input::keyboard_input),
+                input::announce_pads,
                 prompt::prompt_input,
                 input::mouse_input,
                 paste::paste_typing,

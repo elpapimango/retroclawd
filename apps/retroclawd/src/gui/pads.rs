@@ -345,7 +345,7 @@ impl PadBindings {
         ))
     }
 
-    /// Defaults, then `[pads]`, then `[machines.<machine>.pads]`.
+    /// Defaults, the shipped layout of the machine, then `[pads]`, then `[machines.<machine>.pads]`.
     pub(crate) fn resolve(
         config: &AppConfig,
         machine: &str,
@@ -365,6 +365,8 @@ impl PadBindings {
         }
 
         let mut map = PadBindings::defaults(names);
+        // the layouts that ship with the program (assets/controllers/layouts.toml) replace those button by button
+        map.extend(super::pad_layouts::bindings(machine, names));
         let mut axes = PadBindings::default_axes(names);
         let layers = [
             (Some(&config.pads), "[pads".to_string(), true),
@@ -723,10 +725,15 @@ mod tests {
             &names(&["Joy1Left"])
         );
         assert_eq!(b.get(1, PadButton::South).unwrap(), &names(&["Joy1Fire1"]));
-        assert_eq!(b.get(1, PadButton::West).unwrap(), &names(&["Joy1Fire2"]));
-        // The machine has no Fire3 or Joy2Down: those stay unbound.
-        assert!(b.get(1, PadButton::North).is_none());
+        // A machine with no layout of its own (the shipped `*` one): every face button fires.
+        assert_eq!(b.get(1, PadButton::West).unwrap(), &names(&["Joy1Fire1"]));
+        assert_eq!(b.get(1, PadButton::North).unwrap(), &names(&["Joy1Fire1"]));
+        // The machine has no Joy2Down: it stays unbound.
         assert!(b.get(2, PadButton::Down).is_none());
+        assert!(
+            b.get(1, PadButton::Start).is_none(),
+            "no key for the centre buttons"
+        );
         assert_eq!(b.get(2, PadButton::Up).unwrap(), &names(&["Joy2Up"]));
         // No joystick keys at all (ZX81) or no reported names: nothing bound.
         let none = PadBindings::resolve(&AppConfig::default(), "m", &info(&["KeyA"])).unwrap();
@@ -765,11 +772,11 @@ mod tests {
             ..KeyNames::default()
         };
         let shared =
-            PadBindings::resolve(&cfg("[pads.1]\nl1 = \"Joy1Fire2\""), "m", &names).unwrap();
-        assert!(shared.get(1, PadButton::L1).is_none());
+            PadBindings::resolve(&cfg("[pads.1]\nl3 = \"Joy1Fire2\""), "m", &names).unwrap();
+        assert!(shared.get(1, PadButton::L3).is_none());
         // The machine's own section is strict.
         assert!(
-            PadBindings::resolve(&cfg("[machines.m.pads.1]\nl1 = \"Joy1Fire2\""), "m", &names)
+            PadBindings::resolve(&cfg("[machines.m.pads.1]\nl3 = \"Joy1Fire2\""), "m", &names)
                 .is_err()
         );
     }

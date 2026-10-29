@@ -790,6 +790,34 @@ pub(crate) fn record_logical_keys(
     }
 }
 
+/// Says which pad took which slot, once for each pad that is plugged in: the name RetroArch's profiles give its USB id
+/// (`gui::controllers`) or the name the system reports.
+pub(crate) fn announce_pads(
+    gamepads: Query<(Entity, &Gamepad, Option<&Name>)>,
+    mut slots: ResMut<PadSlots>,
+    mut announced: Local<std::collections::HashSet<u64>>,
+) {
+    let present: Vec<u64> = gamepads.iter().map(|(e, _, _)| e.to_bits()).collect();
+    announced.retain(|id| present.contains(id));
+    for (slot, id) in slots.assign(&present) {
+        if !announced.insert(id) {
+            continue;
+        }
+        let Some((_, gamepad, system_name)) = gamepads.iter().find(|(e, _, _)| e.to_bits() == id)
+        else {
+            continue;
+        };
+        let known = gamepad
+            .vendor_id()
+            .zip(gamepad.product_id())
+            .and_then(|(vid, pid)| super::controllers::device_name(vid, pid));
+        let name = known
+            .or(system_name.map(Name::as_str))
+            .unwrap_or("unnamed controller");
+        eprintln!("pad {slot}: {name}");
+    }
+}
+
 /// Reads every connected gamepad once per frame and sends the machine keys
 /// its buttons are bound to (`gui::pads`). Pads are numbered by `PadSlots`: the
 /// first pad plugged in is `[pads.1]`.
