@@ -113,7 +113,28 @@ fn where_are_both_cpus() {
     let mut last_frame = u64::MAX;
     let mut last_ram: Vec<u8> = Vec::new();
     let mut watched: BTreeMap<u32, u32> = BTreeMap::new();
+    // RC_PRESS=900:Start:1,910:Start:0 presses and releases pad 1 buttons at the given frames
+    let mut presses: Vec<(u64, String, bool)> = std::env::var("RC_PRESS")
+        .map(|v| {
+            v.split(',')
+                .filter_map(|e| {
+                    let mut p = e.split(':');
+                    Some((
+                        p.next()?.parse().ok()?,
+                        p.next()?.to_string(),
+                        p.next()? == "1",
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    presses.reverse();
     while spent < budget {
+        let now_frame = spent / (m.clock_hz() / m.frame_hz());
+        while presses.last().is_some_and(|p| p.0 <= now_frame) {
+            let (_, name, down) = presses.pop().unwrap();
+            m.set_pad_button(0, &name, down).unwrap();
+        }
         spent += u64::from(m.step());
         if let Some(range) = &ram_watch {
             let frame = spent / (m.clock_hz() / m.frame_hz());
@@ -301,4 +322,8 @@ fn where_are_both_cpus() {
         words.push(g.main_read_word(off).unwrap());
     }
     println!("main flag, commands, status: {words:04X?}");
+    println!(
+        "audio activity (non-silent PCM samples, CD audio frames): {:?}",
+        e.audio_activity()
+    );
 }

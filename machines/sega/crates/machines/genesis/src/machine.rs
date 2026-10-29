@@ -173,7 +173,11 @@ impl Machine for Genesis {
     fn drain_audio(&mut self) -> Vec<f32> {
         self.bus.catch_up();
         self.bus.sound.run_to(self.bus.now);
-        self.bus.sound.drain()
+        let mut out = self.bus.sound.drain();
+        if let Some(e) = self.bus.expansion_mut() {
+            e.mix_audio(&mut out, SAMPLE_MASTER_CLOCKS);
+        }
+        out
     }
 
     fn run(&mut self, running: &mut dyn FnMut(&dyn Machine) -> bool) -> RunStats {

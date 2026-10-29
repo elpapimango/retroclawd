@@ -5,6 +5,7 @@
 //! addresses stop the machine with a report, as the project rule says for an address no fact covers.
 #![forbid(unsafe_code)]
 
+pub mod audio;
 pub mod drive;
 
 use genesis::mc68000::{BusFault, Cpu, FunctionCode, IackResponse, M68kBus, Size};
@@ -384,6 +385,13 @@ pub struct SegaCdExp {
     main_log: Option<Vec<(u64, u32, Size, u32)>>,
     /// Debugging aid: the last sub-CPU instruction addresses, frozen when the sub-CPU reaches an address in `trace_stop`.
     trace: Option<SubTrace>,
+    /// The PCM chip's and the CD audio's samples waiting for the output (fact C22).
+    pcm_audio: audio::Resampler,
+    cd_audio: audio::Resampler,
+    /// Scratch for the PCM chip's samples.
+    pcm_scratch: Vec<(i16, i16)>,
+    /// Debugging aid: PCM samples that were not silent and CD audio frames produced so far.
+    activity: (u64, u64),
 }
 
 /// One traced sub-CPU instruction: address, data registers, address registers, status register.
@@ -430,7 +438,16 @@ impl SegaCdExp {
             run_clocks: 0,
             main_log: None,
             trace: None,
+            pcm_audio: audio::Resampler::new(SUB_CLOCK_HZ / rf5c164::CLOCKS_PER_SAMPLE),
+            cd_audio: audio::Resampler::new(44_100),
+            pcm_scratch: Vec::new(),
+            activity: (0, 0),
         })
+    }
+
+    /// Debugging aid: how many PCM samples were not silent and how many CD audio frames were played so far.
+    pub fn audio_activity(&self) -> (u64, u64) {
+        self.activity
     }
 
     /// The 8 KB of internal backup RAM (the sub-CPU sees it on odd addresses only, fact C2).
@@ -785,6 +802,27 @@ impl Expansion for SegaCdExp {
         self.due += clocks;
         self.side.gate.advance_sub_clocks(clocks);
         self.run_sub();
+        self.side.pcm.advance(clocks, &mut self.pcm_scratch);
+        for (l, r) in self.pcm_scratch.drain(..) {
+            self.activity.0 += u64::from((l, r) != (0, 0));
+            self.pcm_audio
+                .push(f32::from(l) / 32768.0, f32::from(r) / 32768.0);
+        }
+        let cd = self.side.gate.take_cd_audio();
+        self.activity.1 += (cd.len() / 2) as u64;
+        for lr in cd.as_chunks::<2>().0 {
+            self.cd_audio
+                .push(f32::from(lr[0]) / 32768.0, f32::from(lr[1]) / 32768.0);
+        }
+    }
+
+    fn mix_audio(&mut self, out: &mut [f32], frame_clocks: u64) {
+        for frame in out.as_chunks_mut::<2>().0 {
+            let (pl, pr) = self.pcm_audio.next(frame_clocks, self.master_hz);
+            let (cl, cr) = self.cd_audio.next(frame_clocks, self.master_hz);
+            frame[0] += pl + cl;
+            frame[1] += pr + cr;
+        }
     }
 
     fn stop_report(&self) -> Option<String> {
@@ -903,6 +941,57 @@ mod tests {
             Some(0xAB),
             "and the sub-CPU has what the main CPU wrote"
         );
+    }
+
+    /// Sets up channel 1 of the PCM chip to play a constant `+100` byte at full level and starts the chip.
+    fn start_pcm_tone(e: &mut SegaCdExp) {
+        let pcm = &mut e.side.pcm;
+        pcm.write(7, 0);
+        for i in 0..16 {
+            pcm.write(0x1000 + i, 0x80 | 100);
+        }
+        pcm.write(0x1010 - 1, 0xFF);
+        pcm.write(7, 0x40);
+        for (a, v) in [(0, 0xFF), (1, 0xFF), (2, 0), (3, 0), (6, 0)] {
+            pcm.write(a, v);
+        }
+        pcm.write(8, 0xFE);
+        pcm.write(7, 0x80);
+    }
+
+    #[test]
+    fn the_pcm_chip_and_the_cd_audio_are_added_to_the_genesis_sound() {
+        let mut e = exp();
+        start_pcm_tone(&mut e);
+        // a tenth of a second of the master clock, taken as output samples of 1008 clocks
+        e.advance(NTSC / 10);
+        let frames = (NTSC / 10 / 1008) as usize;
+        let mut out = vec![0.25f32; frames * 2];
+        e.mix_audio(&mut out, 1008);
+        let expect = 0.25 + ((100 * 255 * 15) >> 5) as f32 / 32768.0;
+        assert!(
+            (out[out.len() - 1] - expect).abs() < 1e-4,
+            "{}",
+            out[out.len() - 1]
+        );
+        assert!((out[out.len() - 2] - expect).abs() < 1e-4);
+        // the CD audio, 44.1 kHz stereo: left 0.5 and right -0.5
+        let mut e = exp();
+        for _ in 0..4410 {
+            e.cd_audio.push(0.5, -0.5);
+        }
+        let mut out = vec![0.0f32; 2 * 100];
+        e.mix_audio(&mut out, 1008);
+        assert_eq!((out[198], out[199]), (0.5, -0.5));
+    }
+
+    #[test]
+    fn a_pcm_chip_that_is_off_adds_nothing() {
+        let mut e = exp();
+        e.advance(NTSC / 10);
+        let mut out = vec![0.0f32; 2 * 1000];
+        e.mix_audio(&mut out, 1008);
+        assert!(out.iter().all(|v| *v == 0.0));
     }
 
     #[test]

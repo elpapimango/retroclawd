@@ -26,6 +26,9 @@ pub trait Expansion: Send {
     /// Runs the expansion's own processors up to master clock `now`.
     fn advance(&mut self, now: u64);
 
+    /// Adds the expansion's own sound to `out` (interleaved left and right samples, one pair every `frame_clocks` master clocks).
+    fn mix_audio(&mut self, _out: &mut [f32], _frame_clocks: u64) {}
+
     /// The report of a stop inside the expansion (its own CPU met an unknown address), once it happened.
     fn stop_report(&self) -> Option<String>;
 

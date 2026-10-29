@@ -30,9 +30,11 @@ pub mod command {
     pub const NOP: u8 = 0x0;
     pub const STOP: u8 = 0x1;
     pub const REPORT_REQUEST: u8 = 0x2;
+    /// Starts playing or reading at a time: an audio track is played, a data track is read (fact E17).
     pub const READ: u8 = 0x3;
     pub const SEEK: u8 = 0x4;
     pub const PAUSE: u8 = 0x6;
+    /// Resumes after a pause, at the time given when there is one.
     pub const PLAY: u8 = 0x7;
     pub const FORWARD: u8 = 0x8;
     pub const REVERSE: u8 = 0x9;
@@ -52,6 +54,9 @@ pub trait Drive: Send {
     fn music_playing(&self) -> bool {
         false
     }
+    /// Moves the audio the drive played since the last call to `out`: interleaved left and right 16-bit samples at 44.1 kHz
+    /// (588 stereo frames for each period of playing, fact E17).
+    fn take_audio(&mut self, _out: &mut Vec<i16>) {}
     fn box_clone(&self) -> Box<dyn Drive>;
 }
 
@@ -114,6 +119,8 @@ pub struct Cdd {
     acc: u64,
     /// Debugging aid: the commands received and the answers given.
     log: Vec<([u8; 10], [u8; 10])>,
+    /// CD audio played and not yet taken, interleaved left and right.
+    audio: Vec<i16>,
 }
 
 impl Default for Cdd {
@@ -152,6 +159,7 @@ impl Cdd {
             drive: Box::new(NoDisc::new()),
             acc: 0,
             log: Vec::new(),
+            audio: Vec::new(),
         }
     }
 
@@ -201,7 +209,8 @@ impl Cdd {
         let rs = self.drive.command(&self.tc);
         self.rs[..9].copy_from_slice(&rs);
         self.rs[9] = checksum(&self.rs);
-        if self.log.len() < 4000 {
+        // the report requests and no-ops the BIOS repeats all the time would fill the log
+        if self.log.len() < 4000 && !matches!(self.tc[0], command::REPORT_REQUEST | command::NOP) {
             self.log.push((self.tc, self.rs));
         }
     }
@@ -222,5 +231,11 @@ impl Cdd {
     /// One period of the drive itself (sector delivery), whether or not the host clock runs.
     pub fn drive_period(&mut self, cdc: &mut Cdc) {
         self.drive.period(cdc);
+        self.drive.take_audio(&mut self.audio);
+    }
+
+    /// The CD audio played since the last call (interleaved left and right samples at 44.1 kHz).
+    pub fn take_audio(&mut self) -> Vec<i16> {
+        std::mem::take(&mut self.audio)
     }
 }

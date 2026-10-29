@@ -1,7 +1,7 @@
 //! The disc drive behind the CDD port: answers the BIOS's commands from the disc's table of contents and hands the CD
 //! controller one sector per 1/75 s while it reads (facts E4-E6, E14 in `docs/hardware-facts.md`).
 //!
-//! Slice 3b: data reading. Audio discs and CD-DA output come with the audio slice; PLAY only moves the position.
+//! Playing an audio track hands 588 stereo frames of the sector under the head to the mixer each period (fact E17).
 
 use disc::{Disc, RAW_SECTOR, Track};
 use mcd_gate_array::cdc::Cdc;
@@ -22,7 +22,7 @@ enum Mode {
     },
     /// Reading data sectors, one a period.
     Reading,
-    /// Playing audio: only the position moves.
+    /// Playing audio: the sector under the head goes to the mixer.
     Playing,
     Paused,
     Scanning,
@@ -49,6 +49,8 @@ pub struct DiscDrive {
     start_delay: u8,
     /// The last status values RS0-RS8 sent; RS1-RS8 stay as they were while the drive is stopped (fact E15).
     last: [u8; 9],
+    /// Audio played and not yet taken.
+    audio: Vec<i16>,
 }
 
 impl DiscDrive {
@@ -70,6 +72,7 @@ impl DiscDrive {
             report: 0,
             start_delay: 0,
             last: [0; 9],
+            audio: Vec::new(),
         }
     }
 
@@ -85,6 +88,20 @@ impl DiscDrive {
     }
 
     /// The track under the head; a head in the lead-in is on the first track.
+    /// What the drive does when it plays from the head: an audio track is played, a data track is read (fact E17).
+    fn playing_mode(&self) -> Mode {
+        if self.on_audio_track() {
+            Mode::Playing
+        } else {
+            Mode::Reading
+        }
+    }
+
+    fn on_audio_track(&self) -> bool {
+        self.track_of(self.lba)
+            .is_some_and(|t| t.kind == disc::cue::TrackKind::Audio)
+    }
+
     fn track_of(&self, lba: i32) -> Option<&Track> {
         self.tracks
             .iter()
@@ -238,7 +255,7 @@ impl Drive for DiscDrive {
                 if tc[2..8].iter().any(|n| *n != 0) {
                     self.seek(lba, After::Play);
                 } else {
-                    self.mode = Mode::Playing;
+                    self.mode = self.playing_mode();
                 }
             }
             command::FORWARD | command::REVERSE => self.mode = Mode::Scanning,
@@ -285,9 +302,8 @@ impl Drive for DiscDrive {
                     };
                 } else {
                     self.mode = match then {
-                        After::Read => Mode::Reading,
+                        After::Read | After::Play => self.playing_mode(),
                         After::Pause => Mode::Paused,
-                        After::Play => Mode::Playing,
                     };
                 }
             }
@@ -314,6 +330,17 @@ impl Drive for DiscDrive {
                 }
             }
             Mode::Playing | Mode::Scanning => {
+                if self.mode == Mode::Playing && self.lba >= 0 && self.on_audio_track() {
+                    let mut raw = [0u8; RAW_SECTOR];
+                    if self.disc.read_raw(self.lba as u32, &mut raw).is_ok() {
+                        self.audio.extend(
+                            raw.as_chunks::<2>()
+                                .0
+                                .iter()
+                                .map(|b| i16::from_le_bytes(*b)),
+                        );
+                    }
+                }
                 self.lba = (self.lba + 1).min(self.lead_out as i32 - 1);
             }
             _ => {}
@@ -321,10 +348,11 @@ impl Drive for DiscDrive {
     }
 
     fn music_playing(&self) -> bool {
-        matches!(self.mode, Mode::Playing | Mode::Scanning)
-            && self
-                .track_of(self.lba)
-                .is_some_and(|t| t.kind == disc::cue::TrackKind::Audio)
+        matches!(self.mode, Mode::Playing | Mode::Scanning) && self.on_audio_track()
+    }
+
+    fn take_audio(&mut self, out: &mut Vec<i16>) {
+        out.append(&mut self.audio);
     }
 
     fn box_clone(&self) -> Box<dyn Drive> {
@@ -464,5 +492,58 @@ mod tests {
         assert!((5..=12).contains(&delivered), "{delivered}");
         let rs = d.command(&cmd(command::NOP, &[]));
         assert_eq!(rs[0], status::PLAY);
+    }
+
+    #[test]
+    fn playing_an_audio_track_hands_588_stereo_frames_a_period_to_the_mixer() {
+        let (mut d, _) = drive();
+        let mut cdc = Cdc::new();
+        // track 2 starts at sector 300 of the program area: absolute time 00:06:00
+        d.command(&cmd(command::PLAY, &[(5, 6)]));
+        let mut audio = Vec::new();
+        for _ in 0..40 {
+            d.period(&mut cdc);
+            d.take_audio(&mut audio);
+        }
+        assert!(d.music_playing());
+        // twelve periods of seeking, then every period one sector of 588 frames; the track is filled with 0x01 bytes
+        assert!(audio.len() >= 2 * 588 * 20, "{}", audio.len());
+        assert_eq!(audio.len() % (2 * 588), 0, "whole sectors only");
+        assert!(audio.iter().all(|s| *s == 0x0101));
+        d.command(&cmd(command::PAUSE, &[]));
+        let before = audio.len();
+        d.period(&mut cdc);
+        d.take_audio(&mut audio);
+        assert_eq!(audio.len(), before, "a paused drive plays nothing");
+    }
+
+    #[test]
+    fn the_read_command_plays_an_audio_track_and_reads_a_data_track() {
+        let (mut d, _) = drive();
+        let mut cdc = Cdc::new();
+        let mut audio = Vec::new();
+        d.command(&cmd(command::READ, &[(5, 6)])); // 00:06:00: the audio track
+        for _ in 0..30 {
+            d.period(&mut cdc);
+            d.take_audio(&mut audio);
+        }
+        assert!(d.music_playing());
+        assert!(!audio.is_empty());
+        let rs = d.command(&cmd(command::NOP, &[]));
+        assert_eq!(rs[0], status::PLAY);
+    }
+
+    #[test]
+    fn playing_a_data_track_makes_no_audio() {
+        let (mut d, _) = drive();
+        let mut cdc = Cdc::new();
+        d.command(&cmd(command::PLAY, &[(5, 2)])); // 00:02:00: the data track
+        let mut audio = Vec::new();
+        for _ in 0..30 {
+            d.period(&mut cdc);
+            d.take_audio(&mut audio);
+        }
+        assert!(audio.is_empty());
+        assert!(!d.music_playing());
     }
 }

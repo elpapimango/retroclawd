@@ -138,6 +138,11 @@ impl GateArray {
     }
 
     /// The commands and answers of the drive port so far (a debugging aid).
+    /// The CD audio the drive played since the last call (interleaved left and right samples at 44.1 kHz).
+    pub fn take_cd_audio(&mut self) -> Vec<i16> {
+        self.cdd.take_audio()
+    }
+
     pub fn cdd_log(&self) -> &[([u8; 10], [u8; 10])] {
         self.cdd.log()
     }
