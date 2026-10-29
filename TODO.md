@@ -122,16 +122,16 @@ agree (`p22`, `p29`, `p34`); what is left is below what the probes resolve. MAME
 (its `p22`/`p29`/`p30` results show it), so it cannot arbitrate those; it agrees with Genesis Plus GX on the game logic.
 
 Open, each with what it needs:
-- **FIFO slots** are fitted to Genesis Plus GX (about 16 clocks); **DMA slot interleave with the 68000, mid-line palette and register
-  effects** (`render_exact`), pixel-level HBLANK flags: not modelled beyond the per-line rates; needs probes that write CRAM/registers
-  at known H positions and read the picture back.
+- **FIFO slots** are fitted to Genesis Plus GX (about 16 clocks). Mid-line CRAM/backdrop writes show from the pixel they happen at
+  (fact V34, probe `p48`, compared with BlastEm; Genesis Plus GX does not do it). Other mid-line register effects, DMA slot
+  interleave with the 68000 and pixel-level HBLANK flags are not modelled beyond the per-line rates.
 - **Z80 access to the 68000's bus**: 10 CPU cycles lost by the 68000 (Genesis Plus GX 10.3 on average, BlastEm 8): `P30B` known gap.
-- **Codemasters J-Cart boards** (Micro Machines, Brian Lara Cricket), Sonic 2's lock-on chip (no dump), Game Genie / Action Replay,
-  Sega CD, 32X, Menacer, mouse, 4-way play, Pico, weaving the two fields of interlace mode 2: not started.
+- **Done 2026-10-29**: J-Cart, cheat codes (Game Genie decode, raw patches), mouse, 4-way play, Menacer, weave interlace, Sonic 2
+  lock-on chip mechanism (no dump, untested), `--execution-mode fast|accurate`, tile-row picture cache (`docs/benchmarks.md`), fuzz
+  tests for cheats and cartridge headers. Not started: Sega CD, 32X, Pico, real Game Genie/Action Replay ROMs, PAL V30 probes.
 - **EEPROM**: tested against the data sheets' sequences and by booting NBA Jam (no oracle sets the lines; a game that saves to it
   was not played through).
-- **Speed**: about 5x real time headless with sound on this machine; no profile-driven optimisation has been done.
-- **`--accuracy fast|accurate`**: there is one mode (per-bus-cycle 68000, instruction-granular Z80).
+- **Speed**: about 5.2x real time headless (`docs/benchmarks.md`); YM2612 is 12 % of it.
 
 ## Atari ST: closed (2026-10-24); what is parked, and what each item needs
 

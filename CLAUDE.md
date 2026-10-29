@@ -196,7 +196,7 @@ open), SSF2 mapper (> 4 MB or header `SEGA SSF`), battery SRAM (`sram_file`, sav
 (`--tmss auto|off|on`, `--rom-tmss`). Timing: bus refresh (2 of every 130 CPU cycles), Z80 access to the 68000's bus (3 Z80 clocks
 wait, 10 CPU cycles lost by the 68000, waits for DMA), VDP DMA holds the 68000. Save states are `RCST` v2 (ROM CRC, region, chip,
 full validation, fuzzed by `RC_SWEEP`). Interlace modes 1 and 2 (single field), serial EEPROM boards (EA, Sega, Acclaim) and the Sonic & Knuckles lock-on (`--lock-on`)
-are done. Not done: J-Cart boards, Game Genie, Sega CD/32X, mouse and the 4-way adapter; see `TODO.md` "Sega Mega Drive". Oracles for comparison are the libretro cores in a RetroArch install
+are done, and since 2026-10-29 so are Codemasters J-Cart pads, cheat codes (option `cheats`: Game Genie `XXXX-YYYY`, `AAAAAA:DDDD`; no lock-on cartridge ROM), weave interlace (`interlace_output=weave`), the Sega Mouse, 4-Way Play and Menacer (options `port1`/`port2`), the Sonic 2 lock-on chip mechanism (`lock_on_chip`, untested against a real dump), `--execution-mode fast|accurate` (fast drops refresh, Z80 cost and FIFO stalls; `docs/benchmarks.md`) and mid-line palette/backdrop changes (fact V34). Not done: Sega CD/32X, real Game Genie/Action Replay cartridge ROMs, PAL V30 probes; see `TODO.md` "Sega Mega Drive". Oracles for comparison are the libretro cores in a RetroArch install
 (`retroclawd-tools/scripts/libretro_run.py`; Genesis Plus GX is the main reference); `machines/sega/scenarios/` has the probes
 (`probe.py`), the frame comparison against Genesis Plus GX (`compare_frames.py`, `batch_compare.py`) and `sweep.py` (every game of
 `software/roms/` for N frames). Manifest: `machines/sega/genesis.manifest.toml` (`rc-scenarios`).
