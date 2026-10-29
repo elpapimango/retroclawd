@@ -1,0 +1,8 @@
+[package]
+name = "mcd-gate-array"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Mega-CD gate array: main and sub CPU registers, word RAM ownership, mailboxes, stopwatch and timer"
+
+[dependencies]

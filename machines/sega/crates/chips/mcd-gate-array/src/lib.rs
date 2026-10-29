@@ -1,0 +1,642 @@
+//! The Mega-CD gate array: the registers both CPUs see (main side at `$A12000`, sub side at `$FF8000`), the ownership of word
+//! RAM, program RAM banking and write protection, the mailboxes, the stopwatch, the timer and the sub-CPU's interrupt levels.
+//!
+//! Facts C1-C15 in `docs/hardware-facts.md` (source: Mega-CD Hardware Manual v1.0). Registers that belong to the CD
+//! controller, the drive, the graphics unit and the sub-code are not here: they return `None` ("no such register") until
+//! their slices, and the machine stops with a report, as the project rule says for an unknown address.
+//!
+//! Word RAM in 1M/1M mode is not modelled (fact C8 is unresolved): the mode bit can be set and `mode_1m()` tells the machine,
+//! which stops with a report when the RAM is touched.
+#![forbid(unsafe_code)]
+
+/// Sub-CPU clocks per tick of the stopwatch and the timer (30.72 us at 12.5 MHz, fact C10).
+pub const CLOCKS_PER_TICK: u64 = 384;
+
+/// Who has the 256 KB of word RAM in 2M mode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WordRamOwner {
+    Main,
+    Sub,
+}
+
+#[derive(Clone, Debug)]
+pub struct GateArray {
+    run: bool,
+    sbrq: bool,
+    ifl2: bool,
+    wp: u8,
+    bank: u8,
+    mode_1m: bool,
+    owner: WordRamOwner,
+    pm: u8,
+    hint_vector: u16,
+    flag_main: u8,
+    flag_sub: u8,
+    commands: [u16; 8],
+    status: [u16; 8],
+    stopwatch: u16,
+    tick_acc: u64,
+    timer_reload: u8,
+    timer_count: u8,
+    mask: u8,
+    pending: u8,
+    /// Progress through the forced reset sequence of fact C5 (0 = not armed).
+    reset_step: u8,
+}
+
+impl Default for GateArray {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GateArray {
+    /// Power-on state (fact C6, C4, C9, C12): sub-CPU in reset, 2M mode, word RAM with the main CPU.
+    pub fn new() -> GateArray {
+        GateArray {
+            run: false,
+            sbrq: false,
+            ifl2: false,
+            wp: 0,
+            bank: 0,
+            mode_1m: false,
+            owner: WordRamOwner::Main,
+            pm: 0,
+            hint_vector: 0xFFFF,
+            flag_main: 0,
+            flag_sub: 0,
+            commands: [0; 8],
+            status: [0; 8],
+            stopwatch: 0,
+            tick_acc: 0,
+            timer_reload: 0,
+            timer_count: 0,
+            mask: 0,
+            pending: 0,
+            reset_step: 0,
+        }
+    }
+
+    /// The forced reset (fact C5): everything but the main side's own registers goes back to its power-on value.
+    fn reset_forced(&mut self) {
+        let (wp, bank, hint, cmds) = (self.wp, self.bank, self.hint_vector, self.commands);
+        *self = GateArray::new();
+        self.wp = wp;
+        self.bank = bank;
+        self.hint_vector = hint;
+        self.commands = cmds;
+    }
+
+    // ------------------------------------------------------------------ state for the buses
+
+    /// The sub-CPU does not run (reset, or its bus given to the main CPU).
+    pub fn sub_halted(&self) -> bool {
+        !self.run || self.sbrq
+    }
+
+    pub fn sub_in_reset(&self) -> bool {
+        !self.run
+    }
+
+    /// The main CPU may use program RAM (fact C1): the sub-CPU is in reset or has granted its bus.
+    pub fn sub_bus_granted(&self) -> bool {
+        !self.run || self.sbrq
+    }
+
+    /// Program RAM bank (0-3) the main CPU sees at `$020000`.
+    pub fn prg_bank(&self) -> u8 {
+        self.bank
+    }
+
+    /// Program RAM `addr` (sub-CPU address) cannot be written by the main CPU (fact C2: the first `WP x $200` bytes).
+    pub fn prg_write_protected(&self, addr: u32) -> bool {
+        addr < u32::from(self.wp) * 0x200
+    }
+
+    pub fn mode_1m(&self) -> bool {
+        self.mode_1m
+    }
+
+    /// Who has word RAM in 2M mode.
+    pub fn word_ram_owner(&self) -> WordRamOwner {
+        self.owner
+    }
+
+    pub fn hint_vector(&self) -> u16 {
+        self.hint_vector
+    }
+
+    // ------------------------------------------------------------------ main side
+
+    fn read_a12000(&self) -> u16 {
+        let ien2 = u16::from(self.mask & 0x04 != 0);
+        let ifl2 = u16::from(self.ifl2);
+        let granted = u16::from(self.sub_bus_granted());
+        (ien2 << 15) | (ifl2 << 8) | (granted << 1) | u16::from(self.run)
+    }
+
+    fn memory_mode_low(&self) -> u8 {
+        let (dmna, ret) = match self.owner {
+            WordRamOwner::Main => (0, 1),
+            WordRamOwner::Sub => (1, 0),
+        };
+        (self.bank << 6) | (u8::from(self.mode_1m) << 2) | (dmna << 1) | ret
+    }
+
+    /// Reads a main-side word; `off` is the address minus `$A12000` (even). `None`: no such register.
+    pub fn main_read_word(&mut self, off: u32) -> Option<u16> {
+        let off = off & !1;
+        Some(match off {
+            0x00 => self.read_a12000(),
+            0x02 => (u16::from(self.wp) << 8) | u16::from(self.memory_mode_low()),
+            0x06 => self.hint_vector,
+            0x0C => self.stopwatch,
+            0x0E => (u16::from(self.flag_main) << 8) | u16::from(self.flag_sub),
+            0x10..=0x1E => self.commands[((off - 0x10) / 2) as usize],
+            0x20..=0x2E => self.status[((off - 0x20) / 2) as usize],
+            _ => return None,
+        })
+    }
+
+    pub fn main_read_byte(&mut self, off: u32) -> Option<u8> {
+        let w = self.main_read_word(off)?;
+        Some(if off & 1 == 0 {
+            (w >> 8) as u8
+        } else {
+            w as u8
+        })
+    }
+
+    /// Writes a main-side byte. Returns `false` for an address with no register.
+    pub fn main_write_byte(&mut self, off: u32, v: u8) -> bool {
+        // the forced reset is three byte writes to $A12001 right after the word $FF00 to $A12002 (fact C5)
+        if self.reset_step != 0 {
+            let expect = [0x03, 0x02, 0x00][usize::from(self.reset_step - 1)];
+            if off == 1 && v == expect {
+                self.reset_step += 1;
+                if self.reset_step == 4 {
+                    self.reset_forced();
+                }
+                return true;
+            }
+            self.reset_step = 0;
+        }
+        match off {
+            0x00 => {
+                // bit 0 of the high byte is IFL2: write 1 raises level 2 on the sub side
+                if v & 1 != 0 {
+                    self.ifl2 = true;
+                    self.pending |= 1 << 2;
+                }
+                true
+            }
+            0x01 => {
+                self.run = v & 1 != 0;
+                self.sbrq = v & 2 != 0;
+                true
+            }
+            0x02 => {
+                self.wp = v;
+                true
+            }
+            0x03 => {
+                self.bank = v >> 6;
+                // DMNA (bit 1): writing 1 gives the 2M RAM to the sub-CPU (fact C7)
+                if v & 2 != 0 && !self.mode_1m {
+                    self.owner = WordRamOwner::Sub;
+                }
+                true
+            }
+            0x06 => {
+                self.hint_vector = (self.hint_vector & 0x00FF) | (u16::from(v) << 8);
+                true
+            }
+            0x07 => {
+                self.hint_vector = (self.hint_vector & 0xFF00) | u16::from(v);
+                true
+            }
+            // the high byte of the flag word is the main CPU's (CFM); the low byte is the sub-CPU's and is ignored here
+            0x0E => {
+                self.flag_main = v;
+                true
+            }
+            0x0F => true,
+            0x10..=0x1F => {
+                let i = ((off - 0x10) / 2) as usize;
+                let w = self.commands[i];
+                self.commands[i] = if off & 1 == 0 {
+                    (w & 0x00FF) | (u16::from(v) << 8)
+                } else {
+                    (w & 0xFF00) | u16::from(v)
+                };
+                true
+            }
+            // read-only here, or not a register: stopwatch, status words are not writable by the main CPU
+            0x0C..=0x0D | 0x20..=0x2F => true,
+            _ => false,
+        }
+    }
+
+    /// Writes a main-side word as the two byte writes it is, except for the reset word `$FF00` to `$A12002`.
+    pub fn main_write_word(&mut self, off: u32, v: u16) -> bool {
+        if off == 0x02 && v == 0xFF00 {
+            // an exact word write arms the forced reset; it is also an ordinary write of the register
+            let ok = self.main_write_byte(0x02, 0xFF) && self.main_write_byte(0x03, 0x00);
+            self.reset_step = 1;
+            return ok;
+        }
+        let ok_hi = self.main_write_byte(off & !1, (v >> 8) as u8);
+        let ok_lo = self.main_write_byte(off | 1, v as u8);
+        ok_hi && ok_lo
+    }
+
+    // ------------------------------------------------------------------ sub side
+
+    /// Reads a sub-side word; `off` is the address minus `$FF8000` (even). `None`: no such register (yet).
+    pub fn sub_read_word(&mut self, off: u32) -> Option<u16> {
+        let off = off & !1;
+        Some(match off {
+            // reset register: peripherals operational at once, version nibble 0, LEDs off (fact C15, simplified)
+            0x00 => 0x0001,
+            0x02 => {
+                (u16::from(self.wp) << 8)
+                    | (u16::from(self.pm) << 3)
+                    | u16::from(self.memory_mode_low() & 0x07)
+            }
+            0x0C => self.stopwatch,
+            0x0E => (u16::from(self.flag_main) << 8) | u16::from(self.flag_sub),
+            0x10..=0x1E => self.commands[((off - 0x10) / 2) as usize],
+            0x20..=0x2E => self.status[((off - 0x20) / 2) as usize],
+            0x30 => u16::from(self.timer_reload),
+            0x32 => u16::from(self.mask),
+            _ => return None,
+        })
+    }
+
+    pub fn sub_read_byte(&mut self, off: u32) -> Option<u8> {
+        let w = self.sub_read_word(off)?;
+        Some(if off & 1 == 0 {
+            (w >> 8) as u8
+        } else {
+            w as u8
+        })
+    }
+
+    /// Writes a sub-side word. Returns `false` for a register that is not there (yet).
+    pub fn sub_write_word(&mut self, off: u32, v: u16) -> bool {
+        let off = off & !1;
+        match off {
+            0x00 => true,
+            0x02 => {
+                self.pm = ((v >> 3) & 3) as u8;
+                self.mode_1m = v & 0x04 != 0;
+                // RET (bit 0): writing 1 gives the 2M RAM back to the main CPU (fact C7)
+                if v & 1 != 0 && !self.mode_1m {
+                    self.owner = WordRamOwner::Main;
+                }
+                true
+            }
+            0x0C => {
+                self.stopwatch = 0;
+                self.tick_acc = 0;
+                true
+            }
+            0x0E => {
+                self.flag_sub = v as u8;
+                true
+            }
+            0x10..=0x1E => true, // commands are read only here
+            0x20..=0x2E => {
+                self.status[((off - 0x20) / 2) as usize] = v;
+                true
+            }
+            0x30 => {
+                self.timer_reload = v as u8;
+                self.timer_count = v as u8;
+                true
+            }
+            0x32 => {
+                self.mask = (v as u8) & 0x7E;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub fn sub_write_byte(&mut self, off: u32, v: u8) -> bool {
+        match self.sub_read_word(off) {
+            None => false,
+            Some(w) => {
+                let w = if off & 1 == 0 {
+                    (w & 0x00FF) | (u16::from(v) << 8)
+                } else {
+                    (w & 0xFF00) | u16::from(v)
+                };
+                // the flag word is split by owner: the sub-CPU can only change its own (low) byte
+                if off & !1 == 0x0E {
+                    if off & 1 == 1 {
+                        self.flag_sub = v;
+                    }
+                    return true;
+                }
+                self.sub_write_word(off, w)
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ time and interrupts
+
+    /// Advances the stopwatch and the timer by `clocks` sub-CPU clocks.
+    pub fn advance_sub_clocks(&mut self, clocks: u64) {
+        self.tick_acc += clocks;
+        let mut ticks = self.tick_acc / CLOCKS_PER_TICK;
+        self.tick_acc %= CLOCKS_PER_TICK;
+        self.stopwatch = ((u64::from(self.stopwatch) + ticks) & 0x0FFF) as u16;
+        if self.timer_reload == 0 {
+            return;
+        }
+        // the count goes reload .. 0 and the tick after 0 raises level 3: a period of reload + 1 ticks (fact C11)
+        while ticks > 0 {
+            let c = u64::from(self.timer_count);
+            if ticks > c {
+                ticks -= c + 1;
+                self.pending |= 1 << 3;
+                self.timer_count = self.timer_reload;
+            } else {
+                self.timer_count -= ticks as u8;
+                ticks = 0;
+            }
+        }
+    }
+
+    /// Raises a sub-CPU interrupt level (1, 4, 5 or 6 from the units that own them; 2 and 3 are raised inside).
+    pub fn raise_level(&mut self, level: u8) {
+        if (1..=6).contains(&level) {
+            self.pending |= 1 << level;
+        }
+    }
+
+    /// The highest pending level the mask enables, if any (fact C3).
+    pub fn sub_irq_level(&self) -> Option<u8> {
+        let live = self.pending & self.mask;
+        (1..=6).rev().find(|l| live & (1 << l) != 0)
+    }
+
+    /// The CPU took `level`: clear it.
+    pub fn ack_sub_irq(&mut self, level: u8) {
+        if (1..=6).contains(&level) {
+            self.pending &= !(1 << level);
+            if level == 2 {
+                self.ifl2 = false;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_sub(g: &mut GateArray) {
+        g.main_write_byte(1, 0x01);
+    }
+
+    #[test]
+    fn power_on_values() {
+        let mut g = GateArray::new();
+        assert_eq!(g.main_read_word(0x00), Some(0x0002)); // in reset, bus granted
+        assert_eq!(g.main_read_word(0x02), Some(0x0001)); // 2M mode, word RAM with main
+        assert_eq!(g.sub_read_word(0x02), Some(0x0001));
+        assert_eq!(g.main_read_word(0x06), Some(0xFFFF));
+        assert_eq!(g.main_read_word(0x0E), Some(0));
+        assert_eq!(g.sub_read_word(0x30), Some(0));
+        assert!(g.sub_halted() && g.sub_bus_granted());
+    }
+
+    #[test]
+    fn main_a12000_bits() {
+        let mut g = GateArray::new();
+        run_sub(&mut g);
+        assert_eq!(g.main_read_word(0x00).unwrap() & 3, 0b01); // running, bus not granted
+        assert!(!g.sub_halted());
+        g.main_write_byte(1, 0x03); // run + request the bus
+        assert_eq!(g.main_read_word(0x00).unwrap() & 3, 0b11);
+        assert!(g.sub_halted() && g.sub_bus_granted());
+        g.main_write_byte(1, 0x00);
+        assert!(g.sub_in_reset());
+    }
+
+    #[test]
+    fn level_2_needs_ifl2_and_the_mask_and_clears_when_taken() {
+        let mut g = GateArray::new();
+        g.main_write_byte(0, 0x01); // IFL2
+        assert_eq!(g.sub_irq_level(), None, "masked");
+        assert_eq!(g.main_read_word(0x00).unwrap() & 0x8100, 0x0100);
+        g.sub_write_word(0x32, 0x0004);
+        assert_eq!(
+            g.main_read_word(0x00).unwrap() & 0x8000,
+            0x8000,
+            "IEN2 shows the mask"
+        );
+        assert_eq!(g.sub_irq_level(), Some(2));
+        g.ack_sub_irq(2);
+        assert_eq!(g.sub_irq_level(), None);
+        assert_eq!(g.main_read_word(0x00).unwrap() & 0x0100, 0);
+    }
+
+    #[test]
+    fn interrupt_mask_and_priority() {
+        let mut g = GateArray::new();
+        g.sub_write_word(0x32, 0x007E);
+        g.raise_level(4);
+        g.raise_level(5);
+        g.raise_level(1);
+        assert_eq!(g.sub_irq_level(), Some(5));
+        g.ack_sub_irq(5);
+        assert_eq!(g.sub_irq_level(), Some(4));
+        g.sub_write_word(0x32, 0x0002); // only level 1 enabled
+        assert_eq!(g.sub_irq_level(), Some(1));
+        assert_eq!(g.sub_read_word(0x32), Some(0x0002));
+        // writing bit 0 or bit 7 does not enable anything
+        g.sub_write_word(0x32, 0x0081);
+        assert_eq!(g.sub_read_word(0x32), Some(0));
+    }
+
+    #[test]
+    fn reset_sequence_must_be_exact() {
+        let mut g = GateArray::new();
+        g.sub_write_word(0x32, 0x007E);
+        g.sub_write_word(0x20, 0x1234);
+        // the right sequence
+        assert!(g.main_write_word(0x02, 0xFF00));
+        g.main_write_byte(1, 0x03);
+        g.main_write_byte(1, 0x02);
+        g.main_write_byte(1, 0x00);
+        assert_eq!(g.sub_read_word(0x32), Some(0), "sub side was reset");
+        assert_eq!(g.sub_read_word(0x20), Some(0));
+        // wrong value, wrong order, and a missing arming word do not reset
+        for seq in [[0x03u8, 0x00, 0x02], [0x02, 0x03, 0x00], [0x03, 0x02, 0x01]] {
+            let mut g = GateArray::new();
+            g.sub_write_word(0x32, 0x007E);
+            g.main_write_word(0x02, 0xFF00);
+            for b in seq {
+                g.main_write_byte(1, b);
+            }
+            assert_eq!(g.sub_read_word(0x32), Some(0x7E), "{seq:?}");
+        }
+        let mut g = GateArray::new();
+        g.sub_write_word(0x32, 0x007E);
+        for b in [0x03, 0x02, 0x00] {
+            g.main_write_byte(1, b);
+        }
+        assert_eq!(g.sub_read_word(0x32), Some(0x7E), "not armed");
+        // a byte write of $FF00 (two bytes) does not arm it
+        let mut g = GateArray::new();
+        g.sub_write_word(0x32, 0x007E);
+        g.main_write_byte(2, 0xFF);
+        g.main_write_byte(3, 0x00);
+        for b in [0x03, 0x02, 0x00] {
+            g.main_write_byte(1, b);
+        }
+        assert_eq!(g.sub_read_word(0x32), Some(0x7E), "bytes do not arm");
+    }
+
+    #[test]
+    fn flag_word_halves() {
+        let mut g = GateArray::new();
+        g.main_write_word(0x0E, 0xAB12); // main owns the high byte only
+        assert_eq!(g.main_read_word(0x0E), Some(0xAB00));
+        g.sub_write_word(0x0E, 0xCD34); // the sub-CPU owns the low byte only
+        assert_eq!(g.sub_read_word(0x0E), Some(0xAB34));
+        g.sub_write_byte(0x0E, 0xFF); // its high byte is not writable
+        assert_eq!(g.main_read_word(0x0E), Some(0xAB34));
+        g.sub_write_byte(0x0F, 0x01);
+        assert_eq!(g.main_read_byte(0x0F), Some(0x01));
+    }
+
+    #[test]
+    fn command_and_status_words_go_one_way_each() {
+        let mut g = GateArray::new();
+        g.main_write_word(0x10, 0x1111);
+        g.main_write_word(0x1E, 0x7777);
+        g.main_write_word(0x20, 0x9999); // not writable by main
+        g.sub_write_word(0x10, 0x5555); // not writable by sub
+        g.sub_write_word(0x2E, 0x3333);
+        assert_eq!(g.sub_read_word(0x10), Some(0x1111));
+        assert_eq!(g.sub_read_word(0x1E), Some(0x7777));
+        assert_eq!(g.main_read_word(0x20), Some(0));
+        assert_eq!(g.main_read_word(0x2E), Some(0x3333));
+        g.main_write_byte(0x11, 0x22);
+        assert_eq!(g.main_read_word(0x10), Some(0x1122));
+    }
+
+    #[test]
+    fn stopwatch_counts_and_wraps() {
+        let mut g = GateArray::new();
+        g.advance_sub_clocks(383);
+        assert_eq!(g.main_read_word(0x0C), Some(0));
+        g.advance_sub_clocks(1);
+        assert_eq!(g.main_read_word(0x0C), Some(1));
+        g.advance_sub_clocks(384 * 4094);
+        assert_eq!(g.sub_read_word(0x0C), Some(4095));
+        g.advance_sub_clocks(384);
+        assert_eq!(g.sub_read_word(0x0C), Some(0), "wraps");
+        g.advance_sub_clocks(384 * 5);
+        g.sub_write_word(0x0C, 0);
+        assert_eq!(g.main_read_word(0x0C), Some(0));
+    }
+
+    #[test]
+    fn timer_counts_down_and_interrupts_level_3() {
+        let mut g = GateArray::new();
+        g.sub_write_word(0x32, 0x0008);
+        g.advance_sub_clocks(384 * 100);
+        assert_eq!(g.sub_irq_level(), None, "n = 0: no interrupt");
+        g.sub_write_word(0x30, 3); // period 4 ticks
+        g.advance_sub_clocks(384 * 3);
+        assert_eq!(g.sub_irq_level(), None);
+        g.advance_sub_clocks(384);
+        assert_eq!(g.sub_irq_level(), Some(3));
+        g.ack_sub_irq(3);
+        g.advance_sub_clocks(384 * 4);
+        assert_eq!(
+            g.sub_irq_level(),
+            Some(3),
+            "periodic (to be confirmed by a probe)"
+        );
+        g.ack_sub_irq(3);
+        g.sub_write_word(0x30, 255);
+        g.advance_sub_clocks(384 * 255);
+        assert_eq!(g.sub_irq_level(), None);
+        g.advance_sub_clocks(384);
+        assert_eq!(g.sub_irq_level(), Some(3));
+        assert_eq!(
+            g.sub_read_word(0x30),
+            Some(255),
+            "a read gives the value written"
+        );
+    }
+
+    #[test]
+    fn word_ram_2m_handover() {
+        let mut g = GateArray::new();
+        assert_eq!(g.word_ram_owner(), WordRamOwner::Main);
+        g.main_write_byte(3, 0x02); // DMNA
+        assert_eq!(g.word_ram_owner(), WordRamOwner::Sub);
+        assert_eq!(g.main_read_byte(3).unwrap() & 3, 0b10);
+        assert_eq!(g.sub_read_word(0x02).unwrap() & 3, 0b10);
+        g.sub_write_word(0x02, 0x0001); // RET
+        assert_eq!(g.word_ram_owner(), WordRamOwner::Main);
+        assert_eq!(g.main_read_byte(3).unwrap() & 3, 0b01);
+        // the main CPU cannot take it back by itself, nor the sub give it by writing DMNA
+        g.main_write_byte(3, 0x02);
+        g.main_write_byte(3, 0x00);
+        assert_eq!(g.word_ram_owner(), WordRamOwner::Sub);
+        g.sub_write_word(0x02, 0x0002);
+        assert_eq!(g.word_ram_owner(), WordRamOwner::Sub);
+    }
+
+    #[test]
+    fn mode_bit_is_set_by_the_sub_cpu_and_read_by_both() {
+        let mut g = GateArray::new();
+        assert!(!g.mode_1m());
+        g.sub_write_word(0x02, 0x0004);
+        assert!(g.mode_1m());
+        assert_eq!(g.main_read_byte(3).unwrap() & 4, 4);
+    }
+
+    #[test]
+    fn prg_bank_and_write_protect() {
+        let mut g = GateArray::new();
+        g.main_write_word(0x02, 0x00C0); // bank bits are bits 7-6 of the low byte
+        assert_eq!(g.prg_bank(), 3);
+        assert_eq!(g.main_read_byte(3).unwrap() >> 6, 3);
+        g.main_write_byte(2, 4); // 4 x $200 = $800 protected
+        assert!(g.prg_write_protected(0x7FF));
+        assert!(!g.prg_write_protected(0x800));
+        g.main_write_byte(2, 0xFF);
+        assert!(g.prg_write_protected(0x1FDFF));
+        assert!(!g.prg_write_protected(0x1FE00));
+        assert_eq!(g.sub_read_word(0x02).unwrap() >> 8, 0xFF);
+    }
+
+    #[test]
+    fn unknown_registers_are_not_invented() {
+        let mut g = GateArray::new();
+        for off in [0x04, 0x08, 0x34, 0x36, 0x58, 0x100, 0x1FE] {
+            assert_eq!(g.sub_read_word(off), None, "{off:#x}");
+            assert!(!g.sub_write_word(off, 0), "{off:#x}");
+        }
+        assert_eq!(g.main_read_word(0x40), None);
+        assert!(!g.main_write_byte(0x40, 0));
+    }
+
+    #[test]
+    fn h_int_vector_bytes() {
+        let mut g = GateArray::new();
+        g.main_write_word(0x06, 0x1234);
+        assert_eq!(g.hint_vector(), 0x1234);
+        g.main_write_byte(0x07, 0xFF);
+        assert_eq!(g.main_read_word(0x06), Some(0x12FF));
+    }
+}
