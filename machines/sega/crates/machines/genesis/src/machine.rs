@@ -22,6 +22,14 @@ pub struct Genesis {
 
 impl Genesis {
     pub fn new(config: Config) -> Result<Self, String> {
+        Self::with_expansion(config, None)
+    }
+
+    /// A machine with hardware on the cartridge port (the Mega-CD), attached before the first reset.
+    pub fn with_expansion(
+        config: Config,
+        expansion: Option<Box<dyn crate::Expansion>>,
+    ) -> Result<Self, String> {
         if config.rom.is_empty() {
             return Err("the cartridge ROM is empty".to_string());
         }
@@ -47,6 +55,9 @@ impl Genesis {
             for (reg, value) in [(0, 0x04), (1, 0x04), (12, 0x81), (15, 0x02)] {
                 machine.bus.vdp.set_register(reg, value);
             }
+        }
+        if let Some(e) = expansion {
+            machine.bus.attach_expansion(e);
         }
         machine.bus.vdp.set_weave(config.interlace_weave);
         machine.bus.vdp.set_fifo_stalls(config.exact_timing);
@@ -126,7 +137,10 @@ impl Genesis {
         if self.stop_reported {
             return None;
         }
-        let report = self.bus.stop()?.report();
+        let report = match self.bus.stop() {
+            Some(stop) => stop.report(),
+            None => self.bus.expansion_stop()?,
+        };
         self.stop_reported = true;
         Some(report)
     }
@@ -168,7 +182,7 @@ impl Machine for Genesis {
 
     fn step(&mut self) -> u32 {
         let start = self.bus.now;
-        if self.bus.stop().is_some() {
+        if self.bus.any_stop() {
             self.bus.now += 4 * M68K_DIVIDER;
             return (4 * M68K_DIVIDER) as u32;
         }
@@ -186,7 +200,7 @@ impl Machine for Genesis {
     }
 
     fn halted(&self) -> bool {
-        self.bus.stop().is_some() || self.cpu.run_state() == RunState::Halted
+        self.bus.any_stop() || self.cpu.run_state() == RunState::Halted
     }
 
     fn pc(&self) -> Addr {

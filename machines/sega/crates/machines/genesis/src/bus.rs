@@ -3,6 +3,7 @@
 
 use crate::cart::Cart;
 use crate::config::{Config, M68K_DIVIDER, Region};
+use crate::expansion::Expansion;
 use crate::io::Io;
 use crate::sound::Sound;
 use crate::tmss::Tmss;
@@ -76,18 +77,32 @@ pub struct Bus {
     pub(crate) z80_delay: u64,
     /// The 68000's bus is held by a VDP DMA until this master clock (the Z80 cannot use it before).
     pub(crate) dma_hold_until: u64,
+    /// Hardware on the cartridge port that owns part of the address space (the Mega-CD).
+    expansion: Option<Box<dyn Expansion>>,
 }
 
 /// What a VDP DMA transfer can read: the cartridge and work RAM (fact V14). Anything else stops the machine.
 struct DmaMemory<'a> {
     cart: &'a Cart,
     ram: &'a [u8; RAM_SIZE],
+    expansion: Option<&'a mut dyn Expansion>,
     unmapped: Option<u32>,
 }
 
 impl DmaBus for DmaMemory<'_> {
     fn read_word(&mut self, addr: u32) -> u16 {
         let addr = addr & 0x00FF_FFFE;
+        if let Some(e) = self.expansion.as_deref_mut()
+            && e.claims(addr)
+        {
+            return match e.dma_read_word(addr) {
+                Some(w) => w,
+                None => {
+                    self.unmapped.get_or_insert(addr);
+                    0
+                }
+            };
+        }
         let byte = |this: &Self, a: u32| -> u8 {
             match a {
                 0..=0x3F_FFFF => this.cart.read(a),
@@ -140,6 +155,7 @@ impl Bus {
             refresh_at: REFRESH_INTERVAL,
             z80_delay: 0,
             dma_hold_until: 0,
+            expansion: None,
             exact: config.exact_timing,
             pokes: config
                 .cheats
@@ -181,6 +197,31 @@ impl Bus {
         self.stop.as_ref()
     }
 
+    /// Attaches hardware on the cartridge port. Call before the first reset.
+    pub fn attach_expansion(&mut self, expansion: Box<dyn Expansion>) {
+        self.expansion = Some(expansion);
+    }
+
+    pub fn expansion(&self) -> Option<&dyn Expansion> {
+        self.expansion.as_deref()
+    }
+
+    pub fn expansion_mut(&mut self) -> Option<&mut dyn Expansion> {
+        self.expansion
+            .as_mut()
+            .map(|e| &mut **e as &mut dyn Expansion)
+    }
+
+    /// The report of a stop inside the expansion's own processors.
+    pub fn expansion_stop(&self) -> Option<String> {
+        self.expansion.as_ref().and_then(|e| e.stop_report())
+    }
+
+    /// Whether the machine stopped, on the 68000's bus or inside the expansion.
+    pub fn any_stop(&self) -> bool {
+        self.stop.is_some() || self.expansion_stop().is_some()
+    }
+
     pub fn take_stop(&mut self) -> Option<Stop> {
         self.stop.take()
     }
@@ -188,6 +229,11 @@ impl Bus {
     /// A byte as the debugger sees it: no side effects, `$FF` where nothing is mapped.
     pub fn peek(&self, addr: u32) -> u8 {
         let addr = addr & 0x00FF_FFFF;
+        if let Some(e) = self.expansion.as_ref()
+            && e.claims(addr)
+        {
+            return e.peek(addr);
+        }
         match addr {
             0..=0x3F_FFFF => self.rom_byte(addr),
             0xE0_0000..=0xFF_FFFF => self.ram[(addr & 0xFFFF) as usize],
@@ -258,6 +304,10 @@ impl Bus {
         let mut src = DmaMemory {
             cart: &self.cart,
             ram: &self.ram,
+            expansion: self
+                .expansion
+                .as_mut()
+                .map(|e| &mut **e as &mut dyn Expansion),
             unmapped: None,
         };
         let until = self.vdp.write_control(value, self.now, &mut src);
@@ -306,6 +356,10 @@ impl Bus {
                 let mut src = DmaMemory {
                     cart: &self.cart,
                     ram: &self.ram,
+                    expansion: self
+                        .expansion
+                        .as_mut()
+                        .map(|e| &mut **e as &mut dyn Expansion),
                     unmapped: None,
                 };
                 // A DMA the Z80 starts holds the 68000, not the Z80 (the time it takes is not modelled yet).
@@ -323,6 +377,9 @@ impl Bus {
         }
         self.now += std::mem::take(&mut self.z80_delay);
         self.vdp.advance(self.now);
+        if let Some(e) = self.expansion.as_mut() {
+            e.advance(self.now);
+        }
     }
 
     pub(crate) fn rom_byte_for_z80(&self, addr: u32) -> u8 {
@@ -453,6 +510,18 @@ impl Bus {
 impl M68kBus for Bus {
     fn read(&mut self, addr: u32, size: Size, _fc: FunctionCode) -> Result<u32, BusFault> {
         self.bus_cycle();
+        if let Some(e) = self.expansion.as_mut()
+            && e.claims(addr)
+        {
+            let value = e.read(addr, size, self.now);
+            return match value {
+                Some(v) => Ok(v),
+                None => {
+                    self.fail(false, addr, size, 0);
+                    Ok(0)
+                }
+            };
+        }
         let value = match size {
             // A byte read from a VDP port reads the whole word and returns the half the address names ([O] P03).
             Size::Byte | Size::Word
@@ -508,6 +577,14 @@ impl M68kBus for Bus {
         _fc: FunctionCode,
     ) -> Result<(), BusFault> {
         self.bus_cycle();
+        if let Some(e) = self.expansion.as_mut()
+            && e.claims(addr)
+        {
+            if !e.write(addr, size, value, self.now) {
+                self.fail(true, addr, size, value);
+            }
+            return Ok(());
+        }
         let ok = match size {
             Size::Byte | Size::Word
                 if self.cart.has_jcart() && (0x38_0000..0x40_0000).contains(&addr) =>
@@ -745,5 +822,113 @@ mod tests {
         assert_eq!(b.now, 28);
         b.sync(3);
         assert_eq!(b.now, 28 + 21);
+    }
+}
+
+#[cfg(test)]
+mod expansion_tests {
+    use super::*;
+    use std::any::Any;
+
+    /// Answers `$000000-$00FFFF` with the low byte of the address and `$A12000` with `$5A`; everything else it claims is unknown.
+    struct Fixed {
+        advanced_to: u64,
+        writes: Vec<(u32, u32)>,
+    }
+
+    impl Expansion for Fixed {
+        fn read(&mut self, addr: u32, size: Size, _now: u64) -> Option<u32> {
+            match addr {
+                0..=0xFFFF => Some(match size {
+                    Size::Byte => addr & 0xFF,
+                    Size::Word => (addr & 0xFF) << 8 | ((addr + 1) & 0xFF),
+                }),
+                0xA1_2000 => Some(0x5A),
+                _ => None,
+            }
+        }
+        fn write(&mut self, addr: u32, _size: Size, value: u32, _now: u64) -> bool {
+            self.writes.push((addr, value));
+            addr == 0xA1_2000
+        }
+        fn dma_read_word(&mut self, addr: u32) -> Option<u16> {
+            (addr < 0x1_0000).then_some(0xCAFE)
+        }
+        fn peek(&self, addr: u32) -> u8 {
+            addr as u8
+        }
+        fn advance(&mut self, now: u64) {
+            self.advanced_to = now;
+        }
+        fn stop_report(&self) -> Option<String> {
+            None
+        }
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    fn with_expansion() -> Bus {
+        let mut b = Bus::new(&Config::new(vec![0xEE; 0x400], Region::Usa));
+        b.attach_expansion(Box::new(Fixed {
+            advanced_to: 0,
+            writes: Vec::new(),
+        }));
+        b
+    }
+
+    fn rd(b: &mut Bus, addr: u32, size: Size) -> u32 {
+        b.read(addr, size, FunctionCode::SUPERVISOR_DATA).unwrap()
+    }
+
+    #[test]
+    fn an_expansion_sees_the_cartridge_area_and_the_gate_array_addresses() {
+        let mut b = with_expansion();
+        assert_eq!(rd(&mut b, 0x1234, Size::Byte), 0x34);
+        assert_eq!(rd(&mut b, 0x1234, Size::Word), 0x3435);
+        assert_eq!(rd(&mut b, 0xA1_2000, Size::Byte), 0x5A);
+        assert_eq!(b.peek(0x77), 0x77, "the debugger asks it too");
+        b.write(0xA1_2000, Size::Byte, 1, FunctionCode::SUPERVISOR_DATA)
+            .unwrap();
+        assert!(b.stop().is_none());
+        // what it does not answer stops the machine with the usual report
+        rd(&mut b, 0x30_0000, Size::Byte);
+        assert!(b.stop().unwrap().report().contains("$300000"));
+    }
+
+    #[test]
+    fn a_write_the_expansion_refuses_stops_the_machine() {
+        let mut b = with_expansion();
+        b.write(0x20_0000, Size::Word, 5, FunctionCode::SUPERVISOR_DATA)
+            .unwrap();
+        assert!(b.stop().is_some());
+        assert!(b.any_stop());
+    }
+
+    #[test]
+    fn the_expansion_is_run_to_the_bus_clock_and_ram_is_not_claimed() {
+        let mut b = with_expansion();
+        b.write(0xFF_0000, Size::Word, 0xBEEF, FunctionCode::SUPERVISOR_DATA)
+            .unwrap();
+        assert_eq!(rd(&mut b, 0xFF_0000, Size::Word), 0xBEEF);
+        b.catch_up();
+        let e = b
+            .expansion()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<Fixed>()
+            .unwrap();
+        assert_eq!(e.advanced_to, b.now);
+        assert!(e.writes.is_empty(), "work RAM never reaches it");
+    }
+
+    #[test]
+    fn without_an_expansion_the_cartridge_answers_as_before() {
+        let mut b = Bus::new(&Config::new(vec![0xEE; 0x400], Region::Usa));
+        assert_eq!(rd(&mut b, 0x10, Size::Byte), 0xEE);
+        assert!(b.expansion().is_none());
     }
 }
