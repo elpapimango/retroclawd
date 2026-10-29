@@ -4,7 +4,11 @@
 //! can only name files inside its own folder.
 #![forbid(unsafe_code)]
 
+pub mod builder;
 pub mod cue;
+mod disc;
+
+pub use disc::{Disc, RAW_SECTOR, SECTORS_PER_SECOND, Track, USER_SECTOR};
 
 use std::fmt;
 
