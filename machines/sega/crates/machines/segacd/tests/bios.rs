@@ -183,6 +183,17 @@ fn where_are_both_cpus() {
             .collect();
         std::fs::write(path, bytes).unwrap();
     }
+    if std::env::var("RC_VDP").is_ok() {
+        let v = &m.bus().vdp;
+        let regs: Vec<u8> = (0..24).map(|n| v.reg(n)).collect();
+        println!("vdp regs {regs:02X?}");
+        println!(
+            "vdp cram nonzero {} vram nonzero {} of {}",
+            v.cram().iter().filter(|&&c| c != 0).count(),
+            v.vram().iter().filter(|&&b| b != 0).count(),
+            v.vram().len()
+        );
+    }
     println!("stop: {:?}", m.take_stop_report());
     {
         let regs = m.registers();
@@ -686,7 +697,12 @@ fn sub_status_writes() {
     let mut config = SegaCdConfig::new(std::fs::read(path).unwrap(), Region::Usa);
     config.disc = std::env::var("RC_DISC").ok().map(Into::into);
     let mut m = new_machine(config).unwrap();
-    {
+    let log_from: u64 = std::env::var("RC_LOGFROM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let mut armed = false;
+    let arm = |m: &mut genesis::Genesis| {
         let e = m
             .bus_mut()
             .expansion_mut()
@@ -695,6 +711,9 @@ fn sub_status_writes() {
             .downcast_mut::<SegaCdExp>()
             .unwrap();
         e.log_sub_io();
+        if std::env::var("RC_SUBREADS").is_ok() {
+            e.log_sub_reads();
+        }
         let (lo, hi) = std::env::var("RC_SUBRANGE")
             .ok()
             .and_then(|v| {
@@ -706,10 +725,15 @@ fn sub_status_writes() {
             })
             .unwrap_or((0xFF_8020, 0xFF_802F));
         e.filter_sub_io(lo, hi);
-    }
+        e.watch_sub_writes(lo, hi);
+    };
     let budget = frames * m.clock_hz() / m.frame_hz();
     let mut spent = 0u64;
     while spent < budget {
+        if !armed && spent >= log_from * (m.clock_hz() / m.frame_hz()) {
+            arm(&mut m);
+            armed = true;
+        }
         spent += u64::from(m.step());
     }
     let e = m
@@ -720,6 +744,89 @@ fn sub_status_writes() {
         .downcast_ref::<SegaCdExp>()
         .unwrap();
     for (pc, addr, size, value) in e.sub_io_log() {
-        println!("S {pc:06X} {addr:06X} {size:?} {value:04X}");
+        let (kind, addr) = if addr & 0x8000_0000 != 0 {
+            ("r", addr & 0xFF_FFFF)
+        } else {
+            ("S", *addr)
+        };
+        println!("{kind} {pc:06X} {addr:06X} {size:?} {value:04X}");
     }
+}
+
+/// Runs to frame `RC_LOGFROM`, then freezes the sub-CPU the first time it reaches `RC_STOP` and prints the way in as runs of consecutive
+/// addresses (the last `RC_TAIL` instructions, default 400), with the sub-CPU's registers.
+#[test]
+#[ignore]
+fn sub_path_to() {
+    let (Ok(bios), Ok(disc)) = (std::env::var("RC_BIOS"), std::env::var("RC_DISC")) else {
+        return;
+    };
+    let stop = u32::from_str_radix(&std::env::var("RC_STOP").unwrap(), 16).unwrap();
+    let from: u64 = std::env::var("RC_LOGFROM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let tail_len: usize = std::env::var("RC_TAIL")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(400);
+    let mut config = SegaCdConfig::new(std::fs::read(bios).unwrap(), Region::Usa);
+    config.disc = Some(disc.into());
+    let mut m = new_machine(config).unwrap();
+    let per = m.clock_hz() / m.frame_hz();
+    let mut spent = 0u64;
+    while spent < from * per {
+        spent += u64::from(m.step());
+    }
+    m.bus_mut()
+        .expansion_mut()
+        .unwrap()
+        .as_any_mut()
+        .downcast_mut::<SegaCdExp>()
+        .unwrap()
+        .trace_sub(vec![stop]);
+    let mut steps = 0u64;
+    while spent < (from + 120) * per {
+        spent += u64::from(m.step());
+        steps += 1;
+        if !steps.is_multiple_of(50) {
+            continue;
+        }
+        let e = m
+            .bus()
+            .expansion()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<SegaCdExp>()
+            .unwrap();
+        if let Some((true, ring)) = e.sub_trace() {
+            let (pc, d, a, sr) = ring.last().unwrap();
+            println!(
+                "frozen at {pc:06X} sr {sr:04X} frame {}\n d {d:08X?}\n a {a:08X?}",
+                spent / per
+            );
+            let tail: Vec<u32> = ring
+                .iter()
+                .rev()
+                .take(tail_len)
+                .map(|e| e.0)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            let mut path = String::new();
+            let mut i = 0;
+            while i < tail.len() {
+                let mut j = i;
+                while j + 1 < tail.len() && tail[j + 1] > tail[j] && tail[j + 1] - tail[j] <= 8 {
+                    j += 1;
+                }
+                path.push_str(&format!("{:X}-{:X} ", tail[i], tail[j]));
+                i = j + 1;
+            }
+            println!("path: {path}");
+            return;
+        }
+    }
+    println!("not reached within 120 frames");
 }

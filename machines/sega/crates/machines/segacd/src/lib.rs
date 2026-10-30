@@ -76,6 +76,8 @@ struct SubSide {
     pc: u32,
     /// Debugging aid: the sub-CPU's writes to the gate array registers, `(pc, address, size, value)`.
     io_log: Option<Vec<(u32, u32, Size, u32)>>,
+    /// Debugging aid: every read in the filtered range goes into `io_log`, not only those of the CD controller's ports.
+    log_reads: bool,
     /// Debugging aid: the addresses `io_log` records (reads and writes), `(first, last)`.
     io_filter: (u32, u32),
     /// Debugging aid: an address range besides the registers whose writes are logged.
@@ -341,7 +343,7 @@ impl M68kBus for SubSide {
         match self.sub_read(addr, size) {
             Some(v) => {
                 if (self.io_filter.0..=self.io_filter.1).contains(&addr)
-                    && (0xFF_8004..=0xFF_800B).contains(&addr)
+                    && (self.log_reads || (0xFF_8004..=0xFF_800B).contains(&addr))
                     && let Some(log) = self.io_log.as_mut()
                     && log.len() < 200_000
                 {
@@ -473,6 +475,7 @@ impl SegaCdExp {
                 stop: None,
                 pc: 0,
                 io_log: None,
+                log_reads: false,
                 io_filter: (0, 0xFF_FFFF),
                 watch: (1, 0),
             },
@@ -540,6 +543,10 @@ impl SegaCdExp {
     /// Also logs the sub-CPU's writes to this address range (a debugging aid).
     pub fn watch_sub_writes(&mut self, from: u32, to: u32) {
         self.side.watch = (from, to);
+    }
+
+    pub fn log_sub_reads(&mut self) {
+        self.side.log_reads = true;
     }
 
     pub fn log_sub_io(&mut self) {
