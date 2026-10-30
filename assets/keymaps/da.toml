@@ -1,0 +1,12 @@
+# Denmark (ISO, QWERTY) keyboard -> any machine.
+#
+# The symbolic layout: what a key types decides which machine key it presses, so the letters, digits and punctuation
+# of this keyboard come out as their keycaps say on every machine whose plugin declares that character (the ZX
+# Spectrum and the C64 cover the whole punctuation row, the CPC `, . /`, the ZX81 letters, digits and space). A
+# character a machine has no key for falls back to the physical key. Here: ae, o-slash and a-ring type their plain letters; < > sits on the extra ISO key.
+#
+# Use it by name: `retroclawd <machine> --keymap da` or `[input] keymap = "da"` (a file of that name next to
+# retroclawd.toml wins over this shipped one). Add your own `[keys]` / `[machines.<id>.keys]` underneath in
+# retroclawd.toml.
+
+layout = "symbolic"

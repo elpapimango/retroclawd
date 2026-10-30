@@ -449,8 +449,13 @@ keymap = "keymaps/spectrum.toml"
   layout while the emulator runs just works.
 - `retroclawd <machine> --list-keys` shows the layout and keymap files in effect.
 
-**US keyboard on the C64:** `keyboard/us_c64.toml` (loaded by `retroclawd.toml`'s
-`[machines.c64.input] keymap`) makes a US keyboard type what its keycaps say: `+`
+**Shipped keymaps:** `uk`, `us`, `es`, `de`, `fr`, `sv`, `no`, `da` (sources in `assets/keymaps/`, built into
+the program) are used by name: `retroclawd c64 --keymap de` or `[input] keymap = "de"`. Each selects the symbolic
+layout for that keyboard; a file of the same name next to the config wins. `retroclawd` lists the names when a
+keymap is not found.
+
+**US keyboard on the C64:** the shipped `us-c64` keymap (`--keymap us-c64`, or
+`[machines.c64.input] keymap = "us-c64"`) makes a US keyboard type what its keycaps say: `+`
 (Shift and `=`), `:`, `@`, `*`, `^`, `_`, quotes, brackets and the shifted number
 row. Without it the positional default sends Shift+`=` as the C64's Shift and `=`,
 which types nothing useful, because the C64 has its own `+`, `:`, `@`, `*` keys and

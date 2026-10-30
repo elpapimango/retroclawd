@@ -1,3 +1,4 @@
+mod builtin_keymaps;
 mod debug_symbols;
 #[cfg_attr(
     not(any(feature = "debug-ui", feature = "debug-zrcp")),
@@ -1645,8 +1646,24 @@ fn load_keymaps(
     let given = args.keymap.iter().map(|path| (path.clone(), true));
     let mut loaded = Vec::new();
     for (path, upper) in listed.chain(given) {
-        let text = fs::read_to_string(&path)
-            .map_err(|e| format!("failed to read keymap file {}: {e}", path.display()))?;
+        let text = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            // a bare name that is no file is a keymap that ships with the program
+            Err(e) => path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .filter(|_| e.kind() == std::io::ErrorKind::NotFound)
+                .and_then(builtin_keymaps::find)
+                .map(str::to_string)
+                .ok_or_else(|| {
+                    let known: Vec<_> = builtin_keymaps::names().collect();
+                    format!(
+                        "failed to read keymap file {}: {e} (shipped keymaps: {})",
+                        path.display(),
+                        known.join(", ")
+                    )
+                })?,
+        };
         let file = app_config::parse_keymap(&text)
             .map_err(|e| format!("failed to parse keymap file {}: {e}", path.display()))?;
         loaded.push(gui::keys::LoadedKeymap {
@@ -3471,7 +3488,15 @@ mod tests {
         assert!(err.contains("bad.toml") && err.contains("hotkeys"), "{err}");
         args.keymap = vec![dir.join("missing.toml")];
         let err = load_keymaps(&args, &app_config::parse("").unwrap(), "c64").unwrap_err();
-        assert!(err.contains("missing.toml"), "{err}");
+        assert!(err.contains("missing.toml") && err.contains("shipped keymaps"), "{err}");
+        // a name that is no file is a keymap shipped with the program; a file of that name wins
+        args.keymap = vec![PathBuf::from("de")];
+        let files = load_keymaps(&args, &app_config::parse("").unwrap(), "c64").unwrap();
+        assert_eq!(files[0].file.layout.as_deref(), Some("symbolic"));
+        std::fs::write(dir.join("sv"), "layout = \"positional\"").unwrap();
+        args.keymap = vec![dir.join("sv")];
+        let files = load_keymaps(&args, &app_config::parse("").unwrap(), "c64").unwrap();
+        assert_eq!(files[0].file.layout.as_deref(), Some("positional"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
