@@ -64,3 +64,18 @@ versions below 5; each says so. Proof: 14 unit tests (a built two-track file, da
 `crates/formats/chd/tests/real.rs` (ignored, `RC_CHD`): all 33 000 hunks of Mad Dog McCree (cdlz data, audio, subcode, regenerated ECC) hash to
 the SHA-1 stored in the file's header, and the game boots from `--disc romm:6986` through the BIOS to its FMV. A `.chd` track with a virtual
 (`V...`) pregap becomes silence in the disc, one with a stored pregap keeps it as the start of the track's data.
+
+## Final Fight CD, what is known (2026-10-30)
+
+Black screen, not solved. Established with `crates/machines/segacd/tests/bios.rs` (ignored probes: `where_are_both_cpus`, `registers_where_the_sub_cpu_reaches_an_address`
+with `RC_STOP`, `which_routines_are_alive`, `main_side_at_the_stall`, `grep_the_bios_listing` with `RC_LIVE_DISC` to disassemble the live program RAM; the
+sub-CPU I/O log takes `RC_IOFILTER`, `RC_IOSKIP`, `RC_IOMAX`):
+- **Not the disc image:** the full 448 MB disc from RomM behaves like the truncated copy. **Not the CHD/PCM path:** the BIOS DMAs to program RAM (destination 5, 265 times) and word RAM (7), never PCM.
+- **The reads work:** the BIOS reads 152 consecutive sectors in one burst (00:51:36 to 00:53:37, headers and modes right, 409 sectors of CDC interrupts in all), identical register traffic to the discs that boot, then stops by itself.
+- **The wait:** both CPUs are alive. The sub-CPU runs the game's own program (not the BIOS) from `$6000`: a dispatcher at `$61C8` jumps through a table on the mode word at `$9B52`; mode 4 is the loop at `$8578` that ends when `$9B54` becomes non-zero, which only
+  the mode-setting routine at `$6202` does (`st 2(a6)`). The mode changes when the sub's level-2 handler (`$88(a6)`, command from the main CPU) runs. The main CPU, in the game's IP in work RAM, has just called the BIOS user call 3
+  (`moveq #8,d0 / jmp $35C`) and waits at `$FFFF103C` for `$8E65`, which its own level-2 handler sets when the sub raises IRQ2. The main side keeps sending (every 4 frames) command words that are all zero with IFL2 and flag toggles;
+  the sub keeps answering with status `0101 0052 0050 0100`. So each side waits for the other's first real message.
+- The BIOS's software error-check routine (`$4E74`/`$4FE2`, bits 5 and 6 of `$5BC2(a5)`, `addq.w #1,2(a6)`) is never reached and is not the setter of that flag (an earlier note said it was).
+- Open question: what the main CPU is supposed to send after USERCALL3 (the main BIOS code at `$1800` stores `d0/d1` in `$FDE4/$FDE6` and sets main flag bit 2 only when `d0 = 1`), and whether the user-call data reaches the comm registers
+  (they stay zero). Compare with Genesis Plus GX at the gate-array register level (it cannot be traced from outside; a patched build or its source is the way).

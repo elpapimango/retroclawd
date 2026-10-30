@@ -76,6 +76,8 @@ struct SubSide {
     pc: u32,
     /// Debugging aid: the sub-CPU's writes to the gate array registers, `(pc, address, size, value)`.
     io_log: Option<Vec<(u32, u32, Size, u32)>>,
+    /// Debugging aid: the addresses `io_log` records (reads and writes), `(first, last)`.
+    io_filter: (u32, u32),
     /// Debugging aid: an address range besides the registers whose writes are logged.
     watch: (u32, u32),
 }
@@ -323,9 +325,10 @@ impl M68kBus for SubSide {
         let addr = sub_address(addr);
         match self.sub_read(addr, size) {
             Some(v) => {
-                if (0xFF_8004..=0xFF_800B).contains(&addr)
+                if (self.io_filter.0..=self.io_filter.1).contains(&addr)
+                    && (0xFF_8004..=0xFF_800B).contains(&addr)
                     && let Some(log) = self.io_log.as_mut()
-                    && log.len() < 4000
+                    && log.len() < 200_000
                 {
                     log.push((self.pc, addr | 0x8000_0000, size, v));
                 }
@@ -349,8 +352,9 @@ impl M68kBus for SubSide {
         let watched = (0xFF_8000..=0xFF_81FF).contains(&addr)
             || (self.watch.0..=self.watch.1).contains(&addr);
         if watched
+            && (self.io_filter.0..=self.io_filter.1).contains(&addr)
             && let Some(log) = self.io_log.as_mut()
-            && log.len() < 4000
+            && log.len() < 200_000
         {
             log.push((self.pc, addr, size, value));
         }
@@ -454,6 +458,7 @@ impl SegaCdExp {
                 stop: None,
                 pc: 0,
                 io_log: None,
+                io_filter: (0, 0xFF_FFFF),
                 watch: (1, 0),
             },
             sub: Cpu::new(),
@@ -524,6 +529,11 @@ impl SegaCdExp {
 
     pub fn log_sub_io(&mut self) {
         self.side.io_log = Some(Vec::new());
+    }
+
+    /// Debugging aid: only the sub-CPU accesses to `from..=to` go into the log.
+    pub fn filter_sub_io(&mut self, from: u32, to: u32) {
+        self.side.io_filter = (from, to);
     }
 
     pub fn sub_io_log(&self) -> &[(u32, u32, Size, u32)] {
@@ -710,7 +720,7 @@ impl SegaCdExp {
                 if t.stop_at.contains(&self.sub.pc) {
                     t.frozen = true;
                 } else {
-                    if t.ring.len() >= 200 {
+                    if t.ring.len() >= 20_000 {
                         t.ring.pop_front();
                     }
                     t.ring

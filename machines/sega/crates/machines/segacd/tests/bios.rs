@@ -87,6 +87,14 @@ fn where_are_both_cpus() {
             .downcast_mut::<SegaCdExp>()
             .unwrap()
             .log_sub_io();
+        let (lo, hi) = io_filter();
+        m.bus_mut()
+            .expansion_mut()
+            .unwrap()
+            .as_any_mut()
+            .downcast_mut::<SegaCdExp>()
+            .unwrap()
+            .filter_sub_io(lo, hi);
         if let Ok(w) = std::env::var("RC_SUBWATCH") {
             let (a, b) = w.split_once('-').unwrap();
             m.bus_mut()
@@ -229,7 +237,18 @@ fn where_are_both_cpus() {
             let (lo, hi) = io_filter();
             (lo..=hi).contains(&(a & 0xFF_FFFF))
         })
-        .take(400)
+        .skip(
+            std::env::var("RC_IOSKIP")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
+        )
+        .take(
+            std::env::var("RC_IOMAX")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(400),
+        )
     {
         let kind = if addr & 0x8000_0000 != 0 { "R" } else { "W" };
         println!(
@@ -286,7 +305,7 @@ fn where_are_both_cpus() {
         e.sub_clocks_due()
     );
     println!("sub vectors 60..80 {:02X?}", &e.prg_ram()[0x60..0x80]);
-    println!("sub 5f30..5f80 {:02X?}", &e.prg_ram()[0x5F30..0x5F80]);
+    println!("sub 5f30..5f80 {:02X?}", &e.prg_ram()[0x5F30..0x5FA8]);
     println!("sub d {:X?} a {:X?}", e.sub_cpu().d, e.sub_cpu().a);
     let mut g = e.gate_array().clone();
     println!(
@@ -362,4 +381,240 @@ fn a_saved_state_resumes_the_real_bios_and_disc_exactly() {
     run(&mut b, 120);
     assert_eq!(a.save_state(), b.save_state(), "the states diverged");
     assert_eq!(a.render_frame(), b.render_frame(), "the pictures differ");
+}
+
+/// Where the game's software error check starts (`RC_STOP`, hex, default 4E74): the registers there and the bytes the first
+/// register points at.
+#[test]
+#[ignore]
+fn registers_where_the_sub_cpu_reaches_an_address() {
+    let (Ok(bios), Ok(disc)) = (std::env::var("RC_BIOS"), std::env::var("RC_DISC")) else {
+        return;
+    };
+    let stops: Vec<u32> = std::env::var("RC_STOP")
+        .unwrap_or_else(|_| "4E74".into())
+        .split(',')
+        .map(|v| u32::from_str_radix(v, 16).unwrap())
+        .collect();
+    let mut config = SegaCdConfig::new(std::fs::read(bios).unwrap(), Region::Usa);
+    config.disc = Some(disc.into());
+    let mut m = new_machine(config).unwrap();
+    m.bus_mut()
+        .expansion_mut()
+        .unwrap()
+        .as_any_mut()
+        .downcast_mut::<SegaCdExp>()
+        .unwrap()
+        .trace_sub(stops);
+    let mut spent = 0u64;
+    let mut steps = 0u64;
+    let budget = 1500 * (m.clock_hz() / m.frame_hz());
+    while spent < budget {
+        spent += u64::from(m.step());
+        steps += 1;
+        if !steps.is_multiple_of(2000) {
+            continue;
+        }
+        let e = m
+            .bus()
+            .expansion()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<SegaCdExp>()
+            .unwrap();
+        if let Some((true, ring)) = e.sub_trace() {
+            let (pc, d, a, sr) = ring.last().unwrap();
+            println!("frozen at {pc:06X} sr {sr:04X}\n d {d:08X?}\n a {a:08X?}");
+            let at = a[0];
+            let bytes: Vec<u8> = (0..96).map(|i| e.sub_peek(at + i)).collect();
+            println!("a0 {at:06X}: {bytes:02X?}");
+            // the way in: the last instructions before the stop, runs of consecutive addresses written as ranges
+            let mut path = String::new();
+            let tail: Vec<u32> = ring
+                .iter()
+                .rev()
+                .take(150)
+                .map(|e| e.0)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            let mut i = 0;
+            while i < tail.len() {
+                let mut j = i;
+                while j + 1 < tail.len() && tail[j + 1] > tail[j] && tail[j + 1] - tail[j] <= 8 {
+                    j += 1;
+                }
+                path.push_str(&format!("{:X}-{:X} ", tail[i], tail[j]));
+                i = j + 1;
+            }
+            println!("path: {path}");
+            return;
+        }
+    }
+    println!("never reached");
+}
+
+/// Linear disassembly of the sub-CPU's BIOS (`RC_BIOS`) printing the lines that contain `RC_GREP` (default `$2(a6)`).
+#[test]
+#[ignore]
+fn grep_the_bios_listing() {
+    let Ok(path) = std::env::var("RC_BIOS") else {
+        return;
+    };
+    let mut bios = std::fs::read(&path).unwrap();
+    if let Ok(disc) = std::env::var("RC_LIVE_DISC") {
+        // the sub-CPU's code as it is in program RAM after RC_FRAMES frames
+        let frames: u64 = std::env::var("RC_FRAMES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(900);
+        let mut config = SegaCdConfig::new(bios, Region::Usa);
+        config.disc = Some(disc.into());
+        let mut m = new_machine(config).unwrap();
+        let mut spent = 0u64;
+        let budget = frames * (m.clock_hz() / m.frame_hz());
+        while spent < budget {
+            spent += u64::from(m.step());
+        }
+        let e = m
+            .bus()
+            .expansion()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<SegaCdExp>()
+            .unwrap();
+        bios = e.prg_ram()[..0x2_0000].to_vec();
+    }
+    let pattern = std::env::var("RC_GREP").unwrap_or_else(|_| "$2(a6)".into());
+    let mut at = 0usize;
+    while at + 10 < bios.len() {
+        let (text, len) = disassemble(&bios[at..at + 10], at as u32);
+        let (from, to) = std::env::var("RC_RANGE")
+            .ok()
+            .and_then(|v| {
+                let (a, b) = v.split_once('-')?;
+                Some((
+                    usize::from_str_radix(a, 16).ok()?,
+                    usize::from_str_radix(b, 16).ok()?,
+                ))
+            })
+            .unwrap_or((0, usize::MAX));
+        if (from..=to).contains(&at) && text.contains(&pattern) {
+            println!("  {at:06X}  {text}");
+        }
+        at += len.clamp(2, 10);
+    }
+}
+
+/// The distinct sub-CPU addresses the last 20 000 instructions touched (`RC_STOP` stops that never hit keep the ring running):
+/// shows which routines are alive in a steady state, in the order of their first appearance, with interrupt entries marked.
+#[test]
+#[ignore]
+fn which_routines_are_alive() {
+    let (Ok(bios), Ok(disc)) = (std::env::var("RC_BIOS"), std::env::var("RC_DISC")) else {
+        return;
+    };
+    let frames: u64 = std::env::var("RC_FRAMES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(900);
+    let mut config = SegaCdConfig::new(std::fs::read(bios).unwrap(), Region::Usa);
+    config.disc = Some(disc.into());
+    let mut m = new_machine(config).unwrap();
+    m.bus_mut()
+        .expansion_mut()
+        .unwrap()
+        .as_any_mut()
+        .downcast_mut::<SegaCdExp>()
+        .unwrap()
+        .trace_sub(vec![0xFFFF_FFF0]);
+    let mut spent = 0u64;
+    let budget = frames * (m.clock_hz() / m.frame_hz());
+    while spent < budget {
+        spent += u64::from(m.step());
+    }
+    let e = m
+        .bus()
+        .expansion()
+        .unwrap()
+        .as_any()
+        .downcast_ref::<SegaCdExp>()
+        .unwrap();
+    let (_, ring) = e.sub_trace().unwrap();
+    println!("{} instructions in the ring", ring.len());
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out = String::new();
+    let mut prev_sr = 0u16;
+    for (pc, _, _, sr) in &ring {
+        if (sr & 0x0700) != (prev_sr & 0x0700) {
+            out.push_str(&format!(
+                "
+[sr {sr:04X}] "
+            ));
+        }
+        prev_sr = *sr;
+        if seen.insert(*pc) {
+            out.push_str(&format!("{pc:X} "));
+        }
+    }
+    println!("{out}");
+}
+
+/// The main CPU's view at a stall: its vectors (work RAM `$FFFF0060..`), status register and the gate array registers it can read.
+#[test]
+#[ignore]
+fn main_side_at_the_stall() {
+    let (Ok(bios), Ok(disc)) = (std::env::var("RC_BIOS"), std::env::var("RC_DISC")) else {
+        return;
+    };
+    let frames: u64 = std::env::var("RC_FRAMES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(900);
+    let mut config = SegaCdConfig::new(std::fs::read(bios).unwrap(), Region::Usa);
+    config.disc = Some(disc.into());
+    let mut m = new_machine(config).unwrap();
+    let mut spent = 0u64;
+    let budget = frames * (m.clock_hz() / m.frame_hz());
+    while spent < budget {
+        spent += u64::from(m.step());
+    }
+    let word = |m: &genesis::Genesis, a: u32| {
+        (u32::from(m.read_memory(u64::from(a))) << 8) | u32::from(m.read_memory(u64::from(a + 1)))
+    };
+    let long = |m: &genesis::Genesis, a: u32| (word(m, a) << 16) | word(m, a + 2);
+    println!("main sr {:04X}", m.cpu().sr());
+    for (name, at) in [
+        ("lvl1", 0x64u32),
+        ("lvl2", 0x68),
+        ("lvl3", 0x6C),
+        ("lvl4", 0x70),
+        ("lvl6", 0x78),
+    ] {
+        println!("vector {name} at {at:X}: {:08X}", long(&m, at));
+    }
+    let e = m
+        .bus()
+        .expansion()
+        .unwrap()
+        .as_any()
+        .downcast_ref::<SegaCdExp>()
+        .unwrap();
+    let mut gate = e.gate_array().clone();
+    for off in (0u32..0x40).step_by(2) {
+        print!(
+            "{:02X}:{:04X} ",
+            off,
+            gate.main_read_word(off).unwrap_or(0xDEAD)
+        );
+    }
+    println!();
+    let dbg = format!("{:?}", e.gate_array());
+    println!("gate: {}", dbg.split("cdc:").next().unwrap_or(&dbg));
+    println!(
+        "8e65: {:02X}, 8e66: {:02X}",
+        m.read_memory(0xFF8E65u64),
+        m.read_memory(0xFF8E66u64)
+    );
 }
