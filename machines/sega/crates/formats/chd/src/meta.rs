@@ -79,11 +79,7 @@ pub fn entry_bytes(entry: &MetaEntry, next: u64) -> Vec<u8> {
     out
 }
 
-pub(crate) fn read_chain(
-    file: &mut File,
-    mut offset: u64,
-    file_len: u64,
-) -> Result<Vec<Entry>, ChdError> {
+pub fn read_chain(file: &mut File, mut offset: u64, file_len: u64) -> Result<Vec<Entry>, ChdError> {
     let io = |e: std::io::Error| ChdError::Io(format!("reading the metadata: {e}"));
     let mut entries = Vec::new();
     while offset != 0 {
@@ -112,7 +108,7 @@ pub(crate) fn read_chain(
             offset,
             next,
         });
-        if next != 0 && next <= offset {
+        if next != 0 && entries.iter().any(|e| e.offset == next) {
             return format_err("the metadata chain loops");
         }
         offset = next;

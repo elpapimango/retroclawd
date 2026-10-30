@@ -75,6 +75,8 @@ pub struct Writer {
     /// Uncompressed files: the stored position of each hunk divided by the hunk size (0: not stored).
     plain_map: Vec<u32>,
     seen: HashMap<[u8; 20], u32>,
+    /// An uncompressed file: where its metadata chain starts and the entries (written when the file was started).
+    plain_meta: Option<(u64, Vec<MetaEntry>)>,
     raw: Sha1,
     summary: Summary,
     finished: bool,
@@ -98,6 +100,27 @@ fn config<T>(why: impl Into<String>) -> Result<T, ChdError> {
 
 fn sha1_of(data: &[u8]) -> [u8; 20] {
     Sha1::digest(data).into()
+}
+
+/// Places the entries of a chain one after another from file offset `at`, each pointing at the next; returns the bytes of the chain and
+/// the offset of its first entry (0 for an empty chain).
+fn lay_out_chain(entries: &mut [MetaEntry], at: u64) -> (Vec<u8>, u64) {
+    let mut here = at;
+    let offsets: Vec<u64> = entries
+        .iter()
+        .map(|e| {
+            let o = here;
+            here += 16 + e.data.len() as u64;
+            o
+        })
+        .collect();
+    let mut bytes = Vec::new();
+    for (i, e) in entries.iter_mut().enumerate() {
+        e.offset = offsets[i];
+        e.next = offsets.get(i + 1).copied().unwrap_or(0);
+        bytes.extend(meta::entry_bytes(e, e.next));
+    }
+    (bytes, offsets.first().copied().unwrap_or(0))
 }
 
 impl ParentIndex {
@@ -204,6 +227,7 @@ impl Writer {
             entries: Vec::new(),
             plain_map: Vec::new(),
             seen: HashMap::new(),
+            plain_meta: None,
             raw: Sha1::new(),
             summary: Summary {
                 hunks: hunk_total as u32,
@@ -223,18 +247,25 @@ impl Writer {
             .map_err(io)?;
         w.pos = u64::from(V5_HEADER_LEN);
         if !w.compressed() {
-            // the map is written at the end; its room is reserved, then the hunks start on the next multiple of the hunk size
+            // the map's room is reserved and the metadata goes right after it; the hunks start on the next multiple of the hunk size
             let map_bytes = u64::from(w.hunk_total) * 4;
-            let start = (w.pos + map_bytes).div_ceil(u64::from(w.opts.hunk_bytes))
-                * u64::from(w.opts.hunk_bytes);
+            let mut entries = std::mem::take(&mut w.opts.metadata);
+            let (chain, first) = lay_out_chain(&mut entries, w.pos + map_bytes);
+            let end = w.pos + map_bytes + chain.len() as u64;
             let zeros = vec![0u8; 1 << 16];
-            let mut left = start - w.pos;
-            while left > 0 {
-                let n = left.min(zeros.len() as u64) as usize;
-                w.out.write_all(&zeros[..n]).map_err(io)?;
-                left -= n as u64;
-            }
-            w.pos = start;
+            let write_zeros = |out: &mut BufWriter<File>, mut left: u64| -> Result<(), ChdError> {
+                while left > 0 {
+                    let n = left.min(zeros.len() as u64) as usize;
+                    out.write_all(&zeros[..n]).map_err(io)?;
+                    left -= n as u64;
+                }
+                Ok(())
+            };
+            write_zeros(&mut w.out, map_bytes)?;
+            w.out.write_all(&chain).map_err(io)?;
+            // (the padding up to the first stored hunk is written with that hunk, so a file with none ends after its metadata)
+            w.pos = end;
+            w.plain_meta = Some((first, entries));
         }
         Ok(w)
     }
@@ -438,7 +469,6 @@ impl Writer {
         let hb = self.opts.hunk_bytes;
         let (map_offset, raw_sha1, sha1);
         // metadata first (at the end of the data), then the map for a compressed file
-        let mut meta_offset = 0u64;
         let compressed = self.compressed();
         let map_bytes = if compressed {
             Some(mapenc::encode(&self.entries, hb, self.opts.unit_bytes))
@@ -452,29 +482,15 @@ impl Writer {
         } else {
             map_offset = u64::from(V5_HEADER_LEN);
         }
-        let mut entries = std::mem::take(&mut self.opts.metadata);
-        // lay the chain out: each entry's header holds the offset of the next
-        let mut at = self.pos;
-        let offsets: Vec<u64> = entries
-            .iter()
-            .map(|e| {
-                let here = at;
-                at += 16 + e.data.len() as u64;
-                here
-            })
-            .collect();
-        for (i, e) in entries.iter_mut().enumerate() {
-            e.offset = offsets[i];
-            e.next = offsets.get(i + 1).copied().unwrap_or(0);
-        }
-        if let Some(first) = offsets.first() {
-            meta_offset = *first;
-        }
-        for e in &entries {
-            let bytes = meta::entry_bytes(e, e.next);
-            self.out.write_all(&bytes).map_err(io)?;
-            self.pos += bytes.len() as u64;
-        }
+        let (meta_offset, entries) = if let Some((first, entries)) = self.plain_meta.take() {
+            (first, entries)
+        } else {
+            let mut entries = std::mem::take(&mut self.opts.metadata);
+            let (chain, first) = lay_out_chain(&mut entries, self.pos);
+            self.out.write_all(&chain).map_err(io)?;
+            self.pos += chain.len() as u64;
+            (first, entries)
+        };
 
         let raw: [u8; 20] = self.raw.clone().finalize().into();
         if compressed {

@@ -13,6 +13,7 @@ pub mod builder;
 mod cd;
 mod codec;
 pub(crate) mod ecc;
+mod edit;
 mod file;
 mod flac;
 mod huff;
@@ -26,6 +27,7 @@ mod synthetic;
 mod writer;
 
 pub use codec::{Codec, compress, decompress};
+pub use edit::{delete_metadata, read_header_and_metadata, set_metadata, write_hashes};
 pub use file::{Chd, FRAME_SIZE, MAIN_SIZE, SUBCODE_SIZE, TrackInfo};
 pub use image::{Header, HunkKind, Image, VerifyReport};
 pub use meta::{FLAG_CHECKSUM, MetaEntry, entry_bytes, overall_sha1};
