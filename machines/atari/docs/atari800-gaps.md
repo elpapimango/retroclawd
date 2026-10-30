@@ -39,6 +39,15 @@ No game/demo/application compatibility claim follows from these small scenarios.
 
 ## Reference capture
 
+**2026-10-30, reproducing every golden.** With the three replacement ROMs built from the Atari800 sources
+(`retroclawd-tools/scripts/atari800_roms_from_source.py`: each array is written only if its size and SHA-1 equal the pins of
+`firmware.toml`), the scenario media from `scenarios/build.sh` and `software/diagnostics/acid800.atr`,
+`retroclawd-tools/scripts/capture_atari8bit_goldens.py MACHINE` recaptures all 46 goldens of the four manifests with the reference
+(S1 picture and screen memory, S3 program/cartridge/disk, S7 Acid800) and **every SHA-256 equals the pinned `golden_sha256`**. The four
+manifests then run 44 passed, 0 failed, 10 known gaps each (the gaps are the documented ones: S2/S3 CAS/S4 reference RMS and the
+S7 Acid800 comparison against a reference that itself fails hardware tests). Original Atari OS dumps exist on the author's machine
+(`REV02(800XL-65XE-130XE)`, `Atari OS vB`, `BASIC revC`) but are not what the manifests pin, so they stay untested here.
+
 Reference: Atari800 7.2.1 Win64, source
 `63a381884175e3cbfc745ff00dfb3d70d928eb50`; portable ZIP SHA-256
 `82eb30836613a03b3a82d594da71b47667f2eef844d9cd808e3a367f250613ab`.
