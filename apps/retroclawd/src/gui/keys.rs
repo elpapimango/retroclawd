@@ -1212,6 +1212,121 @@ mod tests {
         events
     }
 
+    /// The Atari ST keys the shipped keymaps may name (its scancode names).
+    fn atari_keys() -> Vec<MachineKeyInfo> {
+        let mut names: Vec<String> = ('A'..='Z').map(|c| format!("Key{c}")).collect();
+        names.extend((0..=9).map(|d| format!("Digit{d}")));
+        names.extend(
+            [
+                "ShiftLeft",
+                "Minus",
+                "Equal",
+                "BracketLeft",
+                "BracketRight",
+                "Backslash",
+                "Semicolon",
+                "Quote",
+                "Backquote",
+                "Comma",
+                "Period",
+                "Slash",
+                "Space",
+            ]
+            .map(String::from),
+        );
+        plugin_api::key_infos(names.iter().map(String::as_str))
+    }
+
+    fn shipped_router(language: &str) -> KeyRouter {
+        let names = atari_keys();
+        let file = LoadedKeymap {
+            label: language.to_string(),
+            upper: true,
+            file: app_config::parse_keymap(crate::builtin_keymaps::find(language).unwrap())
+                .unwrap(),
+        };
+        let bindings = KeyBindings::resolve(
+            &cfg(""),
+            "atari-st",
+            &KeyNames::only(&names),
+            &defaults(),
+            &[file],
+        )
+        .unwrap_or_else(|e| panic!("{language}: {e}"));
+        KeyRouter::new(bindings).with_layout(Layout::Symbolic, SymbolMap::from_names(&names))
+    }
+
+    /// One frame: `shift` (if any) held, then `key` going down having typed `c`; the machine keys that went down, sorted.
+    fn typed_on_the_st(
+        router: &mut KeyRouter,
+        shift: bool,
+        key: KeyCode,
+        c: Option<char>,
+    ) -> Vec<String> {
+        let mut kb = ButtonInput::<KeyCode>::default();
+        if shift {
+            kb.press(KeyCode::ShiftLeft);
+            router.route(&kb, &HotkeyState::default(), &LogicalKeys::default());
+            kb.clear();
+        }
+        let mut names: Vec<String> = press_typing(router, &mut kb, key, c)
+            .into_iter()
+            .filter(|(_, down)| *down)
+            .map(|(name, _)| name)
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn every_shipped_keymap_resolves_against_the_atari_st_keys_and_a_german_keyboard_types_its_keycaps()
+     {
+        for language in ["uk", "us", "es", "de", "fr", "sv", "no", "da"] {
+            shipped_router(language);
+        }
+        let mut de = shipped_router("de");
+        // Shift+2 is `"` on a German keyboard: the ST's Shift+' (it would be `@` unchanged).
+        assert_eq!(
+            typed_on_the_st(&mut de, true, KeyCode::Digit2, Some('"')),
+            ["Quote", "ShiftLeft"]
+        );
+        // `-` has its own key on the German slash position.
+        let mut de = shipped_router("de");
+        assert_eq!(
+            typed_on_the_st(&mut de, false, KeyCode::Slash, Some('-')),
+            ["Minus"]
+        );
+        // `+` is Shift+= on the ST, with the Shift the ST needs and none of the host's.
+        let mut de = shipped_router("de");
+        assert_eq!(
+            typed_on_the_st(&mut de, false, KeyCode::BracketRight, Some('+')),
+            ["Equal", "ShiftLeft"]
+        );
+        // The Y key types z.
+        let mut de = shipped_router("de");
+        assert_eq!(
+            typed_on_the_st(&mut de, false, KeyCode::KeyY, Some('z')),
+            ["KeyZ"]
+        );
+        // On an AZERTY keyboard the unshifted 1 key is `&`.
+        let mut fr = shipped_router("fr");
+        assert_eq!(
+            typed_on_the_st(&mut fr, false, KeyCode::Digit1, Some('&')),
+            ["Digit7", "ShiftLeft"]
+        );
+        let mut fr = shipped_router("fr");
+        assert_eq!(
+            typed_on_the_st(&mut fr, true, KeyCode::Digit1, Some('1')),
+            ["Digit1"]
+        );
+        // A US keyboard needs nothing: positional keys are the ST's.
+        let mut us = shipped_router("us");
+        assert_eq!(
+            typed_on_the_st(&mut us, true, KeyCode::Digit2, Some('@')),
+            ["Digit2"]
+        );
+    }
+
     #[test]
     fn the_symbol_map_comes_from_letters_digits_and_declared_characters() {
         let map = SymbolMap::from_names(&spectrum_like());

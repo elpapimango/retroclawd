@@ -3488,7 +3488,10 @@ mod tests {
         assert!(err.contains("bad.toml") && err.contains("hotkeys"), "{err}");
         args.keymap = vec![dir.join("missing.toml")];
         let err = load_keymaps(&args, &app_config::parse("").unwrap(), "c64").unwrap_err();
-        assert!(err.contains("missing.toml") && err.contains("shipped keymaps"), "{err}");
+        assert!(
+            err.contains("missing.toml") && err.contains("shipped keymaps"),
+            "{err}"
+        );
         // a name that is no file is a keymap shipped with the program; a file of that name wins
         args.keymap = vec![PathBuf::from("de")];
         let files = load_keymaps(&args, &app_config::parse("").unwrap(), "c64").unwrap();

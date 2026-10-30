@@ -10,3 +10,31 @@
 # retroclawd.toml.
 
 layout = "symbolic"
+
+# Atari ST, Mega ST and STE: the ST keyboard has the US key positions and EmuTOS' default keyboard table is
+# the US one, so a character this keyboard types is typed there with the US key (and Shift) that makes it. A
+# character the US table has no key for types nothing. Letters, digits and accented letters are left to the
+# symbolic layout.
+[machines.atari-st.keys]
+"shift+KC_GRV" = "none"
+"shift+KC_2" = ["ShiftLeft", "Quote"]
+"shift+KC_3" = "none"
+"KC_BSLS" = ["ShiftLeft", "Digit3"]
+"shift+KC_BSLS" = ["ShiftLeft", "Backquote"]
+"shift+KC_QUOT" = ["ShiftLeft", "Digit2"]
+
+[machines.atari-mega-st.keys]
+"shift+KC_GRV" = "none"
+"shift+KC_2" = ["ShiftLeft", "Quote"]
+"shift+KC_3" = "none"
+"KC_BSLS" = ["ShiftLeft", "Digit3"]
+"shift+KC_BSLS" = ["ShiftLeft", "Backquote"]
+"shift+KC_QUOT" = ["ShiftLeft", "Digit2"]
+
+[machines.atari-ste.keys]
+"shift+KC_GRV" = "none"
+"shift+KC_2" = ["ShiftLeft", "Quote"]
+"shift+KC_3" = "none"
+"KC_BSLS" = ["ShiftLeft", "Digit3"]
+"shift+KC_BSLS" = ["ShiftLeft", "Backquote"]
+"shift+KC_QUOT" = ["ShiftLeft", "Digit2"]

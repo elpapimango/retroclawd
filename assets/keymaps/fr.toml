@@ -10,3 +10,100 @@
 # retroclawd.toml.
 
 layout = "symbolic"
+
+# Atari ST, Mega ST and STE: the ST keyboard has the US key positions and EmuTOS' default keyboard table is
+# the US one, so a character this keyboard types is typed there with the US key (and Shift) that makes it. A
+# character the US table has no key for types nothing. Letters, digits and accented letters are left to the
+# symbolic layout.
+[machines.atari-st.keys]
+"KC_GRV" = "none"
+"shift+KC_GRV" = "none"
+"KC_1" = ["ShiftLeft", "Digit7"]
+"shift+KC_1" = "Digit1"
+"KC_3" = ["ShiftLeft", "Quote"]
+"shift+KC_3" = "Digit3"
+"KC_4" = "Quote"
+"shift+KC_4" = "Digit4"
+"KC_5" = ["ShiftLeft", "Digit9"]
+"shift+KC_5" = "Digit5"
+"KC_6" = "Minus"
+"shift+KC_6" = "Digit6"
+"KC_8" = ["ShiftLeft", "Minus"]
+"shift+KC_8" = "Digit8"
+"KC_MINS" = ["ShiftLeft", "Digit0"]
+"shift+KC_MINS" = "none"
+"KC_RBRC" = ["ShiftLeft", "Digit4"]
+"shift+KC_RBRC" = "none"
+"KC_BSLS" = ["ShiftLeft", "Digit8"]
+"shift+KC_BSLS" = "none"
+"shift+KC_QUOT" = ["ShiftLeft", "Digit5"]
+"KC_COMM" = "Semicolon"
+"shift+KC_COMM" = "Period"
+"KC_DOT" = ["ShiftLeft", "Semicolon"]
+"shift+KC_DOT" = "Slash"
+"KC_SLSH" = ["ShiftLeft", "Digit1"]
+"shift+KC_SLSH" = "none"
+"KC_M" = "Comma"
+"shift+KC_M" = ["ShiftLeft", "Slash"]
+
+[machines.atari-mega-st.keys]
+"KC_GRV" = "none"
+"shift+KC_GRV" = "none"
+"KC_1" = ["ShiftLeft", "Digit7"]
+"shift+KC_1" = "Digit1"
+"KC_3" = ["ShiftLeft", "Quote"]
+"shift+KC_3" = "Digit3"
+"KC_4" = "Quote"
+"shift+KC_4" = "Digit4"
+"KC_5" = ["ShiftLeft", "Digit9"]
+"shift+KC_5" = "Digit5"
+"KC_6" = "Minus"
+"shift+KC_6" = "Digit6"
+"KC_8" = ["ShiftLeft", "Minus"]
+"shift+KC_8" = "Digit8"
+"KC_MINS" = ["ShiftLeft", "Digit0"]
+"shift+KC_MINS" = "none"
+"KC_RBRC" = ["ShiftLeft", "Digit4"]
+"shift+KC_RBRC" = "none"
+"KC_BSLS" = ["ShiftLeft", "Digit8"]
+"shift+KC_BSLS" = "none"
+"shift+KC_QUOT" = ["ShiftLeft", "Digit5"]
+"KC_COMM" = "Semicolon"
+"shift+KC_COMM" = "Period"
+"KC_DOT" = ["ShiftLeft", "Semicolon"]
+"shift+KC_DOT" = "Slash"
+"KC_SLSH" = ["ShiftLeft", "Digit1"]
+"shift+KC_SLSH" = "none"
+"KC_M" = "Comma"
+"shift+KC_M" = ["ShiftLeft", "Slash"]
+
+[machines.atari-ste.keys]
+"KC_GRV" = "none"
+"shift+KC_GRV" = "none"
+"KC_1" = ["ShiftLeft", "Digit7"]
+"shift+KC_1" = "Digit1"
+"KC_3" = ["ShiftLeft", "Quote"]
+"shift+KC_3" = "Digit3"
+"KC_4" = "Quote"
+"shift+KC_4" = "Digit4"
+"KC_5" = ["ShiftLeft", "Digit9"]
+"shift+KC_5" = "Digit5"
+"KC_6" = "Minus"
+"shift+KC_6" = "Digit6"
+"KC_8" = ["ShiftLeft", "Minus"]
+"shift+KC_8" = "Digit8"
+"KC_MINS" = ["ShiftLeft", "Digit0"]
+"shift+KC_MINS" = "none"
+"KC_RBRC" = ["ShiftLeft", "Digit4"]
+"shift+KC_RBRC" = "none"
+"KC_BSLS" = ["ShiftLeft", "Digit8"]
+"shift+KC_BSLS" = "none"
+"shift+KC_QUOT" = ["ShiftLeft", "Digit5"]
+"KC_COMM" = "Semicolon"
+"shift+KC_COMM" = "Period"
+"KC_DOT" = ["ShiftLeft", "Semicolon"]
+"shift+KC_DOT" = "Slash"
+"KC_SLSH" = ["ShiftLeft", "Digit1"]
+"shift+KC_SLSH" = "none"
+"KC_M" = "Comma"
+"shift+KC_M" = ["ShiftLeft", "Slash"]

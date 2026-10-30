@@ -10,13 +10,19 @@ const SHIPPED: &[(&str, &str)] = &[
     ("sv", include_str!("../../../assets/keymaps/sv.toml")),
     ("uk", include_str!("../../../assets/keymaps/uk.toml")),
     ("us", include_str!("../../../assets/keymaps/us.toml")),
-    ("us-c64", include_str!("../../../assets/keymaps/us-c64.toml")),
+    (
+        "us-c64",
+        include_str!("../../../assets/keymaps/us-c64.toml"),
+    ),
 ];
 
 /// The text of the shipped keymap called `name` (with or without `.toml`).
 pub(crate) fn find(name: &str) -> Option<&'static str> {
     let name = name.strip_suffix(".toml").unwrap_or(name);
-    SHIPPED.iter().find(|(n, _)| *n == name).map(|(_, text)| *text)
+    SHIPPED
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, text)| *text)
 }
 
 /// The names of the shipped keymaps.

@@ -10,3 +10,16 @@
 # retroclawd.toml.
 
 layout = "symbolic"
+
+# Atari ST, Mega ST and STE: the ST keyboard has the US key positions and EmuTOS' default keyboard table is
+# the US one, so a character this keyboard types is typed there with the US key (and Shift) that makes it. A
+# character the US table has no key for types nothing. Letters, digits and accented letters are left to the
+# symbolic layout.
+[machines.atari-st.keys]
+# the US keyboard needs no bindings: the ST keys are where its keycaps are
+
+[machines.atari-mega-st.keys]
+# the US keyboard needs no bindings: the ST keys are where its keycaps are
+
+[machines.atari-ste.keys]
+# the US keyboard needs no bindings: the ST keys are where its keycaps are

@@ -10,3 +10,70 @@
 # retroclawd.toml.
 
 layout = "symbolic"
+
+# Atari ST, Mega ST and STE: the ST keyboard has the US key positions and EmuTOS' default keyboard table is
+# the US one, so a character this keyboard types is typed there with the US key (and Shift) that makes it. A
+# character the US table has no key for types nothing. Letters, digits and accented letters are left to the
+# symbolic layout.
+[machines.atari-st.keys]
+"KC_GRV" = "none"
+"shift+KC_GRV" = "none"
+"shift+KC_2" = ["ShiftLeft", "Quote"]
+"shift+KC_3" = "none"
+"shift+KC_6" = ["ShiftLeft", "Digit7"]
+"shift+KC_7" = "Slash"
+"shift+KC_8" = ["ShiftLeft", "Digit9"]
+"shift+KC_9" = ["ShiftLeft", "Digit0"]
+"shift+KC_0" = "Equal"
+"KC_MINS" = "Quote"
+"shift+KC_MINS" = ["ShiftLeft", "Slash"]
+"KC_EQL" = "none"
+"shift+KC_EQL" = "none"
+"KC_RBRC" = ["ShiftLeft", "Equal"]
+"shift+KC_RBRC" = ["ShiftLeft", "Digit8"]
+"shift+KC_COMM" = "Semicolon"
+"shift+KC_DOT" = ["ShiftLeft", "Semicolon"]
+"KC_SLSH" = "Minus"
+"shift+KC_SLSH" = ["ShiftLeft", "Minus"]
+
+[machines.atari-mega-st.keys]
+"KC_GRV" = "none"
+"shift+KC_GRV" = "none"
+"shift+KC_2" = ["ShiftLeft", "Quote"]
+"shift+KC_3" = "none"
+"shift+KC_6" = ["ShiftLeft", "Digit7"]
+"shift+KC_7" = "Slash"
+"shift+KC_8" = ["ShiftLeft", "Digit9"]
+"shift+KC_9" = ["ShiftLeft", "Digit0"]
+"shift+KC_0" = "Equal"
+"KC_MINS" = "Quote"
+"shift+KC_MINS" = ["ShiftLeft", "Slash"]
+"KC_EQL" = "none"
+"shift+KC_EQL" = "none"
+"KC_RBRC" = ["ShiftLeft", "Equal"]
+"shift+KC_RBRC" = ["ShiftLeft", "Digit8"]
+"shift+KC_COMM" = "Semicolon"
+"shift+KC_DOT" = ["ShiftLeft", "Semicolon"]
+"KC_SLSH" = "Minus"
+"shift+KC_SLSH" = ["ShiftLeft", "Minus"]
+
+[machines.atari-ste.keys]
+"KC_GRV" = "none"
+"shift+KC_GRV" = "none"
+"shift+KC_2" = ["ShiftLeft", "Quote"]
+"shift+KC_3" = "none"
+"shift+KC_6" = ["ShiftLeft", "Digit7"]
+"shift+KC_7" = "Slash"
+"shift+KC_8" = ["ShiftLeft", "Digit9"]
+"shift+KC_9" = ["ShiftLeft", "Digit0"]
+"shift+KC_0" = "Equal"
+"KC_MINS" = "Quote"
+"shift+KC_MINS" = ["ShiftLeft", "Slash"]
+"KC_EQL" = "none"
+"shift+KC_EQL" = "none"
+"KC_RBRC" = ["ShiftLeft", "Equal"]
+"shift+KC_RBRC" = ["ShiftLeft", "Digit8"]
+"shift+KC_COMM" = "Semicolon"
+"shift+KC_DOT" = ["ShiftLeft", "Semicolon"]
+"KC_SLSH" = "Minus"
+"shift+KC_SLSH" = ["ShiftLeft", "Minus"]

@@ -451,7 +451,11 @@ keymap = "keymaps/spectrum.toml"
 
 **Shipped keymaps:** `uk`, `us`, `es`, `de`, `fr`, `sv`, `no`, `da` (sources in `assets/keymaps/`, built into
 the program) are used by name: `retroclawd c64 --keymap de` or `[input] keymap = "de"`. Each selects the symbolic
-layout for that keyboard; a file of the same name next to the config wins. `retroclawd` lists the names when a
+layout for that keyboard, which types the right characters on the ZX Spectrum, the CPC, the C64 and the other machines
+that declare what their keys type. The Atari ST, Mega ST and STE (whose keys are the US positions and whose EmuTOS
+uses the US table by default) have explicit bindings in each file, so e.g. Shift+2 on a German keyboard types `"`.
+Characters a machine has no key for (the Spectrum has no `\`, `{`, `}`, `|`, `~`; the CPC no `~`) and the AltGr
+layer are not covered; the extra ISO key left of Z cannot be bound. A file of the same name next to the config wins. `retroclawd` lists the names when a
 keymap is not found.
 
 **US keyboard on the C64:** the shipped `us-c64` keymap (`--keymap us-c64`, or
