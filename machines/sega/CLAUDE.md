@@ -93,6 +93,19 @@ sub-CPU I/O log takes `RC_IOFILTER`, `RC_IOSKIP`, `RC_IOMAX`):
 - Open question: what the main CPU is supposed to send after USERCALL3 (the main BIOS code at `$1800` stores `d0/d1` in `$FDE4/$FDE6` and sets main flag bit 2 only when `d0 = 1`), and whether the user-call data reaches the comm registers
   (they stay zero). Compare with Genesis Plus GX at the gate-array register level (it cannot be traced from outside; a patched build or its source is the way).
 
+## Boot sweep of ten discs (2026-10-30)
+
+Ten US discs from RomM (cue and bin pairs fetched into `software/discs/`), 2400 frames each from the real BIOS, picture compared with Genesis Plus GX at the
+same frame (`discsweep.py` style: `retroclawd segacd --disc X.cue --firmware auto --headless --frames 2400 --dump-screen`):
+- **Boot to their own screen or the BIOS one like GPGX:** After Burner III, Ecco the Dolphin, Flashback (mean difference 1.96 from GPGX), Silpheed, Dragon's Lair;
+  Shining Force CD and Lunar reach the backup RAM prompt.
+- **Black, GPGX shows a picture:** Final Fight CD (the map screen), Eternal Champions (GPGX: the backup RAM warning), Snatcher (GPGX: the "CD Backup RAM Cart SET" prompt).
+  Snatcher has the same shape as Final Fight CD: the main CPU idles in `bra.s *` after testing its command byte `$A1201F` and the sub-CPU polls `tst.b $FF802F` (the
+  main side's command byte 15); Eternal Champions has the main CPU waiting for status word 0 (`cmpi.w #0,$A12020`) while the sub-CPU spins at `$C61E`. So the Final Fight
+  stall is not a one-game quirk: three of ten discs fail at the main/sub hand-over, which makes a trace against GPGX at the gate-array register level worth doing.
+- **Earthworm Jim: Special Edition stops** with "sub-CPU read word $FF800A (pc $00711A): no fact covers this address": `$FF800A` is the CDC DMA address register, which fact E9 calls write only;
+  the game reads it, so what a read returns (GPGX runs the game) is a fact still to find with a probe.
+
 ## Scenario manifest of the Mega-CD (2026-10-30)
 
 `segacd.manifest.toml` (run by `rc-scenarios` like `genesis.manifest.toml`; BIOS `us_scd2_9306.bin` in `roms/segacd/`, discs in `software/discs/`, none committed) has S1 (the BIOS start-up animation at frames
