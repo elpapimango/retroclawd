@@ -370,6 +370,12 @@ that is removed when the program exits (a folder left by a killed run is swept a
 `--progress` prints download and unpack progress on stderr. `--disk-writeback` refuses a URL or zip source
 (use `--disk-save <file>`). `.m3u` entries may be paths, URLs or `zip#entry`.
 
+**Disc images in a zip, and from RomM.** A CD image is several files (a `.cue` sheet and its `.bin` tracks), so a machine
+option that names one, such as the Sega CD's `disc`, also takes a `.zip` or `romm:<id>`: the whole archive is unpacked
+into `<cache>/unpacked/` (once per archive version; sets unused for a week are removed) and the machine gets the `.cue`
+(else a `.gdi`, `.iso`, `.chd`, `.toc`) inside it. `retroclawd segacd --firmware auto --disc romm:6764` plays a game
+straight from the server; a single `.iso` or `.cue` on RomM is used as it is.
+
 **Debugger symbols**
 
 The debugger's disassembly shows a name after an address operand (`JSR $FFD2  ; CHROUT`,
@@ -444,9 +450,11 @@ keymap = "keymaps/spectrum.toml"
   the only thing the machine sees. Paste folds accents the same way.
 - **Explicit bindings still win:** a plain `[keys]` entry for a physical key beats the
   layout; chords, hotkeys and pad bindings are always physical.
-- **Not covered:** dead keys and non-ASCII characters (`é`, `ß`) use the physical
-  key; the typed character is read as each key goes down, so switching the host
-  layout while the emulator runs just works.
+- **AltGr and the ISO key:** the character is what counts, so the AltGr layer (`@ \ { } [ ] ~ |` on a German keyboard) and the extra key left
+  of Z (`<`, `>`, `|`) type the right machine key whenever the machine has one, with AltGr kept from the machine. For a
+  fixed binding that key is `KC_NUBS` (`KC_NONUS_BACKSLASH`). `ß`, `Æ` and `Œ` (two letters) type both, a frame apart.
+- **Not covered:** dead keys and characters with no letter form (`€`, `¿`) use the physical key; the typed character is
+  read as each key goes down, so switching the host layout while the emulator runs just works.
 - `retroclawd <machine> --list-keys` shows the layout and keymap files in effect.
 
 **Shipped keymaps:** `uk`, `us`, `es`, `de`, `fr`, `sv`, `no`, `da` (sources in `assets/keymaps/`, built into
@@ -454,7 +462,7 @@ the program) are used by name: `retroclawd c64 --keymap de` or `[input] keymap =
 layout for that keyboard, which types the right characters on the ZX Spectrum, the CPC, the C64 and the other machines
 that declare what their keys type. The Atari ST, Mega ST and STE (whose keys are the US positions and whose EmuTOS
 uses the US table by default) have explicit bindings in each file, so e.g. Shift+2 on a German keyboard types `"`.
-Every character of a US keyboard now has a key on the Spectrum (`\ | { } ~ [ ]` are typed as the ROM's extended-mode sequence, a few frames long) and on the CPC (`~` is Control+2); the AltGr layer and the extra ISO key left of Z are not covered. A file of the same name next to the config wins. `retroclawd` lists the names when a
+Every character of a US keyboard now has a key on the Spectrum (`\ | { } ~ [ ]` are typed as the ROM's extended-mode sequence, a few frames long) and on the CPC (`~` is Control+2). The 8-bit Ataris declare every ASCII punctuation key, so they need no bindings of their own. A file of the same name next to the config wins. `retroclawd` lists the names when a
 keymap is not found.
 
 **US keyboard on the C64:** the shipped `us-c64` keymap (`--keymap us-c64`, or

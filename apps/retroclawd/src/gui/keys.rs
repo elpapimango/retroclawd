@@ -21,7 +21,7 @@
 //! Shift is not sent to the machine, so `shift+2 = "At"` gives exactly `At`
 //! and not `At` plus a stray Shift.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use app_config::{AppConfig, OneOrMany};
 use bevy::input::ButtonInput;
@@ -246,6 +246,16 @@ impl SymbolMap {
     fn lookup(&self, c: char) -> Option<&(String, CharKind)> {
         self.get(c)
             .or_else(|| super::fold::ascii_fold_char(c).and_then(|plain| self.get(plain)))
+    }
+
+    /// The machine keys that type `c` as several plain letters in a row (`ß` as `S S`), when it is one the machine can only
+    /// type that way.
+    fn letters_for(&self, c: char) -> Option<Vec<String>> {
+        let plain = super::fold::ascii_fold(c).filter(|plain| plain.chars().count() > 1)?;
+        plain
+            .chars()
+            .map(|letter| self.get(letter).map(|(name, _)| name.clone()))
+            .collect()
     }
 
     /// The machine key that types `c`, if it has one.
@@ -501,6 +511,35 @@ struct Held {
     names: Vec<String>,
     /// Modifiers this key's chord consumed (the machine must not see them).
     consumed: Mods,
+    /// The letters still to type after `names` for a character that is several (`ß` is `ss`), one per frame.
+    follow: VecDeque<String>,
+    /// The key just before the next letter is up: the machine needs a release between two equal letters.
+    gap: bool,
+}
+
+impl Held {
+    fn new(names: Vec<String>, consumed: Mods) -> Held {
+        Held {
+            names,
+            consumed,
+            follow: VecDeque::new(),
+            gap: false,
+        }
+    }
+
+    /// One frame of a several-letter character: lets go of the letter just typed, then presses the next.
+    fn step(&mut self, releases: &mut Vec<Vec<String>>, presses: &mut Vec<Vec<String>>) {
+        if self.gap {
+            if let Some(next) = self.follow.pop_front() {
+                self.names = vec![next];
+                presses.push(self.names.clone());
+            }
+            self.gap = false;
+        } else if !self.follow.is_empty() {
+            releases.push(std::mem::take(&mut self.names));
+            self.gap = true;
+        }
+    }
 }
 
 #[derive(Resource, Debug)]
@@ -513,6 +552,8 @@ pub(crate) struct KeyRouter {
     counts: HashMap<String, u32>,
     /// The names the combined machine Shift pressed, while it is down.
     shift_names: Option<Vec<String>>,
+    /// Several-letter characters whose host key was let go before their last letter was typed.
+    tails: Vec<Held>,
 }
 
 impl KeyRouter {
@@ -524,6 +565,7 @@ impl KeyRouter {
             held: HashMap::new(),
             counts: HashMap::new(),
             shift_names: None,
+            tails: Vec::new(),
         }
     }
 
@@ -566,10 +608,7 @@ impl KeyRouter {
                 meta: mods.meta,
             };
             if let Some(names) = self.bindings.get(&exact) {
-                return Held {
-                    names: names.clone(),
-                    consumed: Mods::of_chord(&exact),
-                };
+                return Held::new(names.clone(), Mods::of_chord(&exact));
             }
         }
         // Symbolic layout: an explicit plain binding for this physical key
@@ -586,10 +625,7 @@ impl KeyRouter {
             meta: false,
         };
         if self.layout == Layout::Symbolic && dead && self.bindings.get(&plain_binding).is_none() {
-            return Held {
-                names: Vec::new(),
-                consumed: Mods::default(),
-            };
+            return Held::new(Vec::new(), Mods::default());
         }
         if self.layout == Layout::Symbolic
             && let Some(c) = typed
@@ -617,15 +653,19 @@ impl KeyRouter {
                     ..Mods::default()
                 },
             };
-            return Held {
-                names: vec![name.clone()],
-                consumed,
-            };
+            return Held::new(vec![name.clone()], consumed);
         }
-        Held {
-            names: self.plain_names(key),
-            consumed: Mods::default(),
+        // A character that is several letters (`ß` is `ss`, `Æ` is `AE`): the first now, the rest a frame apart.
+        if self.layout == Layout::Symbolic
+            && let Some(c) = typed
+            && self.bindings.get(&plain_binding).is_none()
+            && let Some(mut letters) = self.symbols.letters_for(c)
+        {
+            let mut held = Held::new(vec![letters.remove(0)], Mods::default());
+            held.follow = letters.into();
+            return held;
         }
+        Held::new(self.plain_names(key), Mods::default())
     }
 
     /// Compares the keyboard to what has been sent so far and returns the
@@ -656,7 +696,23 @@ impl KeyRouter {
             .collect();
         for key in gone {
             if let Some(held) = self.held.remove(&key) {
-                releases.push(held.names);
+                if held.follow.is_empty() && !held.gap {
+                    releases.push(held.names);
+                } else {
+                    self.tails.push(held);
+                }
+            }
+        }
+        // Several-letter characters carry on one letter a frame; a tail whose letters are all typed is let go.
+        for held in self.held.values_mut() {
+            held.step(&mut releases, &mut presses);
+        }
+        for mut tail in std::mem::take(&mut self.tails) {
+            if tail.follow.is_empty() && !tail.gap {
+                releases.push(tail.names);
+            } else {
+                tail.step(&mut releases, &mut presses);
+                self.tails.push(tail);
             }
         }
         // Ordinary keys newly pressed (sorted: a deterministic event order).
@@ -699,13 +755,7 @@ impl KeyRouter {
             } else if !have && wanted {
                 let names = self.plain_names(key);
                 presses.push(names.clone());
-                self.held.insert(
-                    key,
-                    Held {
-                        names,
-                        consumed: Mods::default(),
-                    },
-                );
+                self.held.insert(key, Held::new(names, Mods::default()));
             }
         }
 
@@ -1279,6 +1329,72 @@ mod tests {
     }
 
     #[test]
+    fn the_atari_8bit_needs_no_bindings_of_its_own_to_type_a_german_keyboards_altgr_layer() {
+        // The 8-bit Ataris declare a key for every ASCII punctuation mark, so the symbolic layout types whatever
+        // character the OS layout produced, AltGr or the ISO key included.
+        let mut names =
+            plugin_api::key_infos(["KeyQ", "Minus", "At", "Backslash", "Pipe", "ShiftLeft"]);
+        plugin_api::set_key_chars(
+            &mut names,
+            &[
+                ("At", "@"),
+                ("Backslash", "\\"),
+                ("Pipe", "|"),
+                ("Minus", "-"),
+            ],
+        );
+        for language in ["uk", "us", "es", "de", "fr", "sv", "no", "da"] {
+            let file = LoadedKeymap {
+                label: language.to_string(),
+                upper: true,
+                file: app_config::parse_keymap(crate::builtin_keymaps::find(language).unwrap())
+                    .unwrap(),
+            };
+            KeyBindings::resolve(
+                &cfg(""),
+                "atari-800xl",
+                &KeyNames::only(&names),
+                &defaults(),
+                &[file],
+            )
+            .unwrap_or_else(|e| panic!("{language}: {e}"));
+        }
+        let bindings = KeyBindings::resolve(
+            &cfg(""),
+            "atari-800xl",
+            &KeyNames::only(&names),
+            &defaults(),
+            &[],
+        )
+        .unwrap();
+        let mut router =
+            KeyRouter::new(bindings).with_layout(Layout::Symbolic, SymbolMap::from_names(&names));
+        for (key, typed, expected) in [
+            (KeyCode::KeyQ, '@', "At"),
+            (KeyCode::Minus, '\\', "Backslash"),
+            (KeyCode::IntlBackslash, '|', "Pipe"),
+        ] {
+            let mut kb = ButtonInput::<KeyCode>::default();
+            kb.press(KeyCode::AltRight);
+            router.route(&kb, &HotkeyState::default(), &LogicalKeys::default());
+            kb.clear();
+            let events = press_typing(&mut router, &mut kb, key, Some(typed));
+            assert!(events.contains(&ev(expected, true)), "{typed}: {events:?}");
+            assert!(
+                events.contains(&ev("AltRight", false)),
+                "the machine's Alt is let go before the character: {events:?}"
+            );
+            kb.release(key);
+            kb.release(KeyCode::AltRight);
+            frame_released(&mut router, &kb);
+        }
+    }
+
+    fn frame_released(router: &mut KeyRouter, kb: &ButtonInput<KeyCode>) {
+        router.route(kb, &HotkeyState::default(), &LogicalKeys::default());
+    }
+
+    #[test]
     fn every_shipped_keymap_resolves_against_the_atari_st_keys_and_a_german_keyboard_types_its_keycaps()
      {
         for language in ["uk", "us", "es", "de", "fr", "sv", "no", "da"] {
@@ -1465,6 +1581,62 @@ mod tests {
         );
     }
 
+    fn letters_router() -> KeyRouter {
+        let names = plugin_api::key_infos(["KeyA", "KeyE", "KeyS"]);
+        let bindings =
+            KeyBindings::resolve(&cfg(""), "m", &KeyNames::only(&names), &defaults(), &[]).unwrap();
+        KeyRouter::new(bindings).with_layout(Layout::Symbolic, SymbolMap::from_names(&names))
+    }
+
+    fn next_frame(router: &mut KeyRouter, kb: &ButtonInput<KeyCode>) -> Vec<(String, bool)> {
+        router.route(kb, &HotkeyState::default(), &LogicalKeys::default())
+    }
+
+    #[test]
+    fn a_held_sharp_s_types_two_s_a_frame_apart() {
+        let mut r = letters_router();
+        let mut kb = ButtonInput::<KeyCode>::default();
+        assert_eq!(
+            press_typing(&mut r, &mut kb, KeyCode::Minus, Some('\u{df}')),
+            [ev("KeyS", true)]
+        );
+        assert_eq!(next_frame(&mut r, &kb), [ev("KeyS", false)]);
+        assert_eq!(next_frame(&mut r, &kb), [ev("KeyS", true)]);
+        assert_eq!(next_frame(&mut r, &kb), [], "held: nothing more happens");
+        kb.release(KeyCode::Minus);
+        assert_eq!(next_frame(&mut r, &kb), [ev("KeyS", false)]);
+    }
+
+    #[test]
+    fn a_tapped_ae_still_types_both_letters() {
+        let mut r = letters_router();
+        let mut kb = ButtonInput::<KeyCode>::default();
+        assert_eq!(
+            press_typing(&mut r, &mut kb, KeyCode::Quote, Some('\u{c6}')),
+            [ev("KeyA", true)]
+        );
+        kb.release(KeyCode::Quote);
+        assert_eq!(next_frame(&mut r, &kb), [ev("KeyA", false)]);
+        assert_eq!(next_frame(&mut r, &kb), [ev("KeyE", true)]);
+        assert_eq!(next_frame(&mut r, &kb), [ev("KeyE", false)]);
+        assert_eq!(next_frame(&mut r, &kb), []);
+    }
+
+    #[test]
+    fn a_several_letter_character_the_machine_cannot_spell_stays_positional() {
+        // `ß` needs an S key; a machine without one falls back to the physical key's own name.
+        let names: Vec<MachineKeyInfo> = plugin_api::key_infos(["KeyA"]);
+        let bindings =
+            KeyBindings::resolve(&cfg(""), "m", &KeyNames::only(&names), &defaults(), &[]).unwrap();
+        let mut r =
+            KeyRouter::new(bindings).with_layout(Layout::Symbolic, SymbolMap::from_names(&names));
+        let mut kb = ButtonInput::<KeyCode>::default();
+        assert_eq!(
+            press_typing(&mut r, &mut kb, KeyCode::Minus, Some('\u{df}')),
+            [ev("Minus", true)]
+        );
+    }
+
     #[test]
     fn characters_the_machine_lacks_and_untyped_keys_stay_positional() {
         let mut r = symbolic_router("");
@@ -1488,6 +1660,34 @@ mod tests {
         assert_eq!(
             press_typing(&mut r, &mut kb, KeyCode::Semicolon, Some(';')),
             [ev("KeyA", true)]
+        );
+    }
+
+    #[test]
+    fn the_iso_key_left_of_z_types_its_character_and_can_be_bound() {
+        // A German keyboard: the extra key types `<`, which is the machine's LessThan (declared below).
+        let names = {
+            let mut infos = plugin_api::key_infos(["LessThan", "Semicolon"]);
+            plugin_api::set_key_chars(&mut infos, &[("LessThan", "<"), ("Semicolon", ";")]);
+            infos
+        };
+        let build = |text: &str| {
+            let bindings =
+                KeyBindings::resolve(&cfg(text), "m", &KeyNames::only(&names), &defaults(), &[])
+                    .unwrap();
+            KeyRouter::new(bindings).with_layout(Layout::Symbolic, SymbolMap::from_names(&names))
+        };
+        let mut kb = ButtonInput::<KeyCode>::default();
+        assert_eq!(
+            press_typing(&mut build(""), &mut kb, KeyCode::IntlBackslash, Some('<')),
+            [ev("LessThan", true)]
+        );
+        // Bound by name, it no longer depends on what the OS layout typed.
+        let mut bound = build("[keys]\nKC_NUBS = \"Semicolon\"");
+        let mut kb = ButtonInput::<KeyCode>::default();
+        assert_eq!(
+            press_typing(&mut bound, &mut kb, KeyCode::IntlBackslash, Some('<')),
+            [ev("Semicolon", true)]
         );
     }
 

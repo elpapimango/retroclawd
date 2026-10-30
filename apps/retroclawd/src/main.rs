@@ -13,6 +13,7 @@ mod gui;
 mod host_files;
 mod inputs;
 mod listing;
+mod media_set;
 mod overrides;
 mod playlist;
 mod plugin_bridge;
@@ -32,7 +33,7 @@ use clap::{Command, CommandFactory, FromArgMatches, Parser, ValueEnum};
 use game_config::GameConfig;
 use machine::Region;
 use plugin_api::{
-    BinaryBlob, DebugValue, MachineCreateRequest, MachineOptionInfo, MachineOptionKind,
+    BinaryBlob, CpuFamily, DebugValue, MachineCreateRequest, MachineOptionInfo, MachineOptionKind,
     MachineProfile, MediaKind, NamedValue,
 };
 
@@ -142,15 +143,18 @@ fn resolve_program_load(path: &str, bytes: Vec<u8>, org: u16) -> Result<(u16, Ve
     Ok((real_org, bytes[2..].to_vec()))
 }
 
-/// Whether `--program name` goes to the machine plugin as `MediaKind::Program`: the machine declares it and the file is a
-/// GEMDOS program by its extension.
-fn program_goes_to_plugin(name: &str, media_kinds: &[MediaKind]) -> bool {
+/// Whether `--program name` goes to the machine plugin as `MediaKind::Program`: the machine declares it, runs a 68000 (a
+/// GEMDOS executable is one; a 6502 machine's `.prg` is a load address and bytes) and the file is a GEMDOS program by its
+/// extension.
+fn program_goes_to_plugin(name: &str, media_kinds: &[MediaKind], cpu: &CpuFamily) -> bool {
     let extension = Path::new(name)
         .extension()
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    media_kinds.contains(&MediaKind::Program) && matches!(extension.as_str(), "prg" | "tos" | "ttp")
+    *cpu == CpuFamily::M68k
+        && media_kinds.contains(&MediaKind::Program)
+        && matches!(extension.as_str(), "prg" | "tos" | "ttp")
 }
 
 fn normalize_cli_args() -> Vec<OsString> {
@@ -1276,20 +1280,19 @@ fn resolve_one_machine_option(
             Ok(info.default.clone().map(ResolvedOption::Scalar))
         }
         MachineOptionKind::Text | MachineOptionKind::Enum { .. } => {
+            // A `romm:<id>` or `.zip` value (a CD image in a zip) becomes the path of the unpacked set.
+            let text = |value: String| {
+                media_set::resolve(&value)
+                    .map(|v| Some(ResolvedOption::Scalar(DebugValue::Text(v))))
+            };
             if let Some(value) = matches.try_get_one::<String>(&info.flag).ok().flatten() {
-                return Ok(Some(ResolvedOption::Scalar(DebugValue::Text(
-                    value.clone(),
-                ))));
+                return text(value.clone());
             }
             if let Some(value) = game_config_options.get(&info.key) {
-                return Ok(Some(ResolvedOption::Scalar(DebugValue::Text(
-                    toml_value_to_text(value, &info.key)?,
-                ))));
+                return text(toml_value_to_text(value, &info.key)?);
             }
             if let Some(value) = app_config_options.get(&info.key) {
-                return Ok(Some(ResolvedOption::Scalar(DebugValue::Text(
-                    toml_value_to_text(value, &info.key)?,
-                ))));
+                return text(toml_value_to_text(value, &info.key)?);
             }
             Ok(info.default.clone().map(ResolvedOption::Scalar))
         }
@@ -2423,7 +2426,13 @@ fn main() -> ExitCode {
     let mut program_media: Option<(String, Vec<u8>)> = None;
     let program = match &args.program {
         Some(path) => match inputs::load(path) {
-            Ok(loaded) if program_goes_to_plugin(&loaded.name, &selected_media_kinds) => {
+            Ok(loaded)
+                if program_goes_to_plugin(
+                    &loaded.name,
+                    &selected_media_kinds,
+                    &selected_profile.cpu_family,
+                ) =>
+            {
                 program_media = Some((loaded.name.clone(), loaded.bytes.clone()));
                 None
             }
@@ -4284,22 +4293,43 @@ mod tests {
     #[test]
     fn prg_goes_to_the_plugin_when_the_profile_declares_program() {
         let kinds = [MediaKind::Disk, MediaKind::Program];
-        assert!(program_goes_to_plugin("hello.prg", &kinds));
-        assert!(program_goes_to_plugin("HELLO.PRG", &kinds));
-        assert!(program_goes_to_plugin("a/b/tool.ttp", &kinds));
-        assert!(program_goes_to_plugin("x.tos", &kinds));
+        let st = &CpuFamily::M68k;
+        assert!(program_goes_to_plugin("hello.prg", &kinds, st));
+        assert!(program_goes_to_plugin("HELLO.PRG", &kinds, st));
+        assert!(program_goes_to_plugin("a/b/tool.ttp", &kinds, st));
+        assert!(program_goes_to_plugin("x.tos", &kinds, st));
         assert!(
-            !program_goes_to_plugin("blob.bin", &kinds),
+            !program_goes_to_plugin("blob.bin", &kinds, st),
             "only GEMDOS programs"
         );
-        assert!(!program_goes_to_plugin("noextension", &kinds));
+        assert!(!program_goes_to_plugin("noextension", &kinds, st));
+    }
+
+    #[test]
+    fn a_6502_machines_prg_stays_a_load_address_and_bytes_even_when_it_declares_program() {
+        // The VIC-20 declares `Program` and wants the host to read the load address from the header.
+        let kinds = [MediaKind::Program, MediaKind::Tape];
+        assert!(!program_goes_to_plugin(
+            "pattern.prg",
+            &kinds,
+            &CpuFamily::Mos6502
+        ));
+        assert!(!program_goes_to_plugin(
+            "pattern.prg",
+            &kinds,
+            &CpuFamily::Z80
+        ));
     }
 
     #[test]
     fn prg_keeps_the_c64_path_when_it_does_not() {
         let kinds = [MediaKind::Disk, MediaKind::Tape];
-        assert!(!program_goes_to_plugin("hello.prg", &kinds));
-        assert!(!program_goes_to_plugin("hello.prg", &[]));
+        assert!(!program_goes_to_plugin(
+            "hello.prg",
+            &kinds,
+            &CpuFamily::M68k
+        ));
+        assert!(!program_goes_to_plugin("hello.prg", &[], &CpuFamily::M68k));
         // And the C64 path still reads the load address from the header.
         let (org, loaded) =
             resolve_program_load("game.prg", vec![0x01, 0x08, 0xAA], 0x4000).unwrap();

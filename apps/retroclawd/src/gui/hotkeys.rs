@@ -498,6 +498,7 @@ const BINDABLE_KEYS: &[KeyCode] = &[
     KeyCode::BracketLeft,
     KeyCode::BracketRight,
     KeyCode::Backslash,
+    KeyCode::IntlBackslash,
     KeyCode::Backquote,
     KeyCode::Numpad0,
     KeyCode::Numpad1,
@@ -622,6 +623,7 @@ fn qmk_name(key: KeyCode) -> Option<&'static str> {
         BracketLeft => "KC_LBRC",
         BracketRight => "KC_RBRC",
         Backslash => "KC_BSLS",
+        IntlBackslash => "KC_NUBS",
         Backquote => "KC_GRV",
         Numpad0 => "KC_P0",
         Numpad1 => "KC_P1",
@@ -675,6 +677,7 @@ const QMK_ALIASES: &[(&str, KeyCode)] = &[
     ("KC_LEFT_BRACKET", KeyCode::BracketLeft),
     ("KC_RIGHT_BRACKET", KeyCode::BracketRight),
     ("KC_BACKSLASH", KeyCode::Backslash),
+    ("KC_NONUS_BACKSLASH", KeyCode::IntlBackslash),
     ("KC_GRAVE", KeyCode::Backquote),
     ("KC_KP_0", KeyCode::Numpad0),
     ("KC_KP_1", KeyCode::Numpad1),
@@ -1506,6 +1509,7 @@ mod tests {
             "ctrl+shift+KC_Q",
             "KC_RALT",
             "KC_PSCR",
+            "KC_NUBS",
         ] {
             let chord = parse_chord(text).unwrap();
             assert_eq!(parse_chord(&chord.to_text()).unwrap(), chord, "{text}");

@@ -128,10 +128,26 @@ Open, each with what it needs:
 - **Z80 access to the 68000's bus**: 10 CPU cycles lost by the 68000 (Genesis Plus GX 10.3 on average, BlastEm 8): `P30B` known gap.
 - **Done 2026-10-29**: J-Cart, cheat codes (Game Genie decode, raw patches), mouse, 4-way play, Menacer, weave interlace, Sonic 2
   lock-on chip mechanism (no dump, untested), `--execution-mode fast|accurate`, tile-row picture cache (`docs/benchmarks.md`), fuzz
-  tests for cheats and cartridge headers, PAL V30 DMA verification (V35), HBLANK flag check (V36). P30B: GPGX is the outlier (PicoDrive, BlastEm and here agree within 2 %), so it stays a gap. Sega CD: slices 1-3 done 2026-10-29 (disc crate, sub-CPU, gate array, CDD/CDC, graphics unit; real BIOS boots Dragon's Lair and Silpheed; backup RAM file persists), PCM and CD-DA audio and the backup RAM file work (Lunar and Shining Force CD run once formatted); open: Final Fight CD stays black (the sub-CPU waits at $857E for a flag only the sector routine at $4F80 sets), CHD, see `docs/superpowers/specs/2026-10-29-sega-cd-design.md`. Not started: 32X, Pico, real Game Genie/Action Replay ROMs.
+  tests for cheats and cartridge headers, PAL V30 DMA verification (V35), HBLANK flag check (V36). P30B: GPGX is the outlier (PicoDrive, BlastEm and here agree within 2 %), so it stays a gap. Sega CD: slices 1-3 done 2026-10-29 (disc crate, sub-CPU, gate array, CDD/CDC, graphics unit; real BIOS boots Dragon's Lair and Silpheed; backup RAM file persists), PCM and CD-DA audio and the backup RAM file work (Lunar and Shining Force CD run once formatted); RomM/zip discs unpack through `media_set.rs` (2026-10-30); open: Final Fight CD stays black (the sub-CPU waits at $857E for a flag only the sector routine at $4F80 sets), CHD, CD save states, see `docs/superpowers/specs/2026-10-29-sega-cd-design.md`. Not started: 32X, Pico, real Game Genie/Action Replay ROMs.
 - **EEPROM**: tested against the data sheets' sequences and by booting NBA Jam (no oracle sets the lines; a game that saves to it
   was not played through).
 - **Speed**: about 5.2x real time headless (`docs/benchmarks.md`); YM2612 is 12 % of it.
+
+## Keymaps, typed characters and open reference files (2026-10-30)
+
+**Done:** shipped keymaps (uk, us, es, de, fr, sv, no, da, us-c64) with Atari ST bindings; Spectrum `\ | { } ~ [ ] (c)` and corrected symbol
+combos, CPC `~`; `ß Æ Œ` typed as two letters; the ISO key (`KC_NUBS`) bindable; the 8-bit Ataris need no per-language file (every ASCII
+punctuation key is declared); zip/RomM discs (`media_set.rs`); `.prg` on a 6502 machine that declares `Program` (VIC-20) no longer goes to the
+plugin as a program file; the VIC-20 manifest is closed (62/62) with goldens made by VICE 3.10 (hashes equal the pinned ones; recipe in
+`retroclawd-tools/scripts/capture_vic20_goldens.py`, note `+virtualdev` is `+trapdevice` in 3.10).
+
+**Open (needs third-party files, none of which is on this machine or on RomM):**
+- `atari-800`, `atari-800xl`, `atari-65xe`, `atari-130xe` manifests: the Altirra replacement ROMs (`rom_os`, `rom_basic`; sources are the C arrays in the
+  Atari800 7.2.1 sources, `machines/atari/firmware.toml` has the SHA-1s) and the Atari800 7.2.1 reference emulator for the S1/S2/S3/S7 goldens
+  (`retroclawd-tools/scripts/capture_atari800_screen.py`, Windows only). The scenario media now build (`machines/atari/scenarios/build.sh`);
+  the Acid800 ATR comes from `Emulators/Acid800-1.2`. Once the ROMs are in `machines/atari/roms/atarixl/`, upload them to RomM or copy them there.
+- Not covered by the keymaps: dead keys and characters with no letter form (`€`, `¿`), non-US EmuTOS keyboard tables, accents typed as
+  accents (a machine without them gets the plain letter).
 
 ## Atari ST: closed (2026-10-24); what is parked, and what each item needs
 
