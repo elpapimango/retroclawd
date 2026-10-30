@@ -830,3 +830,65 @@ fn sub_path_to() {
     }
     println!("not reached within 120 frames");
 }
+
+/// Prints, for every frame, the runs of word RAM (1 KB chunks) and program RAM (4 KB chunks) that changed since the frame before, in the
+/// format of the patched Genesis Plus GX log (`WR frame mode first last nonzero`, `PR ...`), to be put beside it. `RC_BIOS`, `RC_DISC`,
+/// `RC_FRAMES`.
+#[test]
+#[ignore]
+fn ram_changes() {
+    let Ok(path) = std::env::var("RC_BIOS") else {
+        return;
+    };
+    let frames: u64 = std::env::var("RC_FRAMES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1500);
+    let mut config = SegaCdConfig::new(std::fs::read(path).unwrap(), Region::Usa);
+    config.disc = std::env::var("RC_DISC").ok().map(Into::into);
+    let mut m = new_machine(config).unwrap();
+    let per = m.clock_hz() / m.frame_hz();
+    let (mut prev_w, mut prev_p) = (vec![0u8; 0x4_0000], vec![0u8; 0x8_0000]);
+    let mut spent = 0u64;
+    let mut frame = 0u64;
+    let runs = |tag: &str, mode: u32, frame: u64, prev: &mut Vec<u8>, now: &[u8], chunk: usize| {
+        let n = now.len() / chunk;
+        let mut start: Option<usize> = None;
+        for i in 0..=n {
+            let changed =
+                i < n && prev[i * chunk..(i + 1) * chunk] != now[i * chunk..(i + 1) * chunk];
+            if changed && start.is_none() {
+                start = Some(i);
+            }
+            if !changed && let Some(s) = start.take() {
+                let nz = now[s * chunk..i * chunk]
+                    .iter()
+                    .filter(|&&b| b != 0)
+                    .count();
+                println!(
+                    "{tag} {frame} {mode} {} {} {nz}",
+                    s * chunk / 1024,
+                    i * chunk / 1024 - 1
+                );
+            }
+        }
+        prev.copy_from_slice(now);
+    };
+    while frame < frames {
+        while spent < (frame + 1) * per {
+            spent += u64::from(m.step());
+        }
+        frame += 1;
+        let e = m
+            .bus()
+            .expansion()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<SegaCdExp>()
+            .unwrap();
+        let mode = if e.gate_array().mode_1m() { 10 } else { 2 };
+        let (word, prg) = (e.word_ram().to_vec(), e.prg_ram().to_vec());
+        runs("WR", mode, frame, &mut prev_w, &word, 1024);
+        runs("PR", 0, frame, &mut prev_p, &prg, 4096);
+    }
+}
