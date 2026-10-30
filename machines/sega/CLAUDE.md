@@ -99,9 +99,7 @@ Ten US discs from RomM (cue and bin pairs fetched into `software/discs/`), 2400 
 same frame (`discsweep.py` style: `retroclawd segacd --disc X.cue --firmware auto --headless --frames 2400 --dump-screen`):
 - **Boot to their own screen or the BIOS one like GPGX:** After Burner III, Ecco the Dolphin, Flashback (mean difference 1.96 from GPGX), Silpheed, Dragon's Lair;
   Shining Force CD and Lunar reach the backup RAM prompt.
-- **Black, GPGX shows a picture:** Final Fight CD (fixed, see above); Eternal Champions (GPGX: the backup RAM warning) and Snatcher (GPGX: the "CD Backup RAM Cart SET"
-  prompt) are still black after that fix, so they are other bugs: Snatcher's main CPU idles in `bra.s *` after testing its command byte `$A1201F` while the sub-CPU polls `tst.b $FF802F`;
-  Eternal Champions' main CPU waits for status word 0 (`cmpi.w #0,$A12020`) while the sub-CPU spins at `$C61E`. The same method (GPGX trace beside `main_command_writes`) applies.
+- **Black, GPGX shows a picture:** Final Fight CD (fixed, see above). Snatcher shows its Konami logo since 2026-10-30 (fact E19: a switch of the word RAM mode regroups its contents instead of losing them; found with the per-frame word RAM change log of the patched Genesis Plus GX, `WR frame mode firstKB lastKB nonzero`, beside our `ram_changes` probe), and then stays black where GPGX goes on to the backup RAM prompt: GPGX sends the drive an extra seek to the start of the data (`0400 0000 0001 0700`) before several reads, and a last read (`0300 0101 0307 0307`) that ours never sends. The pad bytes the game sends the sub-CPU are not the cause (GPGX's second port holds a light gun by default, ID 1; with a pad on both ports it behaves the same). Eternal Champions (GPGX: the backup RAM warning) is untouched so far.
 - **Earthworm Jim: Special Edition stops** with "sub-CPU read word $FF800A (pc $00711A): no fact covers this address": `$FF800A` is the CDC DMA address register, which fact E9 calls write only;
   the game reads it, so what a read returns (GPGX runs the game) is a fact still to find with a probe.
 

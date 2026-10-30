@@ -271,8 +271,36 @@ impl SubSide {
             0xFF_0000..=0xFF_3FFF => {
                 addr & 1 == 0 || self.pcm.write(((addr - 0xFF_0000) >> 1) as u16, v)
             }
-            0xFF_8000..=0xFF_81FF => self.gate.sub_write_byte(addr - 0xFF_8000, v),
+            0xFF_8000..=0xFF_81FF => {
+                let was_1m = self.gate.mode_1m();
+                let ok = self.gate.sub_write_byte(addr - 0xFF_8000, v);
+                self.word_ram_mode_switched(was_1m);
+                ok
+            }
             _ => false,
+        }
+    }
+
+    /// Word RAM is one memory that the two modes map differently (fact C8, E19): in 2M mode its 16-bit words follow one another, in 1M mode
+    /// the even-numbered words are one 128 KB bank and the odd-numbered words the other. A switch of mode regroups the words, so what
+    /// was loaded in 2M mode is what the CPUs find in their banks in 1M mode, and the other way round.
+    fn word_ram_mode_switched(&mut self, was_1m: bool) {
+        let now_1m = self.gate.mode_1m();
+        if was_1m == now_1m {
+            return;
+        }
+        let old = self.word.to_vec();
+        const BANK: usize = 0x2_0000;
+        for k in 0..BANK / 2 {
+            let linear = 4 * k;
+            let (even, odd) = (2 * k, BANK + 2 * k);
+            if now_1m {
+                self.word[even..even + 2].copy_from_slice(&old[linear..linear + 2]);
+                self.word[odd..odd + 2].copy_from_slice(&old[linear + 2..linear + 4]);
+            } else {
+                self.word[linear..linear + 2].copy_from_slice(&old[even..even + 2]);
+                self.word[linear + 2..linear + 4].copy_from_slice(&old[odd..odd + 2]);
+            }
         }
     }
 
@@ -325,7 +353,10 @@ impl SubSide {
                 .write_word(off, word, &mut self.word, pm, self.clock);
         }
         if (0xFF_8000..=0xFF_81FF).contains(&addr) && size == Size::Word {
-            return self.gate.sub_write_word(addr - 0xFF_8000, value as u16);
+            let was_1m = self.gate.mode_1m();
+            let ok = self.gate.sub_write_word(addr - 0xFF_8000, value as u16);
+            self.word_ram_mode_switched(was_1m);
+            return ok;
         }
         match size {
             Size::Byte => self.sub_write_byte(addr, value as u8),
@@ -1202,6 +1233,28 @@ mod tests {
         assert!(e.side.gate.sub_write_word(0x02, 0x0000));
         e.side.put_dma_bytes(Destination::WordRam, 0x3_0000, &[7]);
         assert_eq!(e.word_ram()[0x3_0000], 7);
+    }
+
+    #[test]
+    fn switching_the_word_ram_mode_regroups_the_words_and_keeps_them() {
+        let mut e = exp();
+        // 2M mode: four words one after the other
+        for (i, w) in [0x1111u32, 0x2222, 0x3333, 0x4444].iter().enumerate() {
+            assert!(e.write(0x20_0000 + 2 * i as u32, Size::Word, *w, 0));
+        }
+        // to 1M mode: the main CPU's bank 0 holds the even-numbered words, the sub-CPU's bank 1 the odd-numbered ones (fact E19)
+        assert!(e.side.gate.sub_write_word(0x02, 0x0004));
+        e.side.word_ram_mode_switched(false);
+        assert_eq!(e.read(0x20_0000, Size::Word, 0), Some(0x1111));
+        assert_eq!(e.read(0x20_0002, Size::Word, 0), Some(0x3333));
+        assert_eq!(&e.word_ram()[0x2_0000..0x2_0004], &[0x22, 0x22, 0x44, 0x44]);
+        // and back: the original order
+        assert!(e.side.gate.sub_write_word(0x02, 0x0000));
+        e.side.word_ram_mode_switched(true);
+        let words: Vec<u32> = (0..4)
+            .map(|i| e.read(0x20_0000 + 2 * i, Size::Word, 0).unwrap())
+            .collect();
+        assert_eq!(words, [0x1111, 0x2222, 0x3333, 0x4444]);
     }
 
     #[test]

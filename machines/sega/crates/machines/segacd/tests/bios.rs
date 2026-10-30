@@ -58,6 +58,7 @@ fn where_are_both_cpus() {
         .unwrap_or(600);
     let bios = std::fs::read(path).unwrap();
     let mut config = SegaCdConfig::new(bios, Region::Usa);
+    apply_ports(&mut config);
     config.disc = std::env::var("RC_DISC").ok().map(Into::into);
     let mut m = new_machine(config).unwrap();
     let budget = frames * m.clock_hz() / m.frame_hz();
@@ -379,6 +380,7 @@ fn a_saved_state_resumes_the_real_bios_and_disc_exactly() {
         .unwrap_or(400);
     let make = || {
         let mut config = SegaCdConfig::new(std::fs::read(&bios).unwrap(), Region::Usa);
+        apply_ports(&mut config);
         config.disc = Some(disc.clone().into());
         new_machine(config).unwrap()
     };
@@ -415,6 +417,7 @@ fn registers_where_the_sub_cpu_reaches_an_address() {
         .map(|v| u32::from_str_radix(v, 16).unwrap())
         .collect();
     let mut config = SegaCdConfig::new(std::fs::read(bios).unwrap(), Region::Usa);
+    apply_ports(&mut config);
     config.disc = Some(disc.into());
     let mut m = new_machine(config).unwrap();
     m.bus_mut()
@@ -488,6 +491,7 @@ fn grep_the_bios_listing() {
             .and_then(|v| v.parse().ok())
             .unwrap_or(900);
         let mut config = SegaCdConfig::new(bios, Region::Usa);
+        apply_ports(&mut config);
         config.disc = Some(disc.into());
         let mut m = new_machine(config).unwrap();
         let mut spent = 0u64;
@@ -538,6 +542,7 @@ fn which_routines_are_alive() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(900);
     let mut config = SegaCdConfig::new(std::fs::read(bios).unwrap(), Region::Usa);
+    apply_ports(&mut config);
     config.disc = Some(disc.into());
     let mut m = new_machine(config).unwrap();
     m.bus_mut()
@@ -591,6 +596,7 @@ fn main_side_at_the_stall() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(900);
     let mut config = SegaCdConfig::new(std::fs::read(bios).unwrap(), Region::Usa);
+    apply_ports(&mut config);
     config.disc = Some(disc.into());
     let mut m = new_machine(config).unwrap();
     let mut spent = 0u64;
@@ -650,6 +656,7 @@ fn main_command_writes() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(1500);
     let mut config = SegaCdConfig::new(std::fs::read(path).unwrap(), Region::Usa);
+    apply_ports(&mut config);
     config.disc = std::env::var("RC_DISC").ok().map(Into::into);
     let mut m = new_machine(config).unwrap();
     m.bus_mut()
@@ -695,6 +702,7 @@ fn sub_status_writes() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(1500);
     let mut config = SegaCdConfig::new(std::fs::read(path).unwrap(), Region::Usa);
+    apply_ports(&mut config);
     config.disc = std::env::var("RC_DISC").ok().map(Into::into);
     let mut m = new_machine(config).unwrap();
     let log_from: u64 = std::env::var("RC_LOGFROM")
@@ -771,6 +779,7 @@ fn sub_path_to() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(400);
     let mut config = SegaCdConfig::new(std::fs::read(bios).unwrap(), Region::Usa);
+    apply_ports(&mut config);
     config.disc = Some(disc.into());
     let mut m = new_machine(config).unwrap();
     let per = m.clock_hz() / m.frame_hz();
@@ -845,6 +854,7 @@ fn ram_changes() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(1500);
     let mut config = SegaCdConfig::new(std::fs::read(path).unwrap(), Region::Usa);
+    apply_ports(&mut config);
     config.disc = std::env::var("RC_DISC").ok().map(Into::into);
     let mut m = new_machine(config).unwrap();
     let per = m.clock_hz() / m.frame_hz();
@@ -891,4 +901,22 @@ fn ram_changes() {
         runs("WR", mode, frame, &mut prev_w, &word, 1024);
         runs("PR", 0, frame, &mut prev_p, &prg, 4096);
     }
+}
+
+/// `RC_PORTS=six,none` (three, six, mouse, none): what is plugged into the two controller ports, to match another emulator's setup.
+fn apply_ports(config: &mut SegaCdConfig) {
+    let Ok(v) = std::env::var("RC_PORTS") else {
+        return;
+    };
+    let kind = |s: &str| match s {
+        "none" => genesis::PadKind::None,
+        "three" => genesis::PadKind::Three,
+        "mouse" => genesis::PadKind::Mouse,
+        _ => genesis::PadKind::Six,
+    };
+    let mut it = v.split(',');
+    config.pads = [
+        kind(it.next().unwrap_or("six")),
+        kind(it.next().unwrap_or("six")),
+    ];
 }

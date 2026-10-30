@@ -81,6 +81,17 @@ golden = "segacd/S3-ffcd-2400.png"
 golden_sha256 = "80549392098acd7d161482b18df32db4b06c11339126abbd4cec8f3460b8b142"
 compare = { mode = "similarity", max_mad = 5.0, reason = "another emulator's colour levels (4.0 measured: the map is scrolling and the two are not on the same frame)" }
 
+# S3 Snatcher at frame 1900: the Konami logo. Its graphics are loaded in 2M mode and found in the banks after the switch to 1M mode, which
+# keeps the words (fact E19); before that was handled the screen stayed black. Another emulator's picture, so a similarity.
+[[scenario]]
+id = "S3-snatcher"
+kind = "screen"
+frames = 1900
+files = { disc = "sega/software/discs/Snatcher (USA)/Snatcher (USA).cue" }
+golden = "segacd/S3-snatcher-1900.png"
+golden_sha256 = "a4037c544d3f8c5d99a2ec67c34f11d89d7b953b8df4f0d4ec4e26ef54b837d1"
+compare = { mode = "similarity", max_mad = 5.0, reason = "another emulator's colour levels (and its second controller port holds a light gun by default, ours a pad)" }
+
 # S4: no tone scenario. An audio-only disc reaches the BIOS's CD player in both emulators, but neither starts it without input and
 # the button sequence that starts it was not found (Start, A, B, C and the d-pad were tried in Genesis Plus GX); the BIOS's start-up
 # music is not a pure tone. The CD-DA level was compared by hand once (fact E17: RMS 4469 against 4471).
