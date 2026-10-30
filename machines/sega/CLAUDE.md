@@ -62,8 +62,8 @@ the codec's tables turned out to be multiplication by the generator and by 1/(ge
 four frames. Audio is big-endian in the file (all three codecs) and `disc` turns it round. Not read: `cdzs` (zstd), GD-ROM, parent files,
 versions below 5; each says so. Proof: 14 unit tests (a built two-track file, damage at every byte, refusals), the `disc` tests, and
 `crates/formats/chd/tests/real.rs` (ignored, `RC_CHD`): all 33 000 hunks of Mad Dog McCree (cdlz data, audio, subcode, regenerated ECC) hash to
-the SHA-1 stored in the file's header, and the game boots from `--disc romm:6986` through the BIOS to its FMV. A `.chd` track with a virtual
-(`V...`) pregap becomes silence in the disc, one with a stored pregap keeps it as the start of the track's data.
+the SHA-1 stored in the file's header, and the game boots from `--disc romm:6986` through the BIOS to its FMV. In a `.chd` track description
+(a pregap type starting with `V` means the pregap's sectors are stored in the track's frames and the disc keeps them as the start of its data; any other type, as chdman writes for a cue `PREGAP`, means silence the disc makes up; checked against chdman 0.289 on both kinds).
 
 ## Final Fight CD, what is known (2026-10-30)
 

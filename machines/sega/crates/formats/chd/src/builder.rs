@@ -145,7 +145,7 @@ pub fn build(codec: &[u8; 4]) -> Vec<u8> {
     );
     let second = entry(
         b"CHT2",
-        "TRACK:2 TYPE:AUDIO SUBTYPE:NONE FRAMES:3 PREGAP:2 PGTYPE:VAUDIO PGSUB:NONE POSTGAP:0",
+        "TRACK:2 TYPE:AUDIO SUBTYPE:NONE FRAMES:3 PREGAP:2 PGTYPE:MODE1 PGSUB:NONE POSTGAP:0",
         0,
     );
 

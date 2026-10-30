@@ -127,7 +127,8 @@ pub(crate) struct TrackText {
     pub kind: String,
     pub frames: u32,
     pub pregap: u32,
-    /// A pregap type starting with `V` means the pregap sectors are not in the file.
+    /// A pregap type starting with `V` means the pregap's sectors are stored in the file (in the track's frames); any other type means
+    /// the pregap is not stored: a gap of silence (or zeros) the disc makes up.
     pub pregap_in_file: bool,
     pub postgap: u32,
 }
@@ -150,7 +151,7 @@ pub(crate) fn parse_track(text: &[u8], has_pregap: bool) -> Result<TrackText, Ch
     let (pregap, pregap_in_file, postgap) = if has_pregap {
         (
             number("PREGAP")?,
-            !field("PGTYPE").unwrap_or("").starts_with('V'),
+            field("PGTYPE").unwrap_or("").starts_with('V'),
             number("POSTGAP")?,
         )
     } else {
@@ -173,7 +174,7 @@ mod tests {
     #[test]
     fn a_track_description_is_read_by_its_keywords() {
         let t = parse_track(
-            b"TRACK:2 TYPE:AUDIO SUBTYPE:NONE FRAMES:1500 PREGAP:150 PGTYPE:VAUDIO PGSUB:NONE POSTGAP:0\0",
+            b"TRACK:2 TYPE:AUDIO SUBTYPE:NONE FRAMES:1500 PREGAP:150 PGTYPE:MODE1 PGSUB:NONE POSTGAP:0\0",
             true,
         )
         .unwrap();
@@ -189,7 +190,7 @@ mod tests {
             }
         );
         let stored = parse_track(
-            b"TRACK:1 TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:9 PREGAP:2 PGTYPE:MODE1 PGSUB:NONE POSTGAP:0",
+            b"TRACK:1 TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:9 PREGAP:2 PGTYPE:VMODE1 PGSUB:NONE POSTGAP:0",
             true,
         )
         .unwrap();

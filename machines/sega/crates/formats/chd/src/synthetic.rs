@@ -33,7 +33,7 @@ fn a_disc_of_cdzl_hunks_reads_back_frame_for_frame() {
         (tracks[1].first_frame, tracks[1].frames, tracks[1].pregap),
         (8, 3, 2)
     );
-    assert!(!tracks[1].pregap_in_file, "a V pregap is not in the file");
+    assert!(!tracks[1].pregap_in_file, "a pregap whose type does not start with V is not in the file");
     let want = disc_frames();
     let mut got = [0u8; FRAME_SIZE];
     for (n, frame) in want.iter().enumerate() {
