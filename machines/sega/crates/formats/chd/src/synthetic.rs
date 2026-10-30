@@ -75,9 +75,10 @@ fn files_this_reader_does_not_do_are_refused_in_words() {
         "{err}"
     );
 
-    // a codec that is not a CD one: opens (the map is fine), refuses the hunk
-    let mut chd = Chd::open(&write("zlib.chd", &build(b"zlib"))).unwrap();
-    let err = chd.hunk(0).unwrap_err();
+    // a codec that is not a CD one: the CD view refuses it by name (the generic `Image` would read it)
+    let err = Chd::open(&write("zlib.chd", &build(b"zlib")))
+        .err()
+        .unwrap();
     assert!(
         matches!(err, ChdError::Unsupported(ref m) if m.contains("zlib")),
         "{err}"

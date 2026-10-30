@@ -11,15 +11,25 @@ mod bits;
 #[cfg(any(test, feature = "builder"))]
 pub mod builder;
 mod cd;
+mod codec;
 pub(crate) mod ecc;
 mod file;
+mod flac;
+mod huff;
 mod huffman;
+mod image;
 mod map;
+mod mapenc;
 mod meta;
 #[cfg(test)]
 mod synthetic;
+mod writer;
 
+pub use codec::{Codec, compress, decompress};
 pub use file::{Chd, FRAME_SIZE, MAIN_SIZE, SUBCODE_SIZE, TrackInfo};
+pub use image::{Header, HunkKind, Image, VerifyReport};
+pub use meta::{FLAG_CHECKSUM, MetaEntry, entry_bytes, overall_sha1};
+pub use writer::{CreateOptions, Summary, Writer};
 
 use std::fmt;
 

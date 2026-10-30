@@ -64,11 +64,13 @@ fn data_sectors_come_back_raw_the_pregap_is_silent_and_audio_is_little_endian() 
 }
 
 #[test]
-fn a_chd_with_a_codec_that_is_not_a_cd_one_fails_when_read_not_when_opened() {
-    let (mut disc, _) = open(b"zlib");
-    let mut sector = [0u8; RAW_SECTOR];
-    assert!(matches!(
-        disc.read_raw(0, &mut sector),
-        Err(DiscError::Unsupported(_))
-    ));
+fn a_chd_with_a_codec_that_is_not_a_cd_one_is_refused_by_name_when_opened() {
+    let dir = std::env::temp_dir().join(format!("disc-chd-zlib-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("test.chd");
+    std::fs::write(&path, build(b"zlib")).unwrap();
+    match Disc::open(&path) {
+        Err(DiscError::Unsupported(what)) => assert!(what.contains("zlib"), "{what}"),
+        other => panic!("expected a refusal, got {:?}", other.map(|_| ())),
+    }
 }

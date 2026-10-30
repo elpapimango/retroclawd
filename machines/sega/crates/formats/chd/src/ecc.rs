@@ -85,7 +85,6 @@ pub(crate) fn generate(sector: &mut [u8; 2352]) {
 }
 
 /// Whether a sector has the sync pattern and the parity a codec would have taken out.
-#[cfg(any(test, feature = "builder"))]
 pub(crate) fn is_regenerable(sector: &[u8; 2352]) -> bool {
     let mut copy = *sector;
     copy[..12].copy_from_slice(&SYNC);

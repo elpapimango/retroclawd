@@ -47,9 +47,56 @@ impl<'a> BitReader<'a> {
     }
 }
 
+/// The writing side of `BitReader`: fields go in most significant bit first and the last byte is padded with zeros.
+#[derive(Default)]
+pub(crate) struct BitWriter {
+    out: Vec<u8>,
+    /// Bits used in the last byte (0 means the last byte is full or there is none).
+    used: u32,
+}
+
+impl BitWriter {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    /// Writes the low `n` (at most 32) bits of `value`.
+    pub(crate) fn put(&mut self, value: u32, n: u32) {
+        for i in (0..n).rev() {
+            if self.used == 0 {
+                self.out.push(0);
+            }
+            if (value >> i) & 1 != 0 {
+                *self.out.last_mut().expect("pushed above") |= 0x80 >> self.used;
+            }
+            self.used = (self.used + 1) % 8;
+        }
+    }
+
+    pub(crate) fn finish(self) -> Vec<u8> {
+        self.out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_the_writer_puts_the_reader_gets() {
+        let mut w = BitWriter::new();
+        w.put(0b101, 3);
+        w.put(0, 5);
+        w.put(0xBEEF, 16);
+        w.put(1, 1);
+        let bytes = w.finish();
+        assert_eq!(bytes, [0b1010_0000, 0xBE, 0xEF, 0x80]);
+        let mut r = BitReader::new(&bytes);
+        assert_eq!(
+            (r.read(3), r.read(5), r.read(16), r.read(1)),
+            (5, 0, 0xBEEF, 1)
+        );
+    }
 
     #[test]
     fn bits_come_out_most_significant_first_and_overflow_is_flagged() {

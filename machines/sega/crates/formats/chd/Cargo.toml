@@ -11,8 +11,7 @@ builder = []
 
 [dependencies]
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
-lzma-rust2 = { version = "0.24", default-features = false, features = ["std"] }
+lzma-rust2 = { version = "0.24", default-features = false, features = ["std", "encoder"] }
 claxon = "0.4"
-
-[dev-dependencies]
+ruzstd = { version = "0.9", default-features = false, features = ["std"] }
 sha1 = "0.10"

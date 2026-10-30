@@ -55,6 +55,7 @@ dependencies = [
  "claxon",
  "flate2",
  "lzma-rust2",
+ "ruzstd",
  "sha1",
 ]
 
@@ -231,6 +232,12 @@ version = "0.1.0"
 dependencies = [
  "serde",
 ]
+
+[[package]]
+name = "ruzstd"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69e4ce4a039f42bf25920b95667e4d789e98749ab11bbb8d2c2936f788421bb5"
 
 [[package]]
 name = "sega-machine-plugin"
