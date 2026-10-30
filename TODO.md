@@ -141,11 +141,12 @@ punctuation key is declared); zip/RomM discs (`media_set.rs`); `.prg` on a 6502 
 plugin as a program file; the VIC-20 manifest is closed (62/62) with goldens made by VICE 3.10 (hashes equal the pinned ones; recipe in
 `retroclawd-tools/scripts/capture_vic20_goldens.py`, note `+virtualdev` is `+trapdevice` in 3.10).
 
-**Open (needs third-party files, none of which is on this machine or on RomM):**
-- `atari-800`, `atari-800xl`, `atari-65xe`, `atari-130xe` manifests: the Altirra replacement ROMs (`rom_os`, `rom_basic`; sources are the C arrays in the
-  Atari800 7.2.1 sources, `machines/atari/firmware.toml` has the SHA-1s) and the Atari800 7.2.1 reference emulator for the S1/S2/S3/S7 goldens
-  (`retroclawd-tools/scripts/capture_atari800_screen.py`, Windows only). The scenario media now build (`machines/atari/scenarios/build.sh`);
-  the Acid800 ATR comes from `Emulators/Acid800-1.2`. Once the ROMs are in `machines/atari/roms/atarixl/`, upload them to RomM or copy them there.
+**Atari 8-bit manifests closed (2026-10-30):** the Altirra ROMs come from the Atari800 sources (`atari800_roms_from_source.py`), the reference is
+Atari800 7.2.1 Win64, and every golden recaptured by `capture_atari8bit_goldens.py` has the pinned SHA-256; each manifest runs 44 passed, 0 failed,
+10 known gaps (all documented). Setup on a fresh machine: fetch the three `src/roms/*.c` files at commit `63a38188...`, run the ROM script,
+`machines/atari/scenarios/build.sh`, put `acid800.atr` in `software/diagnostics/`.
+
+**Open:**
 - Not covered by the keymaps: dead keys and characters with no letter form (`€`, `¿`), non-US EmuTOS keyboard tables, accents typed as
   accents (a machine without them gets the plain letter).
 

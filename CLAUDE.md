@@ -123,7 +123,7 @@ PIA/POKEY pins. State v5 preserves profile/MMU/Media/control phases and reads
 v1-v4 only on 800; preserve original files for rollback.
 Accurate Acid800 reaches 56/1/1 on 800 (XL-only banking fails) and 57/0/1
 on XL/XE. Reference keyboard/CAS/RMS capture and diagnostic screen parity
-remain explicit gaps; original Atari firmware and general games are not proven.
+remain explicit gaps (every pinned golden is reproducible: 2026-10-30, `retroclawd-tools/scripts/capture_atari8bit_goldens.py`, manifests 44/0/10 each); original Atari firmware and general games are not proven.
 Read the Family intakes and
 `machines/atari/docs/atari800-gaps.md` before extending it. C16/Plus4 stay parked.
 
