@@ -6,3 +6,7 @@ license = "GPL-3.0-or-later"
 description = "CD images: cue sheets, BIN and ISO files, sector reads and the table of contents"
 
 [dependencies]
+chd = { path = "../chd" }
+
+[dev-dependencies]
+chd = { path = "../chd", features = ["builder"] }

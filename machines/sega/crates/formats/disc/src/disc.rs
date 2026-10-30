@@ -27,9 +27,12 @@ pub struct Track {
     pub sectors: u32,
 }
 
+#[derive(Clone, Copy)]
 enum Data {
     /// A `PREGAP` command: silent sectors, no data in any file.
     Silence,
+    /// Frames of the CHD file, from frame `first`.
+    Chd { first: u32 },
     /// Sectors from `first` of file `file`.
     File { file: usize, first: u32 },
 }
@@ -51,11 +54,34 @@ pub struct Disc {
     tracks: Vec<Track>,
     segments: Vec<Segment>,
     sources: Vec<Source>,
+    /// The image, when the disc is a CHD file.
+    chd: Option<chd::Chd>,
     lead_out: u32,
 }
 
 fn io_err(name: &str, e: std::io::Error) -> DiscError {
     DiscError::Io(format!("{name}: {e}"))
+}
+
+fn chd_err(e: chd::ChdError) -> DiscError {
+    match e {
+        chd::ChdError::Unsupported(what) => DiscError::Unsupported(what),
+        other => DiscError::Io(other.to_string()),
+    }
+}
+
+/// A cooked sector's 2048 user bytes in a raw sector: sync, the header with the sector's address and a mode byte (EDC and ECC left
+/// zero: no reader of ours checks them).
+fn expand_cooked(user: &[u8; USER_SECTOR], lba: u32, kind: TrackKind, out: &mut [u8; RAW_SECTOR]) {
+    out.fill(0);
+    out[1..11].fill(0xFF);
+    let (m, s, f) = Disc::msf(lba);
+    let bcd = |v: u8| ((v / 10) << 4) | (v % 10);
+    out[12] = bcd(m);
+    out[13] = bcd(s);
+    out[14] = bcd(f);
+    out[15] = if kind == TrackKind::Mode2Cooked { 2 } else { 1 };
+    out[16..16 + USER_SECTOR].copy_from_slice(user);
 }
 
 impl Disc {
@@ -97,7 +123,7 @@ impl Disc {
                 };
                 Disc::from_cue(&sheet, dir)
             }
-            "chd" => Err(DiscError::Unsupported("chd".into())),
+            "chd" => Disc::from_chd(path),
             other => Err(DiscError::Unsupported(format!(
                 "\".{other}\" (expected .cue or .iso)"
             ))),
@@ -109,6 +135,7 @@ impl Disc {
             tracks: Vec::new(),
             segments: Vec::new(),
             sources: Vec::new(),
+            chd: None,
             lead_out: 0,
         };
         let too_big = || DiscError::TooLarge("the disc".into());
@@ -188,6 +215,74 @@ impl Disc {
         Ok(disc)
     }
 
+    /// Opens a CHD file: each track's frames follow one another in the file (padded to four), a pregap that is not in the file
+    /// is silence.
+    fn from_chd(path: &Path) -> Result<Disc, DiscError> {
+        let image = chd::Chd::open(path).map_err(chd_err)?;
+        let mut disc = Disc {
+            tracks: Vec::new(),
+            segments: Vec::new(),
+            sources: Vec::new(),
+            chd: None,
+            lead_out: 0,
+        };
+        let too_big = || DiscError::TooLarge("the disc".into());
+        let mut cursor = 0u32;
+        for t in image.tracks() {
+            let kind = match t.kind.as_str() {
+                "AUDIO" => TrackKind::Audio,
+                "MODE1_RAW" => TrackKind::Mode1Raw,
+                "MODE1" => TrackKind::Mode1Cooked,
+                "MODE2_RAW" => TrackKind::Mode2Raw,
+                other => {
+                    return Err(DiscError::Unsupported(format!(
+                        "CHD track type {other} (audio, MODE1_RAW, MODE1 and MODE2_RAW are read)"
+                    )));
+                }
+            };
+            let number = u8::try_from(t.number)
+                .ok()
+                .filter(|n| (1..=99).contains(n))
+                .ok_or_else(|| DiscError::Unsupported(format!("track number {}", t.number)))?;
+            let pregap_lba = cursor;
+            let silence = if t.pregap_in_file { 0 } else { t.pregap };
+            if silence > 0 {
+                disc.segments.push(Segment {
+                    lba: cursor,
+                    count: silence,
+                    kind,
+                    data: Data::Silence,
+                });
+                cursor = cursor.checked_add(silence).ok_or_else(too_big)?;
+            }
+            let data_lba = cursor;
+            disc.segments.push(Segment {
+                lba: cursor,
+                count: t.frames,
+                kind,
+                data: Data::Chd {
+                    first: t.first_frame,
+                },
+            });
+            cursor = cursor.checked_add(t.frames).ok_or_else(too_big)?;
+            let start_lba = if t.pregap_in_file {
+                data_lba + t.pregap.min(t.frames)
+            } else {
+                data_lba
+            };
+            disc.tracks.push(Track {
+                number,
+                kind,
+                start_lba,
+                pregap_lba,
+                sectors: cursor - start_lba,
+            });
+        }
+        disc.lead_out = cursor;
+        disc.chd = Some(image);
+        Ok(disc)
+    }
+
     pub fn tracks(&self) -> &[Track] {
         &self.tracks
     }
@@ -216,8 +311,36 @@ impl Disc {
             .iter()
             .find(|s| lba >= s.lba && lba - s.lba < s.count)
             .ok_or(DiscError::OutOfRange(lba))?;
-        let (kind, lba_in) = (seg.kind, lba - seg.lba);
-        match seg.data {
+        let (kind, lba_in, data) = (seg.kind, lba - seg.lba, seg.data);
+        match data {
+            Data::Chd { first } => {
+                let image = self.chd.as_mut().ok_or(DiscError::OutOfRange(lba))?;
+                let mut frame = [0u8; chd::FRAME_SIZE];
+                image
+                    .read_frame(first + lba_in, &mut frame)
+                    .map_err(chd_err)?;
+                match kind {
+                    // the format keeps audio as big-endian samples; a BIN file has them little-endian
+                    TrackKind::Audio => {
+                        for (dst, src) in out
+                            .as_chunks_mut::<2>()
+                            .0
+                            .iter_mut()
+                            .zip(frame.as_chunks::<2>().0)
+                        {
+                            *dst = [src[1], src[0]];
+                        }
+                    }
+                    TrackKind::Mode1Raw | TrackKind::Mode2Raw => {
+                        out.copy_from_slice(&frame[..RAW_SECTOR]);
+                    }
+                    TrackKind::Mode1Cooked | TrackKind::Mode2Cooked => {
+                        let user: [u8; USER_SECTOR] = frame[..USER_SECTOR].try_into().unwrap();
+                        expand_cooked(&user, lba, kind, out);
+                    }
+                }
+                Ok(())
+            }
             Data::Silence => {
                 out.fill(0);
                 Ok(())
@@ -239,15 +362,7 @@ impl Disc {
                     src.file
                         .read_exact(&mut user)
                         .map_err(|e| io_err(&src.name, e))?;
-                    out.fill(0);
-                    out[1..11].fill(0xFF);
-                    let (m, s, f) = Disc::msf(lba);
-                    let bcd = |v: u8| ((v / 10) << 4) | (v % 10);
-                    out[12] = bcd(m);
-                    out[13] = bcd(s);
-                    out[14] = bcd(f);
-                    out[15] = if kind == TrackKind::Mode2Cooked { 2 } else { 1 };
-                    out[16..16 + USER_SECTOR].copy_from_slice(&user);
+                    expand_cooked(&user, lba, kind, out);
                 }
                 Ok(())
             }

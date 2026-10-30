@@ -416,7 +416,7 @@ fn segacd_profile() -> MachineProfile {
             "disc",
             MachineOptionKind::Text,
             None,
-            "The disc to play: a .cue sheet (with its .bin files beside it) or an .iso, put in the drive at start-up (CHD discs are not supported yet)",
+            "The disc to play: a .cue sheet (with its .bin files beside it), an .iso or a .chd (version 5, cdzl/cdlz/cdfl hunks), put in the drive at start-up; a .zip or romm:<id> holding one is unpacked first",
         ),
     );
     profile.cpus.insert(

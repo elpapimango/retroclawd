@@ -1,0 +1,18 @@
+[package]
+name = "chd"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "CHD v5 compressed hunks of data: reads CD images (cdzl, cdlz and cdfl hunks) from untrusted files"
+
+[features]
+# the test-file builder, for crates that test their own use of a CHD
+builder = []
+
+[dependencies]
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+lzma-rust2 = { version = "0.24", default-features = false, features = ["std"] }
+claxon = "0.4"
+
+[dev-dependencies]
+sha1 = "0.10"

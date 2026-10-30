@@ -178,12 +178,20 @@ fn cue_paths_stay_inside_the_cue_folder() {
 }
 
 #[test]
-fn chd_and_unknown_extensions_are_refused_clearly() {
+fn a_file_that_is_not_a_chd_and_unknown_extensions_are_refused_clearly() {
     let dir = temp("ext");
+    // a missing file, and a file that does not start like a CHD, are errors that say so (not a panic)
     assert!(matches!(
         Disc::open(&dir.join("x.chd")),
-        Err(DiscError::Unsupported(_))
+        Err(DiscError::Io(_))
     ));
+    std::fs::write(
+        dir.join("y.chd"),
+        b"this is not a compressed hunks of data file",
+    )
+    .unwrap();
+    let err = Disc::open(&dir.join("y.chd")).err().unwrap().to_string();
+    assert!(err.contains("CHD"), "{err}");
     assert!(matches!(
         Disc::open(&dir.join("x.zip")),
         Err(DiscError::Unsupported(_))
