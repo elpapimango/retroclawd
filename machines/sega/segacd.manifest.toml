@@ -1,0 +1,101 @@
+machine = "segacd"
+# The BIOS (a US Model 2, bios_CD_U.bin: RomM firmware `us_scd2_9306.bin`) goes in machines/sega/roms/segacd/ and the discs in
+# machines/sega/software/discs/ (none of them committed). The goldens are Genesis Plus GX's pictures (scenarios/capture_segacd_goldens.py
+# prints their hashes), never committed.
+
+[reference]
+emulator = "genesis-plus-gx"
+version = "1.7.4"
+command = "machines/sega/scenarios/capture_segacd_goldens.py (libretro_run.py with the Sega CD BIOS as bios_CD_U.bin in the system folder)"
+
+[files]
+rom-bios = "sega/roms/segacd/us_scd2_9306.bin"
+
+# S1 at frames 300 and 600: the BIOS start-up animation (the Sega CD logo and the spinning earth), the same whatever disc is in.
+# Mean absolute difference of 2.7 to 3.0 is the colour-level conversion (as for the Genesis scenarios), the pictures agree otherwise.
+[[scenario]]
+id = "S1-300"
+kind = "screen"
+frames = 300
+files = { disc = "sega/software/discs/dl/Dragon's Lair (USA).cue" }
+golden = "segacd/S1-300.png"
+golden_sha256 = "890244c7e3984f5dceaea421bd7640f0702444bb60a73e06847223eea7e5f9ea"
+compare = { mode = "similarity", max_mad = 3.5, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+[[scenario]]
+id = "S1-600"
+kind = "screen"
+frames = 600
+files = { disc = "sega/software/discs/dl/Dragon's Lair (USA).cue" }
+golden = "segacd/S1-600.png"
+golden_sha256 = "49b9552bca657fc52073279fd5c9b646d0f0b26d3091c87d867b8b9a64a242e9"
+compare = { mode = "similarity", max_mad = 3.5, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+# S1 at frame 900: the BIOS's "PRESS THE START BUTTON" screen (earth, logo, text) as the disc check begins; 0.13 mean difference.
+[[scenario]]
+id = "S1-900"
+kind = "screen"
+frames = 900
+files = { disc = "sega/software/discs/dl/Dragon's Lair (USA).cue" }
+golden = "segacd/S1-900.png"
+golden_sha256 = "96615f955ea2b88bc0fc443dd98ef7a079205fb2668ae2d0948df7b781c73d77"
+compare = { mode = "similarity", max_mad = 0.5, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+# S3: three discs read by the BIOS (cue and BIN, whole boot-time handshake with the sub-CPU, the CD controller and the drive) to frame
+# 1200: Dragon's Lair has left the BIOS screen for its own picture, Silpheed and Lunar are still on the BIOS one (they load later).
+[[scenario]]
+id = "S3-dl"
+kind = "screen"
+frames = 1200
+files = { disc = "sega/software/discs/dl/Dragon's Lair (USA).cue" }
+golden = "segacd/S3-dl-1200.png"
+golden_sha256 = "a718a75e8ae3a8eca5334de973838897aa78aff57df752ae928f30dda35bd624"
+compare = { mode = "similarity", max_mad = 0.8, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+[[scenario]]
+id = "S3-silpheed"
+kind = "screen"
+frames = 1200
+files = { disc = "sega/software/discs/Silpheed (USA)/Silpheed (USA).cue" }
+golden = "segacd/S3-silpheed-1200.png"
+golden_sha256 = "735656bcf8ed5e48debbb2462608597aa8592dc2d0e790d4abb4ed43411fb663"
+compare = { mode = "similarity", max_mad = 0.5, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+[[scenario]]
+id = "S3-lunar"
+kind = "screen"
+frames = 1200
+files = { disc = "sega/software/discs/Lunar - The Silver Star (USA)/Lunar - The Silver Star (USA).cue" }
+golden = "segacd/S3-lunar-1200.png"
+golden_sha256 = "735656bcf8ed5e48debbb2462608597aa8592dc2d0e790d4abb4ed43411fb663"
+compare = { mode = "similarity", max_mad = 0.5, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+# S4: no tone scenario. An audio-only disc reaches the BIOS's CD player in both emulators, but neither starts it without input and
+# the button sequence that starts it was not found (Start, A, B, C and the d-pad were tried in Genesis Plus GX); the BIOS's start-up
+# music is not a pure tone. The CD-DA level was compared by hand once (fact E17: RMS 4469 against 4471).
+[[scenario]]
+id = "S4"
+kind = "audio"
+frames = 1500
+status = "known-gap"
+files = { disc = "sega/software/scenarios/segacd-tone.cue" }
+audio = { from_s = 20.0, to_s = 24.0, tone_hz = 440.0, tone_tolerance_pct = 1.0, min_amplitude = 0.05 }
+gap = { reason = "the BIOS CD player needs button presses that were not found to start a track, so there is no CD-DA tone to measure; the start-up music is not a tone", evidence = "docs/hardware-facts.md fact E17 (the one manual comparison); scenarios/make_tone_disc.py builds the disc" }
+
+# S5: the saved state is deterministic and a reload continues identically (the Mega-CD's own state, the drive's position and the
+# BIOS's own handshake in flight at frame 600).
+[[scenario]]
+id = "S5"
+kind = "state"
+frames = 600
+more_frames = 100
+files = { disc = "sega/software/discs/dl/Dragon's Lair (USA).cue" }
+
+# S6: the NTSC frame is 262 lines of 3420 master clocks.
+[[scenario]]
+id = "S6"
+kind = "timing"
+frames = 100
+files = { disc = "sega/software/discs/dl/Dragon's Lair (USA).cue" }
+cycles_per_frame = 896040
+cycles_tolerance = 100

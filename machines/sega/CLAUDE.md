@@ -79,3 +79,11 @@ sub-CPU I/O log takes `RC_IOFILTER`, `RC_IOSKIP`, `RC_IOMAX`):
 - The BIOS's software error-check routine (`$4E74`/`$4FE2`, bits 5 and 6 of `$5BC2(a5)`, `addq.w #1,2(a6)`) is never reached and is not the setter of that flag (an earlier note said it was).
 - Open question: what the main CPU is supposed to send after USERCALL3 (the main BIOS code at `$1800` stores `d0/d1` in `$FDE4/$FDE6` and sets main flag bit 2 only when `d0 = 1`), and whether the user-call data reaches the comm registers
   (they stay zero). Compare with Genesis Plus GX at the gate-array register level (it cannot be traced from outside; a patched build or its source is the way).
+
+## Scenario manifest of the Mega-CD (2026-10-30)
+
+`segacd.manifest.toml` (run by `rc-scenarios` like `genesis.manifest.toml`; BIOS `us_scd2_9306.bin` in `roms/segacd/`, discs in `software/discs/`, none committed) has S1 (the BIOS start-up animation at frames
+300 and 600 and the "press start" screen at 900), S3 (Dragon's Lair, Silpheed and Lunar at frame 1200), S5 (save state determinism and reload, which the CD state work made possible) and S6 (frame length 896040 master clocks),
+all passing, and S4 as a known gap. The pictures are Genesis Plus GX's, made by `scenarios/capture_segacd_goldens.py` (which prints the pins); `similarity` thresholds are the colour-level conversion (3.0 and 2.7 on the animation, 0.13 to 0.35 on
+the later screens). S4: an audio-only disc (`scenarios/make_tone_disc.py`) reaches the BIOS CD player in both emulators but neither plays it unprompted, and none of Start, A, B, C and the d-pad started a track in Genesis Plus GX, so there is
+no CD-DA tone to measure; the one manual comparison is fact E17. Not covered: S2 (the BIOS needs button sequences nobody has worked out), games past their loading, Final Fight CD.
