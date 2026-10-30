@@ -215,7 +215,7 @@ impl DiscDrive {
                     if t.kind != disc::cue::TrackKind::Audio {
                         rs[6] |= 8;
                     }
-                    rs[8] = (n & 0xF) as u8;
+                    rs[8] = (n % 10) as u8;
                 }
             }
             _ => {}
@@ -579,6 +579,34 @@ mod tests {
             (status::TOC_READ, 0xF),
             "the rest of the packet stays"
         );
+    }
+
+    #[test]
+    fn the_start_report_of_track_ten_and_up_carries_the_low_decimal_digit() {
+        let dir = std::env::temp_dir().join(format!("segacd-drive-tracks-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let tracks: Vec<BuildTrack> = (0..12)
+            .map(|i| BuildTrack {
+                kind: if i == 0 {
+                    TrackKind::Mode1Raw
+                } else {
+                    TrackKind::Audio
+                },
+                sectors: 20,
+                fill: Fill::Byte(1),
+            })
+            .collect();
+        let cue = builder::write_disc(&dir, "d", &tracks).unwrap();
+        let mut d = DiscDrive::new(Disc::open(&cue).unwrap());
+        // the request names track 10 as the digits 1 and 0, and RS8 answers 0, not 0xA (fact E20)
+        for (n, tens, ones) in [(9u8, 0u8, 9u8), (10, 1, 0), (11, 1, 1)] {
+            let rs = d.command(&cmd(
+                command::REPORT_REQUEST,
+                &[(3, 5), (4, tens), (5, ones)],
+            ));
+            assert_eq!(rs[8], n % 10, "track {n}");
+        }
     }
 
     #[test]
