@@ -70,6 +70,17 @@ golden = "segacd/S3-lunar-1200.png"
 golden_sha256 = "735656bcf8ed5e48debbb2462608597aa8592dc2d0e790d4abb4ed43411fb663"
 compare = { mode = "similarity", max_mad = 0.5, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
 
+# S3 Final Fight CD at frame 2400: the game's own map screen. Its main-CPU program arrives in word RAM through a CD controller transfer made
+# in 1M mode (fact E18); before that was handled the machine stayed black. Another emulator's picture, so a similarity.
+[[scenario]]
+id = "S3-ffcd"
+kind = "screen"
+frames = 2400
+files = { disc = "sega/software/discs/Final Fight CD (USA)/Final Fight CD (USA).cue" }
+golden = "segacd/S3-ffcd-2400.png"
+golden_sha256 = "80549392098acd7d161482b18df32db4b06c11339126abbd4cec8f3460b8b142"
+compare = { mode = "similarity", max_mad = 5.0, reason = "another emulator's colour levels (4.0 measured: the map is scrolling and the two are not on the same frame)" }
+
 # S4: no tone scenario. An audio-only disc reaches the BIOS's CD player in both emulators, but neither starts it without input and
 # the button sequence that starts it was not found (Start, A, B, C and the d-pad were tried in Genesis Plus GX); the BIOS's start-up
 # music is not a pure tone. The CD-DA level was compared by hand once (fact E17: RMS 4469 against 4471).

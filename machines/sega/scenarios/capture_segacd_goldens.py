@@ -29,6 +29,7 @@ PICTURES = [
     ("S3-dl-1200.png", "dl/Dragon's Lair (USA).cue", 1200),
     ("S3-silpheed-1200.png", "Silpheed (USA)/Silpheed (USA).cue", 1200),
     ("S3-lunar-1200.png", "Lunar - The Silver Star (USA)/Lunar - The Silver Star (USA).cue", 1200),
+    ("S3-ffcd-2400.png", "Final Fight CD (USA)/Final Fight CD (USA).cue", 2400),
 ]
 
 

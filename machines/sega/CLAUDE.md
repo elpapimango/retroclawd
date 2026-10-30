@@ -78,20 +78,20 @@ with the same SHA-1s. **A pregap type starting with `V` means the pregap's frame
 `MODE1` for a cue `PREGAP`) means silence.** The first version of the reader had this the other way round (found with chdman on both kinds of cue); audio
 tracks of real CHDs were positioned two seconds off.
 
-## Final Fight CD, what is known (2026-10-30)
+## Final Fight CD, solved (2026-10-30)
 
-Black screen, not solved. Established with `crates/machines/segacd/tests/bios.rs` (ignored probes: `where_are_both_cpus`, `registers_where_the_sub_cpu_reaches_an_address`
-with `RC_STOP`, `which_routines_are_alive`, `main_side_at_the_stall`, `grep_the_bios_listing` with `RC_LIVE_DISC` to disassemble the live program RAM; the
-sub-CPU I/O log takes `RC_IOFILTER`, `RC_IOSKIP`, `RC_IOMAX`):
-- **Not the disc image:** the full 448 MB disc from RomM behaves like the truncated copy. **Not the CHD/PCM path:** the BIOS DMAs to program RAM (destination 5, 265 times) and word RAM (7), never PCM.
-- **The reads work:** the BIOS reads 152 consecutive sectors in one burst (00:51:36 to 00:53:37, headers and modes right, 409 sectors of CDC interrupts in all), identical register traffic to the discs that boot, then stops by itself.
-- **The wait:** both CPUs are alive. The sub-CPU runs the game's own program (not the BIOS) from `$6000`: a dispatcher at `$61C8` jumps through a table on the mode word at `$9B52`; mode 4 is the loop at `$8578` that ends when `$9B54` becomes non-zero, which only
-  the mode-setting routine at `$6202` does (`st 2(a6)`). The mode changes when the sub's level-2 handler (`$88(a6)`, command from the main CPU) runs. The main CPU, in the game's IP in work RAM, has just called the BIOS user call 3
-  (`moveq #8,d0 / jmp $35C`) and waits at `$FFFF103C` for `$8E65`, which its own level-2 handler sets when the sub raises IRQ2. The main side keeps sending (every 4 frames) command words that are all zero with IFL2 and flag toggles;
-  the sub keeps answering with status `0101 0052 0050 0100`. So each side waits for the other's first real message.
-- The BIOS's software error-check routine (`$4E74`/`$4FE2`, bits 5 and 6 of `$5BC2(a5)`, `addq.w #1,2(a6)`) is never reached and is not the setter of that flag (an earlier note said it was).
-- Open question: what the main CPU is supposed to send after USERCALL3 (the main BIOS code at `$1800` stores `d0/d1` in `$FDE4/$FDE6` and sets main flag bit 2 only when `d0 = 1`), and whether the user-call data reaches the comm registers
-  (they stay zero). Compare with Genesis Plus GX at the gate-array register level (it cannot be traced from outside; a patched build or its source is the way).
+It stayed black because a CD controller transfer to word RAM made in **1M mode was dropped** (`apply_cdc_dma` only handled 2M mode). The game loads its main-CPU
+program (69 625 bytes, `$200000-$21FFFF`, a jump table at `$207800`) into the sub-CPU's bank that way, swaps the banks, and the main loop jumps through that table;
+with zeros there it parked in its idle loop (`jmp *` at `$FFFF06E4`) and both CPUs waited for each other. Fact E18, test
+`a_cd_controller_transfer_to_word_ram_in_one_megabit_mode_fills_the_sub_cpus_bank`, manifest scenario S3-ffcd (the map screen, 4.0 mean difference from Genesis Plus GX).
+
+How it was found (kept as a method): a private build of Genesis Plus GX (source cloned for reading, `LOG_SCD` on, its `error()` writing a trace file named by `GPGX_TRACE`, built with
+Strawberry's gcc and `gmake -f Makefile.libretro platform=win HAVE_CHD=0`; never committed) gives every gate array access of both CPUs with the CPU's PC. The command words the main CPU sends
+(`A12010-A1201E` groups, repeats collapsed) were identical in both emulators for 58 groups; GPGX sent the 59th (`1C 70`), we never did. A state saved by the core
+(`--out-state`, PRG RAM found in it by searching for our own bytes, word-swapped) and the work RAM (`--ram-at --swap16`) differed in a handful of game variables only, and the
+main CPU's own code (`lea $207800,a0 ... jmp (a0)`) read its jump table from word RAM: GPGX's bank 0 had 69 625 non-zero bytes, ours none. Probes added to
+`crates/machines/segacd/tests/bios.rs`: `main_command_writes` (and the main CPU's reads of the flag and status words, bit 31 of the address marks a read), `sub_status_writes`
+(`RC_SUBRANGE=lo-hi`), `RC_DUMP_WORD` (the main CPU's view of `$200000-$23FFFF`).
 
 ## Boot sweep of ten discs (2026-10-30)
 
@@ -99,10 +99,9 @@ Ten US discs from RomM (cue and bin pairs fetched into `software/discs/`), 2400 
 same frame (`discsweep.py` style: `retroclawd segacd --disc X.cue --firmware auto --headless --frames 2400 --dump-screen`):
 - **Boot to their own screen or the BIOS one like GPGX:** After Burner III, Ecco the Dolphin, Flashback (mean difference 1.96 from GPGX), Silpheed, Dragon's Lair;
   Shining Force CD and Lunar reach the backup RAM prompt.
-- **Black, GPGX shows a picture:** Final Fight CD (the map screen), Eternal Champions (GPGX: the backup RAM warning), Snatcher (GPGX: the "CD Backup RAM Cart SET" prompt).
-  Snatcher has the same shape as Final Fight CD: the main CPU idles in `bra.s *` after testing its command byte `$A1201F` and the sub-CPU polls `tst.b $FF802F` (the
-  main side's command byte 15); Eternal Champions has the main CPU waiting for status word 0 (`cmpi.w #0,$A12020`) while the sub-CPU spins at `$C61E`. So the Final Fight
-  stall is not a one-game quirk: three of ten discs fail at the main/sub hand-over, which makes a trace against GPGX at the gate-array register level worth doing.
+- **Black, GPGX shows a picture:** Final Fight CD (fixed, see above); Eternal Champions (GPGX: the backup RAM warning) and Snatcher (GPGX: the "CD Backup RAM Cart SET"
+  prompt) are still black after that fix, so they are other bugs: Snatcher's main CPU idles in `bra.s *` after testing its command byte `$A1201F` while the sub-CPU polls `tst.b $FF802F`;
+  Eternal Champions' main CPU waits for status word 0 (`cmpi.w #0,$A12020`) while the sub-CPU spins at `$C61E`. The same method (GPGX trace beside `main_command_writes`) applies.
 - **Earthworm Jim: Special Edition stops** with "sub-CPU read word $FF800A (pc $00711A): no fact covers this address": `$FF800A` is the CDC DMA address register, which fact E9 calls write only;
   the game reads it, so what a read returns (GPGX runs the game) is a fact still to find with a probe.
 

@@ -113,24 +113,39 @@ impl SubSide {
     /// Carries out the CD controller's DMA transfers into program RAM, word RAM or the PCM chip's wave RAM (fact E13): the
     /// DMA address register counts in units of 8 bytes and moves on by what was transferred.
     fn apply_cdc_dma(&mut self) {
-        use mcd_gate_array::cdc::Destination;
         while let Some(dma) = self.gate.take_cdc_dma() {
             let start = usize::from(self.gate.dma_address()) * 8;
-            for (i, b) in dma.bytes.iter().enumerate() {
-                let at = start + i;
-                match dma.destination {
-                    Destination::ProgramRam => self.prg[at & (PRG_RAM_SIZE - 1)] = *b,
-                    Destination::WordRam if !self.gate.mode_1m() => {
-                        self.word[at & (WORD_RAM_SIZE - 1)] = *b;
-                    }
-                    // the chip's address space: the wave RAM window starts at $1000 (fact P2)
-                    Destination::Pcm if (0x1000..0x2000).contains(&at) => {
-                        self.pcm.bank_mut()[at - 0x1000] = *b;
-                    }
-                    _ => {}
-                }
-            }
+            self.put_dma_bytes(dma.destination, start, &dma.bytes);
             self.gate.advance_dma_address(dma.bytes.len());
+        }
+    }
+
+    /// Writes the bytes of one transfer from the DMA address `start` on.
+    fn put_dma_bytes(
+        &mut self,
+        destination: mcd_gate_array::cdc::Destination,
+        start: usize,
+        bytes: &[u8],
+    ) {
+        use mcd_gate_array::cdc::Destination;
+        for (i, b) in bytes.iter().enumerate() {
+            let at = start + i;
+            match destination {
+                Destination::ProgramRam => self.prg[at & (PRG_RAM_SIZE - 1)] = *b,
+                Destination::WordRam if !self.gate.mode_1m() => {
+                    self.word[at & (WORD_RAM_SIZE - 1)] = *b;
+                }
+                // in 1M mode the transfer fills the bank the sub-CPU has (fact E18)
+                Destination::WordRam => {
+                    let bank = 1 - self.gate.main_bank_1m();
+                    self.word[bank * 0x2_0000 + (at & 0x1_FFFF)] = *b;
+                }
+                // the chip's address space: the wave RAM window starts at $1000 (fact P2)
+                Destination::Pcm if (0x1000..0x2000).contains(&at) => {
+                    self.pcm.bank_mut()[at - 0x1000] = *b;
+                }
+                _ => {}
+            }
         }
     }
 
@@ -757,28 +772,37 @@ impl Expansion for SegaCdExp {
 
     fn read(&mut self, addr: u32, size: Size, now: u64) -> Option<u32> {
         self.advance(now);
-        if (0xA1_2000..=0xA1_20FF).contains(&addr) && size == Size::Word {
-            return self
-                .side
+        let value = if (0xA1_2000..=0xA1_20FF).contains(&addr) && size == Size::Word {
+            self.side
                 .gate
                 .main_read_word(addr - 0xA1_2000)
-                .map(u32::from);
-        }
-        match size {
-            Size::Byte => self.main_byte(addr, true).map(u32::from),
-            Size::Word => {
-                let hi = self.main_byte(addr, true)?;
-                let lo = self.main_byte(addr | 1, true)?;
-                Some(u32::from(hi) << 8 | u32::from(lo))
+                .map(u32::from)
+        } else {
+            match size {
+                Size::Byte => self.main_byte(addr, true).map(u32::from),
+                Size::Word => {
+                    let hi = self.main_byte(addr, true)?;
+                    let lo = self.main_byte(addr | 1, true)?;
+                    Some(u32::from(hi) << 8 | u32::from(lo))
+                }
             }
+        };
+        // debugging aid: the main CPU's reads of the flag and status words are logged too, marked by bit 31 of the address
+        if let Some(v) = value
+            && (0xA1_200E..=0xA1_202F).contains(&addr)
+            && let Some(log) = self.main_log.as_mut()
+            && log.len() < 400_000
+        {
+            log.push((self.due, addr | 0x8000_0000, size, v));
         }
+        value
     }
 
     fn write(&mut self, addr: u32, size: Size, value: u32, now: u64) -> bool {
         self.advance(now);
         if (0xA1_2000..=0xA1_20FF).contains(&addr)
             && let Some(log) = self.main_log.as_mut()
-            && log.len() < 20000
+            && log.len() < 400_000
         {
             log.push((self.due, addr, size, value));
         }
@@ -1151,6 +1175,26 @@ mod tests {
         assert_eq!(e.dma_read_word(0x60_0004), Some(0x2222));
         // the BIOS area is not delayed
         assert_eq!(e.dma_read_word(0x00_0004), Some(0));
+    }
+
+    #[test]
+    fn a_cd_controller_transfer_to_word_ram_in_one_megabit_mode_fills_the_sub_cpus_bank() {
+        use mcd_gate_array::cdc::Destination;
+        let mut e = exp();
+        // 1M mode, RET = 0: the main CPU has bank 0, so the sub-CPU's is bank 1
+        assert!(e.side.gate.sub_write_word(0x02, 0x0004));
+        e.side.put_dma_bytes(Destination::WordRam, 0x10, &[1, 2, 3]);
+        assert_eq!(&e.word_ram()[0x2_0010..0x2_0013], &[1, 2, 3]);
+        assert_eq!(&e.word_ram()[0x10..0x13], &[0, 0, 0]);
+        // RET = 1 hands the main CPU bank 1: the next transfer fills bank 0, and the address wraps inside a bank
+        assert!(e.side.gate.sub_write_word(0x02, 0x0005));
+        e.side
+            .put_dma_bytes(Destination::WordRam, 0x2_0000 + 4, &[9]);
+        assert_eq!(e.word_ram()[4], 9);
+        // in 2M mode it is one memory
+        assert!(e.side.gate.sub_write_word(0x02, 0x0000));
+        e.side.put_dma_bytes(Destination::WordRam, 0x3_0000, &[7]);
+        assert_eq!(e.word_ram()[0x3_0000], 7);
     }
 
     #[test]

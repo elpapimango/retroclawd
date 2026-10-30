@@ -176,6 +176,13 @@ fn where_are_both_cpus() {
     if let Ok(path) = std::env::var("RC_DUMP_RAM") {
         std::fs::write(path, m.bus().ram()).unwrap();
     }
+    if let Ok(path) = std::env::var("RC_DUMP_WORD") {
+        // the main CPU's view of $200000-$23FFFF
+        let bytes: Vec<u8> = (0..0x4_0000u64)
+            .map(|a| m.read_memory(0x20_0000 + a))
+            .collect();
+        std::fs::write(path, bytes).unwrap();
+    }
     println!("stop: {:?}", m.take_stop_report());
     {
         let regs = m.registers();
@@ -617,4 +624,102 @@ fn main_side_at_the_stall() {
         m.read_memory(0xFF8E65u64),
         m.read_memory(0xFF8E66u64)
     );
+}
+
+/// Prints the main CPU's writes to the gate array's flag and command words (`RC_BIOS`, `RC_DISC`, `RC_FRAMES`), one a line: the frame
+/// (from the sub-CPU's clock), the address and the value. Made to be put beside the same writes of Genesis Plus GX's own log.
+#[test]
+#[ignore]
+fn main_command_writes() {
+    let Ok(path) = std::env::var("RC_BIOS") else {
+        return;
+    };
+    let frames: u64 = std::env::var("RC_FRAMES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1500);
+    let mut config = SegaCdConfig::new(std::fs::read(path).unwrap(), Region::Usa);
+    config.disc = std::env::var("RC_DISC").ok().map(Into::into);
+    let mut m = new_machine(config).unwrap();
+    m.bus_mut()
+        .expansion_mut()
+        .unwrap()
+        .as_any_mut()
+        .downcast_mut::<SegaCdExp>()
+        .unwrap()
+        .log_main_io();
+    let budget = frames * m.clock_hz() / m.frame_hz();
+    let mut spent = 0u64;
+    while spent < budget {
+        spent += u64::from(m.step());
+    }
+    let e = m
+        .bus()
+        .expansion()
+        .unwrap()
+        .as_any()
+        .downcast_ref::<SegaCdExp>()
+        .unwrap();
+    for (due, addr, size, value) in e.main_io_log() {
+        let frame = due * 60 / 12_500_000;
+        let (kind, addr) = if addr & 0x8000_0000 != 0 {
+            ("R", addr & 0xFF_FFFF)
+        } else {
+            ("W", *addr)
+        };
+        println!("{kind} {frame} {addr:06X} {size:?} {value:04X}");
+    }
+}
+
+/// Prints the sub-CPU's writes to its status words `$FF8020-$FF802F` (`RC_BIOS`, `RC_DISC`, `RC_FRAMES`), one a line, to be put beside the
+/// same writes of Genesis Plus GX's own log.
+#[test]
+#[ignore]
+fn sub_status_writes() {
+    let Ok(path) = std::env::var("RC_BIOS") else {
+        return;
+    };
+    let frames: u64 = std::env::var("RC_FRAMES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1500);
+    let mut config = SegaCdConfig::new(std::fs::read(path).unwrap(), Region::Usa);
+    config.disc = std::env::var("RC_DISC").ok().map(Into::into);
+    let mut m = new_machine(config).unwrap();
+    {
+        let e = m
+            .bus_mut()
+            .expansion_mut()
+            .unwrap()
+            .as_any_mut()
+            .downcast_mut::<SegaCdExp>()
+            .unwrap();
+        e.log_sub_io();
+        let (lo, hi) = std::env::var("RC_SUBRANGE")
+            .ok()
+            .and_then(|v| {
+                let (a, b) = v.split_once('-')?;
+                Some((
+                    u32::from_str_radix(a, 16).ok()?,
+                    u32::from_str_radix(b, 16).ok()?,
+                ))
+            })
+            .unwrap_or((0xFF_8020, 0xFF_802F));
+        e.filter_sub_io(lo, hi);
+    }
+    let budget = frames * m.clock_hz() / m.frame_hz();
+    let mut spent = 0u64;
+    while spent < budget {
+        spent += u64::from(m.step());
+    }
+    let e = m
+        .bus()
+        .expansion()
+        .unwrap()
+        .as_any()
+        .downcast_ref::<SegaCdExp>()
+        .unwrap();
+    for (pc, addr, size, value) in e.sub_io_log() {
+        println!("S {pc:06X} {addr:06X} {size:?} {value:04X}");
+    }
 }
