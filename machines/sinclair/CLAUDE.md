@@ -403,6 +403,7 @@ The notes below were written in the host repository before the split and refer t
   best-effort" stance as `load_snapshot` — `restore_memory` itself can't
   safely detect a mismatch (applying a `Memory::Flat` payload onto banked
   memory, or vice versa, would silently do the wrong thing, not error).
+- **Spectrum symbol keys (2026-10-30)**: the combo keys were probed against the 48K ROM (`Symbol Shift` + key in L mode): `DoubleQuote` is SS+P, `Question` SS+C, `LessThan` SS+R, `GreaterThan` SS+T, `GreaterEqual` SS+E, `NotEqual` SS+W, `Pound` SS+X, `Caret` SS+H (before, `"`/`?`/`<`/`>` typed `AT`, `>`, `>=`, `<`). `~ | \ { } [ ]` and the copyright sign are extended-mode keys: Caps Shift + Symbol Shift together, both let go, then Symbol Shift + A/S/D/F/G/Y/U/P. The plugin's `extended.rs` runs that as a sequence in machine time (two keyboard scans per step, T-states from `step`); other key events wait behind it, in order (`pending_keys`, replayed two scans apart). Checked on the real ROM through the plugin (edit-line bytes `5C 7C 7B 22 61` for a fast tap of `\ | { " a`).
 - **Second drive on the +3 (2026-10-17)**: `ZxSpectrumBus` keeps `pristine_disks[2]`; `ZxSpectrum::load_disk_in(drive, ..)`, `eject_disk_from`,
   `disk_in`, `take_modified_disk_image_of`, `mark_disk_saved_in`; the save state carries `modified_disk_b`. The plugin handles
   `MediaSlot::Disk { drive }` 0 and 1 for attach, detach, `ExportDisk` and `MarkDiskSaved` and reports two `DiskStatus` entries; the other

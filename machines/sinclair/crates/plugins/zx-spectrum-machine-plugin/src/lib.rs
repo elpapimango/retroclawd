@@ -1,3 +1,5 @@
+mod extended;
+
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -160,6 +162,12 @@ struct InstanceRecord {
     /// Drive A and drive B.
     disk_attached: [bool; 2],
     disk_image_id: [Option<String>; 2],
+    /// The `[ ] ~ | \ { }` keys, typed as the ROM's extended-mode sequence.
+    extended: extended::ExtendedKeys,
+    /// Key events that arrived while an extended-mode key was being typed, in order.
+    pending_keys: std::collections::VecDeque<(String, bool)>,
+    /// T-states before the next waiting event may play: each is held for a keyboard scan or two, like a typed key.
+    key_wait: u32,
 }
 
 impl PluginState {
@@ -475,6 +483,9 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             breakpoints: Vec::new(),
             disk_attached: [false; 2],
             disk_image_id: [None, None],
+            extended: extended::ExtendedKeys::default(),
+            pending_keys: std::collections::VecDeque::new(),
+            key_wait: 0,
         },
     );
 
@@ -749,17 +760,19 @@ fn spectrum_combo_table() -> &'static [(&'static str, (ZxSpectrumKey, ZxSpectrum
         ("LeftParen", (SymShift, Digit8)),
         ("RightParen", (SymShift, Digit9)),
         ("Underscore", (SymShift, Digit0)),
+        // Probed on the 48K ROM with Symbol Shift + the key in L mode.
         ("LessEqual", (SymShift, Q)),
-        ("GreaterEqual", (SymShift, W)),
-        ("LessThan", (SymShift, E)),
-        ("GreaterThan", (SymShift, R)),
-        ("Question", (SymShift, T)),
-        ("LeftBracket", (SymShift, Y)),
-        ("RightBracket", (SymShift, U)),
-        ("DoubleQuote", (SymShift, I)),
-        ("Quote", (SymShift, I)),
+        ("NotEqual", (SymShift, W)),
+        ("GreaterEqual", (SymShift, E)),
+        ("LessThan", (SymShift, R)),
+        ("GreaterThan", (SymShift, T)),
+        ("DoubleQuote", (SymShift, P)),
+        ("Quote", (SymShift, P)),
         ("Semicolon", (SymShift, O)),
         ("Colon", (SymShift, Z)),
+        ("Pound", (SymShift, X)),
+        ("Question", (SymShift, C)),
+        ("Caret", (SymShift, H)),
         ("Minus", (SymShift, J)),
         ("Plus", (SymShift, K)),
         ("Equals", (SymShift, L)),
@@ -769,6 +782,30 @@ fn spectrum_combo_table() -> &'static [(&'static str, (ZxSpectrumKey, ZxSpectrum
         ("Period", (SymShift, M)),
         ("Delete", (CapsShift, Digit0)),
     ]
+}
+
+/// The keys the ROM types in extended mode (Caps Shift + Symbol Shift, let go, then Symbol Shift + the key), by the key
+/// that follows the shifts. Probed on the 48K ROM: A is `~`, S `|`, D backslash, F `{`, G `}`, Y `[`, U `]` and P the
+/// copyright sign.
+fn spectrum_extended_table() -> &'static [(&'static str, ZxSpectrumKey)] {
+    use ZxSpectrumKey::*;
+    &[
+        ("Tilde", A),
+        ("Pipe", S),
+        ("Backslash", D),
+        ("LeftBrace", F),
+        ("RightBrace", G),
+        ("LeftBracket", Y),
+        ("RightBracket", U),
+        ("Copyright", P),
+    ]
+}
+
+fn spectrum_extended_from_name(name: &str) -> Option<ZxSpectrumKey> {
+    spectrum_extended_table()
+        .iter()
+        .find(|(candidate, _)| *candidate == name)
+        .map(|(_, key)| *key)
 }
 
 fn spectrum_combo_from_name(name: &str) -> Option<(ZxSpectrumKey, ZxSpectrumKey)> {
@@ -786,6 +823,7 @@ fn key_names() -> Vec<plugin_api::MachineKeyInfo> {
             .iter()
             .map(|(name, _)| *name)
             .chain(spectrum_combo_table().iter().map(|(name, _)| *name))
+            .chain(spectrum_extended_table().iter().map(|(name, _)| *name))
             .chain(JOYSTICK_KEYS.iter().map(|(name, _)| *name)),
     );
     plugin_api::set_key_chars(&mut infos, SPECTRUM_CHARS);
@@ -812,6 +850,14 @@ const SPECTRUM_CHARS: &[(&str, &str)] = &[
     ("Question", "?"),
     ("LeftBracket", "["),
     ("RightBracket", "]"),
+    ("Tilde", "~"),
+    ("Pipe", "|"),
+    ("Backslash", "\\"),
+    ("LeftBrace", "{"),
+    ("RightBrace", "}"),
+    ("Caret", "^"),
+    ("Pound", "\u{a3}"),
+    ("Copyright", "\u{a9}"),
     ("DoubleQuote", "\""),
     ("Semicolon", ";"),
     ("Colon", ":"),
@@ -968,7 +1014,56 @@ fn mouse_button_from_host(button: HostMouseButton) -> Option<MouseButton> {
     }
 }
 
+/// Most key events kept waiting behind an extended-mode key.
+const PENDING_KEYS_MAX: usize = 1024;
+
+/// A key event from the host. While an extended-mode key is being typed (a few frames) the others wait their turn, so
+/// the characters of a paste arrive in order.
 fn apply_key_event(record: &mut InstanceRecord, key: &str, pressed: bool) {
+    if !pressed
+        && spectrum_extended_from_name(key).is_some_and(|base| record.extended.is_current(base))
+    {
+        apply_key_now(record, key, pressed);
+    } else if record.extended.busy() || record.key_wait > 0 || !record.pending_keys.is_empty() {
+        if record.pending_keys.len() < PENDING_KEYS_MAX {
+            record.pending_keys.push_back((key.to_string(), pressed));
+        }
+    } else {
+        apply_key_now(record, key, pressed);
+    }
+}
+
+/// Time passed (`cycles` T-states): moves the extended-mode sequence on and plays the events that waited for it.
+fn advance_keys(record: &mut InstanceRecord, cycles: u32) {
+    record.extended.advance(&mut record.machine, cycles);
+    record.key_wait = record.key_wait.saturating_sub(cycles);
+    // A release of the extended key being typed goes through at once; everything else waits while one is typed.
+    while let Some((key, pressed)) = record.pending_keys.front() {
+        let ends_current = !*pressed
+            && spectrum_extended_from_name(key)
+                .is_some_and(|base| record.extended.is_current(base));
+        if !ends_current && (record.extended.busy() || record.key_wait > 0) {
+            break;
+        }
+        let Some((key, pressed)) = record.pending_keys.pop_front() else {
+            break;
+        };
+        apply_key_now(record, &key, pressed);
+        if !ends_current {
+            record.key_wait = extended::STEP_TSTATES;
+        }
+    }
+}
+
+fn apply_key_now(record: &mut InstanceRecord, key: &str, pressed: bool) {
+    if let Some(base) = spectrum_extended_from_name(key) {
+        if pressed {
+            record.extended.press(&mut record.machine, base);
+        } else {
+            record.extended.release(&mut record.machine, base);
+        }
+        return;
+    }
     if let Some((modifier, base)) = spectrum_combo_from_name(key) {
         for emulated_key in [modifier, base] {
             if pressed {
@@ -1074,6 +1169,7 @@ fn handle_machine_command(
         }
         MachineCommand::Step => {
             let cycles = record.machine.step();
+            advance_keys(record, cycles);
             Ok(MachineResponse::Step(plugin_api::StepResult {
                 cycles,
                 pc: record.machine.pc(),
@@ -1083,6 +1179,9 @@ fn handle_machine_command(
         MachineCommand::IsHalted => Ok(MachineResponse::Halted(record.machine.halted())),
         MachineCommand::GetPc => Ok(MachineResponse::Pc(record.machine.pc())),
         MachineCommand::Reset => {
+            record.extended.clear(&mut record.machine);
+            record.pending_keys.clear();
+            record.key_wait = 0;
             record.machine.reset();
             Ok(MachineResponse::Ack)
         }
@@ -1479,7 +1578,11 @@ fn plugin_step_inner(instance: MachineInstanceHandle) -> u32 {
         return 0;
     };
     match state.instances.get_mut(&instance) {
-        Some(record) => record.machine.step(),
+        Some(record) => {
+            let cycles = record.machine.step();
+            advance_keys(record, cycles);
+            cycles
+        }
         None => 0,
     }
 }
@@ -1543,6 +1646,20 @@ mod tests {
         };
         assert_eq!(typed("Exclamation").as_deref(), Some("!"));
         assert_eq!(typed("DoubleQuote").as_deref(), Some("\""));
+        // The extended-mode keys and the ones the ROM puts on Symbol Shift + C/H/X: typed by the symbolic layout.
+        for (name, text) in [
+            ("Backslash", "\\"),
+            ("Pipe", "|"),
+            ("LeftBrace", "{"),
+            ("RightBrace", "}"),
+            ("Tilde", "~"),
+            ("LeftBracket", "["),
+            ("RightBracket", "]"),
+            ("Caret", "^"),
+            ("Question", "?"),
+        ] {
+            assert_eq!(typed(name).as_deref(), Some(text), "{name}");
+        }
         // No character is claimed by two keys.
         let all: String = infos.iter().map(|k| k.chars.as_str()).collect();
         let unique: std::collections::HashSet<char> = all.chars().collect();
