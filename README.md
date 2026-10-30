@@ -436,7 +436,7 @@ keymap = "keymaps/spectrum.toml"
   (`Shift`+`&` on AZERTY types `1`, so the machine gets `1` without a stray Shift;
   a capital letter keeps Shift). Punctuation is matched through the characters
   each machine plugin declares its keys type (`!`, `"`, `;`, `[`, ... -- ZX
-  Spectrum and C64 cover the whole punctuation row, the CPC only `, . /`, the ZX81
+  Spectrum, CPC and C64 cover the whole punctuation row, the ZX81
   letters, digits and space), and the host's Shift/AltGr used to type it are not
   also sent. A character the machine has no key for falls back to the physical
   key, exactly as in the positional layout -- except an accented letter, which types its plain letter (`é` -> `e`, `Ü` -> `U`, `ß` -> `ss`
@@ -454,8 +454,7 @@ the program) are used by name: `retroclawd c64 --keymap de` or `[input] keymap =
 layout for that keyboard, which types the right characters on the ZX Spectrum, the CPC, the C64 and the other machines
 that declare what their keys type. The Atari ST, Mega ST and STE (whose keys are the US positions and whose EmuTOS
 uses the US table by default) have explicit bindings in each file, so e.g. Shift+2 on a German keyboard types `"`.
-Characters a machine has no key for (the Spectrum has no `\`, `{`, `}`, `|`, `~`; the CPC no `~`) and the AltGr
-layer are not covered; the extra ISO key left of Z cannot be bound. A file of the same name next to the config wins. `retroclawd` lists the names when a
+Every character of a US keyboard now has a key on the Spectrum (`\ | { } ~ [ ]` are typed as the ROM's extended-mode sequence, a few frames long) and on the CPC (`~` is Control+2); the AltGr layer and the extra ISO key left of Z are not covered. A file of the same name next to the config wins. `retroclawd` lists the names when a
 keymap is not found.
 
 **US keyboard on the C64:** the shipped `us-c64` keymap (`--keymap us-c64`, or
