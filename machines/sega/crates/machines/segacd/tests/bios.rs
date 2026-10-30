@@ -327,3 +327,39 @@ fn where_are_both_cpus() {
         e.audio_activity()
     );
 }
+
+/// A real BIOS and disc (`RC_BIOS`, `RC_DISC`): run, save, load into a fresh machine, run both on: the bytes of their states and
+/// the pictures stay equal. `RC_FRAMES` (default 400) frames before the save and 120 after.
+#[test]
+#[ignore]
+fn a_saved_state_resumes_the_real_bios_and_disc_exactly() {
+    let (Ok(bios), Ok(disc)) = (std::env::var("RC_BIOS"), std::env::var("RC_DISC")) else {
+        return;
+    };
+    let frames: u64 = std::env::var("RC_FRAMES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(400);
+    let make = || {
+        let mut config = SegaCdConfig::new(std::fs::read(&bios).unwrap(), Region::Usa);
+        config.disc = Some(disc.clone().into());
+        new_machine(config).unwrap()
+    };
+    let run = |m: &mut genesis::Genesis, frames: u64| {
+        let per = m.clock_hz() / m.frame_hz();
+        let mut spent = 0u64;
+        while spent < frames * per {
+            spent += u64::from(m.step());
+        }
+    };
+    let mut a = make();
+    run(&mut a, frames);
+    let state = a.save_state();
+    println!("state: {} bytes", state.len());
+    let mut b = make();
+    b.load_state(&state).unwrap();
+    run(&mut a, 120);
+    run(&mut b, 120);
+    assert_eq!(a.save_state(), b.save_state(), "the states diverged");
+    assert_eq!(a.render_frame(), b.render_frame(), "the pictures differ");
+}

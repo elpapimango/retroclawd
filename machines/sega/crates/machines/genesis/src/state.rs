@@ -18,7 +18,7 @@ use vdp::Vdp;
 const MAGIC: &[u8; 4] = b"RCST";
 const MACHINE_ID: &[u8] = b"genesis";
 /// The payload layout: bump when a field is added, removed or reordered.
-const SCHEMA: u16 = 2;
+const SCHEMA: u16 = 3;
 /// The most a state may hold (the machine's RAM and chips come to well under 2 MB).
 pub const MAX_STATE_BYTES: usize = 64 * 1024 * 1024;
 
@@ -31,6 +31,8 @@ pub enum StateError {
     OtherRom,
     OtherRegion,
     OtherChip,
+    /// The state has (or lacks) an expansion this machine lacks (or has).
+    OtherExpansion,
     TooLarge(u64),
     BadChecksum,
     Corrupt(String),
@@ -49,6 +51,10 @@ impl fmt::Display for StateError {
             StateError::OtherRom => write!(f, "the state was saved with another cartridge"),
             StateError::OtherRegion => write!(f, "the state was saved for another region"),
             StateError::OtherChip => write!(f, "the state was saved with another FM chip"),
+            StateError::OtherExpansion => write!(
+                f,
+                "the state was saved with other hardware on the cartridge port (a Mega-CD or none)"
+            ),
             StateError::TooLarge(n) => write!(
                 f,
                 "the state claims {n} bytes of payload (the limit is {MAX_STATE_BYTES})"
@@ -73,6 +79,8 @@ struct Payload {
     sound: Sound,
     cart: Cart,
     tmss: Tmss,
+    /// The expansion's own state (the Mega-CD), when one is attached.
+    expansion: Option<Vec<u8>>,
 }
 
 fn region_byte(r: Region) -> u8 {
@@ -103,6 +111,7 @@ pub fn save(cpu: &Cpu, bus: &Bus, rom_crc: u32) -> Vec<u8> {
         sound: bus.sound.clone(),
         cart: bus.cart.clone(),
         tmss: bus.tmss.clone(),
+        expansion: bus.expansion().and_then(|e| e.save_state()),
     };
     let body = bincode::serde::encode_to_vec(&payload, bincode::config::standard())
         .expect("a state always encodes");
@@ -126,6 +135,7 @@ pub fn load(
     rom_crc: u32,
     region: Region,
     chip: ym2612::Chip,
+    has_expansion: bool,
 ) -> Result<Loaded, StateError> {
     let mut at = 0usize;
     let mut take = |n: usize| -> Result<&[u8], StateError> {
@@ -183,6 +193,9 @@ pub fn load(
             "the bus refresh is too far ahead".to_string(),
         ));
     }
+    if payload.expansion.is_some() != has_expansion {
+        return Err(StateError::OtherExpansion);
+    }
     payload.vdp.validate().map_err(StateError::Corrupt)?;
     payload.z80.validate().map_err(StateError::Corrupt)?;
     payload.sound.validate().map_err(StateError::Corrupt)?;
@@ -210,6 +223,7 @@ pub fn load(
         sound: payload.sound,
         cart: payload.cart,
         tmss: payload.tmss,
+        expansion: payload.expansion,
     })
 }
 
@@ -225,4 +239,5 @@ pub struct Loaded {
     pub sound: Sound,
     pub cart: Cart,
     pub tmss: Tmss,
+    pub expansion: Option<Vec<u8>>,
 }

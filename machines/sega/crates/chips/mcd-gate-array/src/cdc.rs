@@ -8,13 +8,14 @@
 //! the PCM RAM, program RAM or word RAM. Error correction is not modelled: every block arrives intact (the disc images have
 //! no errors), and the status registers say so.
 
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
 /// The buffer RAM: 16 KB, addressed by the 14-bit counters.
 pub const BUFFER_SIZE: usize = 0x4000;
 
 /// Where a transfer goes (the destination bits DD2-DD0 of `$FF8004`, fact C13).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Destination {
     /// Not a destination; transfers do nothing.
     None,
@@ -44,13 +45,13 @@ impl Destination {
 }
 
 /// A DMA transfer the gate array's owner carries out into memory it owns.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Dma {
     pub destination: Destination,
     pub bytes: Vec<u8>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Cdc {
     ar: u8,
     dest_bits: u8,
@@ -105,6 +106,27 @@ impl Cdc {
             dma: None,
             int_seen: false,
         }
+    }
+
+    /// Whether a state's values are ones the controller can have (a state is untrusted input).
+    pub fn validate(&self) -> Result<(), String> {
+        if self.ram.len() != BUFFER_SIZE {
+            return Err("the CD controller's buffer has the wrong size".to_string());
+        }
+        if self.ar > 0xF || self.dest_bits > 7 {
+            return Err("the CD controller's address or destination is out of range".to_string());
+        }
+        if self.host.len() > BUFFER_SIZE {
+            return Err("the CD controller holds more host bytes than its buffer".to_string());
+        }
+        if self
+            .dma
+            .as_ref()
+            .is_some_and(|d| d.bytes.len() > BUFFER_SIZE)
+        {
+            return Err("the CD controller's transfer is longer than its buffer".to_string());
+        }
+        Ok(())
     }
 
     pub fn destination(&self) -> Destination {

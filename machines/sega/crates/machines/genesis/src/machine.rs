@@ -265,9 +265,18 @@ impl Machine for Genesis {
     }
 
     fn load_state(&mut self, bytes: &[u8]) -> Result<(), String> {
-        let loaded =
-            crate::state::load(bytes, self.rom_crc, self.region, self.bus.sound.ym().kind())
-                .map_err(|e| e.to_string())?;
+        let loaded = crate::state::load(
+            bytes,
+            self.rom_crc,
+            self.region,
+            self.bus.sound.ym().kind(),
+            self.bus.expansion().is_some(),
+        )
+        .map_err(|e| e.to_string())?;
+        // the expansion goes first: it is the only part that can still refuse, and it changes nothing when it does
+        if let (Some(blob), Some(exp)) = (loaded.expansion.as_deref(), self.bus.expansion_mut()) {
+            exp.load_state(blob, loaded.now)?;
+        }
         self.cpu = loaded.cpu;
         self.bus.now = loaded.now;
         self.bus.refresh_at = loaded.refresh_at;

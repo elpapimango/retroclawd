@@ -6,3 +6,4 @@ license = "GPL-3.0-or-later"
 description = "Mega-CD graphics unit: stamp rotation and scaling into an image buffer, and the font colour converter"
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }

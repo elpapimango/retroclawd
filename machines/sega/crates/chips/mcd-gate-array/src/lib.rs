@@ -12,17 +12,19 @@
 pub mod cdc;
 pub mod cdd;
 
+use serde::{Deserialize, Serialize};
+
 /// Sub-CPU clocks per tick of the stopwatch and the timer (30.72 us at 12.5 MHz, fact C10).
 pub const CLOCKS_PER_TICK: u64 = 384;
 
 /// Who has the 256 KB of word RAM in 2M mode.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WordRamOwner {
     Main,
     Sub,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GateArray {
     run: bool,
     sbrq: bool,
@@ -63,6 +65,38 @@ impl Default for GateArray {
 }
 
 impl GateArray {
+    /// A copy for a save state (the drive's position included, not the drive).
+    pub fn snapshot(&self) -> GateArray {
+        let mut copy = self.clone();
+        copy.cdd = self.cdd.snapshot();
+        copy
+    }
+
+    /// Whether a state's values are ones the gate array can have (a state is untrusted input).
+    pub fn validate(&self) -> Result<(), String> {
+        if self.bank > 3 || self.pm > 3 || self.reset_step > 3 {
+            return Err("a Mega-CD register holds a value it cannot".to_string());
+        }
+        self.cdc.validate()?;
+        self.cdd.validate()
+    }
+
+    /// Takes a snapshot, keeping the plugged-in drive. Nothing changes on an error.
+    pub fn restore(&mut self, mut saved: GateArray) -> Result<(), String> {
+        saved.validate()?;
+        let cdd = std::mem::take(&mut saved.cdd);
+        let mut this_cdd = std::mem::take(&mut self.cdd);
+        if let Err(e) = this_cdd.adopt(cdd) {
+            self.cdd = this_cdd;
+            return Err(e);
+        }
+        *self = GateArray {
+            cdd: this_cdd,
+            ..saved
+        };
+        Ok(())
+    }
+
     /// Power-on state (fact C6, C4, C9, C12): sub-CPU in reset, 2M mode, word RAM with the main CPU.
     pub fn new() -> GateArray {
         GateArray {

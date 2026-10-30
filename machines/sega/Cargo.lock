@@ -78,10 +78,16 @@ dependencies = [
 [[package]]
 name = "mcd-asic"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "mcd-gate-array"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "md-cart"
@@ -117,6 +123,9 @@ dependencies = [
 [[package]]
 name = "rf5c164"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "sega-machine-plugin"
@@ -144,6 +153,8 @@ dependencies = [
 name = "segacd"
 version = "0.1.0"
 dependencies = [
+ "bincode",
+ "crc32fast",
  "disc",
  "genesis",
  "machine",
@@ -151,6 +162,7 @@ dependencies = [
  "mcd-asic",
  "mcd-gate-array",
  "rf5c164",
+ "serde",
 ]
 
 [[package]]

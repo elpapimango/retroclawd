@@ -6,3 +6,4 @@ license = "GPL-3.0-or-later"
 description = "Mega-CD gate array: main and sub CPU registers, word RAM ownership, mailboxes, stopwatch and timer"
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }

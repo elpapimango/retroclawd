@@ -11,6 +11,7 @@ pub mod drive;
 use genesis::mc68000::{BusFault, Cpu, FunctionCode, IackResponse, M68kBus, Size};
 use genesis::{Config, Expansion, Genesis, Region};
 use mcd_gate_array::{GateArray, WordRamOwner};
+use serde::{Deserialize, Serialize};
 use std::any::Any;
 
 /// The sub-CPU's clock (fact C10).
@@ -401,6 +402,34 @@ struct SubTrace {
     ring: std::collections::VecDeque<TraceEntry>,
     stop_at: Vec<u32>,
     frozen: bool,
+}
+
+/// Everything of the Mega-CD that changes while it runs, for a save state. Not in it: the BIOS and the disc (the state names the
+/// BIOS by CRC and the disc by its track layout and refuses another), the debugging aids, and a stop that was already reported.
+#[derive(Serialize, Deserialize)]
+struct SavedExp {
+    bios_crc: u32,
+    master_hz: u64,
+    prg: Vec<u8>,
+    word: Vec<u8>,
+    backup: Vec<u8>,
+    gate: GateArray,
+    pcm: rf5c164::Pcm,
+    asic: mcd_asic::Asic,
+    clock: u64,
+    hung: bool,
+    pc: u32,
+    sub: Cpu,
+    last_master: u64,
+    remainder: u64,
+    due: u64,
+    spent: u64,
+    was_running: bool,
+    starts: u32,
+    run_clocks: u64,
+    pcm_audio: audio::Resampler,
+    cd_audio: audio::Resampler,
+    activity: (u64, u64),
 }
 
 impl SegaCdExp {
@@ -829,6 +858,95 @@ impl Expansion for SegaCdExp {
         self.side.stop.clone()
     }
 
+    fn save_state(&self) -> Option<Vec<u8>> {
+        let saved = SavedExp {
+            bios_crc: crc32fast::hash(&self.side.bios),
+            master_hz: self.master_hz,
+            prg: self.side.prg.to_vec(),
+            word: self.side.word.to_vec(),
+            backup: self.side.backup.to_vec(),
+            gate: self.side.gate.snapshot(),
+            pcm: self.side.pcm.clone(),
+            asic: self.side.asic.clone(),
+            clock: self.side.clock,
+            hung: self.side.hung,
+            pc: self.side.pc,
+            sub: self.sub.clone(),
+            last_master: self.last_master,
+            remainder: self.remainder,
+            due: self.due,
+            spent: self.spent,
+            was_running: self.was_running,
+            starts: self.starts,
+            run_clocks: self.run_clocks,
+            pcm_audio: self.pcm_audio.clone(),
+            cd_audio: self.cd_audio.clone(),
+            activity: self.activity,
+        };
+        Some(
+            bincode::serde::encode_to_vec(&saved, bincode::config::standard())
+                .expect("a state always encodes"),
+        )
+    }
+
+    fn load_state(&mut self, bytes: &[u8], now: u64) -> Result<(), String> {
+        let (saved, used): (SavedExp, usize) =
+            bincode::serde::decode_from_slice(bytes, bincode::config::standard())
+                .map_err(|e| format!("the Mega-CD state is damaged: {e}"))?;
+        if used != bytes.len() {
+            return Err("the Mega-CD state is damaged: trailing bytes".to_string());
+        }
+        if saved.bios_crc != crc32fast::hash(&self.side.bios) {
+            return Err("the state was saved with another Sega CD BIOS".to_string());
+        }
+        if saved.master_hz != self.master_hz {
+            return Err("the state was saved for another region".to_string());
+        }
+        if saved.prg.len() != PRG_RAM_SIZE
+            || saved.word.len() != WORD_RAM_SIZE
+            || saved.backup.len() != BACKUP_RAM_SIZE
+        {
+            return Err("the Mega-CD state has a RAM of the wrong size".to_string());
+        }
+        saved.pcm.validate()?;
+        saved.asic.validate()?;
+        saved
+            .pcm_audio
+            .validate(SUB_CLOCK_HZ / rf5c164::CLOCKS_PER_SAMPLE)?;
+        saved.cd_audio.validate(44_100)?;
+        // the sub-CPU finishes the instruction it started, so it can be a few clocks ahead of what is due
+        if saved.last_master > now
+            || saved.spent > saved.due.saturating_add(4096)
+            || saved.remainder >= self.master_hz
+        {
+            return Err("the Mega-CD state has its clocks out of order".to_string());
+        }
+        // the gate array is the one part that can still refuse (the drive): it goes first, so nothing changes on an error
+        self.side.gate.restore(saved.gate)?;
+        self.side.prg.copy_from_slice(&saved.prg);
+        self.side.word.copy_from_slice(&saved.word);
+        self.side.backup.copy_from_slice(&saved.backup);
+        self.side.pcm = saved.pcm;
+        self.side.asic = saved.asic;
+        self.side.clock = saved.clock;
+        self.side.hung = saved.hung;
+        self.side.stop = None;
+        self.side.pc = saved.pc;
+        self.sub = saved.sub;
+        self.last_master = saved.last_master;
+        self.remainder = saved.remainder;
+        self.due = saved.due;
+        self.spent = saved.spent;
+        self.was_running = saved.was_running;
+        self.starts = saved.starts;
+        self.run_clocks = saved.run_clocks;
+        self.pcm_audio = saved.pcm_audio;
+        self.cd_audio = saved.cd_audio;
+        self.activity = saved.activity;
+        self.pcm_scratch.clear();
+        Ok(())
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -870,6 +988,129 @@ mod tests {
     fn run_master(e: &mut SegaCdExp, master_clocks: u64) {
         let t = e.last_master + master_clocks;
         e.advance(t);
+    }
+
+    /// A machine whose sub-CPU runs a counting loop: `$100: ADDQ.W #1,$2000.L ; BRA.S $100`-ish, enough to change RAM and PC.
+    fn running() -> SegaCdExp {
+        let mut e = exp();
+        // 52 79 00 00 20 00: ADDQ.W #1,($2000).L  then 60 F6: BRA.S back
+        start_sub(&mut e, &[0x5279, 0x0000, 0x2000, 0x60F6]);
+        run_master(&mut e, 200_000);
+        e
+    }
+
+    #[test]
+    fn a_saved_expansion_resumes_exactly_in_a_fresh_one() {
+        let mut a = running();
+        let blob = a.save_state().unwrap();
+        let mut b = exp();
+        b.load_state(&blob, a.last_master).unwrap();
+        assert_eq!(
+            b.save_state().unwrap(),
+            blob,
+            "loading then saving gives the same bytes"
+        );
+        run_master(&mut a, 400_000);
+        run_master(&mut b, 400_000);
+        assert_eq!(a.save_state().unwrap(), b.save_state().unwrap());
+        assert_ne!(a.prg_ram()[0x2000..0x2002], [0, 0], "the loop ran");
+    }
+
+    #[test]
+    fn a_state_of_another_bios_region_or_time_is_refused_and_changes_nothing() {
+        let a = running();
+        let blob = a.save_state().unwrap();
+        let mut other_bios = vec![0u8; BIOS_SIZE];
+        other_bios[7] = 1;
+        let mut b = SegaCdExp::new(other_bios, NTSC).unwrap();
+        let before = b.save_state().unwrap();
+        assert!(
+            b.load_state(&blob, a.last_master)
+                .unwrap_err()
+                .contains("BIOS")
+        );
+        let mut pal = SegaCdExp::new(vec![0; BIOS_SIZE], 53_203_424).unwrap();
+        assert!(
+            pal.load_state(&blob, a.last_master)
+                .unwrap_err()
+                .contains("region")
+        );
+        let mut c = exp();
+        assert!(
+            c.load_state(&blob, 0).unwrap_err().contains("clocks"),
+            "a state from the future"
+        );
+        assert_eq!(b.save_state().unwrap(), before);
+    }
+
+    #[test]
+    fn damaged_expansion_states_never_panic_and_never_half_load() {
+        let a = running();
+        let blob = a.save_state().unwrap();
+        let mut target = exp();
+        let before = target.save_state().unwrap();
+        for len in (0..blob.len()).step_by(997) {
+            assert!(
+                target.load_state(&blob[..len], a.last_master).is_err(),
+                "cut at {len}"
+            );
+        }
+        assert_eq!(
+            target.save_state().unwrap(),
+            before,
+            "refusals change nothing"
+        );
+        // flipped bytes either load (and the machine keeps running) or are refused: never a panic
+        let mut seed = 0x1234_5678u32;
+        for _ in 0..300 {
+            let mut bad = blob.clone();
+            for _ in 0..3 {
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let at = (seed >> 8) as usize % bad.len();
+                bad[at] ^= 1 << (seed & 7);
+            }
+            let mut t = exp();
+            if t.load_state(&bad, a.last_master).is_ok() {
+                run_master(&mut t, 100_000);
+            }
+        }
+    }
+
+    fn cd_machine() -> Genesis {
+        new_machine(SegaCdConfig::new(vec![0; BIOS_SIZE], Region::Usa)).unwrap()
+    }
+
+    #[test]
+    fn a_whole_mega_cd_machine_saves_and_resumes_and_refuses_plain_genesis_states() {
+        let advance = |m: &mut Genesis, clocks: u64| {
+            let mut spent = 0u64;
+            while spent < clocks {
+                spent += u64::from(m.step());
+            }
+        };
+        let mut a = cd_machine();
+        advance(&mut a, 3_000_000);
+        let state = a.save_state();
+        let mut b = cd_machine();
+        b.load_state(&state).unwrap();
+        advance(&mut a, 3_000_000);
+        advance(&mut b, 3_000_000);
+        assert_eq!(a.save_state(), b.save_state());
+
+        // a Genesis without the Mega-CD neither accepts this state nor makes one this machine accepts
+        let mut plain = Genesis::new(Config::new(vec![0u8; 0x400], Region::Usa)).unwrap();
+        assert!(
+            plain
+                .load_state(&state)
+                .unwrap_err()
+                .contains("cartridge port")
+        );
+        let plain_state = plain.save_state();
+        assert!(
+            b.load_state(&plain_state)
+                .unwrap_err()
+                .contains("cartridge port")
+        );
     }
 
     #[test]

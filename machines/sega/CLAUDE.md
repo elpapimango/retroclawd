@@ -37,3 +37,16 @@ crates/plugin-dlls/genesis/         the cdylib (`sega_machine_plugin`), only `ex
 docs/                               hardware-facts.md, sources.md
 scenarios/                          probe ROM sources and the ROM builder
 ```
+
+## Save states of the Mega-CD (2026-10-30)
+
+`Expansion::save_state` / `load_state(bytes, now)` (default: none) let an expansion keep its own state; the Genesis `RCST` payload (schema 3) carries
+it as `expansion: Option<Vec<u8>>`, and a state with a Mega-CD loads only into a Mega-CD machine (`OtherExpansion`) and the reverse. `SegaCdExp`
+saves the sub-CPU, program/word/backup RAM, the gate array (with the CDC buffer and the CDD registers), the PCM chip, the graphics unit, the clocks
+and the two audio resamplers (`SavedExp`, bincode); it names the BIOS by CRC and the region by the master clock and refuses another. The disc is
+not in it: the drive saves only its position and mode (`Drive::state`/`restore`, `DiscDrive` states carry a CRC of the track table so another disc
+is refused), and the disc is opened again from its file. Loading is atomic (the gate array goes first, it is the one part that can still refuse) and
+every value is validated (`validate` on the CD chips; a flipped-byte sweep in `segacd` tests never panics). The backup RAM is part of the state
+(loading a state also loads that backup RAM). Proof: unit tests (round trip, refusals, damage, whole machine) and the ignored
+`a_saved_state_resumes_the_real_bios_and_disc_exactly` (`RC_BIOS`, `RC_DISC`, `RC_FRAMES`): Dragon's Lair at 600 and 1500 frames, Silpheed, Lunar,
+both machines' states and pictures equal 120 frames after the load.

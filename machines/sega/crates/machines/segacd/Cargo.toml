@@ -6,6 +6,9 @@ license = "GPL-3.0-or-later"
 description = "Sega CD / Mega-CD: the sub-CPU system on the Genesis cartridge port"
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+bincode = { version = "2", features = ["serde"] }
+crc32fast = "1"
 genesis = { path = "../genesis" }
 mcd-gate-array = { path = "../../chips/mcd-gate-array" }
 rf5c164 = { path = "../../chips/rf5c164" }

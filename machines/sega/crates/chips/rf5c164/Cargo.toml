@@ -6,3 +6,4 @@ license = "GPL-3.0-or-later"
 description = "Ricoh RF5C164 PCM sound source (the Sega CD's): registers and wave RAM"
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }

@@ -29,6 +29,16 @@ pub trait Expansion: Send {
     /// Adds the expansion's own sound to `out` (interleaved left and right samples, one pair every `frame_clocks` master clocks).
     fn mix_audio(&mut self, _out: &mut [f32], _frame_clocks: u64) {}
 
+    /// The expansion's own state for a save state (`None`: it keeps none).
+    fn save_state(&self) -> Option<Vec<u8>> {
+        None
+    }
+
+    /// Applies what `save_state` made, at master clock `now`. Nothing changes on an error.
+    fn load_state(&mut self, _bytes: &[u8], _now: u64) -> Result<(), String> {
+        Err("this expansion cannot load a saved state".to_string())
+    }
+
     /// The report of a stop inside the expansion (its own CPU met an unknown address), once it happened.
     fn stop_report(&self) -> Option<String>;
 

@@ -7,6 +7,8 @@
 //! channels are summed into a left and a right sample through the envelope and the pan.
 #![forbid(unsafe_code)]
 
+use serde::{Deserialize, Serialize};
+
 pub const WAVE_RAM_SIZE: usize = 0x1_0000;
 /// The window of the wave RAM in the chip's address space is 4 KB.
 pub const BANK_SIZE: usize = 0x1000;
@@ -22,7 +24,7 @@ const LOOP_STOP: u8 = 0xFF;
 /// A channel at full envelope, pan and wave amplitude reaches this many output units; eight of them are limited to 16 bits (fact P6).
 const OUTPUT_SHIFT: u32 = 5;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct Channel {
     env: u8,
     pan: u8,
@@ -40,7 +42,7 @@ impl Channel {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Pcm {
     channels: [Channel; CHANNELS],
     wave: Box<[u8]>,
@@ -77,6 +79,17 @@ impl Pcm {
 
     pub fn sounding(&self) -> bool {
         self.on
+    }
+
+    /// Whether a state's values are ones the chip can have (a state is untrusted input).
+    pub fn validate(&self) -> Result<(), String> {
+        if self.wave.len() != WAVE_RAM_SIZE {
+            return Err("the PCM chip's wave RAM has the wrong size".to_string());
+        }
+        if self.bank > 0xF || self.selected > 7 {
+            return Err("the PCM chip's bank or channel is out of range".to_string());
+        }
+        Ok(())
     }
 
     pub fn bank(&self) -> u8 {

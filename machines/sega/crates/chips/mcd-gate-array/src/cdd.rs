@@ -5,6 +5,7 @@
 //! the machine plugs in: `NoDisc` here, a disc-backed one in the machine crate.
 
 use crate::cdc::Cdc;
+use serde::{Deserialize, Serialize};
 
 /// Sub clocks per second (fact C10) and drive periods per second (the CD frame rate).
 const SUB_CLOCK_HZ: u64 = 12_500_000;
@@ -57,7 +58,22 @@ pub trait Drive: Send {
     /// Moves the audio the drive played since the last call to `out`: interleaved left and right 16-bit samples at 44.1 kHz
     /// (588 stereo frames for each period of playing, fact E17).
     fn take_audio(&mut self, _out: &mut Vec<i16>) {}
+    /// What the drive needs saved besides the disc it was opened with: where the head is and what it is doing. Empty for a
+    /// drive with nothing to keep.
+    fn state(&self) -> Vec<u8> {
+        Vec::new()
+    }
+    /// Takes a state `state` made (for the same disc); nothing changes on an error.
+    fn restore(&mut self, _state: &[u8]) -> Result<(), String> {
+        Ok(())
+    }
     fn box_clone(&self) -> Box<dyn Drive>;
+}
+
+impl Default for Box<dyn Drive> {
+    fn default() -> Self {
+        Box::new(NoDisc::new())
+    }
 }
 
 impl Clone for Box<dyn Drive> {
@@ -100,12 +116,26 @@ impl Drive for NoDisc {
 
     fn period(&mut self, _cdc: &mut Cdc) {}
 
+    fn state(&self) -> Vec<u8> {
+        vec![self.status]
+    }
+
+    fn restore(&mut self, state: &[u8]) -> Result<(), String> {
+        match state {
+            [status] if matches!(*status, status::NO_DISC | status::DOOR_OPEN) => {
+                self.status = *status;
+                Ok(())
+            }
+            _ => Err("the state is not an empty drive's".to_string()),
+        }
+    }
+
     fn box_clone(&self) -> Box<dyn Drive> {
         Box::new(self.clone())
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Cdd {
     /// Status nibbles RS0-RS9 as the sub-CPU reads them.
     rs: [u8; 10],
@@ -114,7 +144,10 @@ pub struct Cdd {
     hock: bool,
     /// The host wrote the last command nibble since the drive last answered.
     command_pending: bool,
+    /// The drive is not part of a saved state (the disc is opened again from its file); `drive_state` carries its position.
+    #[serde(skip)]
     drive: Box<dyn Drive>,
+    drive_state: Vec<u8>,
     /// Sub clocks times 75, not yet a whole period.
     acc: u64,
     /// Debugging aid: the commands received and the answers given.
@@ -157,10 +190,38 @@ impl Cdd {
             hock: false,
             command_pending: false,
             drive: Box::new(NoDisc::new()),
+            drive_state: Vec::new(),
             acc: 0,
             log: Vec::new(),
             audio: Vec::new(),
         }
+    }
+
+    /// Whether a state's values are ones the port can have (a state is untrusted input).
+    pub fn validate(&self) -> Result<(), String> {
+        if self.log.len() > 1 << 16 || self.audio.len() > 1 << 22 {
+            return Err("the CD drive port holds more than it can".to_string());
+        }
+        if self.acc >= 1 << 40 {
+            return Err("the CD drive port's period counter is out of range".to_string());
+        }
+        Ok(())
+    }
+
+    /// A copy for a save state: the port's registers and what the drive keeps.
+    pub fn snapshot(&self) -> Cdd {
+        let mut copy = self.clone();
+        copy.drive_state = self.drive.state();
+        copy
+    }
+
+    /// Takes a snapshot, keeping the drive that is plugged in. Nothing changes on an error.
+    pub fn adopt(&mut self, saved: Cdd) -> Result<(), String> {
+        self.drive.restore(&saved.drive_state)?;
+        let drive = std::mem::take(&mut self.drive);
+        *self = saved;
+        self.drive = drive;
+        Ok(())
     }
 
     /// Plugs in another drive (a disc drive); the port keeps its state.

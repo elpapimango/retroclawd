@@ -12,13 +12,15 @@
 #![forbid(unsafe_code)]
 
 /// Size of word RAM in 2M mode.
+use serde::{Deserialize, Serialize};
+
 pub const RAM_SIZE: usize = 0x4_0000;
 
 /// First and last register offset (from `$FF8000`) this unit answers.
 pub const FIRST_REGISTER: u32 = 0x4C;
 pub const LAST_REGISTER: u32 = 0x67;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Asic {
     font_color: u16,
     font_bits: u16,
@@ -44,6 +46,14 @@ fn word(ram: &[u8], at: usize) -> u16 {
 impl Asic {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Whether a state's values are ones the unit can have (a state is untrusted input).
+    pub fn validate(&self) -> Result<(), String> {
+        if self.last_trace.len() > 1 << 16 {
+            return Err("the graphics unit's trace is longer than it can be".to_string());
+        }
+        Ok(())
     }
 
     /// Whether `off` (the address minus `$FF8000`) belongs to the unit.

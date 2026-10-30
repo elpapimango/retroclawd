@@ -53,7 +53,24 @@ pub struct DiscDrive {
     audio: Vec<i16>,
 }
 
+/// The layout of a drive's saved state: bump when a field is added or changes meaning.
+const STATE_VERSION: u8 = 1;
+/// The most audio a drive can hold unread (a second of stereo samples, well above what a frame produces).
+const MAX_AUDIO_SAMPLES: usize = 44_100 * 2 * 4;
+
 impl DiscDrive {
+    /// A number that identifies the disc's layout, so a state of another disc is refused (a CRC of the track table).
+    fn layout_id(&self) -> u32 {
+        let mut hash = crc32fast::Hasher::new();
+        for t in &self.tracks {
+            for v in [u32::from(t.number), t.start_lba, t.pregap_lba, t.sectors] {
+                hash.update(&v.to_le_bytes());
+            }
+        }
+        hash.update(&self.lead_out.to_le_bytes());
+        hash.finalize()
+    }
+
     pub fn new(disc: Disc) -> Self {
         // a track with no sectors in the image (a truncated copy) is not on the disc
         let tracks: Vec<Track> = disc
@@ -355,6 +372,86 @@ impl Drive for DiscDrive {
         out.append(&mut self.audio);
     }
 
+    fn state(&self) -> Vec<u8> {
+        let mut out = vec![STATE_VERSION];
+        out.extend_from_slice(&self.layout_id().to_le_bytes());
+        match self.mode {
+            Mode::Stopped => out.extend_from_slice(&[0, 0, 0]),
+            Mode::Seeking { periods_left, then } => out.extend_from_slice(&[
+                1,
+                periods_left,
+                match then {
+                    After::Read => 0,
+                    After::Pause => 1,
+                    After::Play => 2,
+                },
+            ]),
+            Mode::Reading => out.extend_from_slice(&[2, 0, 0]),
+            Mode::Playing => out.extend_from_slice(&[3, 0, 0]),
+            Mode::Paused => out.extend_from_slice(&[4, 0, 0]),
+            Mode::Scanning => out.extend_from_slice(&[5, 0, 0]),
+            Mode::TrayOpen => out.extend_from_slice(&[6, 0, 0]),
+        }
+        out.extend_from_slice(&self.lba.to_le_bytes());
+        out.push(self.report);
+        out.push(self.start_delay);
+        out.extend_from_slice(&self.last);
+        out.extend_from_slice(&(self.audio.len() as u32).to_le_bytes());
+        for sample in &self.audio {
+            out.extend_from_slice(&sample.to_le_bytes());
+        }
+        out
+    }
+
+    fn restore(&mut self, state: &[u8]) -> Result<(), String> {
+        let bad = || "the state is not this disc drive's".to_string();
+        let (&version, rest) = state.split_first().ok_or_else(bad)?;
+        if version != STATE_VERSION {
+            return Err(bad());
+        }
+        let (id, rest) = rest.split_at_checked(4).ok_or_else(bad)?;
+        if u32::from_le_bytes(id.try_into().unwrap()) != self.layout_id() {
+            return Err("the state was saved with another disc".to_string());
+        }
+        let (head, rest) = rest.split_at_checked(3 + 4 + 2 + 9 + 4).ok_or_else(bad)?;
+        let mode = match (head[0], head[1], head[2]) {
+            (0, 0, 0) => Mode::Stopped,
+            (1, periods_left, then) if then <= 2 => Mode::Seeking {
+                periods_left,
+                then: [After::Read, After::Pause, After::Play][usize::from(then)],
+            },
+            (2, 0, 0) => Mode::Reading,
+            (3, 0, 0) => Mode::Playing,
+            (4, 0, 0) => Mode::Paused,
+            (5, 0, 0) => Mode::Scanning,
+            (6, 0, 0) => Mode::TrayOpen,
+            _ => return Err(bad()),
+        };
+        let lba = i32::from_le_bytes(head[3..7].try_into().unwrap());
+        let span = i64::from(self.lead_out) + i64::from(LEAD_IN) + 1;
+        if i64::from(lba) < -i64::from(LEAD_IN) - 1 || i64::from(lba) > span {
+            return Err("the state has the head off the disc".to_string());
+        }
+        let (report, start_delay) = (head[7], head[8]);
+        let last: [u8; 9] = head[9..18].try_into().unwrap();
+        let count = u32::from_le_bytes(head[18..22].try_into().unwrap()) as usize;
+        if count > MAX_AUDIO_SAMPLES || rest.len() != count * 2 {
+            return Err(bad());
+        }
+        self.mode = mode;
+        self.lba = lba;
+        self.report = report;
+        self.start_delay = start_delay;
+        self.last = last;
+        self.audio = rest
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| i16::from_le_bytes(*b))
+            .collect();
+        Ok(())
+    }
+
     fn box_clone(&self) -> Box<dyn Drive> {
         // a disc cannot be duplicated (it holds open files): a copy of the machine's state has an empty drive
         Box::new(NoDisc::new())
@@ -401,6 +498,71 @@ mod tests {
             tc[*i] = *v;
         }
         tc
+    }
+
+    #[test]
+    fn a_drives_state_carries_its_position_and_only_fits_the_same_disc() {
+        let (mut d, _) = drive();
+        d.command(&cmd(command::NOP, &[]));
+        // seek to 00:04:00 then play from there: the head moves and the mode changes
+        d.command(&cmd(
+            command::READ,
+            &[(2, 0), (3, 0), (4, 0), (5, 4), (6, 0), (7, 0)],
+        ));
+        let mut cdc = Cdc::new();
+        for _ in 0..20 {
+            d.period(&mut cdc);
+        }
+        let state = d.state();
+        let (mut fresh, _) = drive();
+        fresh.restore(&state).unwrap();
+        assert_eq!(
+            fresh.state(),
+            state,
+            "the restored drive saves what it was given"
+        );
+        for _ in 0..30 {
+            d.period(&mut cdc);
+            fresh.period(&mut cdc);
+        }
+        assert_eq!(fresh.state(), d.state(), "and goes on the same way");
+
+        // another disc (a different track table) is refused, and nothing changes
+        let dir = std::env::temp_dir().join(format!("segacd-drive-other-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let other = builder::write_disc(
+            &dir,
+            "o",
+            &[BuildTrack {
+                kind: TrackKind::Mode1Raw,
+                sectors: 100,
+                fill: Fill::Pattern,
+            }],
+        )
+        .unwrap();
+        let mut other = DiscDrive::new(Disc::open(&other).unwrap());
+        let before = other.state();
+        assert!(other.restore(&state).unwrap_err().contains("another disc"));
+        assert_eq!(other.state(), before);
+    }
+
+    #[test]
+    fn a_damaged_drive_state_is_refused_without_a_change() {
+        let (d, _) = drive();
+        let good = d.state();
+        let (mut target, _) = drive();
+        let before = target.state();
+        for len in 0..good.len() {
+            assert!(target.restore(&good[..len]).is_err(), "cut at {len}");
+        }
+        let mut junk = good.clone();
+        junk[5] = 99; // no such mode
+        assert!(target.restore(&junk).is_err());
+        let mut far = good.clone();
+        far[9..13].copy_from_slice(&i32::MAX.to_le_bytes()); // the head far off the disc
+        assert!(target.restore(&far).is_err());
+        assert_eq!(target.state(), before);
     }
 
     #[test]

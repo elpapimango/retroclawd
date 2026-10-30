@@ -2,10 +2,11 @@
 //! rate and added to its sound (fact C22). Each source queues the samples its clock produced; the mixer takes them at the pace
 //! of the output samples with linear interpolation between neighbours.
 
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
 /// A queue of stereo samples at `in_hz` read at the output rate.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Resampler {
     in_hz: u64,
     queue: VecDeque<(f32, f32)>,
@@ -51,6 +52,14 @@ impl Resampler {
             self.prev.0 + (self.cur.0 - self.prev.0) * t,
             self.prev.1 + (self.cur.1 - self.prev.1) * t,
         )
+    }
+
+    /// Whether a state's values are ones this resampler can have (a state is untrusted input).
+    pub fn validate(&self, in_hz: u64) -> Result<(), String> {
+        if self.in_hz != in_hz || self.queue.len() as u64 > in_hz / MAX_SECONDS_DIV {
+            return Err("an audio resampler of the state does not fit this machine".to_string());
+        }
+        Ok(())
     }
 
     pub fn queued(&self) -> usize {
