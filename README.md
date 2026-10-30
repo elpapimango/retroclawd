@@ -373,7 +373,7 @@ that is removed when the program exits (a folder left by a killed run is swept a
 **Disc images in a zip, and from RomM.** A CD image is several files (a `.cue` sheet and its `.bin` tracks), so a machine
 option that names one, such as the Sega CD's `disc`, also takes a `.zip` or `romm:<id>`: the whole archive is unpacked
 into `<cache>/unpacked/` (once per archive version; sets unused for a week are removed) and the machine gets the `.cue`
-(else a `.gdi`, `.iso`, `.chd`, `.toc`) inside it. `retroclawd segacd --firmware auto --disc romm:6764` plays a game
+(else a `.gdi`, `.iso`, `.chd`, `.toc`) inside it. A `.chd` (version 5, cdzl/cdlz/cdfl) plays as it is, and a Sega CD game can be saved and loaded with the usual state hotkeys. `retroclawd segacd --firmware auto --disc romm:6764` plays a game
 straight from the server; a single `.iso` or `.cue` on RomM is used as it is.
 
 **Debugger symbols**
