@@ -7,19 +7,20 @@ through the plugin ABI; this repository will hold the Neo Geo (MVS/AES cartridge
 
 **The games boot and show their screens.** `neogeo-machine-plugin` (library `neogeo_machine_plugin`, machine id `neogeo`) runs the real
 BIOS (`neogeo.zip`, firmware 259 on RomM) and a cartridge set: the NEO-GEO logo screen, then Cyber-Lip's title and attract mode, Fatal Fury's
-title and Aero Fighters 2's staff roll, all like FinalBurn Neo's pictures apart from shrunk sprites (`docs/neogeo-gaps.md`).
+title and Aero Fighters 2's staff roll, all like FinalBurn Neo's pictures, and with sound: the YM2610 (`crates/chips/ym2610`: timers, SSG,
+FM, ADPCM-A, ADPCM-B) plays the BIOS jingle and the games' music at about the reference's level (`docs/neogeo-gaps.md`).
 Run it: `retroclawd neogeo --game cyberlip.zip --bios neogeo.zip` (both a path or `romm:<id>` / `romm:fw/<id>`).
 
 Crates: `formats/neo-set` (a game zip into its P, S, C, M, V regions), `machines/neogeo` (`Bus`: the 68000's map and registers; `Sound`:
 the Z80's map, ports, command/reply latches, YM2610 registers; `video`: the fix layer and sprites; `system::NeoGeo`: both CPUs in master
 clocks, set loading, keys, picture), `plugins/neogeo-machine-plugin` and `plugin-dlls/neogeo` (the C ABI). Facts: `docs/hardware-facts.md`
-N1-N35. `neogeo.manifest.toml`: S1 (Cyber-Lip title) and S6 (frame 405 504 clocks) pass, S3 (Fatal Fury, Aero Fighters 2) are known
-gaps (sprite shrinking). Goldens are FinalBurn Neo's, made by `scenarios/capture_neogeo_goldens.py` (needs `roms/neogeo.zip` and the sets in
+N1-N35. `neogeo.manifest.toml`: 5 scenarios pass, no gap (S1 Cyber-Lip title, S3 Fatal Fury and Aero Fighters 2, S4 the BIOS's silence, S6 the frame
+length). Goldens are FinalBurn Neo's, made by `scenarios/capture_neogeo_goldens.py` (needs `roms/neogeo.zip` and the sets in
 `software/sets/`, both git-ignored).
 
 Probe: `crates/machines/neogeo/tests/bios.rs` (ignored; env `RC_NEOGEO_ZIP`, `RC_GAME`, `RC_FRAMES`, `RC_OUT` (a PPM), `RC_LIST`, `RC_AT`).
-Next: sprite shrink (the L0 ROM and the horizontal pattern), the timer interrupt, the YM2610 (timers first: sound programs wait on them,
-then FM, SSG and ADPCM), save states, backup RAM and memory card files, more games; see `docs/neogeo-gaps.md`.
+Next: the timer interrupt, the real envelope and FM details (detune, LFO, SSG-EG), the level laws, save states, backup RAM and memory
+card files, more games; see `docs/neogeo-gaps.md`.
 
 ## Rules (same as the other families)
 

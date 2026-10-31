@@ -11,5 +11,6 @@ mc68000 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "077
 machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
 z80 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
 neo-set = { path = "../../formats/neo-set" }
+ym2610 = { path = "../../chips/ym2610" }
 
 [dev-dependencies]

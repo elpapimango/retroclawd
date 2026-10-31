@@ -14,15 +14,26 @@ pub struct Sound {
     pub use_cart: bool,
     ram: Vec<u8>,
     /// The bank number of the windows at `$F000`, `$E000`, `$C000` and `$8000` (fact N24).
-    banks: [u8; 4],
+    pub banks: [u8; 4],
     /// The last command byte the 68000 wrote (read by Z80 port 0) and the Z80's reply (read by the 68000).
     pub command: u8,
     pub reply: u8,
     /// A command is waiting (cleared by the Z80's read of port 0 and by a write to it).
     pending: bool,
     nmi_enabled: bool,
-    /// The YM2610's registers, the two address pairs, as the Z80 wrote them (fact N26).
-    pub ym: [[u8; 256]; 2],
+    /// Set by a reset command (3): the machine resets the Z80 and clears this (fact N39).
+    pub reset_requested: bool,
+    /// The sound chip (facts N26, Y1-Y5) and the sample ROM of ADPCM-A.
+    pub ym: ym2610::Ym2610,
+    pub v_a: Vec<u8>,
+    /// The ADPCM-B sample ROM; empty when the cartridge has none, and then ADPCM-B reads the first (fact Y8).
+    pub v_b: Vec<u8>,
+    /// How often each register of the two pairs was written (a debugging aid).
+    pub ym_writes: Vec<u32>,
+    /// The values written to the key on register (a debugging aid).
+    pub key_log: Vec<u8>,
+    /// The commands the 68000 sent and the replies the Z80 gave, in order (a debugging aid).
+    pub command_log: Vec<(char, u8)>,
     ym_addr: [u8; 2],
 }
 
@@ -33,12 +44,18 @@ impl Sound {
             m1_cart,
             use_cart: false,
             ram: vec![0; M1_BANK_RAM],
-            banks: [0; 4],
+            banks: [0x1E, 0x0E, 0x06, 0x02],
             command: 0,
             reply: 0,
             pending: false,
             nmi_enabled: false,
-            ym: [[0; 256]; 2],
+            reset_requested: false,
+            ym: ym2610::Ym2610::new(),
+            v_a: Vec::new(),
+            v_b: Vec::new(),
+            ym_writes: vec![0; 512],
+            key_log: Vec::new(),
+            command_log: Vec::new(),
             ym_addr: [0; 2],
         }
     }
@@ -62,7 +79,17 @@ impl Sound {
 
     /// The 68000 wrote a sound command (REG_SOUND): it is latched and, with NMIs enabled, interrupts the Z80 (fact N25).
     pub fn send_command(&mut self, v: u8) {
+        if self.command_log.len() < 400 {
+            self.command_log.push(('C', v));
+            self.command_log.push(('M', u8::from(self.use_cart)));
+        }
         self.command = v;
+        if v == 3 && std::env::var("RC_RESET3").is_ok() {
+            self.reset_requested = true;
+            self.pending = false;
+            self.nmi_enabled = false;
+            return;
+        }
         self.pending = true;
     }
 
@@ -96,10 +123,8 @@ impl Sound {
                 self.pending = false;
                 self.command
             }
-            0x04 => {
-                // the YM2610's status (fact N26): nothing is busy and no timer has run out yet
-                0
-            }
+            // the YM2610's ports (fact N26)
+            0x04 => self.ym.read((port & 3) as u8),
             0x08 => {
                 self.banks[usize::from(port & 3)] = (port >> 8) as u8;
                 0
@@ -116,11 +141,20 @@ impl Sound {
                 if p & 1 == 0 {
                     self.ym_addr[pair] = v;
                 } else {
-                    self.ym[pair][usize::from(self.ym_addr[pair])] = v;
+                    self.ym_writes[pair * 256 + usize::from(self.ym_addr[pair])] += 1;
+                    if pair == 0 && self.ym_addr[0] == 0x28 && self.key_log.len() < 200 {
+                        self.key_log.push(v);
+                    }
                 }
+                self.ym.write((p & 3) as u8, v);
             }
             0x08..=0x0B => self.nmi_enabled = true,
-            0x0C => self.reply = v,
+            0x0C => {
+                self.reply = v;
+                if self.command_log.len() < 400 {
+                    self.command_log.push(('R', v));
+                }
+            }
             0x18 => self.nmi_enabled = false,
             _ => {}
         }
@@ -173,11 +207,14 @@ mod tests {
         let mut s = sound();
         s.write_io(0x0C, 0x55);
         assert_eq!(s.reply, 0x55);
+        // timer B: load 255 so it runs out after one count of 16 samples, enable its flag and interrupt
+        s.write_io(0x04, 0x26);
+        s.write_io(0x05, 0xFF);
         s.write_io(0x04, 0x27);
-        s.write_io(0x05, 0x3F);
-        s.write_io(0x06, 0x01);
-        s.write_io(0x07, 0x02);
-        assert_eq!(s.ym[0][0x27], 0x3F);
-        assert_eq!(s.ym[1][0x01], 0x02);
+        s.write_io(0x05, 0b0010_1010);
+        assert!(!s.ym.irq());
+        s.ym.advance(ym2610::CLOCKS_PER_SAMPLE * 16, &[], &[]);
+        assert!(s.ym.irq());
+        assert_eq!(s.read_io(0x04) & 2, 2);
     }
 }

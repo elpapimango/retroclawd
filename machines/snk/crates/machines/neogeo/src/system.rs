@@ -38,6 +38,10 @@ pub struct NeoGeo {
     /// Master clocks the Z80 has run up to.
     z80_clock: u64,
     nmi_was_high: bool,
+    /// A debugging aid: with `trace_nth_nmi` set, the Z80 program counters from the entry of that NMI on (up to 600).
+    pub trace_nth_nmi: Option<usize>,
+    pub z80_trace: Vec<u16>,
+    nmis: usize,
 }
 
 impl NeoGeo {
@@ -52,6 +56,9 @@ impl NeoGeo {
             bus,
             z80_clock: 0,
             nmi_was_high: false,
+            trace_nth_nmi: None,
+            z80_trace: Vec::new(),
+            nmis: 0,
         }
     }
 
@@ -81,7 +88,10 @@ impl NeoGeo {
             s: set.s,
             c: set.c,
         };
-        Ok(NeoGeo::new(Bus::new(bios, set.p, sm1, set.m), graphics))
+        let mut bus = Bus::new(bios, set.p, sm1, set.m);
+        bus.sound.v_a = set.v_a;
+        bus.sound.v_b = set.v_b;
+        Ok(NeoGeo::new(bus, graphics))
     }
 
     /// The picture as RGB bytes, 320 x 224 (fact N29-N32).
@@ -108,6 +118,16 @@ impl NeoGeo {
             rgb.extend_from_slice(&[(px >> 16) as u8, (px >> 8) as u8, px as u8]);
         }
         (video::WIDTH as u32, video::HEIGHT as u32, rgb)
+    }
+
+    /// The sound made since the last call: interleaved left and right at `ym2610::SAMPLE_RATE`, as floats (fact Y1).
+    pub fn drain_audio(&mut self) -> Vec<f32> {
+        let mut out = Vec::new();
+        for (l, r) in self.bus.sound.ym.take_samples() {
+            out.push(f32::from(l) / 32768.0);
+            out.push(f32::from(r) / 32768.0);
+        }
+        out
     }
 
     /// A host key by name (`Joy1Up`, `Coin1`, `Start1`...); `false` for a name this machine does not have (fact N33).
@@ -164,13 +184,32 @@ impl NeoGeo {
 
     fn catch_up_z80(&mut self) {
         while self.z80_clock < self.bus.clock {
+            if self.bus.sound.reset_requested {
+                self.bus.sound.reset_requested = false;
+                self.z80 = z80::Cpu::new();
+                self.nmi_was_high = false;
+            }
             // the NMI line is edge triggered
             let high = self.bus.sound.nmi_line();
             if high && !self.nmi_was_high {
                 self.z80.request_nmi();
             }
             self.nmi_was_high = high;
+            // the sound chip's interrupt is a level: asked for on every step while it is up (fact N38)
+            if self.bus.sound.ym.irq() {
+                self.z80.request_interrupt();
+            }
+            if self.z80.pc == 0x66 {
+                self.nmis += 1;
+            }
+            if self.trace_nth_nmi == Some(self.nmis) && self.z80_trace.len() < 600 {
+                self.z80_trace.push(self.z80.pc);
+            }
             let t = self.z80.step(&mut self.bus);
+            // the chip runs at 8 MHz, twice the Z80's clock
+            let s = &mut self.bus.sound;
+            let rom_b = if s.v_b.is_empty() { &s.v_a } else { &s.v_b };
+            s.ym.advance(u32::from(t.max(1)) * 2, &s.v_a, rom_b);
             self.z80_clock += u64::from(t.max(1)) * Z80_DIVIDER;
         }
     }

@@ -40,6 +40,7 @@ fn first_fetches() {
         c: set.c.clone(),
     };
     let mut machine = NeoGeo::new(Bus::new(bios, set.p, sm1, set.m), graphics);
+    machine.trace_nth_nmi = std::env::var("RC_NMI").ok().and_then(|v| v.parse().ok());
     let limit = std::env::var("RC_STEPS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -64,6 +65,15 @@ fn first_fetches() {
         }
         machine.step();
         steps += 1;
+    }
+    if std::env::var("RC_AUDIO").is_ok() {
+        let samples = machine.drain_audio();
+        let peak = samples.iter().fold(0f32, |m, v| m.max(v.abs()));
+        let rms = (samples.iter().map(|v| v * v).sum::<f32>() / samples.len().max(1) as f32).sqrt();
+        println!(
+            "audio: {} samples, peak {peak:.4}, rms {rms:.4}",
+            samples.len()
+        );
     }
     let (cpu, bus) = (&machine.cpu, &machine.bus);
     println!("{steps} instructions, pc {:#08X}: {:?}", cpu.pc, bus.stop);
@@ -180,6 +190,56 @@ fn first_fetches() {
             ppm.extend_from_slice(&[(px >> 16) as u8, (px >> 8) as u8, px as u8]);
         }
         std::fs::write(path, ppm).unwrap();
+    }
+    if !machine.z80_trace.is_empty() {
+        // the Z80 instructions of the traced NMI, with the sound program's bytes
+        let mut seen = std::collections::BTreeSet::new();
+        for pc in &machine.z80_trace {
+            seen.insert(*pc);
+        }
+        let rom = if bus.sound.use_cart {
+            &bus.sound.m1_cart
+        } else {
+            &bus.sound.m1_board
+        };
+        let mut lines = Vec::new();
+        for pc in &seen {
+            let at = usize::from(*pc);
+            if at < 0x8000 {
+                let (text, _) =
+                    z80::disassemble::disassemble_at(&rom[at..(at + 4).min(rom.len())], *pc);
+                lines.push(format!("{pc:04X}  {text}"));
+            }
+        }
+        println!(
+            "z80 nmi trace ({} steps, {} distinct pcs):
+{}",
+            machine.z80_trace.len(),
+            seen.len(),
+            lines.join(
+                "
+"
+            )
+        );
+    }
+    if std::env::var("RC_YM").is_ok() {
+        let seen: Vec<String> = bus
+            .sound
+            .ym_writes
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| **n > 0)
+            .map(|(i, n)| format!("{}:{:02X}x{n}", i / 256, i % 256))
+            .collect();
+        println!("ym registers written: {}", seen.join(" "));
+        println!("key on log: {:02X?}", bus.sound.key_log);
+        println!("z80 banks: {:02X?}", bus.sound.banks);
+        println!(
+            "z80 regs: {:?}; ym status {:02X}",
+            machine.z80.registers(),
+            bus.sound.ym.read(0)
+        );
+        println!("commands and replies: {:02X?}", bus.sound.command_log);
     }
     println!(
         "z80 pc {:#06X}, reply {:#04X}, command {:#04X}",

@@ -39,6 +39,16 @@ golden = "neogeo/S3-aerofighters2-1200.png"
 golden_sha256 = "5243ae0cd19bcb5597fdd4c818702c95cba323788a51a00799a9fe1287e50fd4"
 compare = { mode = "similarity", max_mad = 1.5, crop = [0.0, 0.65, 1.0, 1.0], reason = "the crop is the staff roll and the credit line, which hold still; the plane and the ground above scroll with the game's own clock and are a few frames (about 4 pixels) apart from the reference, as the pictures were compared region by region" }
 
+# S4: the BIOS is silent while the logo comes up (the first 2.5 s here and in FinalBurn Neo, whose level there is 0.0), then plays its
+# jingle: that level was compared with the reference by hand (RMS 546 here, 528 there, 3 to 8 s), see docs/neogeo-gaps.md. Music is not a
+# tone, so only the silence is a scenario.
+[[scenario]]
+id = "S4"
+kind = "audio"
+frames = 200
+files = { game = "snk/software/sets/cyberlip.zip", bios = "snk/roms/neogeo.zip" }
+audio = { from_s = 0.5, to_s = 2.5, silent_below_rms = 0.001 }
+
 # S6: the NTSC frame is 264 lines of 1536 master clocks.
 [[scenario]]
 id = "S6"

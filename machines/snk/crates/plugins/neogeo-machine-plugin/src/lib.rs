@@ -22,6 +22,8 @@ const PLUGIN_ID: &[u8] = b"retroclawd.neogeo.machine";
 const PLUGIN_VERSION: &[u8] = build_info::version_tag!().as_bytes();
 /// The master clock in Hz (fact N4).
 const MASTER_HZ: u64 = 24_000_000;
+/// The sound chip's sample rate (fact Y1).
+const AUDIO_RATE: u32 = ym2610::SAMPLE_RATE;
 
 const fn static_slice(bytes: &'static [u8]) -> RcSlice {
     RcSlice {
@@ -257,9 +259,8 @@ fn metadata() -> MachineMetadata {
         machine_id: MACHINE_ID.to_string(),
         region: Some("ntsc".to_string()),
         frame_rate: (MASTER_HZ as u32, FRAME_CLOCKS as u32),
-        // there is no sound yet: the stream is empty
         audio_channels: 2,
-        audio_sample_rate: 44_100,
+        audio_sample_rate: AUDIO_RATE,
         ..MachineMetadata::default()
     }
 }
@@ -444,8 +445,8 @@ fn handle_machine_command(
         }
         MachineCommand::DrainAudio => Ok(MachineResponse::AudioPcm {
             channels: 2,
-            sample_rate: 44_100,
-            samples: Vec::new(),
+            sample_rate: AUDIO_RATE,
+            samples: record.machine.drain_audio(),
         }),
         MachineCommand::Debug(command) => Ok(MachineResponse::Debug(handle_debug_command(
             record, command,
