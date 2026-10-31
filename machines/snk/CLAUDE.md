@@ -9,7 +9,8 @@ through the plugin ABI; this repository will hold the Neo Geo (MVS/AES cartridge
 BIOS (`neogeo.zip`, firmware 259 on RomM) and a cartridge set: the NEO-GEO logo screen, then Cyber-Lip's title and attract mode, Fatal Fury's
 title and Aero Fighters 2's staff roll, all like FinalBurn Neo's pictures, and with sound: the YM2610 (`crates/chips/ym2610`: timers, SSG,
 FM, ADPCM-A, ADPCM-B) plays the BIOS jingle and the games' music at about the reference's level (`docs/neogeo-gaps.md`).
-Run it: `retroclawd neogeo --game cyberlip.zip --bios neogeo.zip` (both a path or `romm:<id>` / `romm:fw/<id>`).
+Run it: `retroclawd neogeo --firmware auto --rom romm:7017` (the system set is found on RomM by `firmware.toml`, option `rom_bios`), or
+`retroclawd neogeo --rom cyberlip.zip --rom-bios "neogeo.zip#*"` (the `#*` hands the zip on whole; the game `--rom` is a path or `romm:<id>`).
 
 Crates: `formats/neo-set` (a game zip into its P, S, C, M, V regions), `machines/neogeo` (`Bus`: the 68000's map and registers; `Sound`:
 the Z80's map, ports, command/reply latches, YM2610 registers; `video`: the fix layer and sprites; `system::NeoGeo`: both CPUs in master

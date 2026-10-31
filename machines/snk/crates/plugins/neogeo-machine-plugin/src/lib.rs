@@ -178,7 +178,7 @@ fn machine_profile() -> MachineProfile {
             MachineOptionInfo {
                 required: true,
                 ..option(
-                    "game",
+                    "rom",
                     MachineOptionKind::Text,
                     None,
                     "The cartridge: the game's zip set (P, S, C, M and V files, as FBNeo and MAME sets are), a path or romm:<id>",
@@ -187,10 +187,10 @@ fn machine_profile() -> MachineProfile {
             MachineOptionInfo {
                 required: true,
                 ..option(
-                    "bios",
-                    MachineOptionKind::Text,
+                    "rom_bios",
+                    MachineOptionKind::File,
                     None,
-                    "The system ROM set: neogeo.zip (the 68000 BIOS files, sm1.sm1 and sfix.sfix), a path or romm:fw/<id>",
+                    "The system ROM set: neogeo.zip as a whole (write neogeo.zip#* for a file; --firmware auto finds it on RomM): the 68000 BIOS files, sm1.sm1, sfix.sfix and 000-lo.lo",
                 )
             },
             option(
@@ -288,12 +288,11 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         ));
     }
     let mut diag_file = None;
-    let (mut game, mut bios) = (None, None);
+    let mut game = None;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(std::path::PathBuf::from(v)),
-            ("game", DebugValue::Text(v)) => game = Some(read_set("game", v, MAX_GAME)?),
-            ("bios", DebugValue::Text(v)) => bios = Some(read_set("bios", v, MAX_BIOS)?),
+            ("rom", DebugValue::Text(v)) => game = Some(read_set("rom", v, MAX_GAME)?),
             ("execution_mode", _) => {}
             (key, _) => {
                 return Err(format!(
@@ -302,9 +301,20 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             }
         }
     }
-    let game = game.ok_or_else(|| "missing required option: game".to_string())?;
-    let bios = bios.ok_or_else(|| "missing required option: bios".to_string())?;
-    let machine = NeoGeo::from_sets(&bios, &game)?;
+    let game = game.ok_or_else(|| "missing required option: rom".to_string())?;
+    let bios = req
+        .roms
+        .iter()
+        .find(|blob| blob.key.eq_ignore_ascii_case("rom_bios"))
+        .map(|blob| blob.bytes.as_slice())
+        .ok_or_else(|| "missing required binary blob: rom_bios".to_string())?;
+    if bios.len() as u64 > MAX_BIOS {
+        return Err(format!(
+            "option \"rom_bios\": {} bytes is more than the {MAX_BIOS} read",
+            bios.len()
+        ));
+    }
+    let machine = NeoGeo::from_sets(bios, &game)?;
     let mut state = state()
         .lock()
         .map_err(|_| "plugin state mutex poisoned".to_string())?;
@@ -618,7 +628,7 @@ mod tests {
         let p = machine_profile();
         assert_eq!(p.machine_id, "neogeo");
         assert_eq!(p.cpus.len(), 2);
-        assert!(p.options.iter().any(|o| o.key == "bios" && o.required));
+        assert!(p.options.iter().any(|o| o.key == "rom_bios" && o.required));
     }
 
     #[test]
