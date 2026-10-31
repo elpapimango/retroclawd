@@ -47,7 +47,12 @@
   The two games run their MVS save routine (Metal Slug 2 `$87240`: clear the flag at its start, set it at its end) during start-up, and
   the same game code shows its WARNING screen when the flag is set on an MVS board (`$964`); the reference's backup RAM at frame 900 has the
   flag 0 and the date `26/10/31`. Why the reference reboots and ends with the flag clear is not found: next step would be to trace the
-  reference with its debug build (`fbneo64d.exe`), not done. Probe aids: `RC_COUNT_PC`, `RC_PCHIST`, `RC_DUMP_WORK`, `RC_DUMP_BACKUP`.
+  reference with its debug build, but that is a Windows program with no headless mode, so it was not used. What the reference's work RAM
+  shows frame by frame (KOF 2001): the address-pattern fill of the BIOS RAM test (frames 120-246), a clear, the BIOS variables set
+  (`$10FD80`: MVS flag, country 2), then a **second RAM test with the fill values `$55` (262-277), `$AA` (278-285) and the address pattern again
+  (286 on)**, and only then the game; ours goes from the first fill and clear straight to the game. So the BIOS code takes a longer test
+  path in the reference, decided by something it reads after setting its variables (not the BIOS file: ours with `sp-s2`, `sp-s3` and
+  others does not take it, and the stacked return addresses of the reference match `sp-s3` closely but not exactly). Open. Probe aids: `RC_COUNT_PC`, `RC_PCHIST`, `RC_DUMP_WORK`, `RC_DUMP_BACKUP`.
 - **NEO-CMC (2026-10-31, fact N49, documented exception).** Sprite decryption (CMC42 and CMC50), the fix layer taken from the sprite data
   and the CMC50 Z80 program decryption are in for five sets (Zupapa!, Ganryu, Nightmare in the Dark, Sengoku 3, KOF 2001): all draw their
   title or attract screens. Not yet: a comparison with FinalBurn Neo's pictures and sound, the other keys (KOF 99/2000/2002/2003, Garou,
