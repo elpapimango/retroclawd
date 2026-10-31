@@ -1,0 +1,9 @@
+[package]
+name = "neo-set"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Neo Geo cartridge sets: a zip of P, S, C, M and V files read into the cartridge's five regions"
+
+[dependencies]
+zip = { version = "2", default-features = false, features = ["deflate"] }

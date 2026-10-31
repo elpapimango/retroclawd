@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = ["crates/formats/neo-set"]
+
+# Same release profile as the retroclawd host.
+[profile.release]
+strip = true
+opt-level = "s"
+
+[profile.profiling]
+inherits = "release"
+debug = true
