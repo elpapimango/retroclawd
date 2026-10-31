@@ -14,7 +14,7 @@ command = "machines/snk/scenarios/capture_neogeo_goldens.py (libretro_run.py wit
 id = "S1-cyberlip-1000"
 kind = "screen"
 frames = 1000
-files = { rom = "snk/software/sets/cyberlip.zip", rom_bios = "snk/roms/neogeo.zip#*" }
+files = { rom = "snk/software/sets/cyberlip.zip", rom-bios = "snk/roms/neogeo.zip#*" }
 golden = "neogeo/S1-cyberlip-1000.png"
 golden_sha256 = "373b6969fb48d63b2321a15ba36b75a4d0e594a0ae29ec45815750945546a437"
 compare = { mode = "similarity", max_mad = 6.0, crop = [0.025, 0.0, 0.975, 1.0], golden_crop = [0.0, 0.0, 1.0, 1.0], reason = "another emulator's frame timing and the colour levels: the animated title (the reflections, the stars) is a few frames apart; the pictures agree otherwise" }
@@ -25,7 +25,7 @@ compare = { mode = "similarity", max_mad = 6.0, crop = [0.025, 0.0, 0.975, 1.0],
 id = "S3-fatfury-1200"
 kind = "screen"
 frames = 1200
-files = { rom = "snk/software/sets/fatfury1.zip", rom_bios = "snk/roms/neogeo.zip#*" }
+files = { rom = "snk/software/sets/fatfury1.zip", rom-bios = "snk/roms/neogeo.zip#*" }
 golden = "neogeo/S3-fatfury-1200.png"
 golden_sha256 = "ffd90568a58642ae4fd9d59d0046ecd95030305f63d4969bf9600b55f56d244e"
 compare = { mode = "similarity", max_mad = 3.0, reason = "another emulator's frame timing: the title is animated; the pictures agree to a mean of about 1 level in the regions that do not move" }
@@ -34,7 +34,7 @@ compare = { mode = "similarity", max_mad = 3.0, reason = "another emulator's fra
 id = "S3-aerofighters2-1200"
 kind = "screen"
 frames = 1200
-files = { rom = "snk/software/sets/sonicwi2.zip", rom_bios = "snk/roms/neogeo.zip#*" }
+files = { rom = "snk/software/sets/sonicwi2.zip", rom-bios = "snk/roms/neogeo.zip#*" }
 golden = "neogeo/S3-aerofighters2-1200.png"
 golden_sha256 = "5243ae0cd19bcb5597fdd4c818702c95cba323788a51a00799a9fe1287e50fd4"
 compare = { mode = "similarity", max_mad = 1.5, crop = [0.0, 0.65, 1.0, 1.0], reason = "the crop is the staff roll and the credit line, which hold still; the plane and the ground above scroll with the game's own clock and are a few frames (about 4 pixels) apart from the reference, as the pictures were compared region by region" }
@@ -46,7 +46,7 @@ compare = { mode = "similarity", max_mad = 1.5, crop = [0.0, 0.65, 1.0, 1.0], re
 id = "S4"
 kind = "audio"
 frames = 200
-files = { rom = "snk/software/sets/cyberlip.zip", rom_bios = "snk/roms/neogeo.zip#*" }
+files = { rom = "snk/software/sets/cyberlip.zip", rom-bios = "snk/roms/neogeo.zip#*" }
 audio = { from_s = 0.5, to_s = 2.5, silent_below_rms = 0.001 }
 
 # S6: the NTSC frame is 264 lines of 1536 master clocks.
@@ -54,6 +54,6 @@ audio = { from_s = 0.5, to_s = 2.5, silent_below_rms = 0.001 }
 id = "S6"
 kind = "timing"
 frames = 100
-files = { rom = "snk/software/sets/cyberlip.zip", rom_bios = "snk/roms/neogeo.zip#*" }
+files = { rom = "snk/software/sets/cyberlip.zip", rom-bios = "snk/roms/neogeo.zip#*" }
 cycles_per_frame = 405504
 cycles_tolerance = 400
