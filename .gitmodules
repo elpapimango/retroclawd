@@ -17,3 +17,6 @@
 	path = machines/sega
 	url = https://github.com/elpapimango/retroclawd-sega
 	branch = main
+[submodule "machines/snk"]
+	path = machines/snk
+	url = https://github.com/elpapimango/retroclawd-snk
