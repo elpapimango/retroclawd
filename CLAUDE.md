@@ -16,6 +16,7 @@ git submodules here, and the three machine repositories depend on the shared cra
 | `elpapimango/retroclawd-amstrad` (`machines/amstrad`) | CPC464/664/6128, CPC+ / GX4000, `.cpr` cartridges, SNA snapshots, i8255 |
 | `elpapimango/retroclawd-commodore` (`machines/commodore`) | Experimental VIC-20/VIC-I; C64, C128, 1541/1570/1571/1581, VIC-II, SID, CIAs, VIA, WD1770, VDC, CBM disk formats |
 | `elpapimango/retroclawd-atari` (`machines/atari`) | Atari ST/STF/STFM (`atari-st`, slice 1 of the 16-bit work: CPU, memory map, scheduler, EmuTOS to its first device) |
+| `elpapimango/retroclawd-snk` (`machines/snk`) | SNK Neo Geo (`neogeo`: MVS BIOS and cartridge sets boot to their screens; no sound yet) |
 
 Stays here: the app (`apps/retroclawd`, including the debuggers `debug-ui`, `debug-zrcp`, `debug-log`: ordinary
 modules behind cargo features, no longer plugins), the app-only crates (`app-config`, `game-config`, `file-loader`, `pok`), `crates/plugins/test-machine-plugin` (a
@@ -104,6 +105,17 @@ fast loader now returns through the KERNAL's own SEARCHING/LOADING routines, and
 `TODIN`, so a PAL machine left at 60 Hz runs at 5/6 speed, as VICE and the hardware do). The S6 frame-length gaps were closed 2026-10-19: each machine reports its exact
 frame through `Machine::frame_rate` / `MachineMetadata::frame_rate` (ZX81 312 x 207 T-states, its line corrected from 208 to 207; CPC
 79872; C64/C128 one raster frame, 19656 PAL), and the host paces and budgets by it. Details and the compare options are in `retroclawd-tools/CLAUDE.md`.
+
+## SNK Neo Geo (2026-10-31)
+
+`machines/snk` (`elpapimango/retroclawd-snk`, public) builds `neogeo_machine_plugin` with one machine id, `neogeo`. Reference: FinalBurn Neo
+v1.0.0.03 GIT2b0c1c0 through its libretro core (`RetroArch-Win64/cores/fbneo_libretro.dll`, the BIOS in the system folder), read as a black
+box; the facts are rows of `machines/snk/docs/hardware-facts.md` (N1-N35, the Neo Geo wiki found by search plus what the reference shows).
+Run: `retroclawd neogeo --game cyberlip.zip --bios neogeo.zip` (text options: a path or `romm:<id>`; the BIOS set is RomM firmware 259, the
+games are platform 79; a `.zip` that holds no disc image is now handed on whole by `media_set.rs`). The real BIOS runs its self test (calendar
+check, Z80 handshake), draws the NEO-GEO logo and starts the cartridge: Cyber-Lip's title and attract mode match FinalBurn Neo (S1), Fatal Fury
+and Aero Fighters 2 show their screens. Open (`machines/snk/docs/neogeo-gaps.md`): sprite shrinking, the timer interrupt, the YM2610 (the
+registers are stored only, no sound), save states, backup RAM files. Manifest `machines/snk/neogeo.manifest.toml`: 2 pass, 2 known gaps.
 
 ## Atari 8-bit experimental support
 

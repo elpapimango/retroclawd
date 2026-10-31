@@ -37,8 +37,26 @@ pub(crate) fn resolve(value: &str) -> Result<String, String> {
         // A single file from RomM (an .iso, a .chd): nothing to unpack.
         return Ok(archive.display().to_string());
     }
+    if !holds_disc_set(&archive) {
+        // A zip that is a set of its own (a Neo Geo cartridge, a system ROM set): the machine reads the zip itself.
+        return Ok(archive.display().to_string());
+    }
     let root = crate::romm::cache_root()?.join("unpacked");
     Ok(unpack_into(&archive, &root)?.display().to_string())
+}
+
+/// Whether the zip holds a file that names a disc set (a `.cue`, `.gdi`, `.iso`, `.chd` or `.toc`).
+fn holds_disc_set(archive: &Path) -> bool {
+    let Ok(file) = fs::File::open(archive) else {
+        return true; // the error is reported when the archive is unpacked
+    };
+    let Ok(zip) = zip::ZipArchive::new(io::BufReader::new(file)) else {
+        return true;
+    };
+    zip.file_names().any(|name| {
+        let lower = name.to_ascii_lowercase();
+        SET_FILES.iter().any(|e| lower.ends_with(&format!(".{e}")))
+    })
 }
 
 fn is_zip(path: &Path) -> Result<bool, String> {
@@ -173,6 +191,18 @@ mod tests {
             zip.write_all(data).unwrap();
         }
         zip.finish().unwrap();
+    }
+
+    #[test]
+    fn a_zip_that_is_not_a_disc_set_is_passed_on_whole() {
+        let dir = scratch("whole");
+        let zip = dir.join("game.zip");
+        zip_of(&zip, &[("a.p1", b"p"), ("a.c1", b"c")]);
+        assert!(!holds_disc_set(&zip));
+        assert_eq!(resolve(&zip.display().to_string()).unwrap(), zip.display().to_string());
+        let disc = dir.join("disc.zip");
+        zip_of(&disc, &[("d.cue", b"x"), ("d.bin", b"y")]);
+        assert!(holds_disc_set(&disc));
     }
 
     #[test]
