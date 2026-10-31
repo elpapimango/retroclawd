@@ -11,6 +11,13 @@ pub const PALETTE_RAM: usize = 0x2000;
 pub const BACKUP_RAM: usize = 0x1_0000;
 /// Video RAM in 16-bit words: the slow part `$0000-$7FFF` and the fast part `$8000-$87FF` (fact N13).
 pub const VRAM_WORDS: usize = 0x8800;
+/// Master clocks of one raster line (384 pixels of 4 clocks) and the lines of a frame (fact N20).
+pub const LINE_CLOCKS: u64 = 1536;
+pub const FRAME_LINES: u64 = 264;
+/// The line at which the vertical blank interrupt is raised: after the 8 sync, 16 top border and 224 active lines (fact N20).
+const VBLANK_LINE: u64 = 248;
+/// Half a period of the clock chip's time pulse in master clocks: one second a period from 24 MHz (fact N19).
+const TP_HALF_PERIOD: u64 = 24_000_000 / 2;
 
 /// The video processor's registers as the 68000 sees them (facts N12, N13). Nothing is drawn yet.
 #[derive(Clone, Debug, Default)]
@@ -43,6 +50,14 @@ pub struct Bus {
     pub latch: u8,
     /// The last values written to REG_POUTPUT, REG_SLOT, REG_LEDLATCHES, REG_LEDDATA and REG_RTCCTRL (fact N15).
     pub ctrl: [u8; 5],
+    /// The coin counter 1 and 2 and coin lockout 1 and 2 lines: true when the SET register sank current (fact N16).
+    pub coin: [bool; 4],
+    /// REG_DIPSW as read: active low, so `$FF` is every switch off (fact N17).
+    pub dips: u8,
+    /// Machine time in master clocks (24 MHz), advanced by the owner of the bus (fact N19).
+    pub clock: u64,
+    /// The pending interrupts: bit 0 the power-on reset one (level 3), bit 1 the timer (level 2), bit 2 the vertical blank (level 1) (fact N21).
+    pub irq: u8,
     pub backup: Vec<u8>,
     pub vram: Vec<u16>,
     pub lspc: Lspc,
@@ -64,6 +79,10 @@ impl Bus {
             palette: vec![0; 2 * PALETTE_RAM],
             latch: 0x80,
             ctrl: [0; 5],
+            coin: [false; 4],
+            dips: 0xFF,
+            clock: 0,
+            irq: 1,
             backup: vec![0; BACKUP_RAM],
             vram: vec![0; VRAM_WORDS],
             lspc: Lspc::default(),
@@ -81,6 +100,31 @@ impl Bus {
                 }
                 None => format!("stop: {what} {w} ${addr:06X}: no fact covers this address"),
             });
+        }
+    }
+
+    /// Moves machine time on by `master_clocks`, raising the vertical blank interrupt at its line.
+    pub fn advance(&mut self, master_clocks: u64) {
+        let before = self.clock / LINE_CLOCKS;
+        self.clock += master_clocks;
+        let after = self.clock / LINE_CLOCKS;
+        // the vertical blank begins at line 248 of every 264
+        let blanks = |n: u64| (n + FRAME_LINES - VBLANK_LINE) / FRAME_LINES;
+        if blanks(after) > blanks(before) {
+            self.irq |= 4;
+        }
+    }
+
+    /// The interrupt priority level the 68000 sees (fact N21): the reset interrupt is level 3, the timer 2, the blank 1.
+    pub fn ipl(&self) -> u8 {
+        if self.irq & 1 != 0 {
+            3
+        } else if self.irq & 2 != 0 {
+            2
+        } else if self.irq & 4 != 0 {
+            1
+        } else {
+            0
         }
     }
 
@@ -110,6 +154,15 @@ impl Bus {
             0xC0_0000..=0xC1_FFFF => self.bios.get(a & (BIOS_SIZE - 1)).copied(),
             0x40_0000..=0x7F_FFFF => Some(self.palette[self.palette_at(a)]),
             0xD0_0000..=0xD0_FFFF => Some(self.backup[a & (BACKUP_RAM - 1)]),
+            _ if a & 0xFE_0081 == 0x30_0001 => Some(self.dips),
+            // REG_SYSTYPE / the test switch: bit 7 is the test button (active low), bit 0 the slot count (fact N23)
+            _ if a & 0xFE_0081 == 0x30_0081 => Some(0xFF),
+            // REG_STATUS_A: coin 1, coin 2 and service are active low and not pressed; bit 6 is the clock's time pulse (facts N18, N19)
+            // REG_STATUS_B: start and select buttons, memory card status (active low), bit 7 set on an MVS (fact N22)
+            0x38_0000..=0x38_FFFF if a & 1 == 0 && a & 0xFE_00F1 == 0x38_0000 => Some(0xFF),
+            _ if a & 0xFE_0001 == 0x32_0001 => {
+                Some(0x07 | (((self.clock / TP_HALF_PERIOD) & 1) as u8) << 6)
+            }
             _ => None,
         }
     }
@@ -137,6 +190,12 @@ impl Bus {
                 0x38_0031 => self.ctrl[2] = v,
                 0x38_0041 => self.ctrl[3] = v,
                 0x38_0051 => self.ctrl[4] = v,
+                r @ (0x38_0061 | 0x38_0063 | 0x38_0065 | 0x38_0067) => {
+                    self.coin[((r - 0x38_0061) / 2) as usize] = false
+                }
+                r @ (0x38_00E1 | 0x38_00E3 | 0x38_00E5 | 0x38_00E7) => {
+                    self.coin[((r - 0x38_00E1) / 2) as usize] = true
+                }
                 _ => return false,
             },
         }
@@ -155,6 +214,10 @@ impl Bus {
     }
 
     fn lspc_write(&mut self, reg: u32, v: u16) -> bool {
+        if reg == 0xC {
+            // REG_IRQACK: bit 0 clears the reset interrupt, bit 1 the timer's, bit 2 the vertical blank's (fact N21)
+            self.irq &= !(v as u8 & 7);
+        }
         let l = &mut self.lspc;
         match reg {
             0x0 => l.vram_addr = v,

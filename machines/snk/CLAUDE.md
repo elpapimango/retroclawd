@@ -9,9 +9,11 @@ P0 done (`neogeo.intake.toml`). `crates/formats/neo-set` reads a cartridge zip i
 Aero Fighters 2). `crates/machines/neogeo` is the 68000's bus: BIOS (word-swapped dumps), program ROM with the 2 MiB half swap,
 work/palette/backup RAM, the system register latch, the LSPC registers stored, the watchdog counted. An address no fact covers stops
 the machine with a report; the probe `crates/machines/neogeo/tests/bios.rs` (ignored; env `RC_NEOGEO_ZIP`, `RC_BIOS_NAME`,
-`RC_GAME`) runs the real BIOS until that happens. State of the probe: 354 instructions, then a byte write to `$380065`; every
-stop so far was one new fact row (`docs/hardware-facts.md` N1-N15). Next: keep going down that list, then the vertical blank
-interrupt, the Z80 and YM2610, the LSPC picture, controllers, save states, the plugin and its manifest.
+`RC_GAME`; also `RC_STEPS`, `RC_LIST=addr`, `RC_AT=addr`) runs the real BIOS until that happens. State of the probe: 5.7 million
+instructions (about three seconds of machine time, the BIOS's calendar check passes with a one-second time pulse), then a byte
+write to `$320000`: the sound command to the Z80 (REG_SOUND), which is where the Z80 and its BIOS program `sm1` come in. Every stop
+so far was one fact row (`docs/hardware-facts.md` N1-N23). Next: the Z80 and its port map, the NMI and reply, the YM2610, then the
+raster interrupts and the LSPC picture, controllers, save states, the plugin and its manifest.
 
 ## Rules (same as the other families)
 
