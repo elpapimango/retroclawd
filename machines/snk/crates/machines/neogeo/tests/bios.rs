@@ -3,6 +3,14 @@
 //!   RC_NEOGEO_ZIP=path/to/neogeo.zip  RC_BIOS_NAME=sp-s2.sp1  RC_GAME=path/to/game.zip  cargo test -p neogeo --test bios -- --ignored --nocapture
 
 use neogeo::{Bus, system::NeoGeo};
+
+#[derive(Default, Debug)]
+#[allow(dead_code)]
+struct SpriteLayoutPrint {
+    blocks: [u8; 4],
+    planes: [u8; 4],
+    msb_left: bool,
+}
 use std::io::Read;
 
 #[test]
@@ -32,7 +40,12 @@ fn first_fetches() {
         .unwrap()
         .read_to_end(&mut lo)
         .unwrap();
-    let (set_s, set_c) = (set.s.clone(), set.c.clone());
+    let (set_s, mut set_c) = (set.s.clone(), set.c.clone());
+    if std::env::var("RC_CSWAP").is_ok() {
+        let half = set_c.len() / 2;
+        let (a, b) = set_c.split_at(half);
+        set_c = [b, a].concat();
+    }
     let graphics = neogeo::system::Graphics {
         sfix: sfix.clone(),
         lo: lo.clone(),
@@ -41,6 +54,7 @@ fn first_fetches() {
     };
     let mut machine = NeoGeo::new(Bus::new(bios, set.p, sm1, set.m), graphics);
     machine.trace_nth_nmi = std::env::var("RC_NMI").ok().and_then(|v| v.parse().ok());
+    machine.bus.lenient = std::env::var("RC_LENIENT").is_ok();
     let limit = std::env::var("RC_STEPS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -108,6 +122,75 @@ fn first_fetches() {
         }
         println!("latch {:02X}", bus.latch);
     }
+    if let Ok(range) = std::env::var("RC_RAW") {
+        let (a, b) = range.split_once('-').unwrap();
+        for n in a.parse::<usize>().unwrap()..=b.parse::<usize>().unwrap() {
+            println!(
+                "sprite {n}: scb2 {:04X} scb3 {:04X} scb4 {:04X} first tiles {:04X?}",
+                bus.vram[0x8000 + n],
+                bus.vram[0x8200 + n],
+                bus.vram[0x8400 + n],
+                &bus.vram[n * 64..n * 64 + 8]
+            );
+        }
+    }
+    if let Ok(spec) = std::env::var("RC_FINDTILE") {
+        // "chain,col,row,x,y,reference-luma-file": find which C ROM tile looks like the reference at that place
+        let f: Vec<&str> = spec.split(',').collect();
+        let (n, row): (usize, usize) = (
+            f[0].parse::<usize>().unwrap() + f[1].parse::<usize>().unwrap(),
+            f[2].parse().unwrap(),
+        );
+        let (x0, y0): (usize, usize) = (f[3].parse().unwrap(), f[4].parse().unwrap());
+        let reference = std::fs::read(f[5]).unwrap();
+        let (scb_tile, attr) = (bus.vram[n * 64 + row * 2], bus.vram[n * 64 + row * 2 + 1]);
+        let pal = usize::from(attr >> 8);
+        let at = if bus.latch & 0x80 == 0 {
+            neogeo::PALETTE_RAM
+        } else {
+            0
+        };
+        let colour = |c: usize| {
+            let i = at + (pal * 16 + c) * 2;
+            neogeo::video::colour(u16::from(bus.palette[i]) << 8 | u16::from(bus.palette[i + 1]))
+        };
+        let lum = |px: u32| ((px >> 16 & 255) * 3 + (px >> 8 & 255) * 6 + (px & 255)) / 10;
+        let layout = neogeo::video::SpriteLayout::default();
+        let tiles = set_c.len() / 128;
+        let mut results: Vec<(u64, usize)> = Vec::new();
+        for t in 0..tiles {
+            let mut d = 0u64;
+            for y in 0..16 {
+                for x in 0..16 {
+                    let c = neogeo::video::sprite_pixel(&set_c, &layout, t, x, y);
+                    let ours = if c == 0 {
+                        0
+                    } else {
+                        lum(colour(usize::from(c)))
+                    };
+                    let r = u32::from(reference[(y0 + y) * 304 + x0 + x]);
+                    d += u64::from(ours.abs_diff(r));
+                }
+            }
+            results.push((d, t));
+        }
+        results.sort();
+        println!(
+            "tile in SCB1: {scb_tile:04X}; best matches (diff, tile): {:X?}",
+            &results[..4]
+        );
+    }
+    if let Ok(range) = std::env::var("RC_TILES") {
+        let (a, b) = range.split_once('-').unwrap();
+        for row in 0..12usize {
+            let mut line = String::new();
+            for n in a.parse::<usize>().unwrap()..=b.parse::<usize>().unwrap() {
+                let (t, at) = (bus.vram[n * 64 + row * 2], bus.vram[n * 64 + row * 2 + 1]);
+                line.push_str(&format!("{t:04X}/{:02X}{:X} ", at >> 8, at & 0xFF));
+            }
+            println!("row {row}: {line}");
+        }
+    }
     if std::env::var("RC_CHAINS").is_ok() {
         // the chains: first sprite, how many follow, top line, height in tiles, shrink
         let mut n = 0;
@@ -159,9 +242,6 @@ fn first_fetches() {
     if let Ok(path) = std::env::var("RC_OUT") {
         let sfix = sfix.clone();
         let mut vram = bus.vram.clone();
-        if std::env::var("RC_NOFIX").is_ok() {
-            vram[0x7000..0x7500].fill(0);
-        }
         if std::env::var("RC_NOSPR").is_ok() {
             for n in 0..381 {
                 vram[0x8200 + n] = 0;
@@ -174,7 +254,9 @@ fn first_fetches() {
             } else {
                 0
             }..][..neogeo::PALETTE_RAM],
-            fix: if bus.latch & 0x20 != 0 && !set_s.is_empty() {
+            fix: if std::env::var("RC_NOFIX").is_ok() {
+                &[]
+            } else if bus.latch & 0x20 != 0 && !set_s.is_empty() {
                 &set_s
             } else {
                 &sfix
@@ -184,6 +266,86 @@ fn first_fetches() {
             lo: &lo,
             anim: bus.anim,
         };
+        if let Ok(reference) = std::env::var("RC_REFLUMA") {
+            // try every block and plane order against a 304-wide reference picture (8 columns cut at each side)
+            let reference = std::fs::read(reference).unwrap();
+            let mut perms = Vec::new();
+            for a in 0..4u8 {
+                for b in 0..4u8 {
+                    for c in 0..4u8 {
+                        for d in 0..4u8 {
+                            if a != b && a != c && a != d && b != c && b != d && c != d {
+                                perms.push([a, b, c, d]);
+                            }
+                        }
+                    }
+                }
+            }
+            let mut scored: Vec<(u64, [u8; 4], [u8; 4], bool)> = Vec::new();
+            let score = |layout: neogeo::video::SpriteLayout, dx: i32, dy: i32| -> u64 {
+                let trial = neogeo::video::Sources {
+                    vram: src.vram,
+                    palette: src.palette,
+                    fix: src.fix,
+                    sprites: src.sprites,
+                    layout,
+                    lo: src.lo,
+                    anim: src.anim,
+                };
+                let mut out = vec![0u32; neogeo::video::WIDTH * neogeo::video::HEIGHT];
+                neogeo::video::render(&trial, &mut out);
+                let mut d = 0u64;
+                for y in 40..130i32 {
+                    for x in 30..240i32 {
+                        let (ox, oy) = ((x + 8 + dx) as usize, (y + dy) as usize);
+                        let px = out[oy * neogeo::video::WIDTH + ox];
+                        let l = ((px >> 16 & 255) * 3 + (px >> 8 & 255) * 6 + (px & 255)) / 10;
+                        d += u64::from(
+                            l.abs_diff(u32::from(reference[y as usize * 304 + x as usize])),
+                        );
+                    }
+                }
+                d
+            };
+            for blocks in &perms {
+                for planes in &perms {
+                    for msb_left in [false, true] {
+                        let layout = neogeo::video::SpriteLayout {
+                            blocks: *blocks,
+                            planes: *planes,
+                            msb_left,
+                        };
+                        scored.push((score(layout, 0, 0), *blocks, *planes, msb_left));
+                    }
+                }
+            }
+            scored.sort_by_key(|e| e.0);
+            let mut best = (u64::MAX, SpriteLayoutPrint::default());
+            for (_, blocks, planes, msb_left) in scored.iter().take(40) {
+                let layout = neogeo::video::SpriteLayout {
+                    blocks: *blocks,
+                    planes: *planes,
+                    msb_left: *msb_left,
+                };
+                for dy in -6..=6 {
+                    for dx in -6..=6 {
+                        let d = score(layout, dx, dy);
+                        if d < best.0 {
+                            best = (
+                                d,
+                                SpriteLayoutPrint {
+                                    blocks: *blocks,
+                                    planes: *planes,
+                                    msb_left: *msb_left,
+                                },
+                            );
+                        }
+                    }
+                }
+            }
+            println!("top unshifted: {:?}", &scored[..3]);
+            println!("best layout: {best:?}");
+        }
         let mut out = vec![0u32; neogeo::video::WIDTH * neogeo::video::HEIGHT];
         neogeo::video::render(&src, &mut out);
         let mut ppm = format!(
@@ -231,6 +393,16 @@ fn first_fetches() {
             )
         );
     }
+    println!("vram writes past $87FF: {}", bus.vram_oob);
+    if bus.lenient {
+        println!("unmapped accesses: {}", bus.access_log.len());
+        for (addr, write, value, pc) in bus.access_log.iter().take(80) {
+            println!(
+                "  {} {addr:06X} {value:04X} pc {pc:06X}",
+                if *write { "W" } else { "R" }
+            );
+        }
+    }
     if std::env::var("RC_YM").is_ok() {
         let seen: Vec<String> = bus
             .sound
@@ -254,6 +426,17 @@ fn first_fetches() {
         "z80 pc {:#06X}, reply {:#04X}, command {:#04X}",
         machine.z80.pc, bus.sound.reply, bus.sound.command
     );
+    // RC_LISTP=hex address: the instructions from there in the cartridge's program
+    if let Ok(from) = std::env::var("RC_LISTP") {
+        let mut at = u32::from_str_radix(from.trim_start_matches("0x"), 16).unwrap();
+        for _ in 0..40 {
+            let off = at as usize;
+            let (text, len) =
+                mc68000::disassemble::disassemble(&bus.p[off..(off + 12).min(bus.p.len())], at);
+            println!("P {at:06X}  {text}");
+            at += len as u32;
+        }
+    }
     // RC_LIST=hex address: the instructions from there (the system ROM only)
     if let Ok(from) = std::env::var("RC_LIST") {
         let mut at = u32::from_str_radix(from.trim_start_matches("0x"), 16).unwrap();

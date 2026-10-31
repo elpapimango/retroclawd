@@ -3,6 +3,7 @@
 //! instead of returning an invented value (the project rule).
 #![forbid(unsafe_code)]
 
+pub mod protection;
 pub mod sound;
 pub mod system;
 pub mod video;
@@ -35,6 +36,15 @@ pub struct Lspc {
     pub timer_low: u16,
     pub irq_ack: u16,
     pub timer_stop: u16,
+}
+
+/// Where a 16-bit video RAM address falls in the 0x8800 words: the fast part (`$8000` up) repeats every 2 KiW (fact N44).
+fn vram_index(addr: u16) -> usize {
+    if addr >= 0x8000 {
+        0x8000 | usize::from(addr & 0x7FF)
+    } else {
+        usize::from(addr)
+    }
 }
 
 /// Swaps the two bytes of every 16-bit word.
@@ -77,6 +87,15 @@ pub struct Bus {
     timer_fraction: u64,
     pub backup: Vec<u8>,
     pub vram: Vec<u16>,
+    /// How many VRAM accesses named an address past `$87FF` (a debugging aid).
+    pub vram_oob: u64,
+    /// The cartridge's challenge and response chip, as far as seen (fact N45).
+    pub protection: protection::Protection,
+    /// A debugging aid: when set, an access no fact covers is logged in `access_log` (with the 68000's pc) and answered with `$FF` or
+    /// ignored, instead of stopping the machine.
+    pub lenient: bool,
+    pub access_log: Vec<(u32, bool, u32, u32)>,
+    pub current_pc: u32,
     pub lspc: Lspc,
     pub sound: Sound,
     /// How many times the watchdog was kicked (fact N11).
@@ -110,6 +129,11 @@ impl Bus {
             timer_fraction: 0,
             backup: vec![0; BACKUP_RAM],
             vram: vec![0; VRAM_WORDS],
+            vram_oob: 0,
+            protection: protection::Protection::default(),
+            lenient: false,
+            access_log: Vec::new(),
+            current_pc: 0,
             lspc: Lspc::default(),
             sound: Sound::new(sm1, m1),
             watchdog_kicks: 0,
@@ -118,6 +142,13 @@ impl Bus {
     }
 
     fn report(&mut self, what: &str, addr: u32, size: Size, value: Option<u32>) {
+        if self.lenient {
+            if self.access_log.len() < 4000 {
+                self.access_log
+                    .push((addr, value.is_some(), value.unwrap_or(0), self.current_pc));
+            }
+            return;
+        }
         if self.stop.is_none() {
             let w = if size == Size::Byte { "byte" } else { "word" };
             self.stop = Some(match value {
@@ -321,7 +352,7 @@ impl Bus {
         // the registers at `$3C0008-$3C000E` read like the ones four below them (fact N42)
         let reg = reg & 7;
         match reg {
-            0x0 | 0x2 => Some(self.vram[usize::from(self.lspc.vram_addr) % VRAM_WORDS]),
+            0x0 | 0x2 => Some(self.vram[vram_index(self.lspc.vram_addr)]),
             0x4 => Some(self.lspc.vram_mod),
             // REG_LSPCMODE read: the raster line counter in the upper nine bits, the auto-animation counter in the low three (fact N34)
             0x6 => {
@@ -341,7 +372,10 @@ impl Bus {
         match reg {
             0x0 => l.vram_addr = v,
             0x2 => {
-                self.vram[usize::from(l.vram_addr) % VRAM_WORDS] = v;
+                if l.vram_addr >= 0x8800 {
+                    self.vram_oob += 1;
+                }
+                self.vram[vram_index(l.vram_addr)] = v;
                 l.vram_addr = l.vram_addr.wrapping_add(l.vram_mod);
             }
             0x4 => l.vram_mod = v,
@@ -364,6 +398,11 @@ impl Bus {
 
 impl M68kBus for Bus {
     fn read(&mut self, addr: u32, size: Size, _fc: FunctionCode) -> Result<u32, BusFault> {
+        if size == Size::Byte && (0x20_0000..0x30_0000).contains(&addr) {
+            if let Some(v) = self.protection.read_byte(addr) {
+                return Ok(u32::from(v));
+            }
+        }
         if size == Size::Word && (addr & 0xFF_FFF0) == 0x3C_0000 {
             return match self.lspc_read(addr & 0xF) {
                 Some(v) => Ok(u32::from(v)),
@@ -384,7 +423,7 @@ impl M68kBus for Bus {
             Some(v) => Ok(v),
             None => {
                 self.report("read", addr, size, None);
-                Ok(0)
+                Ok(if self.lenient { 0xFFFF } else { 0 })
             }
         }
     }
@@ -396,6 +435,15 @@ impl M68kBus for Bus {
         value: u32,
         _fc: FunctionCode,
     ) -> Result<(), BusFault> {
+        if (0x20_0000..0x30_0000).contains(&addr) {
+            let taken = match size {
+                Size::Word => self.protection.write_word(addr, value as u16),
+                Size::Byte => self.protection.write_byte(addr),
+            };
+            if taken {
+                return Ok(());
+            }
+        }
         if size == Size::Word && (addr & 0xFF_FFF0) == 0x3C_0000 {
             if !self.lspc_write(addr & 0xF, value as u16) {
                 self.report("write", addr, size, Some(value));

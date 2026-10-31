@@ -21,3 +21,7 @@
 - **uPD4990A clock** is a fixed one-second pulse; no time or date is kept.
 - **Save states, backup RAM and memory card files** are not written (the backup RAM is lost at exit).
 - **Controllers**: one pad and the coin/start buttons are wired; the arcade `Select` and the second player's keys have no default host keys.
+- **Resolved 2026-10-31 (second round).** Art of Fighting's defect was the C ROM layout: four 2 MiB chips with a small program are two
+  halves each (fact N46); Fatal Fury 2's protection answers the challenges its code makes (fact N45); tile numbers past the ROM wrap
+  (fact N43). Art of Fighting now matches the reference (mean difference 5.2 at frame 1500) and Fatal Fury 2 draws its intro.
+  Remaining of the 16-set sweep: V-Liner (a gambling set) stops; Fight Fever runs here but the reference does not (a missing file).

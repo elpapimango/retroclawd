@@ -74,9 +74,11 @@ fn column_byte(x: usize) -> usize {
 }
 
 /// The 4-bit pixel (x, y) of a 16x16 sprite tile (fact N31).
-fn sprite_pixel(sprites: &[u8], layout: &SpriteLayout, tile: usize, x: usize, y: usize) -> u8 {
+pub fn sprite_pixel(sprites: &[u8], layout: &SpriteLayout, tile: usize, x: usize, y: usize) -> u8 {
     let block = usize::from(layout.blocks[(y / 8) * 2 + x / 8]);
-    let base = tile * 128 + block * 32 + (y % 8) * 4;
+    // a tile number past the end of the ROM wraps (fact N43)
+    let tiles = (sprites.len() / 128).max(1);
+    let base = (tile % tiles) * 128 + block * 32 + (y % 8) * 4;
     let bit = if layout.msb_left { 7 - (x % 8) } else { x % 8 };
     let mut v = 0u8;
     for (plane, byte) in layout.planes.iter().enumerate() {

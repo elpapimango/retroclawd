@@ -138,13 +138,33 @@ fn load_with_limit(zip_bytes: &[u8], limit: u64) -> Result<NeoSet, SetError> {
     if !sprites.len().is_multiple_of(2) {
         return Err(SetError::UnpairedSprites);
     }
+    // four 2 MiB chips: each pair holds two 2 MiB stretches of the sprite space, the first halves of both pairs below the second
+    // halves (fact N46)
+    let halves = sprites.len() == 4
+        && sprites.iter().all(|d| d.len() == 2 * 1024 * 1024)
+        && set.p.len() <= 1024 * 1024;
+    let mut pairs: Vec<Vec<u8>> = Vec::new();
     for pair in sprites.chunks(2) {
         if pair[0].len() != pair[1].len() {
             return Err(SetError::UnpairedSprites);
         }
+        let mut interleaved = Vec::with_capacity(pair[0].len() * 2);
         for (a, b) in pair[0].iter().zip(pair[1]) {
-            set.c.push(*a);
-            set.c.push(*b);
+            interleaved.push(*a);
+            interleaved.push(*b);
+        }
+        pairs.push(interleaved);
+    }
+    if halves {
+        let h = pairs[0].len() / 2;
+        for part in 0..2 {
+            for pair in &pairs {
+                set.c.extend_from_slice(&pair[part * h..(part + 1) * h]);
+            }
+        }
+    } else {
+        for pair in &pairs {
+            set.c.extend_from_slice(pair);
         }
     }
     let has_b = of(Kind::V).any(|(_, n, _)| (20..30).contains(n) || (200..300).contains(n));
@@ -228,6 +248,58 @@ mod tests {
         assert!(load_with_limit(&bytes, 1200).is_ok());
         assert_eq!(load_with_limit(&bytes, 1199), Err(SetError::TooLarge));
         assert_eq!(load_with_limit(&bytes, 599), Err(SetError::TooLarge));
+    }
+
+    #[test]
+    fn four_chips_of_two_mib_put_the_first_halves_of_both_pairs_below_the_second_halves() {
+        let mib = 1024 * 1024;
+        let chip = |n: u8| -> Vec<u8> {
+            // the first half of the chip is filled with n, the second with n + 10
+            let mut v = vec![n; mib];
+            v.extend(vec![n + 10; mib]);
+            v
+        };
+        let (c1, c2, c3, c4) = (chip(1), chip(2), chip(3), chip(4));
+        let bytes = zip_of(&[
+            ("a.p1", &[1]),
+            ("a.c1", &c1),
+            ("a.c2", &c2),
+            ("a.c3", &c3),
+            ("a.c4", &c4),
+        ]);
+        let set = load(&bytes).unwrap();
+        assert_eq!(set.c.len(), 8 * mib);
+        // 2 MiB stretches of the sprite space: pair one first half, pair two first half, pair one second half, pair two second half
+        let at = |k: usize| (set.c[k * 2 * mib], set.c[k * 2 * mib + 1]);
+        assert_eq!(
+            [at(0), at(1), at(2), at(3)],
+            [(1, 2), (3, 4), (11, 12), (13, 14)]
+        );
+    }
+
+    #[test]
+    fn with_a_two_mib_program_four_two_mib_chips_stay_in_a_row() {
+        let mib = 1024 * 1024;
+        let chip = |n: u8| -> Vec<u8> {
+            let mut v = vec![n; mib];
+            v.extend(vec![n + 10; mib]);
+            v
+        };
+        let (c1, c2, c3, c4) = (chip(1), chip(2), chip(3), chip(4));
+        let p = vec![0u8; 2 * mib];
+        let bytes = zip_of(&[
+            ("a.p1", &p),
+            ("a.c1", &c1),
+            ("a.c2", &c2),
+            ("a.c3", &c3),
+            ("a.c4", &c4),
+        ]);
+        let set = load(&bytes).unwrap();
+        let at = |k: usize| (set.c[k * mib], set.c[k * mib + 1]);
+        assert_eq!(
+            [at(0), at(2), at(4), at(6)],
+            [(1, 2), (11, 12), (3, 4), (13, 14)]
+        );
     }
 
     #[test]

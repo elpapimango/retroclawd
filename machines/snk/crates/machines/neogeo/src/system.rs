@@ -176,6 +176,7 @@ impl NeoGeo {
     /// Runs one 68000 instruction, then the Z80 up to the same time. Returns the master clocks that passed.
     pub fn step(&mut self) -> u64 {
         self.cpu.set_ipl(self.bus.ipl());
+        self.bus.current_pc = self.cpu.pc;
         let clocks = u64::from(self.cpu.step(&mut self.bus)) * 2;
         self.bus.advance(clocks);
         self.catch_up_z80();
