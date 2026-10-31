@@ -394,6 +394,8 @@ impl GateArray {
             0x30 => u16::from(self.timer_reload),
             0x32 => u16::from(self.mask),
             0x04 => self.cdc.mode_word(),
+            // the DMA address reads back, advanced by the transfers (fact E21)
+            0x0A => self.dma_address,
             // the data port: reading it steps the address register, so only a word access (or the low byte) counts
             0x06 => {
                 let v = u16::from(self.cdc.read()?);
@@ -481,6 +483,7 @@ impl GateArray {
             }
             0x04 => {
                 self.cdc.write_mode(v);
+                self.dma_address = 0; // fact E21
                 true
             }
             0x06 => {
@@ -520,6 +523,7 @@ impl GateArray {
             0x04 => {
                 self.cdc
                     .write_mode(u16::from(v) << 8 | u16::from(self.cdc.address()));
+                self.dma_address = 0; // fact E21
                 return true;
             }
             0x05 => {
@@ -871,6 +875,21 @@ mod tests {
             *n = g.sub_read_byte(0x38 + i as u32).unwrap();
         }
         rs
+    }
+
+    #[test]
+    fn the_cdc_dma_address_reads_back_and_a_write_of_the_mode_register_clears_it() {
+        let mut g = GateArray::new();
+        assert!(g.sub_write_word(0x0A, 0x1234));
+        assert_eq!(g.sub_read_word(0x0A), Some(0x1234));
+        assert_eq!(g.sub_read_byte(0x0B), Some(0x34));
+        g.advance_dma_address(2048);
+        assert_eq!(g.sub_read_word(0x0A), Some(0x1234 + 256));
+        assert!(g.sub_write_word(0x04, 0x0300));
+        assert_eq!(g.sub_read_word(0x0A), Some(0));
+        assert!(g.sub_write_word(0x0A, 0x0042));
+        assert!(g.sub_write_byte(0x04, 0x03));
+        assert_eq!(g.sub_read_word(0x0A), Some(0));
     }
 
     #[test]
