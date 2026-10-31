@@ -4,6 +4,22 @@
 
 use std::f32::consts::TAU;
 
+/// The detune of an operator in 20-bit phase increments for detune 1, 2 and 3 at key codes 0 to 31 (fact Y9).
+const DETUNE: [[u8; 32]; 3] = [
+    [
+        0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 6, 6, 7, 8, 8,
+        8, 8,
+    ],
+    [
+        1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 6, 6, 7, 8, 8, 9, 10, 11, 12, 13, 14,
+        16, 16, 16, 16,
+    ],
+    [
+        2, 2, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 6, 6, 7, 8, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19,
+        20, 22, 22, 22, 22,
+    ],
+];
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
     Off,
@@ -16,6 +32,8 @@ enum Phase {
 #[derive(Clone, Copy)]
 struct Operator {
     mul: u8,
+    /// The detune: bits 6-4 of register `$30`, a magnitude in bits 5-4 and the sign in bit 6 (fact Y9).
+    dt: u8,
     tl: u8,
     ks: u8,
     ar: u8,
@@ -36,6 +54,7 @@ impl Default for Operator {
     fn default() -> Self {
         Operator {
             mul: 0,
+            dt: 0,
             tl: 0,
             ks: 0,
             ar: 0,
@@ -74,8 +93,16 @@ fn rate_step(rate: u32) -> f32 {
 }
 
 impl Channel {
+    /// The key code: the block and two bits made of the top bits of the frequency number (fact Y9).
     fn keycode(&self) -> u32 {
-        u32::from(self.block) << 2 | u32::from((self.fnum >> 9) & 3)
+        let f = u32::from(self.fnum);
+        let (f11, f10, f9, f8) = ((f >> 10) & 1, (f >> 9) & 1, (f >> 8) & 1, (f >> 7) & 1);
+        let n3 = if f11 == 1 {
+            f10 | f9 | f8
+        } else {
+            f10 & f9 & f8
+        };
+        u32::from(self.block) << 2 | f11 << 1 | n3
     }
 
     fn effective_rate(&self, op: &Operator, r: u8, release: bool) -> u32 {
@@ -160,7 +187,20 @@ impl Channel {
             f32::from(self.ops[i].mul)
         };
         // cycles per sample: fnum x 2^block / 2^21 x multiple (fact Y6)
-        let inc = f32::from(self.fnum) * 2f32.powi(i32::from(self.block)) / 2_097_152.0 * mul;
+        // the detune moves the increment of the 20-bit phase by an amount that grows with the key code (fact Y9)
+        let base = ((u32::from(self.fnum) << self.block) >> 1) as f32;
+        let mag = usize::from(self.ops[i].dt & 3);
+        let step = if mag == 0 {
+            0
+        } else {
+            DETUNE[mag - 1][self.keycode().min(31) as usize]
+        };
+        let dt = if self.ops[i].dt & 4 != 0 {
+            -f32::from(step)
+        } else {
+            f32::from(step)
+        };
+        let inc = (base + dt) / 1_048_576.0 * mul;
         let op = &mut self.ops[i];
         op.pos = (op.pos + inc).fract();
         if op.phase == Phase::Off {
@@ -290,7 +330,10 @@ impl Fm {
         let slot = [0usize, 2, 1, 3][usize::from((reg >> 2) & 3)];
         let c = &mut self.channels[ch];
         match reg {
-            0x30..=0x3F => c.ops[slot].mul = value & 0xF,
+            0x30..=0x3F => {
+                c.ops[slot].mul = value & 0xF;
+                c.ops[slot].dt = (value >> 4) & 7;
+            }
             0x40..=0x4F => c.ops[slot].tl = value & 0x7F,
             0x50..=0x5F => {
                 c.ops[slot].ks = value >> 6;
@@ -366,6 +409,32 @@ mod tests {
         // 5555 samples are 0.1 s: the expected frequency is 0x2A0 x 16 x 55555 / 2^21 = 274.7 Hz, 27 cycles
         assert!((26..=29).contains(&crossings), "{crossings} cycles");
         assert!(s.iter().any(|v| v.abs() > 0.5), "the tone is loud");
+    }
+
+    #[test]
+    fn the_keycode_comes_from_the_block_and_the_top_bits_of_the_frequency() {
+        let mut c = Channel::default();
+        c.block = 4;
+        c.fnum = 0x2A0; // bit 10 clear, bits 9, 8, 7 = 1, 0, 1: N4 = 0, N3 = 0
+        assert_eq!(c.keycode(), 16);
+        c.fnum = 0x3A0; // bit 10 clear, bits 9, 8, 7 all set: N3 = 1
+        assert_eq!(c.keycode(), 17);
+        c.fnum = 0x480; // bit 10 set and bit 7 set: N4 = 1, N3 = 1
+        assert_eq!(c.keycode(), 19);
+    }
+
+    #[test]
+    fn detune_moves_the_pitch_up_or_down_by_a_little() {
+        let count = |dt: u8| {
+            let mut fm = tone(0x2A0, 4);
+            fm.write(0, 0x31, 0x01 | (dt << 4));
+            let s = play(&mut fm, 555_550);
+            s.windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count()
+        };
+        let (flat, up, down) = (count(0), count(3), count(7));
+        assert!(up > flat, "{up} {flat}");
+        assert!(down < flat, "{down} {flat}");
+        assert!(up - flat < flat / 40, "a small amount: {up} {flat}");
     }
 
     #[test]
