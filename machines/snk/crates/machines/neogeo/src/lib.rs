@@ -398,10 +398,11 @@ impl Bus {
 
 impl M68kBus for Bus {
     fn read(&mut self, addr: u32, size: Size, _fc: FunctionCode) -> Result<u32, BusFault> {
-        if size == Size::Byte && (0x20_0000..0x30_0000).contains(&addr) {
-            if let Some(v) = self.protection.read_byte(addr) {
-                return Ok(u32::from(v));
-            }
+        if size == Size::Byte
+            && (0x20_0000..0x30_0000).contains(&addr)
+            && let Some(v) = self.protection.read_byte(addr)
+        {
+            return Ok(u32::from(v));
         }
         if size == Size::Word && (addr & 0xFF_FFF0) == 0x3C_0000 {
             return match self.lspc_read(addr & 0xF) {
