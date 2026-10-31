@@ -97,6 +97,14 @@ fn first_fetches() {
         {
             *hist.entry(machine.cpu.pc & !3).or_default() += 1;
         }
+        if let Ok(v) = std::env::var("RC_COUNT_PC")
+            && machine.cpu.pc == u32::from_str_radix(&v, 16).unwrap()
+        {
+            println!(
+                "pc {v} reached at frame {}",
+                machine.bus.clock / (neogeo::LINE_CLOCKS * neogeo::FRAME_LINES)
+            );
+        }
         machine.step();
         steps += 1;
     }

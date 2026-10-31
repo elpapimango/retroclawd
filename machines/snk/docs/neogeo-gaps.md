@@ -40,6 +40,14 @@
   found, Cyber-Lip differs by about 15). With that offset the pictures agree (mean difference 1.5-2.7 at four of four frames). The game's main
   loop waits for the vertical blank flag at `$2785(a5)` (one tick per blank, no timer interrupt used). The backdrop was read from colour 0 of
   palette 255 instead of colour 15 (fact N29), which showed in the game's fade to white: fixed. Sound level is 0.95-1.3 times the reference's.
+- **Boot offset, what is known (2026-10-31).** The reference boots **twice** for exactly the games whose backup RAM word `$D00100` is 1 after
+  our run: KOF 2001 and Metal Slug 2 (the BIOS's RAM-test garbage at frames 120-240, then colour-fill test screens and the same garbage again
+  at 360-450, then the game); Cyber-Lip, Fatal Fury 2, Art of Fighting 2, Zupapa!, Ganryu, Sengoku 3, Nightmare in the Dark and Aero Fighters 2
+  boot once in both and have `$D00100` = 0 here. It is not the CMC (the CMC games boot once) and not the Neo-Geo mode option (MVS/AES alike).
+  The two games run their MVS save routine (Metal Slug 2 `$87240`: clear the flag at its start, set it at its end) during start-up, and
+  the same game code shows its WARNING screen when the flag is set on an MVS board (`$964`); the reference's backup RAM at frame 900 has the
+  flag 0 and the date `26/10/31`. Why the reference reboots and ends with the flag clear is not found: next step would be to trace the
+  reference with its debug build (`fbneo64d.exe`), not done. Probe aids: `RC_COUNT_PC`, `RC_PCHIST`, `RC_DUMP_WORK`, `RC_DUMP_BACKUP`.
 - **NEO-CMC (2026-10-31, fact N49, documented exception).** Sprite decryption (CMC42 and CMC50), the fix layer taken from the sprite data
   and the CMC50 Z80 program decryption are in for five sets (Zupapa!, Ganryu, Nightmare in the Dark, Sengoku 3, KOF 2001): all draw their
   title or attract screens. Not yet: a comparison with FinalBurn Neo's pictures and sound, the other keys (KOF 99/2000/2002/2003, Garou,
