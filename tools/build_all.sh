@@ -60,16 +60,32 @@ echo "== app + debugger plugins ($PROFILE)"
 CARGO_TARGET_DIR="$ROOT/target" cargo build --workspace "${FLAGS[@]}"
 
 PLUGINS="$ROOT/target/$PROFILE/plugins"
-rm -rf "$PLUGINS"; mkdir -p "$PLUGINS"
+# On Windows a deleted folder can linger (a scanner or a stray retroclawd.exe holds a library), and a copy into it then fails with
+# "No such file or directory": wait until the folder is really gone, and retry the copies.
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  rm -rf "$PLUGINS" 2>/dev/null
+  [[ ! -e "$PLUGINS" ]] && break
+  sleep 1
+done
+mkdir -p "$PLUGINS"
+stage() {  # stage SRC... DEST
+  local n
+  for n in 1 2 3 4 5 6 7 8 9 10; do
+    mkdir -p "$PLUGINS" && cp -f "$@" && return 0
+    sleep 1
+  done
+  echo "cannot copy $* after 10 tries" >&2
+  return 1
+}
 for f in "${FAM[@]}"; do
   echo "== machines/$f ($PROFILE)"
   ( cd "machines/$f" && cargo build --workspace "${FLAGS[@]}" )
   shopt -s nullglob
   libs=("$CARGO_TARGET_DIR/$PROFILE"/$LIB_GLOB)
   shopt -u nullglob
-  [[ ${#libs[@]} -gt 0 ]] && cp -f "${libs[@]}" "$PLUGINS/"
+  if [[ ${#libs[@]} -gt 0 ]]; then stage "${libs[@]}" "$PLUGINS/"; fi
   # What --firmware auto matches against RomM (hashes only, no ROMs).
-  [[ -f "machines/$f/firmware.toml" ]] && cp -f "machines/$f/firmware.toml" "$PLUGINS/$f.firmware.toml"
+  if [[ -f "machines/$f/firmware.toml" ]]; then stage "machines/$f/firmware.toml" "$PLUGINS/$f.firmware.toml"; fi
 done
 
 echo
