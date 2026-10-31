@@ -412,6 +412,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::field_reassign_with_default)]
     fn the_keycode_comes_from_the_block_and_the_top_bits_of_the_frequency() {
         let mut c = Channel::default();
         c.block = 4;
