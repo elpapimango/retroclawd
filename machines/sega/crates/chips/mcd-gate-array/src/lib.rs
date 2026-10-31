@@ -124,7 +124,7 @@ impl GateArray {
             reset_step: 0,
             cdd: cdd::Cdd::new(),
             cdc: cdc::Cdc::new(),
-            dma_address: 0,
+            dma_address: 0xFFFF, // fact E21
             fader: 0,
         }
     }
@@ -880,6 +880,7 @@ mod tests {
     #[test]
     fn the_cdc_dma_address_reads_back_and_a_write_of_the_mode_register_clears_it() {
         let mut g = GateArray::new();
+        assert_eq!(g.sub_read_word(0x0A), Some(0xFFFF), "power-on value");
         assert!(g.sub_write_word(0x0A, 0x1234));
         assert_eq!(g.sub_read_word(0x0A), Some(0x1234));
         assert_eq!(g.sub_read_byte(0x0B), Some(0x34));

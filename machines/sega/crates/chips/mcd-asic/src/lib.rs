@@ -173,16 +173,15 @@ impl Asic {
             return 0; // stamp 0 is blank (fact G5)
         }
         let (u, v) = (x % size, y % size);
-        // undo the rotation, then the horizontal flip (fact G5: the order and the sense are [H?])
-        let (mut sx, sy) = match (entry >> 13) & 3 {
+        // the horizontal flip first, then the turn (fact G5)
+        let m = size - 1;
+        let u = if entry & 0x8000 != 0 { m - u } else { u };
+        let (sx, sy) = match (entry >> 13) & 3 {
             0 => (u, v),
-            1 => (v, size - 1 - u),
-            2 => (size - 1 - u, size - 1 - v),
-            _ => (size - 1 - v, u),
+            1 => (m - v, u),
+            2 => (m - u, m - v),
+            _ => (v, m - u),
         };
-        if entry & 0x8000 != 0 {
-            sx = size - 1 - sx;
-        }
         let at = number * 128 + (sx >> 3) * size * 4 + sy * 4 + ((sx & 7) >> 1);
         let byte = ram[(at as usize) & (RAM_SIZE - 1)];
         if sx & 1 == 0 { byte >> 4 } else { byte & 0xF }
@@ -394,16 +393,16 @@ mod tests {
                 0
             }
         });
-        // four map entries at (0,0) (1,0) (2,0) (3,0): plain, flipped, 180 degrees, 90 degrees
-        for (i, e) in [0x0001u16, 0x8001, 0x4001, 0x2001].iter().enumerate() {
+        // map entries at (0,0) to (5,0): plain, flipped, 180 degrees, RT 1, RT 1 flipped, RT 3
+        for (i, e) in [0x0001u16, 0x8001, 0x4001, 0x2001, 0xA001, 0x6001].iter().enumerate() {
             put_word(&mut ram, 0x1000 + 2 * i, *e);
         }
         let mut a = Asic::new();
-        // one line along the top row of 4 stamps = 64 dots
+        // one line along the top row of 6 stamps = 96 dots
         for (i, w) in [0u16, 0, 0x0800, 0].iter().enumerate() {
             put_word(&mut ram, 0x2000 + 2 * i, *w);
         }
-        setup(&mut ram, &mut a, 64, 1);
+        setup(&mut ram, &mut a, 96, 1);
         a.write_word(0x5C, 7, &mut ram, 0, 0);
         start(&mut ram, &mut a, 0);
         let dot = |x| buffer_dot(&ram, 0x3000, 8, x, 0);
@@ -414,11 +413,11 @@ mod tests {
             (0, 0),
             "turned half way the dots are on the bottom row"
         );
-        assert_eq!(
-            (dot(48), dot(63)),
-            (0, 9),
-            "turned a quarter way they are on clockwise the first dot is at the top right"
-        );
+        // RT 1 reads the stamp's right column from the top (fact G5: sense and order from Genesis Plus GX)
+        assert_eq!((dot(48), dot(63)), (5, 0), "RT 1");
+        // the flip comes before the turn
+        assert_eq!((dot(64), dot(79)), (0, 5), "RT 1 flipped");
+        assert_eq!((dot(80), dot(95)), (0, 9), "RT 3");
     }
 
     #[test]
