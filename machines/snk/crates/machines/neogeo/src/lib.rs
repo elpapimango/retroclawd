@@ -3,6 +3,12 @@
 //! instead of returning an invented value (the project rule).
 #![forbid(unsafe_code)]
 
+pub mod sound;
+pub mod system;
+pub mod video;
+
+pub use sound::Sound;
+
 use mc68000::{BusFault, FunctionCode, IackResponse, M68kBus, Size};
 
 pub const BIOS_SIZE: usize = 0x2_0000;
@@ -54,6 +60,8 @@ pub struct Bus {
     pub coin: [bool; 4],
     /// REG_DIPSW as read: active low, so `$FF` is every switch off (fact N17).
     pub dips: u8,
+    /// REG_P1CNT and REG_P2CNT as read: up, down, left, right, A, B, C, D in bits 0-7, active low (fact N28).
+    pub pads: [u8; 2],
     /// Machine time in master clocks (24 MHz), advanced by the owner of the bus (fact N19).
     pub clock: u64,
     /// The pending interrupts: bit 0 the power-on reset one (level 3), bit 1 the timer (level 2), bit 2 the vertical blank (level 1) (fact N21).
@@ -61,6 +69,7 @@ pub struct Bus {
     pub backup: Vec<u8>,
     pub vram: Vec<u16>,
     pub lspc: Lspc,
+    pub sound: Sound,
     /// How many times the watchdog was kicked (fact N11).
     pub watchdog_kicks: u64,
     /// The first report of an access no fact covers; the machine is stopped once it is set.
@@ -69,7 +78,7 @@ pub struct Bus {
 
 impl Bus {
     /// `bios` and `p` are the files as the sets store them: each 16-bit word byte-swapped (fact N10).
-    pub fn new(mut bios: Vec<u8>, mut p: Vec<u8>) -> Bus {
+    pub fn new(mut bios: Vec<u8>, mut p: Vec<u8>, sm1: Vec<u8>, m1: Vec<u8>) -> Bus {
         swap_words(&mut bios);
         swap_words(&mut p);
         Bus {
@@ -81,11 +90,13 @@ impl Bus {
             ctrl: [0; 5],
             coin: [false; 4],
             dips: 0xFF,
+            pads: [0xFF; 2],
             clock: 0,
             irq: 1,
             backup: vec![0; BACKUP_RAM],
             vram: vec![0; VRAM_WORDS],
             lspc: Lspc::default(),
+            sound: Sound::new(sm1, m1),
             watchdog_kicks: 0,
             stop: None,
         }
@@ -160,6 +171,11 @@ impl Bus {
             // REG_STATUS_A: coin 1, coin 2 and service are active low and not pressed; bit 6 is the clock's time pulse (facts N18, N19)
             // REG_STATUS_B: start and select buttons, memory card status (active low), bit 7 set on an MVS (fact N22)
             0x38_0000..=0x38_FFFF if a & 1 == 0 && a & 0xFE_00F1 == 0x38_0000 => Some(0xFF),
+            // the joypad ports (fact N28)
+            _ if a & 0xFE_0001 == 0x30_0000 => Some(self.pads[0]),
+            _ if a & 0xFE_0001 == 0x34_0000 => Some(self.pads[1]),
+            // REG_SOUND read: the Z80's reply (fact N25)
+            _ if a & 0xFE_0001 == 0x32_0000 => Some(self.sound.reply),
             _ if a & 0xFE_0001 == 0x32_0001 => {
                 Some(0x07 | (((self.clock / TP_HALF_PERIOD) & 1) as u8) << 6)
             }
@@ -170,6 +186,8 @@ impl Bus {
     fn put(&mut self, addr: u32, v: u8) -> bool {
         let a = (addr & 0xFF_FFFF) as usize;
         match a {
+            // REG_SOUND written: a command for the Z80 (fact N25)
+            _ if a & 0xFE_0001 == 0x32_0000 => self.sound.send_command(v),
             // REG_DIPSW written: any value kicks the watchdog (fact N11)
             _ if a & 0xFE_0001 == 0x30_0001 => self.watchdog_kicks += 1,
             0x10_0000..=0x1F_FFFF => self.work[a & (WORK_RAM - 1)] = v,
@@ -182,6 +200,7 @@ impl Bus {
             _ if a & 0xFE_0001 == 0x3A_0001 => {
                 let (bit, on) = ((a >> 1) & 7, (a >> 4) & 1 != 0);
                 self.latch = self.latch & !(1 << bit) | u8::from(on) << bit;
+                self.sound.use_cart = self.latch & 0x20 != 0;
             }
             // the write-only output registers (fact N15)
             _ => match a & 0xFE_00F1 {
@@ -292,6 +311,25 @@ impl M68kBus for Bus {
     }
 }
 
+/// The Z80's view of the same machine: its bus is the sound side (facts N24-N27).
+impl machine::Bus for Bus {
+    fn read(&mut self, addr: u16) -> u8 {
+        self.sound.read(addr)
+    }
+
+    fn write(&mut self, addr: u16, val: u8) {
+        self.sound.write(addr, val);
+    }
+
+    fn read_io(&mut self, port: u16) -> u8 {
+        self.sound.read_io(port)
+    }
+
+    fn write_io(&mut self, port: u16, val: u8) {
+        self.sound.write_io(port, val);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,7 +344,7 @@ mod tests {
         let mut p = vec![0u8; 0x1000];
         p[0] = 0x78;
         p[1] = 0x56;
-        Bus::new(bios, p)
+        Bus::new(bios, p, vec![0; 0x8000], Vec::new())
     }
 
     #[test]

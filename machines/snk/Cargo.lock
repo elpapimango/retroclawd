@@ -94,6 +94,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
+name = "machine"
+version = "0.1.0"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac#0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac"
+
+[[package]]
 name = "mc68000"
 version = "0.1.0"
 source = "git+https://github.com/elpapimango/retroclawd-crates?rev=0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac#0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac"
@@ -128,8 +133,10 @@ dependencies = [
 name = "neogeo"
 version = "0.1.0"
 dependencies = [
+ "machine",
  "mc68000",
  "neo-set",
+ "z80",
  "zip",
 ]
 
@@ -203,6 +210,15 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+
+[[package]]
+name = "z80"
+version = "0.1.0"
+source = "git+https://github.com/elpapimango/retroclawd-crates?rev=0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac#0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac"
+dependencies = [
+ "machine",
+ "serde",
+]
 
 [[package]]
 name = "zip"
