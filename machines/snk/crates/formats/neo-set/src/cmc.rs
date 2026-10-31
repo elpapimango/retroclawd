@@ -182,6 +182,8 @@ pub fn decrypt_m1(m: &[u8]) -> Vec<u8> {
 
 /// The fix layer: it is stored in the last bytes of the unscrambled sprite data, in a different tile order.
 pub fn fix_from_sprites(rom: &[u8], fix_len: usize) -> Vec<u8> {
+    // whole 32-byte tiles only: the size comes from the (untrusted) set, and the tile order reaches 31 bytes past `i`
+    let fix_len = fix_len & !0x1f;
     let Some(start) = rom.len().checked_sub(fix_len) else {
         return Vec::new();
     };
@@ -235,6 +237,14 @@ mod tests {
             }
         }
         assert_eq!(decrypt_m1(&[1, 2, 3]).len(), 0x80000);
+    }
+
+    #[test]
+    fn a_fix_size_that_is_not_whole_tiles_is_rounded_down_and_never_panics() {
+        let rom = vec![1u8; 1024];
+        assert_eq!(fix_from_sprites(&rom, 33).len(), 32);
+        assert_eq!(fix_from_sprites(&rom, 31).len(), 0);
+        assert_eq!(fix_from_sprites(&rom, 1000).len(), 992);
     }
 
     #[test]
