@@ -86,29 +86,35 @@ fn classify(name: &str) -> Option<(Kind, u32)> {
 
 /// Reads a set from the bytes of its zip.
 pub fn load(zip_bytes: &[u8]) -> Result<NeoSet, SetError> {
+    load_with_limit(zip_bytes, MAX_SET_BYTES)
+}
+
+/// `load` with the cap on the expanded size as a parameter (a test lowers it).
+fn load_with_limit(zip_bytes: &[u8], limit: u64) -> Result<NeoSet, SetError> {
     let mut zip =
         zip::ZipArchive::new(Cursor::new(zip_bytes)).map_err(|e| SetError::Zip(e.to_string()))?;
     if zip.len() > MAX_ENTRIES {
         return Err(SetError::TooManyEntries(zip.len()));
     }
     let mut files: Vec<(Kind, u32, Vec<u8>)> = Vec::new();
-    let mut total = 0u64;
+    // the bytes really read count against the cap: a header that declares less than the entry expands to is not believed
+    let mut read_total = 0u64;
     for i in 0..zip.len() {
         let entry = zip.by_index(i).map_err(|e| SetError::Zip(e.to_string()))?;
         let Some((kind, number)) = classify(entry.name()) else {
             continue;
         };
-        total += entry.size();
-        if total > MAX_SET_BYTES {
+        let declared = entry.size();
+        if declared > limit - read_total {
             return Err(SetError::TooLarge);
         }
-        // the declared size is not trusted: reading stops at the cap
         let mut data = Vec::new();
         entry
-            .take(MAX_SET_BYTES + 1)
+            .take(limit - read_total + 1)
             .read_to_end(&mut data)
             .map_err(|e| SetError::Zip(e.to_string()))?;
-        if data.len() as u64 > MAX_SET_BYTES {
+        read_total += data.len() as u64;
+        if read_total > limit || data.len() as u64 != declared {
             return Err(SetError::TooLarge);
         }
         files.push((kind, number, data));
@@ -214,6 +220,14 @@ mod tests {
         .unwrap();
         assert_eq!(set.v_a, [1, 2, 3]);
         assert!(set.v_b.is_empty());
+    }
+
+    #[test]
+    fn the_cap_counts_every_entry_together() {
+        let bytes = zip_of(&[("a.p1", &[1; 600]), ("a.s1", &[2; 600])]);
+        assert!(load_with_limit(&bytes, 1200).is_ok());
+        assert_eq!(load_with_limit(&bytes, 1199), Err(SetError::TooLarge));
+        assert_eq!(load_with_limit(&bytes, 599), Err(SetError::TooLarge));
     }
 
     #[test]
