@@ -27,9 +27,15 @@ fn first_fetches() {
         .unwrap()
         .read_to_end(&mut sfix)
         .unwrap();
+    let mut lo = Vec::new();
+    zip.by_name("000-lo.lo")
+        .unwrap()
+        .read_to_end(&mut lo)
+        .unwrap();
     let (set_s, set_c) = (set.s.clone(), set.c.clone());
     let graphics = neogeo::system::Graphics {
         sfix: sfix.clone(),
+        lo: lo.clone(),
         s: set.s.clone(),
         c: set.c.clone(),
     };
@@ -74,6 +80,72 @@ fn first_fetches() {
         nz(0x8400..0x8600),
         bus.palette.iter().filter(|b| **b != 0).count()
     );
+    if std::env::var("RC_PALETTE").is_ok() {
+        for bank in 0..2usize {
+            for pal in [0usize, 1, 254, 255] {
+                let at = bank * neogeo::PALETTE_RAM + pal * 32;
+                let words: Vec<String> = (0..16)
+                    .map(|c| {
+                        format!(
+                            "{:04X}",
+                            u16::from(bus.palette[at + c * 2]) << 8
+                                | u16::from(bus.palette[at + c * 2 + 1])
+                        )
+                    })
+                    .collect();
+                println!("bank {bank} palette {pal}: {}", words.join(" "));
+            }
+        }
+        println!("latch {:02X}", bus.latch);
+    }
+    if std::env::var("RC_CHAINS").is_ok() {
+        // the chains: first sprite, how many follow, top line, height in tiles, shrink
+        let mut n = 0;
+        while n < 381 {
+            let b3 = bus.vram[0x8200 + n];
+            if b3 & 0x40 == 0 && b3 & 0x3F != 0 {
+                let mut len = 1;
+                while n + len < 381 && bus.vram[0x8200 + n + len] & 0x40 != 0 {
+                    len += 1;
+                }
+                let b2 = bus.vram[0x8000 + n];
+                println!(
+                    "chain {n}+{len}: top {} height {} shrink h {} v {} x {}",
+                    (496 - i32::from(b3 >> 7)) & 0x1FF,
+                    b3 & 0x3F,
+                    b2 >> 8 & 0xF,
+                    b2 & 0xFF,
+                    bus.vram[0x8400 + n] >> 7
+                );
+                n += len;
+            } else {
+                n += 1;
+            }
+        }
+    }
+    if std::env::var("RC_SPRITES").is_ok() {
+        // sprites with a height: n, scb2 (shrink), scb3 (y, sticky, height), scb4 (x)
+        let mut shown = 0;
+        for n in 0..381usize {
+            let (b2, b3, b4) = (
+                bus.vram[0x8000 + n],
+                bus.vram[0x8200 + n],
+                bus.vram[0x8400 + n],
+            );
+            if b3 & 0x3F != 0 && (b2 != 0x0FFF || std::env::var("RC_ALL").is_ok()) && shown < 60 {
+                println!(
+                    "sprite {n}: shrink h {} v {}, y {} sticky {} height {}, x {}",
+                    b2 >> 8 & 0xF,
+                    b2 & 0xFF,
+                    b3 >> 7,
+                    b3 >> 6 & 1,
+                    b3 & 0x3F,
+                    b4 >> 7
+                );
+                shown += 1;
+            }
+        }
+    }
     if let Ok(path) = std::env::var("RC_OUT") {
         let sfix = sfix.clone();
         let src = neogeo::video::Sources {
@@ -90,6 +162,7 @@ fn first_fetches() {
             },
             sprites: &set_c,
             layout: neogeo::video::SpriteLayout::default(),
+            lo: &lo,
             anim: bus.anim,
         };
         let mut out = vec![0u32; neogeo::video::WIDTH * neogeo::video::HEIGHT];

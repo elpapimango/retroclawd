@@ -35,6 +35,8 @@ pub struct Sources<'a> {
     /// The sprite data, the C ROM pairs already interleaved (`neo_set::NeoSet::c`).
     pub sprites: &'a [u8],
     pub layout: SpriteLayout,
+    /// The vertical shrink table (`000-lo.lo`: 256 rows of 256 source lines, `$FF` for none).
+    pub lo: &'a [u8],
     /// The auto-animation counter (fact N34).
     pub anim: u8,
 }
@@ -86,7 +88,7 @@ fn sprite_pixel(sprites: &[u8], layout: &SpriteLayout, tile: usize, x: usize, y:
 
 /// Draws one frame into `out` (WIDTH x HEIGHT, 0x00RRGGBB).
 pub fn render(src: &Sources, out: &mut [u32]) {
-    let backdrop = palette_colour(src.palette, 255, 15);
+    let backdrop = palette_colour(src.palette, 255, 0);
     for y in 0..HEIGHT {
         let line = &mut out[y * WIDTH..(y + 1) * WIDTH];
         line.fill(backdrop);
@@ -110,30 +112,48 @@ fn draw_fix(src: &Sources, y: usize, line: &mut [u32]) {
 }
 
 fn draw_sprites(src: &Sources, y: usize, line: &mut [u32]) {
-    // a sprite's height is kept by the first sprite of a sticky chain (fact N32)
+    // a chain of sticky sprites keeps the first one's height, Y and vertical shrink (fact N32); each continues to the right of the
+    // previous one by that one's shrunk width (fact N36)
     let mut height = 0usize;
     let mut sx = 0i32;
     let mut sy = 0i32;
+    let mut vshrink = 0xFFusize;
+    let mut prev_width = 16i32;
     for n in 0..381usize {
+        let scb2 = src.vram[0x8000 + n];
         let scb3 = src.vram[0x8200 + n];
         let scb4 = src.vram[0x8400 + n];
+        let width = usize::from((scb2 >> 8) & 0xF) + 1;
         if scb3 & 0x40 == 0 {
             height = usize::from(scb3 & 0x3F);
             sy = i32::from(scb3 >> 7);
             sx = i32::from(scb4 >> 7);
+            vshrink = usize::from(scb2 & 0xFF);
         } else {
-            sx += 16; // sticky: the next column of the chain, one tile to the right
+            sx += prev_width;
         }
+        prev_width = width as i32;
         if height == 0 {
             continue;
         }
         let top = (496 - sy) & 0x1FF; // the sprite's top line on the screen (fact N32)
         let rel = (y as i32 - top) & 0x1FF;
-        if rel as usize >= height.min(32) * 16 {
+        // the source line of this output line: all of them at full height, else the vertical shrink table's (fact N36)
+        let source = if vshrink == 0xFF {
+            rel as usize
+        } else if rel < 256 {
+            match src.lo.get(vshrink * 256 + rel as usize).copied() {
+                Some(0xFF) | None => continue,
+                Some(b) => usize::from(b),
+            }
+        } else {
+            continue;
+        };
+        if source >= height.min(32) * 16 {
             continue;
         }
-        let tile_row = rel as usize / 16;
-        let py = rel as usize % 16;
+        let tile_row = source / 16;
+        let py = source % 16;
         let entry = n * 64 + tile_row * 2;
         let (lo, attr) = (usize::from(src.vram[entry]), src.vram[entry + 1]);
         let mut tile = lo | usize::from((attr >> 4) & 0xF) << 16;
@@ -146,8 +166,8 @@ fn draw_sprites(src: &Sources, y: usize, line: &mut [u32]) {
         let palette = usize::from(attr >> 8);
         let (hflip, vflip) = (attr & 1 != 0, attr & 2 != 0);
         let py = if vflip { 15 - py } else { py };
-        for x in 0..16 {
-            let screen = (sx + x as i32) & 0x1FF;
+        for dx in 0..width {
+            let screen = (sx + dx as i32) & 0x1FF;
             let screen = if screen >= 0x1F0 {
                 screen - 0x200
             } else {
@@ -156,6 +176,8 @@ fn draw_sprites(src: &Sources, y: usize, line: &mut [u32]) {
             if !(0..WIDTH as i32).contains(&screen) {
                 continue;
             }
+            // the columns kept of the 16 (fact N36: spread evenly, the hardware's pattern is not known)
+            let x = dx * 16 / width;
             let px = sprite_pixel(
                 src.sprites,
                 &src.layout,

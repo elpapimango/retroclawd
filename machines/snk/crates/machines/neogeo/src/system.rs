@@ -11,6 +11,8 @@ const Z80_DIVIDER: u64 = 6;
 /// The graphics data that is not in the bus: the board's fix tiles and the cartridge's S and C ROMs.
 pub struct Graphics {
     pub sfix: Vec<u8>,
+    /// The vertical shrink table, `000-lo.lo` of the system set.
+    pub lo: Vec<u8>,
     pub s: Vec<u8>,
     pub c: Vec<u8>,
 }
@@ -71,9 +73,11 @@ impl NeoGeo {
         )?;
         let sm1 = file("sm1.sm1").ok_or("rom_bios has no sm1.sm1 (the sound program)")?;
         let sfix = file("sfix.sfix").ok_or("rom_bios has no sfix.sfix (the fix tiles)")?;
+        let lo = file("000-lo.lo").ok_or("rom_bios has no 000-lo.lo (the shrink table)")?;
         let set = neo_set::load(game_zip).map_err(|e| format!("the game set: {e}"))?;
         let graphics = Graphics {
             sfix,
+            lo,
             s: set.s,
             c: set.c,
         };
@@ -94,6 +98,7 @@ impl NeoGeo {
             },
             sprites: &self.graphics.c,
             layout: SpriteLayout::default(),
+            lo: &self.graphics.lo,
             anim: bus.anim,
         };
         let mut out = vec![0u32; video::WIDTH * video::HEIGHT];
