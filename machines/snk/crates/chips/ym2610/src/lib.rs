@@ -12,8 +12,9 @@ pub const CLOCKS_PER_SAMPLE: u32 = 144;
 /// The sample rate at the 8 MHz Neo Geo clock.
 pub const SAMPLE_RATE: u32 = 8_000_000 / CLOCKS_PER_SAMPLE;
 
-/// How loud the FM channels are in the mix (one carrier at full volume reaches this many of the 32768 levels).
-const FM_GAIN: f32 = 6000.0;
+/// How loud the FM channels are in the mix (one carrier at full volume reaches this many of the 32768 levels): set so the BIOS
+/// jingle, which is all FM, has the reference's level, and ADPCM-A is scaled 1.25 times its first estimate for the game music (fact Y10).
+const FM_GAIN: f32 = 4080.0;
 
 /// The step sizes of the ADPCM-A decoder: 16 times 1.1 to the power n, rounded down (fact Y5).
 fn step_table() -> [i32; 49] {
@@ -86,6 +87,8 @@ pub struct Ym2610 {
     timer_b_prescale: u32,
     out: Vec<(i16, i16)>,
     steps: [i32; 49],
+    /// A debugging aid: the sources named in the environment variable RC_MUTE (f, s, a, b) are left out of the mix.
+    mute: String,
 }
 
 impl Default for Ym2610 {
@@ -116,6 +119,7 @@ impl Ym2610 {
             timer_b_prescale: 0,
             out: Vec::new(),
             steps: step_table(),
+            mute: std::env::var("RC_MUTE").unwrap_or_default(),
         }
     }
 
@@ -297,9 +301,16 @@ impl Ym2610 {
         }
         // the SSG runs at a quarter of the chip clock: 36 SSG clocks a sample (fact Y2)
         self.ssg.tick(36);
-        let ssg = self.ssg.output();
+        let ssg = if self.mute.contains('s') {
+            0.0
+        } else {
+            self.ssg.output()
+        };
         // the FM channels at a gain that puts one full carrier at about a quarter of full scale (fact Y6)
-        let (fl, fr) = self.fm.sample();
+        let (mut fl, mut fr) = self.fm.sample();
+        if self.mute.contains('f') {
+            (fl, fr) = (0.0, 0.0);
+        }
         let mut left = (ssg * 4096.0 + fl * FM_GAIN) as i32;
         let mut right = (ssg * 4096.0 + fr * FM_GAIN) as i32;
         // ADPCM-A plays at a sixth of the sample rate: a new nibble every six samples (fact Y5)
@@ -337,11 +348,11 @@ impl Ym2610 {
                 ch.step_index = (ch.step_index + INDEX_STEP[usize::from(code & 7)]).clamp(0, 48);
             }
             // the level of the channel and the master level scale the 12-bit sample (fact Y5)
-            let v = (ch.acc * (i32::from(ch.level) + 1) * (master + 1)) >> 9;
-            if ch.left {
+            let v = (ch.acc * (i32::from(ch.level) + 1) * (master + 1) * 5) >> 11;
+            if ch.left && !self.mute.contains('a') {
                 left += v;
             }
-            if ch.right {
+            if ch.right && !self.mute.contains('a') {
                 right += v;
             }
         }

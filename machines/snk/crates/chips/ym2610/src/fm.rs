@@ -82,14 +82,14 @@ pub struct Channel {
     right: bool,
 }
 
-/// The attenuation change an envelope rate (0-63) makes per sample (fact Y6): zero for rate 0, else (4 + rate mod 4) times
-/// two to the power (rate / 4 - 11) every third sample.
+/// The attenuation change an envelope rate (0-63) makes per sample (fact Y10): zero for rate 0, else on average (4 + rate mod 4)
+/// times two to the power (rate / 4 - 14) for every envelope tick, which comes every third sample.
 fn rate_step(rate: u32) -> f32 {
     if rate == 0 {
         return 0.0;
     }
     let r = rate.min(63);
-    (4 + (r & 3)) as f32 * 2f32.powi((r >> 2) as i32 - 11) / 3.0
+    (4 + (r & 3)) as f32 * 2f32.powi((r >> 2) as i32 - 14) / 3.0
 }
 
 impl Channel {
@@ -273,6 +273,8 @@ impl Channel {
                 o1 + o2 + o3 + o4
             }
         };
+        // the sum of the carriers saturates like the chip's 14-bit output (fact Y10)
+        let out = out.clamp(-1.0, 1.0);
         (
             if self.left { out } else { 0.0 },
             if self.right { out } else { 0.0 },
@@ -436,6 +438,30 @@ mod tests {
         assert!(up > flat, "{up} {flat}");
         assert!(down < flat, "{down} {flat}");
         assert!(up - flat < flat / 40, "a small amount: {up} {flat}");
+    }
+
+    #[test]
+    fn an_envelope_rate_moves_the_attenuation_by_the_published_average_per_tick() {
+        // one envelope tick is three samples; below rate 48 an update of 4 + (rate mod 4) eighths comes every 2^(11 - rate / 4) ticks
+        let per_tick = |r: u32| rate_step(r) * 3.0;
+        assert_eq!(rate_step(0), 0.0);
+        assert!((per_tick(47) - 0.875).abs() < 1e-6);
+        assert!((per_tick(48) - 1.0).abs() < 1e-6);
+        assert!((per_tick(52) - 2.0).abs() < 1e-6);
+        assert!((per_tick(60) - 8.0).abs() < 1e-6);
+        assert!((per_tick(4) - 4.0 / 8192.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_channel_with_four_loud_carriers_is_limited_to_one_carrier_at_full_scale() {
+        let mut fm = tone(0x2A0, 4);
+        for off in [0x01u8, 0x05, 0x09, 0x0D] {
+            fm.write(0, 0x40 + off, 0);
+            fm.write(0, 0x30 + off, 1);
+        }
+        fm.write(0, 0x28, 0xF1);
+        let peak = play(&mut fm, 5555).iter().fold(0f32, |m, v| m.max(v.abs()));
+        assert!(peak > 0.9 && peak <= 1.0, "{peak}");
     }
 
     #[test]
