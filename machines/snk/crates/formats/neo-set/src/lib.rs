@@ -129,7 +129,7 @@ pub fn load(zip_bytes: &[u8]) -> Result<NeoSet, SetError> {
         set.m.extend_from_slice(d);
     }
     let sprites: Vec<&Vec<u8>> = of(Kind::C).map(|(_, _, d)| d).collect();
-    if sprites.len() % 2 != 0 {
+    if !sprites.len().is_multiple_of(2) {
         return Err(SetError::UnpairedSprites);
     }
     for pair in sprites.chunks(2) {
