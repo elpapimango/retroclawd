@@ -32,10 +32,13 @@
   Remaining of the 16-set sweep: V-Liner (a gambling set) stops; Fight Fever runs here but the reference does not (a missing file).
 - **Metal Slug 2 (RomM 7062, 2026-10-31).** Its stop at `$2FFFF0` was the program's bank register (fact N47, done: a program over 2 MiB is
   banked, and the `.sp2` second program file is read). The game then shows its "WARNING: this ROM cartridge is for use with original SNK
-  boards only" screen and stops in a watchdog loop at `$000BEA`, where FinalBurn Neo reaches the title: it is a game of the later kind whose
-  sprite, fix and sound data are scrambled by the cartridge's decryption chip (NEO-CMC) and which checks it; the decryption is not
-  implemented (no source for its rules is in the facts), so the sprite data is encrypted here and the check fails. The same holds for the
-  other later games (the Metal Slug series, King of Fighters 97 and later, Samurai Shodown 4 and 5...).
+  boards only" screen. It is **not** a NEO-CMC game (the set is plain): the program takes the path to WARNING when the BIOS country is 2
+  (`sp-s2`, the first BIOS tried) and the MVS flag is set and the word at `$D00100` is non-zero; with the USA BIOS (`sp-u2.sp1`) it
+  proceeds. Why the order differs from FinalBurn Neo (which BIOS it defaults to, whether its backup RAM starts different) is open.
+- **NEO-CMC (2026-10-31, fact N49, documented exception).** Sprite decryption (CMC42 and CMC50), the fix layer taken from the sprite data
+  and the CMC50 Z80 program decryption are in for five sets (Zupapa!, Ganryu, Nightmare in the Dark, Sengoku 3, KOF 2001): all draw their
+  title or attract screens. Not yet: a comparison with FinalBurn Neo's pictures and sound, the other keys (KOF 99/2000/2002/2003, Garou,
+  Metal Slug 3-5, Samurai Shodown 5, ...) and the extra chips those boards also carry (SMA, PCM2, PVC, bootleg handlers).
 - **SSG-EG and LFO use.** Eleven of the thirteen sets checked write the SSG-EG registers (`$90-$9F`) a few times each at start-up (init
   writes) and four write the LFO register `$22` only at start-up; none was seen using them in music, so they remain unimplemented.
 

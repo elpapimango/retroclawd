@@ -282,7 +282,7 @@ impl Bus {
                     .copied()
             }
             0x10_0000..=0x1F_FFFF => Some(self.work[a & (WORK_RAM - 1)]),
-            0xC0_0000..=0xC1_FFFF => self.bios.get(a & (BIOS_SIZE - 1)).copied(),
+            0xC0_0000..=0xCF_FFFF => self.bios.get(a & (BIOS_SIZE - 1)).copied(),
             0x40_0000..=0x7F_FFFF => Some(self.palette[self.palette_at(a)]),
             0xD0_0000..=0xD0_FFFF => Some(self.backup[a & (BACKUP_RAM - 1)]),
             _ if a & 0xFE_0081 == 0x30_0001 => Some(self.dips),
@@ -480,8 +480,11 @@ impl M68kBus for Bus {
         _fc: FunctionCode,
     ) -> Result<(), BusFault> {
         // the bank register of a banked program: a write to `$2FFFF0`-`$2FFFFF` (fact N47)
-        if self.p.len() > 0x20_0000 && (0x2F_FFF0..0x30_0000).contains(&addr) {
-            self.p_bank = (value & 0xFF) as usize;
+        if (0x2F_FFF0..0x30_0000).contains(&addr) {
+            // a program of 2 MiB or less has nothing to switch (Sengoku 3 writes 0 here all the same, fact N47): the write is taken
+            if self.p.len() > 0x20_0000 {
+                self.p_bank = (value & 0xFF) as usize;
+            }
             return Ok(());
         }
         if (0x20_0000..0x30_0000).contains(&addr) {

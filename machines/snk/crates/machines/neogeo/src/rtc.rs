@@ -25,7 +25,7 @@ fn bcd(v: u32) -> u8 {
 fn days_in(month: u32, year: u32) -> u32 {
     match month {
         2 => {
-            if year % 4 == 0 {
+            if year.is_multiple_of(4) {
                 29
             } else {
                 28

@@ -6,6 +6,9 @@
 //! the file names are only classified, never used as paths.
 #![forbid(unsafe_code)]
 
+pub mod cmc;
+mod cmc_tables;
+
 use std::fmt;
 use std::io::{Cursor, Read};
 
@@ -102,6 +105,8 @@ fn load_with_limit(zip_bytes: &[u8], limit: u64) -> Result<NeoSet, SetError> {
         return Err(SetError::TooManyEntries(zip.len()));
     }
     let mut files: Vec<(Kind, u32, Vec<u8>)> = Vec::new();
+    // the game's number (NGH), the digits that start the name of its program file
+    let mut ngh: Option<u32> = None;
     // the bytes really read count against the cap: a header that declares less than the entry expands to is not believed
     let mut read_total = 0u64;
     for i in 0..zip.len() {
@@ -109,6 +114,11 @@ fn load_with_limit(zip_bytes: &[u8], limit: u64) -> Result<NeoSet, SetError> {
         let Some((kind, number)) = classify(entry.name()) else {
             continue;
         };
+        if kind == Kind::P && ngh.is_none() {
+            let name = entry.name().rsplit('/').next().unwrap_or("");
+            let digits: String = name.chars().take_while(char::is_ascii_digit).collect();
+            ngh = digits.parse().ok();
+        }
         let declared = entry.size();
         if declared > limit - read_total {
             return Err(SetError::TooLarge);
@@ -170,6 +180,20 @@ fn load_with_limit(zip_bytes: &[u8], limit: u64) -> Result<NeoSet, SetError> {
     } else {
         for pair in &pairs {
             set.c.extend_from_slice(pair);
+        }
+    }
+    // a board with a NEO-CMC chip: unscramble the sprites, then the fix layer is the end of them (fact N49)
+    if let Some(cmc) = ngh.and_then(cmc::for_ngh) {
+        if cmc.chip == cmc::Chip::Cmc50 {
+            set.m = cmc::decrypt_m1(&set.m);
+        }
+        if cmc::decrypt_sprites(&mut set.c, cmc) {
+            let fix_len = if set.s.is_empty() {
+                128 * 1024
+            } else {
+                set.s.len()
+            };
+            set.s = cmc::fix_from_sprites(&set.c, fix_len);
         }
     }
     let has_b = of(Kind::V).any(|(_, n, _)| (20..30).contains(n) || (200..300).contains(n));
