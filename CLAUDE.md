@@ -111,8 +111,9 @@ frame through `Machine::frame_rate` / `MachineMetadata::frame_rate` (ZX81 312 x 
 `machines/snk` (`elpapimango/retroclawd-snk`, public) builds `neogeo_machine_plugin` with one machine id, `neogeo`. Reference: FinalBurn Neo
 v1.0.0.03 GIT2b0c1c0 through its libretro core (`RetroArch-Win64/cores/fbneo_libretro.dll`, the BIOS in the system folder), read as a black
 box; the facts are rows of `machines/snk/docs/hardware-facts.md` (N1-N35, the Neo Geo wiki found by search plus what the reference shows).
-Run: `retroclawd neogeo --game cyberlip.zip --bios neogeo.zip` (text options: a path or `romm:<id>`; the BIOS set is RomM firmware 259, the
-games are platform 79; a `.zip` that holds no disc image is now handed on whole by `media_set.rs`). The real BIOS runs its self test (calendar
+Run: `retroclawd neogeo --firmware auto --rom romm:7017` (`--rom` is a text option, a path or `romm:<id>`: the games are RomM platform 79 and a
+`.zip` that holds no disc image is handed on whole by `media_set.rs`; the system set `neogeo.zip` is the file option `rom_bios`, RomM firmware 259, found
+by `--firmware auto` or given as `--rom-bios neogeo.zip#*`, where `#*` is the file loader's selector for the whole archive). The real BIOS runs its self test (calendar
 check, Z80 handshake), draws the NEO-GEO logo and starts the cartridge: Cyber-Lip's title and attract mode match FinalBurn Neo (S1), Fatal Fury
 and Aero Fighters 2 show their screens. Sprites are shrunk with the system ROM's table and the YM2610 (`machines/snk/crates/chips/ym2610`: timers, SSG, FM, ADPCM-A and B) plays
 the BIOS jingle and the games' music at about 80 percent of FinalBurn Neo's level. Open (`machines/snk/docs/neogeo-gaps.md`): the timer

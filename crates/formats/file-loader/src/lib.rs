@@ -121,7 +121,9 @@ impl FileLoader {
         let mut name = effective_name(base);
         let mut extracted_path = None;
 
-        if entry.is_some() || should_unpack_zip(base, &bytes) {
+        // `archive.zip#*` hands a set of files (a Neo Geo system ROM set) on as the zip itself
+        let whole = entry.as_deref() == Some("*");
+        if !whole && (entry.is_some() || should_unpack_zip(base, &bytes)) {
             let unpacked = self.unpack_zip_entry(base, &bytes, entry.as_deref())?;
             name = unpacked.name;
             bytes = unpacked.bytes;
@@ -230,7 +232,7 @@ impl FileLoader {
             (None, _) => {
                 return Err(format!(
                     "{source} is a zip archive with multiple files; expected exactly one \
-                     (pick one with {source}#<entry>). Entries: {}",
+                     (pick one with {source}#<entry>, or {source}#* for the archive itself). Entries: {}",
                     names()
                 ));
             }
@@ -483,6 +485,22 @@ mod tests {
         assert!(root.exists());
         drop(loader);
         assert!(!root.exists());
+    }
+
+    #[test]
+    fn the_star_selector_keeps_the_whole_archive_for_a_set_of_files() {
+        let archive = zip_with(&[("a.p1", b"ONE"), ("b.c1", b"TWO")]);
+        let path = write_temp("whole", "set.zip", &archive);
+        let source = path.to_str().unwrap();
+        let mut loader = FileLoader::new(LoaderConfig::default()).unwrap();
+        assert!(
+            loader.load_binary(source).is_err(),
+            "no entry named: still an error"
+        );
+        let whole = loader.load_binary(&format!("{source}#*")).unwrap();
+        assert_eq!(whole.bytes, archive);
+        assert_eq!(whole.name, "set.zip");
+        assert!(whole.extracted_path.is_none());
     }
 
     #[test]
