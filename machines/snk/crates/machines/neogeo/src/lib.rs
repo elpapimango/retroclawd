@@ -72,6 +72,9 @@ pub struct Bus {
     /// The auto-animation counter, 3 bits (fact N34).
     pub anim: u8,
     anim_frames: u64,
+    /// The LSPC's timer: a down counter in pixel clocks (fact N41), and the master clocks not yet made into pixel clocks.
+    timer_counter: u32,
+    timer_fraction: u64,
     pub backup: Vec<u8>,
     pub vram: Vec<u16>,
     pub lspc: Lspc,
@@ -103,6 +106,8 @@ impl Bus {
             irq: 1,
             anim: 0,
             anim_frames: 0,
+            timer_counter: 0,
+            timer_fraction: 0,
             backup: vec![0; BACKUP_RAM],
             vram: vec![0; VRAM_WORDS],
             lspc: Lspc::default(),
@@ -127,6 +132,7 @@ impl Bus {
     /// Moves machine time on by `master_clocks`, raising the vertical blank interrupt at its line.
     pub fn advance(&mut self, master_clocks: u64) {
         let before = self.clock / LINE_CLOCKS;
+        let before_clock = self.clock;
         self.clock += master_clocks;
         let after = self.clock / LINE_CLOCKS;
         // the vertical blank begins at line 248 of every 264
@@ -143,8 +149,45 @@ impl Bus {
             }
         }
         let blanks = |n: u64| (n + FRAME_LINES - VBLANK_LINE) / FRAME_LINES;
-        if blanks(after) > blanks(before) {
+        let blank_at = if blanks(after) > blanks(before) {
             self.irq |= 4;
+            // the clock at which the line counter passed the blank line
+            Some((blanks(after) * FRAME_LINES - (FRAME_LINES - VBLANK_LINE)) * LINE_CLOCKS)
+        } else {
+            None
+        };
+        // the timer counts the pixel clocks; a reload at the start of the blank splits the span in two (fact N41)
+        match blank_at {
+            Some(at) if self.lspc.mode & 0x40 != 0 && at >= before_clock => {
+                self.run_timer(at - before_clock);
+                self.timer_counter = self.timer_reload();
+                self.run_timer(self.clock - at);
+            }
+            _ => self.run_timer(master_clocks),
+        }
+    }
+
+    fn timer_reload(&self) -> u32 {
+        u32::from(self.lspc.timer_high) << 16 | u32::from(self.lspc.timer_low)
+    }
+
+    /// Counts `master_clocks` of the timer: it runs out at zero, raises level 2 when enabled and reloads when asked.
+    fn run_timer(&mut self, master_clocks: u64) {
+        self.timer_fraction += master_clocks;
+        let mut pixels = self.timer_fraction / 4;
+        self.timer_fraction %= 4;
+        while pixels > 0 && self.timer_counter > 0 {
+            let step = pixels.min(u64::from(self.timer_counter));
+            self.timer_counter -= step as u32;
+            pixels -= step;
+            if self.timer_counter == 0 {
+                if self.lspc.mode & 0x10 != 0 {
+                    self.irq |= 2;
+                }
+                if self.lspc.mode & 0x80 != 0 {
+                    self.timer_counter = self.timer_reload();
+                }
+            }
         }
     }
 
@@ -275,6 +318,8 @@ impl Bus {
 impl Bus {
     /// A word access to the video processor's registers `$3C0000-$3C000F`; `None` for a register no fact covers.
     fn lspc_read(&mut self, reg: u32) -> Option<u16> {
+        // the registers at `$3C0008-$3C000E` read like the ones four below them (fact N42)
+        let reg = reg & 7;
         match reg {
             0x0 | 0x2 => Some(self.vram[usize::from(self.lspc.vram_addr) % VRAM_WORDS]),
             0x4 => Some(self.lspc.vram_mod),
@@ -302,7 +347,13 @@ impl Bus {
             0x4 => l.vram_mod = v,
             0x6 => l.mode = v,
             0x8 => l.timer_high = v,
-            0xA => l.timer_low = v,
+            0xA => {
+                l.timer_low = v;
+                // bit 5 of the mode: the counter takes the reload value at once (fact N41)
+                if l.mode & 0x20 != 0 {
+                    self.timer_counter = u32::from(self.lspc.timer_high) << 16 | u32::from(v);
+                }
+            }
             0xC => l.irq_ack = v,
             0xE => l.timer_stop = v,
             _ => return false,
@@ -429,6 +480,65 @@ mod tests {
         b.write(0x3A_001F, Size::Byte, 0, FC).unwrap(); // PALBANK0
         assert_eq!(b.read(0x40_0000, Size::Word, FC), Ok(0x1111));
         assert_eq!(b.read(0x40_2000, Size::Word, FC), Ok(0x1111), "mirrored");
+    }
+
+    /// Writes the timer's reload value and runs the bus for `pixels` pixel clocks (4 master clocks each).
+    fn run_timer(b: &mut Bus, mode: u16, pixels: u64) {
+        b.write(0x3C_0006, Size::Word, u32::from(mode), FC).unwrap();
+        b.write(0x3C_0008, Size::Word, 0, FC).unwrap();
+        b.write(0x3C_000A, Size::Word, 100, FC).unwrap(); // reload 100 (loaded at once when bit 5 is set)
+        b.irq = 0;
+        b.advance(pixels * 4);
+    }
+
+    #[test]
+    fn the_timer_raises_level_2_when_it_runs_out_if_enabled_and_loaded_by_the_low_write() {
+        let mut b = bus();
+        run_timer(&mut b, 0x30, 99);
+        assert_eq!(b.irq & 2, 0, "one pixel clock left");
+        b.advance(4);
+        assert_eq!(b.irq & 2, 2);
+        assert_eq!(b.ipl(), 2);
+        // disabled: nothing
+        let mut b = bus();
+        run_timer(&mut b, 0x20, 200);
+        assert_eq!(b.irq & 2, 0);
+    }
+
+    #[test]
+    fn with_the_repeat_bit_the_timer_reloads_and_fires_again() {
+        let mut b = bus();
+        run_timer(&mut b, 0xB0, 100);
+        assert_eq!(b.irq & 2, 2);
+        b.write(0x3C_000C, Size::Word, 2, FC).unwrap(); // acknowledge
+        assert_eq!(b.irq & 2, 0);
+        b.advance(100 * 4);
+        assert_eq!(b.irq & 2, 2);
+    }
+
+    #[test]
+    fn without_the_repeat_bit_it_fires_once() {
+        let mut b = bus();
+        run_timer(&mut b, 0x30, 100);
+        b.write(0x3C_000C, Size::Word, 2, FC).unwrap();
+        b.advance(1000 * 4);
+        assert_eq!(b.irq & 2, 0);
+    }
+
+    #[test]
+    fn the_timer_reloads_at_the_start_of_the_vertical_blank_when_asked() {
+        let mut b = bus();
+        b.write(0x3C_0006, Size::Word, 0x50, FC).unwrap(); // enable, reload at the blank
+        b.write(0x3C_0008, Size::Word, 0, FC).unwrap();
+        b.write(0x3C_000A, Size::Word, 400, FC).unwrap(); // a reload value, not loaded yet
+        b.irq = 0;
+        // run to line 248 (the reload), then 399 pixel clocks later nothing, one more and it fires
+        b.advance(VBLANK_LINE * LINE_CLOCKS);
+        b.irq = 0;
+        b.advance(399 * 4);
+        assert_eq!(b.irq & 2, 0);
+        b.advance(4);
+        assert_eq!(b.irq & 2, 2);
     }
 
     #[test]

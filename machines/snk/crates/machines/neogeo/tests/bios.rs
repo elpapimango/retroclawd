@@ -158,8 +158,17 @@ fn first_fetches() {
     }
     if let Ok(path) = std::env::var("RC_OUT") {
         let sfix = sfix.clone();
+        let mut vram = bus.vram.clone();
+        if std::env::var("RC_NOFIX").is_ok() {
+            vram[0x7000..0x7500].fill(0);
+        }
+        if std::env::var("RC_NOSPR").is_ok() {
+            for n in 0..381 {
+                vram[0x8200 + n] = 0;
+            }
+        }
         let src = neogeo::video::Sources {
-            vram: &bus.vram,
+            vram: &vram,
             palette: &bus.palette[if bus.latch & 0x80 == 0 {
                 neogeo::PALETTE_RAM
             } else {
