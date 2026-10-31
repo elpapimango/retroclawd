@@ -1,0 +1,81 @@
+machine = "neogeo"
+display_name = "Neo Geo (MVS/AES cartridge)"
+family = "snk"
+default_region = "ntsc"
+
+[implementation]
+status = "intake"
+boot_verified = false
+note = "P0 only (2026-10-31): the reference runs and its pictures and audio can be captured; nothing is emulated yet. The Family repository retroclawd-snk is to be created by the owner; until then machines/snk is a local git repository with no remote."
+
+[core]
+reuse = ["mc68000", "z80"]
+variant = "68000 main CPU; Z80 sound CPU"
+tests = ["SingleStepTests 68000/v1 (already run by shared/mc68000)", "ZEXALL/ZEXDOC (already run by shared/z80)"]
+note = "Both Cores exist in shared/ (the Atari ST and the Mega Drive use them). The Neo Geo needs no new Core."
+
+[chips]
+new = ["LSPC2-A2 video processor (sprites, fix layer, auto-animation, timer interrupts)", "YM2610 (FM + SSG + ADPCM-A + ADPCM-B)", "NEO-ZMC2 Z80 bank controller", "NEO-GRC/NEO-BUF memory and palette logic as needed", "uPD4990A real-time clock", "memory card and backup RAM"]
+reuse_candidates = ["ym2612 (same FM operator pipeline family; the YM2610 has four operators on four channels, different register map)", "ay-3-8910 SSG part of the YM2610", "sn76489 not used"]
+placement = "All of them stay in this Family (retroclawd-snk); the YM2610 may borrow the operator pipeline from the Sega Family's ym2612 only through a shared crate, never by a cross-Family path dependency."
+verified_absent = "No LSPC, YM2610, uPD4990 or ADPCM implementation exists in shared/ or the families."
+
+[reference]
+emulator = "FinalBurn Neo"
+version = "v1.0.0.03 261021 GIT2b0c1c0"
+libretro_core = "C:/Users/matti/Workspace/Emulators/RetroArch-Win64/cores/fbneo_libretro.dll"
+standalone = "C:/Users/matti/Workspace/Emulators/fbneo/fbneo64.exe (and fbneo64d.exe, a debug build)"
+source_url = "https://github.com/finalburnneo/FBNeo"
+libretro_source_url = "https://github.com/libretro/FBNeo"
+license = "non-commercial (FBNeo license.txt): read for understanding only, no code, tables or constants copied"
+method = "Black box through retroclawd-tools/scripts/libretro_run.py (frames, audio, state, RAM dumps), as for Genesis Plus GX; the standalone build only to look at its debug output."
+reference_output = "304x224 picture (the visible 320x224 minus the 8 px FBNeo crops each side in its libretro build, to confirm), 59.18 fps, audio rate 47995 Hz (from --info 2026-10-31)"
+note = "FBNeo is a high-level-friendly emulator that is cycle-approximate for the Neo Geo: a picture and audio comparison by similarity is the right test, never cycle equality."
+
+[timing]
+master_clock_hz = 24000000
+cpu_clock = "68000 at 12 MHz (master / 2), Z80 at 4 MHz (master / 6), YM2610 at 8 MHz (master / 3), pixel clock 6 MHz (master / 4)"
+frame = "384 pixels x 264 lines (NTSC), about 59.185 Hz"
+status = "from memory of the neogeodev wiki; every number needs a row in docs/hardware-facts.md with its source before it is used. FBNeo's reported 59.18 fps agrees with 24 MHz / 4 / (384 x 264)."
+
+[memory]
+note = "Fill from the wiki's memory map when P3 starts: BIOS at $C00000, cartridge P ROM at $000000 and a banked $200000 window, work RAM $100000, palette RAM $400000, video RAM through $3C0000, I/O $300000 / $320000 / $340000 / $380000, backup RAM $D00000, memory card $800000."
+
+[firmware_policy]
+stock_roms_available = true
+note = "The owner's RomM holds the BIOS set as firmware id 259 (neogeo.zip, 2 438 734 bytes, SHA-1 420194cc1171adb1920d2ff05e3b7b9ae2b73942) and 139 game sets under platform 79 (Neo Geo AES) plus 27 under 75 (Neo Geo CD). A local copy of the BIOS set is in RetroArch's system/fbneo/ and the FBNeo folder's fbneo/ (different file, SHA-1 deb62b0074b8cae4f162c257662136733cfc76ad, 34 files). Never committed."
+
+[media]
+formats = ["MAME/FBNeo-style zip sets: one .zip holds the cartridge's P (68000 program), S (fix layer), C (sprite bitplanes, pairs), M (Z80 program), V (ADPCM samples)"]
+note = "A zip set is decoded by the Host or the Plugin into the five regions; the file names inside differ between sets (e.g. 010-p1.p1 in cyberlip.zip), so the region is decided by the extension and the order by the number; some sets share a parent set (clones) or the BIOS set. neogeo.zip is also a ROM set, used as BIOS."
+
+[[test_game]]
+name = "Cyber-Lip"
+romm_id = 7017
+file = "cyberlip.zip"
+sha1 = "01aa7a1fbf1abcc878ef1a80b27e8027e60596d4"
+size = 3316685
+reason = "smallest complete set tried; boots the NEO-GEO logo in the reference"
+
+[[test_game]]
+name = "Fatal Fury"
+romm_id = 7021
+file = "fatfury1.zip"
+sha1 = "7ed9175448f906db659186723303967d45aff573"
+size = 4054266
+
+[[test_game]]
+name = "Aero Fighters 2"
+romm_id = 7109
+file = "sonicwi2.zip"
+sha1 = "b13ec72e98f3756362e8a992db141f8a3bd6a3c9"
+size = 5543828
+
+[scenarios]
+S1 = "BIOS boot: the NEO-GEO logo screen of Cyber-Lip at frame 600 (the reference picture exists)"
+S2 = "Controller: coin and start, then a game's attract/menu screen"
+S3 = "Cartridge sets of the three test games load and run"
+S4 = "Audio: BIOS or game tone by RMS and pitch"
+S5 = "Save state round trip"
+S6 = "Frame length: 405 504 master clocks (4 x 384 x 264) if the wiki's line and pixel counts are confirmed; FBNeo reports 59.18 fps"
+note = "Standard scenarios of docs/new-machine-playbook.md; S7 and S8 not available."
