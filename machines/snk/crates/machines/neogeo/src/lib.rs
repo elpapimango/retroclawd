@@ -191,10 +191,10 @@ impl Bus {
                 0x38_0041 => self.ctrl[3] = v,
                 0x38_0051 => self.ctrl[4] = v,
                 r @ (0x38_0061 | 0x38_0063 | 0x38_0065 | 0x38_0067) => {
-                    self.coin[((r - 0x38_0061) / 2) as usize] = false
+                    self.coin[(r - 0x38_0061) / 2] = false
                 }
                 r @ (0x38_00E1 | 0x38_00E3 | 0x38_00E5 | 0x38_00E7) => {
-                    self.coin[((r - 0x38_00E1) / 2) as usize] = true
+                    self.coin[(r - 0x38_00E1) / 2] = true
                 }
                 _ => return false,
             },
@@ -352,7 +352,7 @@ mod tests {
     #[test]
     fn an_address_no_fact_covers_stops_the_machine_with_a_report() {
         let mut b = bus();
-        b.write(0x38_0065, Size::Byte, 0, FC).unwrap();
-        assert!(b.stop.as_deref().unwrap().contains("$380065"));
+        b.write(0xE0_0000, Size::Byte, 0, FC).unwrap();
+        assert!(b.stop.as_deref().unwrap().contains("$E00000"));
     }
 }

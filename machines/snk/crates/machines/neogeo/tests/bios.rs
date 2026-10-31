@@ -34,16 +34,16 @@ fn first_fetches() {
         if recent.len() > 40 {
             recent.remove(0);
         }
-        if let Ok(v) = std::env::var("RC_AT") {
-            if cpu.pc == u32::from_str_radix(&v, 16).unwrap() {
-                println!(
-                    "at {v}, step {steps}: sr {:04X} a7 {:X}",
-                    cpu.sr(),
-                    cpu.a7()
-                );
-                println!("work $FD00: {:02X?}", &bus.work[0xFD00..0xFD20]);
-                break;
-            }
+        if let Ok(v) = std::env::var("RC_AT")
+            && cpu.pc == u32::from_str_radix(&v, 16).unwrap()
+        {
+            println!(
+                "at {v}, step {steps}: sr {:04X} a7 {:X}",
+                cpu.sr(),
+                cpu.a7()
+            );
+            println!("work $FD00: {:02X?}", &bus.work[0xFD00..0xFD20]);
+            break;
         }
         if (0xC1_6BA0..0xC1_6BB2).contains(&cpu.pc) && std::env::var("RC_TRAIL").is_ok() {
             println!(
