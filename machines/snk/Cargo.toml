@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/formats/neo-set"]
+members = ["crates/formats/neo-set", "crates/machines/neogeo"]
 
 # Same release profile as the retroclawd host.
 [profile.release]

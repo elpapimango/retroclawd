@@ -6,8 +6,12 @@ through the plugin ABI; this repository will hold the Neo Geo (MVS/AES cartridge
 ## Status (2026-10-31)
 
 P0 done (`neogeo.intake.toml`). `crates/formats/neo-set` reads a cartridge zip into its regions (tested on Cyber-Lip, Fatal Fury,
-Aero Fighters 2). Nothing is emulated yet. Next slices: the 68000 memory map with BIOS and cartridge to the first fetches,
-LSPC video, Z80 and YM2610, controllers, save states.
+Aero Fighters 2). `crates/machines/neogeo` is the 68000's bus: BIOS (word-swapped dumps), program ROM with the 2 MiB half swap,
+work/palette/backup RAM, the system register latch, the LSPC registers stored, the watchdog counted. An address no fact covers stops
+the machine with a report; the probe `crates/machines/neogeo/tests/bios.rs` (ignored; env `RC_NEOGEO_ZIP`, `RC_BIOS_NAME`,
+`RC_GAME`) runs the real BIOS until that happens. State of the probe: 354 instructions, then a byte write to `$380065`; every
+stop so far was one new fact row (`docs/hardware-facts.md` N1-N15). Next: keep going down that list, then the vertical blank
+interrupt, the Z80 and YM2610, the LSPC picture, controllers, save states, the plugin and its manifest.
 
 ## Rules (same as the other families)
 
