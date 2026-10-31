@@ -62,10 +62,16 @@ pub struct Bus {
     pub dips: u8,
     /// REG_P1CNT and REG_P2CNT as read: up, down, left, right, A, B, C, D in bits 0-7, active low (fact N28).
     pub pads: [u8; 2],
+    /// Bits held down (1 = pressed) of REG_STATUS_A (coin 1, coin 2, service) and REG_STATUS_B (start and select of both players) (fact N33).
+    pub pressed_a: u8,
+    pub pressed_b: u8,
     /// Machine time in master clocks (24 MHz), advanced by the owner of the bus (fact N19).
     pub clock: u64,
     /// The pending interrupts: bit 0 the power-on reset one (level 3), bit 1 the timer (level 2), bit 2 the vertical blank (level 1) (fact N21).
     pub irq: u8,
+    /// The auto-animation counter, 3 bits (fact N34).
+    pub anim: u8,
+    anim_frames: u64,
     pub backup: Vec<u8>,
     pub vram: Vec<u16>,
     pub lspc: Lspc,
@@ -91,8 +97,12 @@ impl Bus {
             coin: [false; 4],
             dips: 0xFF,
             pads: [0xFF; 2],
+            pressed_a: 0,
+            pressed_b: 0,
             clock: 0,
             irq: 1,
+            anim: 0,
+            anim_frames: 0,
             backup: vec![0; BACKUP_RAM],
             vram: vec![0; VRAM_WORDS],
             lspc: Lspc::default(),
@@ -120,6 +130,18 @@ impl Bus {
         self.clock += master_clocks;
         let after = self.clock / LINE_CLOCKS;
         // the vertical blank begins at line 248 of every 264
+        // the animation counter steps once every (speed + 1) frames unless stalled (fact N34)
+        let frames = |n: u64| n / FRAME_LINES;
+        for _ in frames(before)..frames(after) {
+            self.anim_frames += 1;
+            if self.lspc.mode & 8 == 0
+                && self
+                    .anim_frames
+                    .is_multiple_of(u64::from(self.lspc.mode >> 8) + 1)
+            {
+                self.anim = (self.anim + 1) & 7;
+            }
+        }
         let blanks = |n: u64| (n + FRAME_LINES - VBLANK_LINE) / FRAME_LINES;
         if blanks(after) > blanks(before) {
             self.irq |= 4;
@@ -137,6 +159,11 @@ impl Bus {
         } else {
             0
         }
+    }
+
+    /// A byte as the debugger sees it: no side effects, `$FF` where nothing is.
+    pub fn peek(&self, addr: u32) -> u8 {
+        self.byte(addr).unwrap_or(0xFF)
     }
 
     /// Where `a` of the palette window falls in the two banks (fact N14).
@@ -170,14 +197,37 @@ impl Bus {
             _ if a & 0xFE_0081 == 0x30_0081 => Some(0xFF),
             // REG_STATUS_A: coin 1, coin 2 and service are active low and not pressed; bit 6 is the clock's time pulse (facts N18, N19)
             // REG_STATUS_B: start and select buttons, memory card status (active low), bit 7 set on an MVS (fact N22)
-            0x38_0000..=0x38_FFFF if a & 1 == 0 && a & 0xFE_00F1 == 0x38_0000 => Some(0xFF),
+            0x38_0000..=0x38_FFFF if a & 1 == 0 && a & 0xFE_00F1 == 0x38_0000 => {
+                Some(!self.pressed_b)
+            }
             // the joypad ports (fact N28)
             _ if a & 0xFE_0001 == 0x30_0000 => Some(self.pads[0]),
             _ if a & 0xFE_0001 == 0x34_0000 => Some(self.pads[1]),
+            // the write-only registers read as an open bus: a `clr` reads before it writes (fact N35)
+            _ if a & 0xFE_0001 == 0x3A_0001 => Some(0xFF),
+            _ if matches!(
+                a & 0xFE_00F1,
+                0x38_0001
+                    | 0x38_0021
+                    | 0x38_0031
+                    | 0x38_0041
+                    | 0x38_0051
+                    | 0x38_0061
+                    | 0x38_0063
+                    | 0x38_0065
+                    | 0x38_0067
+                    | 0x38_00E1
+                    | 0x38_00E3
+                    | 0x38_00E5
+                    | 0x38_00E7
+            ) =>
+            {
+                Some(0xFF)
+            }
             // REG_SOUND read: the Z80's reply (fact N25)
             _ if a & 0xFE_0001 == 0x32_0000 => Some(self.sound.reply),
             _ if a & 0xFE_0001 == 0x32_0001 => {
-                Some(0x07 | (((self.clock / TP_HALF_PERIOD) & 1) as u8) << 6)
+                Some((0x07 & !self.pressed_a) | (((self.clock / TP_HALF_PERIOD) & 1) as u8) << 6)
             }
             _ => None,
         }
@@ -228,6 +278,11 @@ impl Bus {
         match reg {
             0x0 | 0x2 => Some(self.vram[usize::from(self.lspc.vram_addr) % VRAM_WORDS]),
             0x4 => Some(self.lspc.vram_mod),
+            // REG_LSPCMODE read: the raster line counter in the upper nine bits, the auto-animation counter in the low three (fact N34)
+            0x6 => {
+                let line = (self.clock / LINE_CLOCKS) % FRAME_LINES;
+                Some((((0xF8 + line) & 0x1FF) as u16) << 7 | u16::from(self.anim))
+            }
             _ => None,
         }
     }

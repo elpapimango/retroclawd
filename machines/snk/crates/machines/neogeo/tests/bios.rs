@@ -28,7 +28,12 @@ fn first_fetches() {
         .read_to_end(&mut sfix)
         .unwrap();
     let (set_s, set_c) = (set.s.clone(), set.c.clone());
-    let mut machine = NeoGeo::new(Bus::new(bios, set.p, sm1, set.m));
+    let graphics = neogeo::system::Graphics {
+        sfix: sfix.clone(),
+        s: set.s.clone(),
+        c: set.c.clone(),
+    };
+    let mut machine = NeoGeo::new(Bus::new(bios, set.p, sm1, set.m), graphics);
     let limit = std::env::var("RC_STEPS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -85,6 +90,7 @@ fn first_fetches() {
             },
             sprites: &set_c,
             layout: neogeo::video::SpriteLayout::default(),
+            anim: bus.anim,
         };
         if let Ok(reference) = std::env::var("RC_REFLUMA") {
             // search the sprite layouts for the one closest to the reference picture (the reference is 304 wide, 8 px cropped)

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/formats/neo-set", "crates/machines/neogeo"]
+members = ["crates/formats/neo-set", "crates/machines/neogeo", "crates/plugins/neogeo-machine-plugin", "crates/plugin-dlls/neogeo"]
 
 # Same release profile as the retroclawd host.
 [profile.release]
@@ -10,3 +10,18 @@ opt-level = "s"
 [profile.profiling]
 inherits = "release"
 debug = true
+
+[profile.release.package.mc68000]
+opt-level = 3
+
+[profile.release.package.z80]
+opt-level = 3
+
+[profile.release.package.neogeo]
+opt-level = 3
+
+[profile.release.package.neogeo-machine-plugin]
+strip = false
+
+[profile.release.package.neogeo-machine-plugin-dll]
+strip = false

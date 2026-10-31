@@ -4,9 +4,9 @@ family = "snk"
 default_region = "ntsc"
 
 [implementation]
-status = "intake"
-boot_verified = false
-note = "P0 only (2026-10-31): the reference runs and its pictures and audio can be captured; nothing is emulated yet. The Family repository retroclawd-snk is to be created by the owner; until then machines/snk is a local git repository with no remote."
+status = "boots-with-gaps"
+boot_verified = true
+note = "2026-10-31: the BIOS and three cartridges boot to their screens in the plugin (see CLAUDE.md and docs/neogeo-gaps.md); sound, shrink and the timer interrupt are open."
 
 [core]
 reuse = ["mc68000", "z80"]

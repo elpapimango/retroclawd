@@ -1,0 +1,53 @@
+machine = "neogeo"
+# The system ROM set (neogeo.zip) goes in machines/snk/roms/ and the game sets in machines/snk/software/sets/ (none of them committed;
+# RomM has both: firmware 259 and the Neo Geo AES games). The goldens are FinalBurn Neo's pictures (scenarios/capture_neogeo_goldens.py
+# prints their hashes), never committed.
+
+[reference]
+emulator = "finalburn-neo"
+version = "v1.0.0.03 GIT2b0c1c0 (libretro core)"
+command = "machines/snk/scenarios/capture_neogeo_goldens.py (libretro_run.py with fbneo_libretro and neogeo.zip in the system folder)"
+
+# The reference draws 304 of our 320 columns (8 cut at each side); the crop is the part both show.
+# S1: the BIOS's NEO-GEO logo and then Cyber-Lip's title screen at frame 1000.
+[[scenario]]
+id = "S1-cyberlip-1000"
+kind = "screen"
+frames = 1000
+files = { game = "snk/software/sets/cyberlip.zip", bios = "snk/roms/neogeo.zip" }
+golden = "neogeo/S1-cyberlip-1000.png"
+golden_sha256 = "373b6969fb48d63b2321a15ba36b75a4d0e594a0ae29ec45815750945546a437"
+compare = { mode = "similarity", max_mad = 6.0, crop = [0.025, 0.0, 0.975, 1.0], golden_crop = [0.0, 0.0, 1.0, 1.0], reason = "another emulator's frame timing and the colour levels: the animated title (the reflections, the stars) is a few frames apart; the pictures agree otherwise" }
+
+# S3: two more cartridge sets reach their own screens. Both pictures have the right content (title, text, credit line) but their
+# logos are drawn with shrunk sprites, which the renderer only approximates: known gaps until the shrink tables are done.
+[[scenario]]
+id = "S3-fatfury-1200"
+kind = "screen"
+status = "known-gap"
+gap = { reason = "the title logo is drawn with shrunk sprites (REG SCB2) and the renderer ignores the shrink value; the picture differs by 11.6 on average (0 to 255) at the best frame, all of it in the logo", evidence = "docs/neogeo-gaps.md" }
+frames = 1200
+files = { game = "snk/software/sets/fatfury1.zip", bios = "snk/roms/neogeo.zip" }
+golden = "neogeo/S3-fatfury-1200.png"
+golden_sha256 = "ffd90568a58642ae4fd9d59d0046ecd95030305f63d4969bf9600b55f56d244e"
+compare = { mode = "similarity", max_mad = 6.0, crop = [0.025, 0.0, 0.975, 1.0], golden_crop = [0.0, 0.0, 1.0, 1.0], reason = "another emulator's frame timing: the title is animated" }
+
+[[scenario]]
+id = "S3-aerofighters2-1200"
+kind = "screen"
+status = "known-gap"
+gap = { reason = "the staff roll and the plane are drawn with shrunk sprites and the renderer ignores the shrink value; the picture differs by 13.6 on average (0 to 255)", evidence = "docs/neogeo-gaps.md" }
+frames = 1200
+files = { game = "snk/software/sets/sonicwi2.zip", bios = "snk/roms/neogeo.zip" }
+golden = "neogeo/S3-aerofighters2-1200.png"
+golden_sha256 = "5243ae0cd19bcb5597fdd4c818702c95cba323788a51a00799a9fe1287e50fd4"
+compare = { mode = "similarity", max_mad = 6.0, crop = [0.025, 0.0, 0.975, 1.0], golden_crop = [0.0, 0.0, 1.0, 1.0], reason = "another emulator's frame timing: the attract scroll is a few frames apart" }
+
+# S6: the NTSC frame is 264 lines of 1536 master clocks.
+[[scenario]]
+id = "S6"
+kind = "timing"
+frames = 100
+files = { game = "snk/software/sets/cyberlip.zip", bios = "snk/roms/neogeo.zip" }
+cycles_per_frame = 405504
+cycles_tolerance = 400

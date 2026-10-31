@@ -35,6 +35,8 @@ pub struct Sources<'a> {
     /// The sprite data, the C ROM pairs already interleaved (`neo_set::NeoSet::c`).
     pub sprites: &'a [u8],
     pub layout: SpriteLayout,
+    /// The auto-animation counter (fact N34).
+    pub anim: u8,
 }
 
 /// A palette word as 0x00RRGGBB (fact N29).
@@ -134,7 +136,13 @@ fn draw_sprites(src: &Sources, y: usize, line: &mut [u32]) {
         let py = rel as usize % 16;
         let entry = n * 64 + tile_row * 2;
         let (lo, attr) = (usize::from(src.vram[entry]), src.vram[entry + 1]);
-        let tile = lo | usize::from((attr >> 4) & 0xF) << 16;
+        let mut tile = lo | usize::from((attr >> 4) & 0xF) << 16;
+        // auto-animation: the low two or three bits of the tile come from the counter (fact N34)
+        if attr & 8 != 0 {
+            tile = (tile & !3) | usize::from(src.anim & 3);
+        } else if attr & 4 != 0 {
+            tile = (tile & !7) | usize::from(src.anim & 7);
+        }
         let palette = usize::from(attr >> 8);
         let (hflip, vflip) = (attr & 1 != 0, attr & 2 != 0);
         let py = if vflip { 15 - py } else { py };
