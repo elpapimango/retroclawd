@@ -54,7 +54,19 @@ fn first_fetches() {
     };
     let mut machine = NeoGeo::new(Bus::new(bios, set.p, sm1, set.m), graphics);
     machine.trace_nth_nmi = std::env::var("RC_NMI").ok().and_then(|v| v.parse().ok());
+    if let Ok(path) = std::env::var("RC_LOAD_BACKUP") {
+        let data = std::fs::read(path).unwrap();
+        machine.bus.backup[..data.len()].copy_from_slice(&data);
+    }
+    if let Ok(v) = std::env::var("RC_RTC_START") {
+        // yy,mm,dd,weekday
+        let f: Vec<u32> = v.split(',').map(|x| x.parse().unwrap()).collect();
+        machine.bus.rtc_start = ((f[0], f[1], f[2], 0, 0, 0), f[3]);
+    }
     machine.bus.lenient = std::env::var("RC_LENIENT").is_ok();
+    if let Ok(v) = std::env::var("RC_DIPS") {
+        machine.bus.dips = u8::from_str_radix(&v, 16).unwrap();
+    }
     let limit = std::env::var("RC_STEPS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -402,6 +414,37 @@ fn first_fetches() {
                 if *write { "W" } else { "R" }
             );
         }
+    }
+    if let Ok(path) = std::env::var("RC_DUMP_BACKUP") {
+        std::fs::write(path, &bus.backup).unwrap();
+    }
+    if std::env::var("RC_RTC").is_ok() {
+        let log = &bus.rtc_log;
+        println!("rtc log entries: {}", log.len());
+        let mut last_read = 0xFFu8;
+        let mut shown = 0;
+        for (i, (k, v, pc)) in log.iter().enumerate() {
+            if *k == 'R' {
+                if *v == last_read {
+                    continue;
+                }
+                last_read = *v;
+            }
+            println!("  {i} {k} {v:02X} pc {pc:06X}");
+            shown += 1;
+            if shown > 400 {
+                break;
+            }
+        }
+    }
+    if std::env::var("RC_BIOSVARS").is_ok() {
+        let w = |at: usize| bus.work[at & 0xFFFF];
+        println!(
+            "work $10FD80..: {:02X?}; $10FDAE {:02X}; backup $D00100: {:02X?}",
+            (0..8).map(|i| w(0xFD80 + i)).collect::<Vec<_>>(),
+            w(0xFDAE),
+            &bus.backup[0x100..0x110]
+        );
     }
     if std::env::var("RC_YM").is_ok() {
         let seen: Vec<String> = bus

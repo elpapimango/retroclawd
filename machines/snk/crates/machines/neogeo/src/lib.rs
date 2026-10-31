@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 pub mod protection;
+pub mod rtc;
 pub mod sound;
 pub mod system;
 pub mod video;
@@ -89,6 +90,11 @@ pub struct Bus {
     pub vram: Vec<u16>,
     /// How many VRAM accesses named an address past `$87FF` (a debugging aid).
     pub vram_oob: u64,
+    /// The calendar chip, and the date and time it starts at (year, month, day, hour, minute, second) with the weekday of that day (fact N48).
+    pub rtc: rtc::Rtc,
+    pub rtc_start: ((u32, u32, u32, u32, u32, u32), u32),
+    /// The writes to REG_RTCCTRL (value, pc) and the reads of REG_STATUS_A (value, pc), in order (a debugging aid).
+    pub rtc_log: Vec<(char, u8, u32)>,
     /// Which 1 MiB bank of the second program file shows at `$200000` (fact N47).
     pub p_bank: usize,
     /// The cartridge's challenge and response chip, as far as seen (fact N45).
@@ -132,6 +138,9 @@ impl Bus {
             backup: vec![0; BACKUP_RAM],
             vram: vec![0; VRAM_WORDS],
             vram_oob: 0,
+            rtc: rtc::Rtc::default(),
+            rtc_start: ((0, 1, 1, 0, 0, 0), 6),
+            rtc_log: Vec::new(),
             p_bank: 0,
             protection: protection::Protection::default(),
             lenient: false,
@@ -310,9 +319,11 @@ impl Bus {
             }
             // REG_SOUND read: the Z80's reply (fact N25)
             _ if a & 0xFE_0001 == 0x32_0000 => Some(self.sound.reply),
-            _ if a & 0xFE_0001 == 0x32_0001 => {
-                Some((0x07 & !self.pressed_a) | (((self.clock / TP_HALF_PERIOD) & 1) as u8) << 6)
-            }
+            _ if a & 0xFE_0001 == 0x32_0001 => Some(
+                (0x07 & !self.pressed_a)
+                    | (((self.clock / TP_HALF_PERIOD) & 1) as u8) << 6
+                    | u8::from(self.rtc.data_out) << 7,
+            ),
             _ => None,
         }
     }
@@ -329,7 +340,12 @@ impl Bus {
                 let at = self.palette_at(a);
                 self.palette[at] = v;
             }
-            0xD0_0000..=0xD0_FFFF => self.backup[a & (BACKUP_RAM - 1)] = v,
+            0xD0_0000..=0xD0_FFFF => {
+                if (0xD0_0100..0xD0_0102).contains(&a) && self.rtc_log.len() < 6000 {
+                    self.rtc_log.push(('B', v, self.current_pc));
+                }
+                self.backup[a & (BACKUP_RAM - 1)] = v;
+            }
             // the system register latch: A3-A1 pick the bit and A4 is the value (fact N14)
             _ if a & 0xFE_0001 == 0x3A_0001 => {
                 let (bit, on) = ((a >> 1) & 7, (a >> 4) & 1 != 0);
@@ -342,7 +358,18 @@ impl Bus {
                 0x38_0021 => self.ctrl[1] = v,
                 0x38_0031 => self.ctrl[2] = v,
                 0x38_0041 => self.ctrl[3] = v,
-                0x38_0051 => self.ctrl[4] = v,
+                0x38_0051 => {
+                    self.ctrl[4] = v;
+                    let now = rtc::add_seconds(
+                        self.rtc_start.0,
+                        self.rtc_start.1,
+                        self.clock / 24_000_000,
+                    );
+                    self.rtc.write(v, &now);
+                    if self.rtc_log.len() < 6000 {
+                        self.rtc_log.push(('W', v, self.current_pc));
+                    }
+                }
                 r @ (0x38_0061 | 0x38_0063 | 0x38_0065 | 0x38_0067) => {
                     self.coin[(r - 0x38_0061) / 2] = false
                 }
@@ -408,6 +435,12 @@ impl Bus {
 
 impl M68kBus for Bus {
     fn read(&mut self, addr: u32, size: Size, _fc: FunctionCode) -> Result<u32, BusFault> {
+        if size == Size::Byte && (addr & 0xFE_0001) == 0x32_0001 && self.rtc_log.len() < 6000 {
+            let v = self.byte(addr).unwrap_or(0);
+            if self.rtc_log.iter().rev().find(|e| e.0 == 'R').map(|e| e.1) != Some(v) {
+                self.rtc_log.push(('R', v, self.current_pc));
+            }
+        }
         if size == Size::Byte
             && (0x20_0000..0x30_0000).contains(&addr)
             && let Some(v) = self.protection.read_byte(addr)
