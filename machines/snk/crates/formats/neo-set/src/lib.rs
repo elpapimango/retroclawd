@@ -69,6 +69,11 @@ enum Kind {
 /// Which region a file name belongs to, and its number (`v11` is number 11).
 fn classify(name: &str) -> Option<(Kind, u32)> {
     let ext = name.rsplit('.').next()?.to_ascii_lowercase();
+    // `.sp2` is the second program file (the banked part), named like a fix file (fact N47)
+    let ext = match ext.strip_prefix("sp") {
+        Some(rest) if !rest.is_empty() => format!("p{rest}"),
+        _ => ext,
+    };
     let kind = match ext.as_bytes().first()? {
         b'p' => Kind::P,
         b's' => Kind::S,
@@ -201,6 +206,8 @@ mod tests {
         assert_eq!(classify("a.c10"), Some((Kind::C, 10)));
         assert_eq!(classify("readme.txt"), None);
         assert_eq!(classify("noext"), None);
+        assert_eq!(classify("241-p2.sp2"), Some((Kind::P, 2)));
+        assert_eq!(classify("x.s1"), Some((Kind::S, 1)));
         assert_eq!(classify("x.p"), None);
         assert_eq!(classify("x.p1x"), None);
     }

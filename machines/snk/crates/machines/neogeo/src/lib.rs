@@ -89,6 +89,8 @@ pub struct Bus {
     pub vram: Vec<u16>,
     /// How many VRAM accesses named an address past `$87FF` (a debugging aid).
     pub vram_oob: u64,
+    /// Which 1 MiB bank of the second program file shows at `$200000` (fact N47).
+    pub p_bank: usize,
     /// The cartridge's challenge and response chip, as far as seen (fact N45).
     pub protection: protection::Protection,
     /// A debugging aid: when set, an access no fact covers is logged in `access_log` (with the 68000's pc) and answered with `$FF` or
@@ -130,6 +132,7 @@ impl Bus {
             backup: vec![0; BACKUP_RAM],
             vram: vec![0; VRAM_WORDS],
             vram_oob: 0,
+            p_bank: 0,
             protection: protection::Protection::default(),
             lenient: false,
             access_log: Vec::new(),
@@ -254,14 +257,21 @@ impl Bus {
             0x00_0000..=0x00_007F if self.latch & 2 == 0 => self.bios.get(a).copied(),
             // the first bank of the cartridge's program; with a 2 MiB program the halves are swapped (fact N5)
             0x00_0000..=0x0F_FFFF => {
-                let at = if self.p.len() >= 0x20_0000 {
+                let at = if self.p.len() == 0x20_0000 {
                     a + 0x10_0000
                 } else {
                     a
                 };
                 self.p.get(at).copied()
             }
-            0x20_0000..=0x2F_FFFF if self.p.len() >= 0x20_0000 => self.p.get(a & 0xF_FFFF).copied(),
+            0x20_0000..=0x2F_FFFF if self.p.len() == 0x20_0000 => self.p.get(a & 0xF_FFFF).copied(),
+            // a program with a banked part: the first MiB below, the rest in banks of 1 MiB at `$200000` (fact N47)
+            0x20_0000..=0x2F_FFFF if self.p.len() > 0x20_0000 => {
+                let banks = (self.p.len() - 0x10_0000) / 0x10_0000;
+                self.p
+                    .get(0x10_0000 + (self.p_bank % banks) * 0x10_0000 + (a & 0xF_FFFF))
+                    .copied()
+            }
             0x10_0000..=0x1F_FFFF => Some(self.work[a & (WORK_RAM - 1)]),
             0xC0_0000..=0xC1_FFFF => self.bios.get(a & (BIOS_SIZE - 1)).copied(),
             0x40_0000..=0x7F_FFFF => Some(self.palette[self.palette_at(a)]),
@@ -436,6 +446,11 @@ impl M68kBus for Bus {
         value: u32,
         _fc: FunctionCode,
     ) -> Result<(), BusFault> {
+        // the bank register of a banked program: a write to `$2FFFF0`-`$2FFFFF` (fact N47)
+        if self.p.len() > 0x20_0000 && (0x2F_FFF0..0x30_0000).contains(&addr) {
+            self.p_bank = (value & 0xFF) as usize;
+            return Ok(());
+        }
         if (0x20_0000..0x30_0000).contains(&addr) {
             let taken = match size {
                 Size::Word => self.protection.write_word(addr, value as u16),
@@ -515,6 +530,34 @@ mod tests {
         assert_eq!(b.read(0, Size::Word, FC), Ok(0x5678));
         b.write(0x3A_0003, Size::Byte, 0, FC).unwrap(); // SWPBIOS
         assert_eq!(b.read(0, Size::Word, FC), Ok(0x1234));
+    }
+
+    #[test]
+    fn a_program_of_more_than_two_mib_shows_the_bank_a_write_to_2ffff0_selects() {
+        let mib = 0x10_0000;
+        let mut p = vec![0u8; 4 * mib];
+        // each megabyte of the file starts with its own number (words stored byte-swapped as in the sets)
+        for n in 0..4 {
+            p[n * mib] = n as u8 + 1;
+            p[n * mib + 1] = 0x00;
+        }
+        let mut b = Bus::new(vec![0u8; BIOS_SIZE], p, vec![0; 0x8000], Vec::new());
+        b.write(0x3A_0013, Size::Byte, 0, FC).unwrap(); // the cartridge's vectors
+        assert_eq!(
+            b.read(0, Size::Word, FC),
+            Ok(1),
+            "the first megabyte stays below"
+        );
+        assert_eq!(
+            b.read(0x20_0000, Size::Word, FC),
+            Ok(2),
+            "bank 0 is the second megabyte"
+        );
+        b.write(0x2F_FFF0, Size::Word, 1, FC).unwrap();
+        assert_eq!(b.read(0x20_0000, Size::Word, FC), Ok(3));
+        b.write(0x2F_FFF0, Size::Word, 2, FC).unwrap();
+        assert_eq!(b.read(0x20_0000, Size::Word, FC), Ok(4));
+        assert!(b.stop.is_none());
     }
 
     #[test]
