@@ -73,6 +73,9 @@ fn first_fetches() {
         .unwrap_or(5_000_000u64);
     let mut steps = 0u64;
     let mut recent: Vec<u32> = Vec::new();
+    // RC_PCHIST=from_frame: after that frame, count the 68000's program counter (rounded to 4) and print the busiest places
+    let hist_from: Option<u64> = std::env::var("RC_PCHIST").ok().and_then(|v| v.parse().ok());
+    let mut hist: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
     let frames_wanted: Option<u64> = std::env::var("RC_FRAMES").ok().and_then(|v| v.parse().ok());
     while machine.bus.stop.is_none()
         && steps < limit
@@ -89,8 +92,27 @@ fn first_fetches() {
             println!("at {v}, step {steps}: {recent:X?}");
             break;
         }
+        if let Some(from) = hist_from
+            && machine.bus.clock >= from * neogeo::LINE_CLOCKS * neogeo::FRAME_LINES
+        {
+            *hist.entry(machine.cpu.pc & !3).or_default() += 1;
+        }
         machine.step();
         steps += 1;
+    }
+    if let Ok(path) = std::env::var("RC_DUMP_WORK") {
+        std::fs::write(path, &machine.bus.work[..]).unwrap();
+    }
+    println!(
+        "irq counts (blank raised, timer raised, blank acked, timer acked): {:?}",
+        machine.bus.irq_counts
+    );
+    if hist_from.is_some() {
+        let mut v: Vec<_> = hist.into_iter().collect();
+        v.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        for (pc, n) in v.iter().take(24) {
+            println!("pc {pc:06X}: {n}");
+        }
     }
     if std::env::var("RC_AUDIO").is_ok() {
         let samples = machine.drain_audio();

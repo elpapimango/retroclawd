@@ -95,6 +95,8 @@ pub struct Bus {
     pub rtc_start: ((u32, u32, u32, u32, u32, u32), u32),
     /// The writes to REG_RTCCTRL (value, pc) and the reads of REG_STATUS_A (value, pc), in order (a debugging aid).
     pub rtc_log: Vec<(char, u8, u32)>,
+    /// A debugging aid: the vertical blanks raised, the timer interrupts raised and the acknowledgements written for bits 0-2.
+    pub irq_counts: [u64; 5],
     /// Which 1 MiB bank of the second program file shows at `$200000` (fact N47).
     pub p_bank: usize,
     /// The cartridge's challenge and response chip, as far as seen (fact N45).
@@ -142,6 +144,7 @@ impl Bus {
             rtc_start: ((0, 1, 1, 0, 0, 0), 6),
             rtc_log: Vec::new(),
             p_bank: 0,
+            irq_counts: [0; 5],
             protection: protection::Protection::default(),
             lenient: false,
             access_log: Vec::new(),
@@ -194,6 +197,7 @@ impl Bus {
         let blanks = |n: u64| (n + FRAME_LINES - VBLANK_LINE) / FRAME_LINES;
         let blank_at = if blanks(after) > blanks(before) {
             self.irq |= 4;
+            self.irq_counts[0] += 1;
             // the clock at which the line counter passed the blank line
             Some((blanks(after) * FRAME_LINES - (FRAME_LINES - VBLANK_LINE)) * LINE_CLOCKS)
         } else {
@@ -226,6 +230,7 @@ impl Bus {
             if self.timer_counter == 0 {
                 if self.lspc.mode & 0x10 != 0 {
                     self.irq |= 2;
+                    self.irq_counts[1] += 1;
                 }
                 if self.lspc.mode & 0x80 != 0 {
                     self.timer_counter = self.timer_reload();
@@ -404,6 +409,8 @@ impl Bus {
         if reg == 0xC {
             // REG_IRQACK: bit 0 clears the reset interrupt, bit 1 the timer's, bit 2 the vertical blank's (fact N21)
             self.irq &= !(v as u8 & 7);
+            self.irq_counts[2] += u64::from(v & 4 != 0);
+            self.irq_counts[3] += u64::from(v & 2 != 0);
         }
         let l = &mut self.lspc;
         match reg {

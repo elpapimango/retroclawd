@@ -35,6 +35,11 @@
   boards only" screen. It is **not** a NEO-CMC game (the set is plain): the program takes the path to WARNING when the BIOS country is 2
   (`sp-s2`, the first BIOS tried) and the MVS flag is set and the word at `$D00100` is non-zero; with the USA BIOS (`sp-u2.sp1`) it
   proceeds. Why the order differs from FinalBurn Neo (which BIOS it defaults to, whether its backup RAM starts different) is open.
+- **KOF 2001 against FinalBurn Neo (2026-10-31).** The game's frame counter (`$10008A`) advances one per frame in both, so the attract loop runs
+  at the same speed; only the start differs: ours reaches the same picture **214 frames earlier** (the reference's boot is longer; cause not
+  found, Cyber-Lip differs by about 15). With that offset the pictures agree (mean difference 1.5-2.7 at four of four frames). The game's main
+  loop waits for the vertical blank flag at `$2785(a5)` (one tick per blank, no timer interrupt used). The backdrop was read from colour 0 of
+  palette 255 instead of colour 15 (fact N29), which showed in the game's fade to white: fixed. Sound level is 0.95-1.3 times the reference's.
 - **NEO-CMC (2026-10-31, fact N49, documented exception).** Sprite decryption (CMC42 and CMC50), the fix layer taken from the sprite data
   and the CMC50 Z80 program decryption are in for five sets (Zupapa!, Ganryu, Nightmare in the Dark, Sengoku 3, KOF 2001): all draw their
   title or attract screens. Not yet: a comparison with FinalBurn Neo's pictures and sound, the other keys (KOF 99/2000/2002/2003, Garou,

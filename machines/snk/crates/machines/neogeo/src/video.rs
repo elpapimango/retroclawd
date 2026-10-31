@@ -90,7 +90,8 @@ pub fn sprite_pixel(sprites: &[u8], layout: &SpriteLayout, tile: usize, x: usize
 
 /// Draws one frame into `out` (WIDTH x HEIGHT, 0x00RRGGBB).
 pub fn render(src: &Sources, out: &mut [u32]) {
-    let backdrop = palette_colour(src.palette, 255, 0);
+    // the last colour of the last palette (fact N29)
+    let backdrop = palette_colour(src.palette, 255, 15);
     for y in 0..HEIGHT {
         let line = &mut out[y * WIDTH..(y + 1) * WIDTH];
         line.fill(backdrop);
@@ -191,5 +192,33 @@ fn draw_sprites(src: &Sources, y: usize, line: &mut [u32]) {
                 line[screen as usize] = palette_colour(src.palette, palette, usize::from(px));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_backdrop_is_the_last_colour_of_the_last_palette() {
+        // KOF 2001 fades to white by writing 7FFF to that word only; colour 0 of palette 255 stays black (fact N29)
+        let mut palette = vec![0u8; 8192];
+        let last = (255 * 16 + 15) * 2;
+        palette[last] = 0x7F;
+        palette[last + 1] = 0xFF;
+        let vram = vec![0u16; 0x8800];
+        let src = Sources {
+            vram: &vram,
+            palette: &palette,
+            fix: &[],
+            sprites: &[],
+            layout: SpriteLayout::default(),
+            lo: &[],
+            anim: 0,
+        };
+        let mut out = vec![0u32; WIDTH * HEIGHT];
+        render(&src, &mut out);
+        assert_eq!(out[0], colour(0x7FFF));
+        assert_eq!(out[WIDTH * HEIGHT - 1], colour(0x7FFF));
     }
 }
