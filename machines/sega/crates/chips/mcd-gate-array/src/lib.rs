@@ -317,13 +317,12 @@ impl GateArray {
             }
             0x03 => {
                 self.bank = v >> 6;
-                // DMNA (bit 1): writing 1 gives the 2M RAM to the sub-CPU (fact C7)
-                if v & 2 != 0 {
-                    if self.mode_1m {
-                        self.swap_request = true; // 1M mode: a request for the sub-CPU to swap the banks (fact C8)
-                    } else {
-                        self.owner = WordRamOwner::Sub;
-                    }
+                // DMNA (bit 1): writing 1 gives the 2M RAM to the sub-CPU (fact C7); in 1M mode either value asks
+                // the sub-CPU to swap the banks (fact C8)
+                if self.mode_1m {
+                    self.swap_request = true;
+                } else if v & 2 != 0 {
+                    self.owner = WordRamOwner::Sub;
                 }
                 true
             }
@@ -875,6 +874,19 @@ mod tests {
             *n = g.sub_read_byte(0x38 + i as u32).unwrap();
         }
         rs
+    }
+
+    #[test]
+    fn in_one_megabit_mode_either_value_written_to_dmna_asks_for_a_swap_until_the_sub_cpu_answers() {
+        let mut g = GateArray::new();
+        assert!(g.sub_write_word(0x02, 0x0004)); // 1M mode
+        for v in [0x02u8, 0x00] {
+            assert_eq!(g.main_read_byte(0x03).unwrap() & 2, 0, "nothing pending");
+            assert!(g.main_write_byte(0x03, v));
+            assert_eq!(g.main_read_byte(0x03).unwrap() & 2, 2, "pending after writing {v}");
+            let ret = u16::from(g.main_read_byte(0x03).unwrap() & 1 ^ 1);
+            assert!(g.sub_write_word(0x02, 0x0004 | ret));
+        }
     }
 
     #[test]

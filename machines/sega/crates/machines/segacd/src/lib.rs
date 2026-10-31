@@ -646,6 +646,12 @@ impl SegaCdExp {
         let addr = alias(addr);
         let gate = &self.side.gate;
         match addr {
+            // the H-INT vector: the long word at $000070 is $FFFF then the register $A12006 (fact C12)
+            0x70..=0x73 => Some(match addr {
+                0x70 | 0x71 => 0xFF,
+                0x72 => (gate.hint_vector() >> 8) as u8,
+                _ => gate.hint_vector() as u8,
+            }),
             0..=0x01_FFFF => Some(self.side.bios[addr as usize]),
             0x02_0000..=0x03_FFFF => {
                 if !gate.sub_bus_granted() {
@@ -1183,6 +1189,20 @@ mod tests {
                 .unwrap_err()
                 .contains("cartridge port")
         );
+    }
+
+    #[test]
+    fn the_h_int_vector_register_replaces_the_low_word_of_the_vector_the_main_cpu_fetches() {
+        let mut bios = vec![0u8; BIOS_SIZE];
+        bios[0x70..0x74].copy_from_slice(&[0x12, 0x34, 0x56, 0x78]);
+        let mut e = SegaCdExp::new(bios, NTSC).unwrap();
+        // power-on: both words read $FFFF (fact C12)
+        assert_eq!(e.read(0x70, Size::Word, 0), Some(0xFFFF));
+        assert_eq!(e.read(0x72, Size::Word, 0), Some(0xFFFF));
+        assert!(e.write(0xA1_2006, Size::Word, 0x0ABC, 0));
+        assert_eq!(e.read(0x70, Size::Word, 0), Some(0xFFFF));
+        assert_eq!(e.read(0x72, Size::Word, 0), Some(0x0ABC));
+        assert_eq!(e.read(0x74, Size::Word, 0), Some(0));
     }
 
     #[test]

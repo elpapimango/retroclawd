@@ -92,17 +92,16 @@ golden = "segacd/S3-snatcher-1900.png"
 golden_sha256 = "a4037c544d3f8c5d99a2ec67c34f11d89d7b953b8df4f0d4ec4e26ef54b837d1"
 compare = { mode = "similarity", max_mad = 5.0, reason = "another emulator's colour levels (and its second controller port holds a light gun by default, ours a pad)" }
 
-# S4: no tone scenario. An audio-only disc reaches the BIOS's CD player in both emulators, but neither starts it without input and
-# the button sequence that starts it was not found (Start, A, B, C and the d-pad were tried in Genesis Plus GX); the BIOS's start-up
-# music is not a pure tone. The CD-DA level was compared by hand once (fact E17: RMS 4469 against 4471).
+# S4: the BIOS's CD player on an audio disc (scenarios/make_tone_disc.py) plays track 1, a 440 Hz tone. Start at frame 600 takes the
+# title screen to the player, Up moves its cursor onto the play button and A presses it (found with Genesis Plus GX, which plays the
+# same tone at the same level: RMS 8485 against 8481 here, fact E17).
 [[scenario]]
 id = "S4"
 kind = "audio"
 frames = 1500
-status = "known-gap"
 files = { disc = "sega/software/scenarios/segacd-tone.cue" }
+actions = ["600:key_down=Joy1Start", "610:key_up=Joy1Start", "700:key_down=Joy1Up", "712:key_up=Joy1Up", "800:key_down=Joy1A", "810:key_up=Joy1A"]
 audio = { from_s = 20.0, to_s = 24.0, tone_hz = 440.0, tone_tolerance_pct = 1.0, min_amplitude = 0.05 }
-gap = { reason = "the BIOS CD player needs button presses that were not found to start a track, so there is no CD-DA tone to measure; the start-up music is not a tone", evidence = "docs/hardware-facts.md fact E17 (the one manual comparison); scenarios/make_tone_disc.py builds the disc" }
 
 # S5: the saved state is deterministic and a reload continues identically (the Mega-CD's own state, the drive's position and the
 # BIOS's own handshake in flight at frame 600).

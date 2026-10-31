@@ -144,7 +144,10 @@ impl Asic {
                 self.tvba = v;
                 self.run(ram, priority);
                 let lines = u64::from(self.v_dots);
-                self.busy_until = Some(clock + lines * (u64::from(self.h_dots) + 13));
+                // every access of the line takes 3 sub-CPU clocks: four reads of the trace vector, two reads of each dot
+                // (map and stamp) and one read-modify-write for each group of four dots (fact G9)
+                let (h, shift) = (u64::from(self.h_dots), u64::from(self.offset & 3));
+                self.busy_until = Some(clock + lines * 3 * (4 + 2 * h + ((h + shift + 3) >> 2)));
             }
             _ => return false,
         }
@@ -506,7 +509,8 @@ mod tests {
         assert_eq!(a.read_word(0x58, 101).unwrap() & 0x8000, 0x8000);
         assert_eq!(a.read_word(0x64, 101), Some(2));
         assert!(!a.take_finished(101));
-        let end = 100 + 2 * (16 + 13);
+        // two lines of 16 dots: 3 clocks for each of 4 + 2 x 16 + (16 + 3) / 4 word RAM accesses (fact G9)
+        let end = 100 + 2 * 3 * (4 + 2 * 16 + (16 + 3) / 4);
         assert!(a.take_finished(end));
         assert!(!a.take_finished(end + 1), "once");
         assert_eq!(a.read_word(0x58, end).unwrap() & 0x8000, 0);
