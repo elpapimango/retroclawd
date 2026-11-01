@@ -52,6 +52,9 @@ fn first_fetches() {
         s: set.s.clone(),
         c: set.c.clone(),
     };
+    let spr_from: Option<u64> = std::env::var("RC_SPRTRACE").ok().and_then(|v| v.parse().ok());
+    let mut spr_last_frame = u64::MAX;
+    let mut spr_last = [(0u16, 0u16, 0u16); 2];
     let mut machine = NeoGeo::new(Bus::new(bios, set.p, sm1, set.m), graphics);
     machine.trace_nth_nmi = std::env::var("RC_NMI").ok().and_then(|v| v.parse().ok());
     if let Ok(path) = std::env::var("RC_LOAD_BACKUP") {
@@ -107,9 +110,35 @@ fn first_fetches() {
         }
         machine.step();
         steps += 1;
+        if let Some(from) = spr_from {
+            let frame = machine.bus.clock / (neogeo::LINE_CLOCKS * neogeo::FRAME_LINES);
+            if frame >= from && frame != spr_last_frame {
+                spr_last_frame = frame;
+                let v = &machine.bus.vram;
+                let now = [1usize, 19].map(|n| (v[0x8000 + n], v[0x8200 + n], v[0x8400 + n]));
+                if now != spr_last {
+                    println!("frame {frame}: spr1 {:04X?} spr19 {:04X?}", now[0], now[1]);
+                    spr_last = now;
+                }
+            }
+        }
     }
     if let Ok(path) = std::env::var("RC_DUMP_WORK") {
         std::fs::write(path, &machine.bus.work[..]).unwrap();
+    }
+    if std::env::var("RC_SPRITES").is_ok() {
+        // the sprites with a height: number, shrink word, Y/chain/height word, X word, first tile entry
+        let v = &machine.bus.vram;
+        for n in 0..381usize {
+            let (b2, b3, b4) = (v[0x8000 + n], v[0x8200 + n], v[0x8400 + n]);
+            if b3 & 0x3F != 0 || b3 & 0x40 != 0 || (17..=20).contains(&n) || n < 2 {
+                println!(
+                    "spr {n:3} scb2 {b2:04X} scb3 {b3:04X} scb4 {b4:04X} tile0 {:04X} {:04X}",
+                    v[n * 64],
+                    v[n * 64 + 1]
+                );
+            }
+        }
     }
     println!(
         "irq counts (blank raised, timer raised, blank acked, timer acked): {:?}",
