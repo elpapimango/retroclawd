@@ -219,21 +219,22 @@ fn machine_profile() -> MachineProfile {
     }
 }
 
-/// The names and default host keys of the machine's inputs (arrows, Z X C V, Enter, Right Shift, 5 and 9).
+/// The names and default host keys of the machine's inputs (arrows, Z X C V, Enter, Right Shift, 5 and 9). The host sends a key's
+/// own name (`Digit5`, `KeyZ`, `ArrowUp`, `ShiftRight`) when nothing is bound, so those are aliases too.
 const KEYS: [(&str, &[&str]); 22] = [
-    ("Joy1Up", &["up"]),
-    ("Joy1Down", &["down"]),
-    ("Joy1Left", &["left"]),
-    ("Joy1Right", &["right"]),
-    ("Joy1A", &["z"]),
-    ("Joy1B", &["x"]),
-    ("Joy1C", &["c"]),
-    ("Joy1D", &["v"]),
+    ("Joy1Up", &["up", "arrowup"]),
+    ("Joy1Down", &["down", "arrowdown"]),
+    ("Joy1Left", &["left", "arrowleft"]),
+    ("Joy1Right", &["right", "arrowright"]),
+    ("Joy1A", &["z", "keyz"]),
+    ("Joy1B", &["x", "keyx"]),
+    ("Joy1C", &["c", "keyc"]),
+    ("Joy1D", &["v", "keyv"]),
     ("Start1", &["enter", "return"]),
     ("Select1", &["shift_right", "shiftright"]),
-    ("Coin1", &["5"]),
-    ("Coin2", &["6"]),
-    ("Service", &["9"]),
+    ("Coin1", &["5", "digit5"]),
+    ("Coin2", &["6", "digit6"]),
+    ("Service", &["9", "digit9"]),
     ("Joy2Up", &[]),
     ("Joy2Down", &[]),
     ("Joy2Left", &[]),
@@ -646,6 +647,15 @@ mod tests {
             ("up", "Joy1Up"),
             ("enter", "Start1"),
             ("shift_right", "Select1"),
+            ("Digit5", "Coin1"),
+            ("Digit6", "Coin2"),
+            ("Digit9", "Service"),
+            ("KeyZ", "Joy1A"),
+            ("KeyV", "Joy1D"),
+            ("ArrowUp", "Joy1Up"),
+            ("ArrowRight", "Joy1Right"),
+            ("Enter", "Start1"),
+            ("ShiftRight", "Select1"),
         ] {
             let found = names.iter().find(|i| i.matches(host)).map(|i| i.name.as_str());
             assert_eq!(found, Some(key), "{host}");
