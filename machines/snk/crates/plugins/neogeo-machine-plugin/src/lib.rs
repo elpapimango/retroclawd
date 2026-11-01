@@ -230,7 +230,7 @@ const KEYS: [(&str, &[&str]); 22] = [
     ("Joy1C", &["c"]),
     ("Joy1D", &["v"]),
     ("Start1", &["enter", "return"]),
-    ("Select1", &["shiftright"]),
+    ("Select1", &["shift_right", "shiftright"]),
     ("Coin1", &["5"]),
     ("Coin2", &["6"]),
     ("Service", &["9"]),
@@ -443,7 +443,12 @@ fn handle_machine_command(
                 .collect(),
         )),
         MachineCommand::KeyEvent { key, pressed } => {
-            if record.machine.set_key(&key, pressed) {
+            // the host sends a host key's own name ("5", "z", "up") when nothing is bound: turn an alias into the key's name
+            let canonical = key_names()
+                .into_iter()
+                .find(|info| info.matches(&key))
+                .map_or(key.clone(), |info| info.name);
+            if record.machine.set_key(&canonical, pressed) {
                 Ok(MachineResponse::Ack)
             } else {
                 Err(format!("unknown key \"{key}\" (try --list-keys)"))
@@ -629,6 +634,22 @@ mod tests {
         assert_eq!(p.machine_id, "neogeo");
         assert_eq!(p.cpus.len(), 2);
         assert!(p.options.iter().any(|o| o.key == "rom_bios" && o.required));
+    }
+
+    #[test]
+    fn the_host_key_names_resolve_to_machine_keys() {
+        // with no binding the host sends a key's own name; every default alias must find its key
+        let names = key_names();
+        for (host, key) in [
+            ("5", "Coin1"),
+            ("z", "Joy1A"),
+            ("up", "Joy1Up"),
+            ("enter", "Start1"),
+            ("shift_right", "Select1"),
+        ] {
+            let found = names.iter().find(|i| i.matches(host)).map(|i| i.name.as_str());
+            assert_eq!(found, Some(key), "{host}");
+        }
     }
 
     #[test]

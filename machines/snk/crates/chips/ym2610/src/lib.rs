@@ -313,8 +313,8 @@ impl Ym2610 {
         }
         let mut left = (ssg * 4096.0 + fl * FM_GAIN) as i32;
         let mut right = (ssg * 4096.0 + fr * FM_GAIN) as i32;
-        // ADPCM-A plays at a sixth of the sample rate: a new nibble every six samples (fact Y5)
-        self.adpcm_phase = (self.adpcm_phase + 1) % 6;
+        // ADPCM-A plays at a third of the sample rate (8 MHz / 432 = 18.5 kHz): a new nibble every three samples (fact Y5)
+        self.adpcm_phase = (self.adpcm_phase + 1) % 3;
         let advance = self.adpcm_phase == 0;
         let master = i32::from(self.master_level);
         for (idx, ch) in self.adpcm_a.iter_mut().enumerate() {
