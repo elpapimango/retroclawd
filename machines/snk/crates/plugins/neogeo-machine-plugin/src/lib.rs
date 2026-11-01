@@ -68,6 +68,8 @@ struct PluginState {
 
 struct InstanceRecord {
     machine: NeoGeo,
+    /// The BIOS set and the cartridge set the machine was built from, to build it again on a reset.
+    sets: (Vec<u8>, Vec<u8>),
     breakpoints: Vec<u64>,
     diag_file: Option<std::path::PathBuf>,
     reported: bool,
@@ -316,6 +318,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         ));
     }
     let machine = NeoGeo::from_sets(bios, &game)?;
+    let sets = (bios.to_vec(), game);
     let mut state = state()
         .lock()
         .map_err(|_| "plugin state mutex poisoned".to_string())?;
@@ -324,6 +327,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         instance,
         InstanceRecord {
             machine,
+            sets,
             breakpoints: Vec::new(),
             diag_file,
             reported: false,
@@ -427,6 +431,14 @@ fn handle_machine_command(
         MachineCommand::GetClockHz => Ok(MachineResponse::ClockHz(MASTER_HZ)),
         MachineCommand::GetFrameHz => Ok(MachineResponse::FrameHz(60)),
         MachineCommand::RequestInterrupt => Ok(MachineResponse::Ack),
+        MachineCommand::Reset => {
+            // the reset button: the machine starts again from its BIOS; the battery-backed RAM keeps what it held
+            let mut fresh = NeoGeo::from_sets(&record.sets.0, &record.sets.1)?;
+            fresh.bus.backup = std::mem::take(&mut record.machine.bus.backup);
+            record.machine = fresh;
+            record.reported = false;
+            Ok(MachineResponse::Ack)
+        }
         MachineCommand::Step => {
             let cycles = record.machine.step() as u32;
             record.after_step();
