@@ -233,11 +233,16 @@ fn load_with_limit(zip_bytes: &[u8], limit: u64) -> Result<NeoSet, SetError> {
         }
         if cmc::decrypt_sprites(&mut set.c, cmc) {
             let fix_len = if set.s.is_empty() {
-                128 * 1024
+                // Metal Slug 4: the glyphs are the 128 KiB that starts 384 KiB before the end (observed against FinalBurn Neo:
+                // the last 128 KiB and the 128 KiB before it show other data; fact N54)
+                if ngh == Some(263) { 384 * 1024 } else { 128 * 1024 }
             } else {
                 set.s.len()
             };
             set.s = cmc::fix_from_sprites(&set.c, fix_len);
+            if ngh == Some(263) {
+                set.s.truncate(128 * 1024);
+            }
         }
     }
     let has_b = of(Kind::V).any(|(_, n, _)| (20..30).contains(n) || (200..300).contains(n));

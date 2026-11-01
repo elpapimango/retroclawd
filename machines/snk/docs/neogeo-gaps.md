@@ -58,9 +58,10 @@
 - **Metal Slug 3, 4 and 5 (RomM 7063-7065, 2026-11-01, facts N52, N53, second documented exception).** All three showed the BIOS test grid or stopped:
   the program of Metal Slug 3 (SMA chip, with the `neo-sma` file) and Metal Slug 5 (PVC chip, the two program files woven by words) is
   scrambled, Metal Slug 4 and 5 have a NEO-PCM2 sample ROM, and Metal Slug 4 writes into program ROM. Now all three run their attract demos
-  for 8000 frames; Metal Slug 5 matches FinalBurn Neo's scenes (frames 1500, 2500). Open: Metal Slug 4's fix layer text (the copyright lines,
-  "INSERT COIN" and the demo's HUD) shows wrong glyphs, while its sprites are right: the 48 MiB sprite size takes the CMC code's special
-  address handling and the fix data comes from the end of that region, which is the part that looks wrong; the sound of the three games is not
+  for 8000 frames; Metal Slug 5 matches FinalBurn Neo's scenes (frames 1500, 2500). Metal Slug 4's fix layer text was wrong
+  (copyright lines, "INSERT COIN", HUD); fixed (fact N54) by taking the glyphs from the 128 KiB that starts 384 KiB before the end of the
+  sprite data, the one place that matches FinalBurn Neo's screen (the reference's own rule for the board's 512 KiB fix region is not
+  understood: the first and last 128 KiB of that region show other data). Open: the sound of the three games is not
   compared (the PCM2 descramble is unverified by ear), and the PVC chip's other functions are not modelled beyond what Metal Slug 5 uses.
 - **NEO-CMC (2026-10-31, fact N49, documented exception).** Sprite decryption (CMC42 and CMC50), the fix layer taken from the sprite data
   and the CMC50 Z80 program decryption are in for five sets (Zupapa!, Ganryu, Nightmare in the Dark, Sengoku 3, KOF 2001): all draw their
