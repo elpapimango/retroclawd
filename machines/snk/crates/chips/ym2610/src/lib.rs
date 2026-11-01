@@ -392,7 +392,7 @@ impl Ym2610 {
                 const ADJUST: [i32; 8] = [57, 57, 57, 57, 77, 102, 128, 153];
                 b.step = ((b.step * ADJUST[mag as usize]) >> 6).clamp(127, 24576);
             }
-            let v = (b.acc * i32::from(b.level)) >> 10;
+            let v = (b.acc * i32::from(b.level)) >> 9;
             if b.left {
                 left += v;
             }

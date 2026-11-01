@@ -67,6 +67,7 @@
   and the CMC50 Z80 program decryption are in for five sets (Zupapa!, Ganryu, Nightmare in the Dark, Sengoku 3, KOF 2001): all draw their
   title or attract screens. Not yet: a comparison with FinalBurn Neo's pictures and sound, the other keys (KOF 99/2000/2002/2003, Garou,
   Metal Slug 3-5, Samurai Shodown 5, ...) and the extra chips those boards also carry (SMA, PCM2, PVC, bootleg handlers).
+- **Sound level (2026-11-01, fact Y11).** ADPCM-B was half as loud as FinalBurn Neo's; fixed, Metal Slug 4's music now agrees within 2 percent in RMS. Other ADPCM-B users were not re-measured.
 - **SSG-EG and LFO use.** Eleven of the thirteen sets checked write the SSG-EG registers (`$90-$9F`) a few times each at start-up (init
   writes) and four write the LFO register `$22` only at start-up; none was seen using them in music, so they remain unimplemented.
 
