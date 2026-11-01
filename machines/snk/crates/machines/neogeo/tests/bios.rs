@@ -126,6 +126,29 @@ fn first_fetches() {
     if let Ok(path) = std::env::var("RC_DUMP_WORK") {
         std::fs::write(path, &machine.bus.work[..]).unwrap();
     }
+    if std::env::var("RC_TILES").is_ok() {
+        // a histogram of the tile numbers (in 0x10000 steps) used by sprites that have a height
+        let v = &machine.bus.vram;
+        let mut hist = [0usize; 16];
+        for n in 0..381usize {
+            let h = usize::from(v[0x8200 + n] & 0x3F);
+            for r in 0..h {
+                let (lo, attr) = (usize::from(v[n * 64 + r * 2]), v[n * 64 + r * 2 + 1]);
+                let tile = lo | usize::from((attr >> 4) & 0xF) << 16;
+                hist[tile >> 16] += 1;
+                if tile >> 16 >= 4 && std::env::var("RC_TILES").as_deref() == Ok("2") {
+                    println!("tile {tile:05X} sprite {n} row {r} attr {attr:04X}");
+                }
+            }
+        }
+        let c = &machine.graphics.c;
+        let zero: Vec<String> = c
+            .chunks(0x100_0000)
+            .map(|ch| format!("{:.2}", ch.iter().filter(|b| **b == 0).count() as f64 / ch.len() as f64))
+            .collect();
+        println!("zero fraction per 16 MiB of the C data: {zero:?}");
+        println!("tiles per 0x10000: {hist:?}; c tiles {}", machine.graphics.c.len() / 128);
+    }
     if std::env::var("RC_SPRITES").is_ok() {
         // the sprites with a height: number, shrink word, Y/chain/height word, X word, first tile entry
         let v = &machine.bus.vram;

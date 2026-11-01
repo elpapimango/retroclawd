@@ -29,6 +29,7 @@ pub fn for_ngh(ngh: u32) -> Option<Cmc> {
         260 => (Chip::Cmc42, 0xff), // Nightmare in the Dark
         261 => (Chip::Cmc42, 0xfe), // Sengoku 3
         262 => (Chip::Cmc50, 0x1e), // The King of Fighters 2001
+        263 => (Chip::Cmc50, 0x31), // Metal Slug 4
         _ => return None,
     };
     Some(Cmc { chip, key })
@@ -77,7 +78,8 @@ fn tables(chip: Chip) -> Tables {
 /// else is left alone and `false` is returned.
 pub fn decrypt_sprites(rom: &mut [u8], cmc: Cmc) -> bool {
     let len = rom.len();
-    if len < 4 || !len.is_power_of_two() {
+    // a power of two, or one of the two boards whose last chips are smaller than the rest: 48 MiB and 96 MiB (fact N49)
+    if len < 4 || !(len.is_power_of_two() || len == 0x300_0000 || len == 0x600_0000) {
         return false;
     }
     let t = tables(cmc.chip);
@@ -130,7 +132,14 @@ pub fn decrypt_sprites(rom: &mut [u8], cmc: Cmc) -> bool {
         b ^= (t.a16_23_1[b & 0xff] as usize) << 16;
         b ^= (t.a16_23_2[(b >> 8) & 0xff] as usize) << 16;
         b ^= t.a0_7[(b >> 8) & 0xff] as usize;
-        b &= words - 1;
+        b = match len {
+            // the first 32 MiB permute among themselves, the last 16 MiB among themselves
+            0x300_0000 if rpos < 0x200_0000 / 4 => b & (0x200_0000 / 4 - 1),
+            0x300_0000 => 0x200_0000 / 4 + (b & (0x100_0000 / 4 - 1)),
+            0x600_0000 if rpos < 0x400_0000 / 4 => b & (0x400_0000 / 4 - 1),
+            0x600_0000 => 0x400_0000 / 4 + (b & (0x100_0000 / 4 - 1)),
+            _ => b & (words - 1),
+        };
         rom[4 * rpos..4 * rpos + 4].copy_from_slice(&buf[4 * b..4 * b + 4]);
     }
     true
@@ -253,6 +262,17 @@ mod tests {
         let c = for_ngh(70).unwrap();
         assert!(!decrypt_sprites(&mut rom, c));
         assert_eq!(rom, vec![7u8; 12]);
+    }
+
+    #[test]
+    fn the_48_mib_layout_is_decrypted_without_leaving_its_chips() {
+        // Metal Slug 4's six 8 MiB chips: the last two (16 MiB) permute among themselves
+        let mut rom = vec![0u8; 0x300_0000];
+        let c = for_ngh(263).unwrap();
+        assert!(decrypt_sprites(&mut rom, c));
+        assert_eq!(rom.len(), 0x300_0000);
+        let mut odd = vec![0u8; 0x300_0000 + 4];
+        assert!(!decrypt_sprites(&mut odd, c));
     }
 
     #[test]

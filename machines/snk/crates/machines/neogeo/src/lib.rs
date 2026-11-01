@@ -530,7 +530,8 @@ impl M68kBus for Bus {
                 Size::Word => self.protection.write_word(addr, value as u16),
                 Size::Byte => self.protection.write_byte(addr),
             };
-            if taken {
+            // a write no cartridge chip answers lands on program ROM and changes nothing (fact N52)
+            if taken || self.p.len() > 0x10_0000 {
                 return Ok(());
             }
         }
