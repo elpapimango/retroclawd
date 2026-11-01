@@ -115,6 +115,7 @@ fn first_fetches() {
         "irq counts (blank raised, timer raised, blank acked, timer acked): {:?}",
         machine.bus.irq_counts
     );
+    println!("watchdog resets: {}", machine.bus.watchdog_resets);
     if hist_from.is_some() {
         let mut v: Vec<_> = hist.into_iter().collect();
         v.sort_by_key(|(_, n)| std::cmp::Reverse(*n));

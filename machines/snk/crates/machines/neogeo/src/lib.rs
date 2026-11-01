@@ -24,6 +24,8 @@ pub const LINE_CLOCKS: u64 = 1536;
 pub const FRAME_LINES: u64 = 264;
 /// The line at which the vertical blank interrupt is raised: after the 8 sync, 16 top border and 224 active lines (fact N20).
 const VBLANK_LINE: u64 = 248;
+/// Master clocks the watchdog waits without a kick before it resets the machine: about 0.13 s (fact N51).
+pub const WATCHDOG_CLOCKS: u64 = 3_120_000;
 /// Half a period of the clock chip's time pulse in master clocks: one second a period from 24 MHz (fact N19).
 const TP_HALF_PERIOD: u64 = 24_000_000 / 2;
 
@@ -110,6 +112,10 @@ pub struct Bus {
     pub sound: Sound,
     /// How many times the watchdog was kicked (fact N11).
     pub watchdog_kicks: u64,
+    /// The master clock of the last kick; the watchdog runs once it has been kicked (fact N51).
+    pub watchdog_last: Option<u64>,
+    /// How many times the watchdog reset the machine.
+    pub watchdog_resets: u64,
     /// The first report of an access no fact covers; the machine is stopped once it is set.
     pub stop: Option<String>,
 }
@@ -152,8 +158,30 @@ impl Bus {
             lspc: Lspc::default(),
             sound: Sound::new(sm1, m1),
             watchdog_kicks: 0,
+            watchdog_last: None,
+            watchdog_resets: 0,
             stop: None,
         }
+    }
+
+    /// True once the watchdog has gone unkicked for `WATCHDOG_CLOCKS` (fact N51).
+    pub fn watchdog_expired(&self) -> bool {
+        self.watchdog_last
+            .is_some_and(|t| self.clock.saturating_sub(t) > WATCHDOG_CLOCKS)
+    }
+
+    /// What the watchdog's reset puts back: the registers, the interrupts, the LSPC and the sound side. The RAMs keep their contents.
+    pub fn watchdog_reset(&mut self) {
+        self.watchdog_resets += 1;
+        self.watchdog_last = None;
+        self.ctrl = [0; 5];
+        self.latch = 0x80;
+        self.irq = 1;
+        self.lspc = Lspc::default();
+        self.timer_counter = 0;
+        self.timer_fraction = 0;
+        self.p_bank = 0;
+        self.sound.reset_requested = true;
     }
 
     fn report(&mut self, what: &str, addr: u32, size: Size, value: Option<u32>) {
@@ -339,7 +367,10 @@ impl Bus {
             // REG_SOUND written: a command for the Z80 (fact N25)
             _ if a & 0xFE_0001 == 0x32_0000 => self.sound.send_command(v),
             // REG_DIPSW written: any value kicks the watchdog (fact N11)
-            _ if a & 0xFE_0001 == 0x30_0001 => self.watchdog_kicks += 1,
+            _ if a & 0xFE_0001 == 0x30_0001 => {
+                self.watchdog_kicks += 1;
+                self.watchdog_last = Some(self.clock);
+            }
             0x10_0000..=0x1F_FFFF => self.work[a & (WORK_RAM - 1)] = v,
             0x40_0000..=0x7F_FFFF => {
                 let at = self.palette_at(a);
@@ -558,6 +589,24 @@ mod tests {
         p[0] = 0x78;
         p[1] = 0x56;
         Bus::new(bios, p, vec![0; 0x8000], Vec::new())
+    }
+
+    #[test]
+    fn the_watchdog_runs_only_after_a_kick_and_expires_without_the_next() {
+        let mut b = bus();
+        b.advance(WATCHDOG_CLOCKS * 2);
+        assert!(!b.watchdog_expired(), "never kicked: not running");
+        b.write(0x30_0001, Size::Byte, 0, FC).unwrap();
+        b.advance(WATCHDOG_CLOCKS - 1000);
+        assert!(!b.watchdog_expired());
+        b.write(0x30_0001, Size::Byte, 0, FC).unwrap();
+        b.advance(WATCHDOG_CLOCKS - 1000);
+        assert!(!b.watchdog_expired(), "a kick starts the count again");
+        b.advance(2000);
+        assert!(b.watchdog_expired());
+        b.watchdog_reset();
+        assert!(!b.watchdog_expired());
+        assert_eq!(b.watchdog_resets, 1);
     }
 
     #[test]

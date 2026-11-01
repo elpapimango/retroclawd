@@ -30,6 +30,7 @@
   halves each (fact N46); Fatal Fury 2's protection answers the challenges its code makes (fact N45); tile numbers past the ROM wrap
   (fact N43). Art of Fighting now matches the reference (mean difference 5.2 at frame 1500) and Fatal Fury 2 draws its intro.
   Remaining of the 16-set sweep: V-Liner (a gambling set) stops; Fight Fever runs here but the reference does not (a missing file).
+- **Resolved 2026-11-01: the boot offset and Metal Slug 2's WARNING screen (fact N51).** Both had one cause: the watchdog reset was not modelled. The BIOS formats an unformatted backup RAM and lets the watchdog reboot it; FinalBurn Neo therefore boots KOF 2001 and Metal Slug 2 twice, and the second boot leaves the flag at `$D00100` clear. Now exactly those two sets reset once here, Metal Slug 2 reaches its title and KOF 2001 its attract mode. The notes below on both are kept as the history of the search (the 214-frame offset should be re-measured; the clock length of the watchdog is `[H?]`).
 - **Metal Slug 2 (RomM 7062, 2026-10-31).** Its stop at `$2FFFF0` was the program's bank register (fact N47, done: a program over 2 MiB is
   banked, and the `.sp2` second program file is read). The game then shows its "WARNING: this ROM cartridge is for use with original SNK
   boards only" screen. It is **not** a NEO-CMC game (the set is plain): the program takes the path to WARNING when the BIOS country is 2

@@ -180,6 +180,12 @@ impl NeoGeo {
         let clocks = u64::from(self.cpu.step(&mut self.bus)) * 2;
         self.bus.advance(clocks);
         self.catch_up_z80();
+        if self.bus.watchdog_expired() {
+            self.bus.watchdog_reset();
+            self.cpu.reset(&mut self.bus);
+            self.z80 = z80::Cpu::new();
+            self.nmi_was_high = false;
+        }
         clocks
     }
 
