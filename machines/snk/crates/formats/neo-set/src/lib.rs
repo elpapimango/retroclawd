@@ -6,6 +6,7 @@
 //! the file names are only classified, never used as paths.
 #![forbid(unsafe_code)]
 
+pub mod carts;
 pub mod cmc;
 mod cmc_tables;
 
@@ -58,6 +59,8 @@ pub struct NeoSet {
     pub v_a: Vec<u8>,
     /// The sample region for ADPCM-B: every `.v2x` file in order; empty when the cartridge has none.
     pub v_b: Vec<u8>,
+    /// The protection board, when it is one the machine models beyond the plain bank register (fact N53).
+    pub board: carts::Board,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -107,10 +110,21 @@ fn load_with_limit(zip_bytes: &[u8], limit: u64) -> Result<NeoSet, SetError> {
     let mut files: Vec<(Kind, u32, Vec<u8>)> = Vec::new();
     // the game's number (NGH), the digits that start the name of its program file
     let mut ngh: Option<u32> = None;
+    let mut sma: Vec<u8> = Vec::new();
     // the bytes really read count against the cap: a header that declares less than the entry expands to is not believed
     let mut read_total = 0u64;
     for i in 0..zip.len() {
         let entry = zip.by_index(i).map_err(|e| SetError::Zip(e.to_string()))?;
+        // Metal Slug 3's SMA chip file: it holds the end of the fixed program (fact N53)
+        if entry.name().rsplit('/').next() == Some("neo-sma") {
+            let mut data = Vec::new();
+            entry
+                .take(1 << 20)
+                .read_to_end(&mut data)
+                .map_err(|e| SetError::Zip(e.to_string()))?;
+            sma = data;
+            continue;
+        }
         let Some((kind, number)) = classify(entry.name()) else {
             continue;
         };
@@ -142,6 +156,36 @@ fn load_with_limit(zip_bytes: &[u8], limit: u64) -> Result<NeoSet, SetError> {
     }
     if set.p.is_empty() {
         return Err(SetError::NoProgram);
+    }
+    // a board with an SMA or PVC chip: unscramble the program (fact N53)
+    match ngh {
+        Some(256) => {
+            // 1 MiB of fixed program, the last 256 KiB of it the chip's own file, then the 8 MiB of banks
+            let mut image = vec![0u8; 0x10_0000];
+            image.extend_from_slice(&set.p);
+            let n = sma.len().min(0x4_0000);
+            image[0x0c_0000..0x0c_0000 + n].copy_from_slice(&sma[..n]);
+            if carts::mslug3_decrypt_68k(&mut image) {
+                set.p = image;
+                set.board = carts::Board::SmaMslug3;
+            }
+        }
+        Some(268) => {
+            // the two program files alternate by 16-bit words: p1, p2, p1, p2, ... (fact N53)
+            if set.p.len() == 0x80_0000 {
+                let (p1, p2) = set.p.split_at(0x40_0000);
+                let mut woven = Vec::with_capacity(set.p.len());
+                for (a, b) in p1.chunks_exact(2).zip(p2.chunks_exact(2)) {
+                    woven.extend_from_slice(a);
+                    woven.extend_from_slice(b);
+                }
+                set.p = woven;
+            }
+            if carts::mslug5_decrypt_68k(&mut set.p) {
+                set.board = carts::Board::PvcMslug5;
+            }
+        }
+        _ => {}
     }
     for (_, _, d) in of(Kind::S) {
         set.s.extend_from_slice(d);
@@ -203,6 +247,14 @@ fn load_with_limit(zip_bytes: &[u8], limit: u64) -> Result<NeoSet, SetError> {
         } else {
             set.v_a.extend_from_slice(d);
         }
+    }
+    // the sample ROMs of the boards with a NEO-PCM2 chip (fact N53)
+    match ngh {
+        Some(263) => carts::pcm2_decrypt(&mut set.v_a, 8),
+        Some(268) => {
+            carts::pcm2_swap(&mut set.v_a, 2);
+        }
+        _ => {}
     }
     Ok(set)
 }

@@ -55,6 +55,13 @@
   (286 on)**, and only then the game; ours goes from the first fill and clear straight to the game. So the BIOS code takes a longer test
   path in the reference, decided by something it reads after setting its variables (not the BIOS file: ours with `sp-s2`, `sp-s3` and
   others does not take it, and the stacked return addresses of the reference match `sp-s3` closely but not exactly). Open. Probe aids: `RC_COUNT_PC`, `RC_PCHIST`, `RC_DUMP_WORK`, `RC_DUMP_BACKUP`.
+- **Metal Slug 3, 4 and 5 (RomM 7063-7065, 2026-11-01, facts N52, N53, second documented exception).** All three showed the BIOS test grid or stopped:
+  the program of Metal Slug 3 (SMA chip, with the `neo-sma` file) and Metal Slug 5 (PVC chip, the two program files woven by words) is
+  scrambled, Metal Slug 4 and 5 have a NEO-PCM2 sample ROM, and Metal Slug 4 writes into program ROM. Now all three run their attract demos
+  for 8000 frames; Metal Slug 5 matches FinalBurn Neo's scenes (frames 1500, 2500). Open: Metal Slug 4's fix layer text (the copyright lines,
+  "INSERT COIN" and the demo's HUD) shows wrong glyphs, while its sprites are right: the 48 MiB sprite size takes the CMC code's special
+  address handling and the fix data comes from the end of that region, which is the part that looks wrong; the sound of the three games is not
+  compared (the PCM2 descramble is unverified by ear), and the PVC chip's other functions are not modelled beyond what Metal Slug 5 uses.
 - **NEO-CMC (2026-10-31, fact N49, documented exception).** Sprite decryption (CMC42 and CMC50), the fix layer taken from the sprite data
   and the CMC50 Z80 program decryption are in for five sets (Zupapa!, Ganryu, Nightmare in the Dark, Sengoku 3, KOF 2001): all draw their
   title or attract screens. Not yet: a comparison with FinalBurn Neo's pictures and sound, the other keys (KOF 99/2000/2002/2003, Garou,

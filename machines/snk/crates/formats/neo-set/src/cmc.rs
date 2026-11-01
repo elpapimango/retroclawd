@@ -29,7 +29,9 @@ pub fn for_ngh(ngh: u32) -> Option<Cmc> {
         260 => (Chip::Cmc42, 0xff), // Nightmare in the Dark
         261 => (Chip::Cmc42, 0xfe), // Sengoku 3
         262 => (Chip::Cmc50, 0x1e), // The King of Fighters 2001
+        256 => (Chip::Cmc42, 0xad), // Metal Slug 3
         263 => (Chip::Cmc50, 0x31), // Metal Slug 4
+        268 => (Chip::Cmc50, 0x19), // Metal Slug 5
         _ => return None,
     };
     Some(Cmc { chip, key })

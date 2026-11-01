@@ -147,6 +147,27 @@ fn first_fetches() {
             .map(|ch| format!("{:.2}", ch.iter().filter(|b| **b == 0).count() as f64 / ch.len() as f64))
             .collect();
         println!("zero fraction per 16 MiB of the C data: {zero:?}");
+        if std::env::var("RC_TILES").as_deref() == Ok("3") {
+            for n in 0..381usize {
+                if v[0x8200 + n] & 0x3F > 32 {
+                    let rows: Vec<String> = (0..6)
+                        .map(|r| format!("{:04X}/{:04X}", v[n * 64 + r * 2], v[n * 64 + r * 2 + 1]))
+                        .collect();
+                    println!("tall {n}: scb2 {:04X} scb3 {:04X} scb4 {:04X} rows {rows:?}", v[0x8000 + n], v[0x8200 + n], v[0x8400 + n]);
+                }
+            }
+        }
+        if let Ok(t) = std::env::var("RC_TILE_AT") {
+            let t = usize::from_str_radix(&t, 16).unwrap();
+            let hex: String = c[t * 128..t * 128 + 32].iter().map(|b| format!("{b:02x}")).collect();
+            println!("tile {t:X} bytes {hex}");
+        }
+        if std::env::var("RC_TILES").as_deref() == Ok("5") {
+            for row in 26..30usize {
+                let line: Vec<String> = (0..14).map(|col| format!("{:04X}", v[0x7000 + col * 32 + row])).collect();
+                println!("fix row {row}: {line:?}");
+            }
+        }
         println!("tiles per 0x10000: {hist:?}; c tiles {}", machine.graphics.c.len() / 128);
     }
     if std::env::var("RC_SPRITES").is_ok() {
@@ -167,7 +188,18 @@ fn first_fetches() {
         "irq counts (blank raised, timer raised, blank acked, timer acked): {:?}",
         machine.bus.irq_counts
     );
-    println!("watchdog resets: {}", machine.bus.watchdog_resets);
+    if std::env::var("RC_HEADER").is_ok() {
+        let hdr: String = (0x100u32..0x110)
+            .map(|a| {
+                let b = machine.bus.peek(a);
+                if b.is_ascii_graphic() { b as char } else { '.' }
+            })
+            .collect();
+        println!("cartridge header at $100: {hdr}");
+        let v: Vec<String> = (0u32..16).map(|a| format!("{:02X}", machine.bus.peek(a))).collect();
+        println!("vectors {v:?}");
+    }
+    println!("watchdog resets: {}, latch {:02X}", machine.bus.watchdog_resets, machine.bus.latch);
     if hist_from.is_some() {
         let mut v: Vec<_> = hist.into_iter().collect();
         v.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
@@ -201,7 +233,7 @@ fn first_fetches() {
     );
     if std::env::var("RC_PALETTE").is_ok() {
         for bank in 0..2usize {
-            for pal in [0usize, 1, 254, 255] {
+            for pal in [0usize, 1, 0x15, 254, 255] {
                 let at = bank * neogeo::PALETTE_RAM + pal * 32;
                 let words: Vec<String> = (0..16)
                     .map(|c| {

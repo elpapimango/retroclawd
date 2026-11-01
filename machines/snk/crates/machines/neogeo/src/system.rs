@@ -89,6 +89,7 @@ impl NeoGeo {
             c: set.c,
         };
         let mut bus = Bus::new(bios, set.p, sm1, set.m);
+        bus.board = set.board;
         bus.sound.v_a = set.v_a;
         bus.sound.v_b = set.v_b;
         Ok(NeoGeo::new(bus, graphics))

@@ -101,6 +101,11 @@ pub struct Bus {
     pub irq_counts: [u64; 5],
     /// Which 1 MiB bank of the second program file shows at `$200000` (fact N47).
     pub p_bank: usize,
+    /// Where the window at `$200000` starts in the program when a chip picked it (SMA, PVC), else the 1 MiB banks of `p_bank` (fact N53).
+    pub p_window: Option<usize>,
+    /// The protection board and the PVC chip's 8 KiB of RAM (fact N53).
+    pub board: neo_set::carts::Board,
+    pub pvc_ram: Vec<u16>,
     /// The cartridge's challenge and response chip, as far as seen (fact N45).
     pub protection: protection::Protection,
     /// A debugging aid: when set, an access no fact covers is logged in `access_log` (with the 68000's pc) and answered with `$FF` or
@@ -150,6 +155,9 @@ impl Bus {
             rtc_start: ((0, 1, 1, 0, 0, 0), 6),
             rtc_log: Vec::new(),
             p_bank: 0,
+            p_window: None,
+            board: neo_set::carts::Board::Plain,
+            pvc_ram: vec![0; 0x1000],
             irq_counts: [0; 5],
             protection: protection::Protection::default(),
             lenient: false,
@@ -181,6 +189,7 @@ impl Bus {
         self.timer_counter = 0;
         self.timer_fraction = 0;
         self.p_bank = 0;
+        self.p_window = None;
         self.sound.reset_requested = true;
     }
 
@@ -308,11 +317,20 @@ impl Bus {
             }
             0x20_0000..=0x2F_FFFF if self.p.len() == 0x20_0000 => self.p.get(a & 0xF_FFFF).copied(),
             // a program with a banked part: the first MiB below, the rest in banks of 1 MiB at `$200000` (fact N47)
+            // the PVC chip's RAM and the SMA chip's constant (fact N53)
+            0x2F_E000..=0x2F_FFFF if self.board == neo_set::carts::Board::PvcMslug5 => {
+                let w = self.pvc_ram[(a - 0x2F_E000) / 2];
+                Some(if a & 1 == 0 { (w >> 8) as u8 } else { w as u8 })
+            }
+            0x2F_E446 | 0x2F_E447 if self.board == neo_set::carts::Board::SmaMslug3 => {
+                Some(if a & 1 == 0 { 0x9A } else { 0x37 })
+            }
             0x20_0000..=0x2F_FFFF if self.p.len() > 0x20_0000 => {
                 let banks = (self.p.len() - 0x10_0000) / 0x10_0000;
-                self.p
-                    .get(0x10_0000 + (self.p_bank % banks) * 0x10_0000 + (a & 0xF_FFFF))
-                    .copied()
+                let base = self
+                    .p_window
+                    .unwrap_or(0x10_0000 + (self.p_bank % banks) * 0x10_0000);
+                self.p.get(base + (a & 0xF_FFFF)).copied()
             }
             0x10_0000..=0x1F_FFFF => Some(self.work[a & (WORK_RAM - 1)]),
             0xC0_0000..=0xCF_FFFF => self.bios.get(a & (BIOS_SIZE - 1)).copied(),
@@ -517,6 +535,31 @@ impl M68kBus for Bus {
         value: u32,
         _fc: FunctionCode,
     ) -> Result<(), BusFault> {
+        match self.board {
+            // the PVC chip: its RAM at `$2FE000`, with the colour packing and the bank register inside it (fact N53)
+            neo_set::carts::Board::PvcMslug5 if (0x2F_E000..0x30_0000).contains(&addr) => {
+                let offset = (addr as usize - 0x2F_E000) / 2;
+                let old = self.pvc_ram[offset];
+                self.pvc_ram[offset] = match size {
+                    Size::Word => value as u16,
+                    Size::Byte if addr & 1 == 0 => (old & 0x00FF) | (value as u16 & 0xFF) << 8,
+                    Size::Byte => (old & 0xFF00) | (value as u16 & 0xFF),
+                };
+                neo_set::carts::pvc_after_write(&mut self.pvc_ram, offset);
+                if offset >= 0xff8 {
+                    self.p_window = Some(neo_set::carts::pvc_bank_base(&mut self.pvc_ram));
+                }
+                return Ok(());
+            }
+            // the SMA chip: the bank register at `$2FFFE4` holds a scrambled number (fact N53)
+            neo_set::carts::Board::SmaMslug3 if (0x2F_FFE0..0x30_0000).contains(&addr) => {
+                if addr & !1 == 0x2F_FFE4 && size == Size::Word {
+                    self.p_window = Some(neo_set::carts::mslug3_bank_base(value as u16));
+                }
+                return Ok(());
+            }
+            _ => {}
+        }
         // the bank register of a banked program: a write to `$2FFFF0`-`$2FFFFF` (fact N47)
         if (0x2F_FFF0..0x30_0000).contains(&addr) {
             // a program of 2 MiB or less has nothing to switch (Sengoku 3 writes 0 here all the same, fact N47): the write is taken
@@ -534,6 +577,10 @@ impl M68kBus for Bus {
             if taken || self.p.len() > 0x10_0000 {
                 return Ok(());
             }
+        }
+        // the cartridge's fixed program is ROM: a write there changes nothing (fact N52)
+        if addr < 0x10_0000 {
+            return Ok(());
         }
         if size == Size::Word && (addr & 0xFF_FFF0) == 0x3C_0000 {
             if !self.lspc_write(addr & 0xF, value as u16) {
