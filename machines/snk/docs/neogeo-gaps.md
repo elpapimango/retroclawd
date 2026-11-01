@@ -69,6 +69,7 @@
   Metal Slug 3-5, Samurai Shodown 5, ...) and the extra chips those boards also carry (SMA, PCM2, PVC, bootleg handlers).
 - **Sound level (2026-11-01, fact Y11).** ADPCM-B was half as loud as FinalBurn Neo's; fixed, Metal Slug 4's music now agrees within 2 percent in RMS. Other ADPCM-B users were not re-measured.
 - **Auto-animation (2026-11-01, fact N34).** The attribute bits were swapped (bit 3 is the eight-frame animation, bit 2 the four-frame one): Metal Slug 3's underwater stage showed dark triangle blocks in its rock background; now smooth like FinalBurn Neo's. Other sets were not re-compared by eye; the scenario manifest still passes.
+- **Metal Slug 3 logo (2026-11-01, fact N54).** The "METAL SLUG 3" logo over the demos and the title screen's copyright and SNK logo are fix-layer tiles; they were blank because the fix glyphs were taken from the last 128 KiB of the sprite data instead of the block 384 KiB before the end (as for Metal Slug 4). Fixed; the logo matches FinalBurn Neo. Other 64 MiB CMC games (KOF 99-2003, Garou, ...) probably need the same check when they are added.
 - **SSG-EG and LFO use.** Eleven of the thirteen sets checked write the SSG-EG registers (`$90-$9F`) a few times each at start-up (init
   writes) and four write the LFO register `$22` only at start-up; none was seen using them in music, so they remain unimplemented.
 
