@@ -162,9 +162,9 @@ fn draw_sprites(src: &Sources, y: usize, line: &mut [u32]) {
         let mut tile = lo | usize::from((attr >> 4) & 0xF) << 16;
         // auto-animation: the low two or three bits of the tile come from the counter (fact N34)
         if attr & 8 != 0 {
-            tile = (tile & !3) | usize::from(src.anim & 3);
-        } else if attr & 4 != 0 {
             tile = (tile & !7) | usize::from(src.anim & 7);
+        } else if attr & 4 != 0 {
+            tile = (tile & !3) | usize::from(src.anim & 3);
         }
         let palette = usize::from(attr >> 8);
         let (hflip, vflip) = (attr & 1 != 0, attr & 2 != 0);
