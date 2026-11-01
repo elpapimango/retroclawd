@@ -70,6 +70,27 @@ r1 = "Joy{n}Fire3"
 l2 = "Joy{n}Fire1"
 r2 = "Joy{n}Fire1"
 
+# Neo Geo: A B C D on the four face buttons (A bottom, B right, C left, D top, as the pad's arc runs), the centre buttons are
+# Start and a coin, the right shoulder button is Select.
+[[layout]]
+machines = ["neogeo"]
+[layout.buttons]
+up = "Joy{n}Up"
+down = "Joy{n}Down"
+left = "Joy{n}Left"
+right = "Joy{n}Right"
+stick_up = "Joy{n}Up"
+stick_down = "Joy{n}Down"
+stick_left = "Joy{n}Left"
+stick_right = "Joy{n}Right"
+south = "Joy{n}A"
+east = "Joy{n}B"
+west = "Joy{n}C"
+north = "Joy{n}D"
+start = "Start{n}"
+select = "Coin{n}"
+r1 = "Select{n}"
+
 # Every other machine: a joystick with one fire button, which any face or shoulder button presses.
 [[layout]]
 machines = ["*"]
