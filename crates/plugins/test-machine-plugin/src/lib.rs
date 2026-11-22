@@ -11,60 +11,17 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use machine::AUDIO_SAMPLE_RATE;
-use plugin_api::{
-    ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, BitmapExplorerDefaults, BitmapPaletteColor,
-    ChipSnapshot, CodecError, CpuFamily, DebugCommand, DebugResponse, DisassemblyLine,
-    MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest,
-    MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse,
-    MachineInstanceHandle, MachineMetadata, MachinePluginVTableV1, MachineProfile, MachineResponse,
-    MediaKind, MediaSlot, MediaSnapshot, PluginDescriptorV1, PluginKind,
-    REQUIRED_MACHINE_DEBUG_CAPABILITIES, RcBuffer, RcCallResult, RcSlice, RcStatus, RegisterField,
-    RegisterSnapshot, StatusCode,
-};
+use plugin_api::{AddressSpaceInfo, BitmapExplorerDefaults, BitmapPaletteColor, ChipSnapshot, CpuFamily, DebugCommand, DebugResponse, DisassemblyLine, FnPlugin, ListProfilesRequest, ListProfilesResponse, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest, MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse, MachineInstanceHandle, MachineMetadata, MachinePlugin, MachineProfile, MachineResponse, MediaKind, MediaSlot, MediaSnapshot, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RegisterField, RegisterSnapshot};
 
 /// The one machine id this plugin offers.
 pub const MACHINE_ID: &str = "stub-machine";
-const PLUGIN_ID: &[u8] = b"retroclawd.test.machine";
-const PLUGIN_VERSION: &[u8] = env!("CARGO_PKG_VERSION").as_bytes();
+const PLUGIN_ID: &str = "retroclawd.test.machine";
+const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 const STATE_MAGIC: &[u8; 4] = b"STUB";
 const CLOCK_HZ: u64 = 1_000_000;
 const FRAME_HZ: u64 = 50;
 
-const fn static_slice(bytes: &'static [u8]) -> RcSlice {
-    RcSlice {
-        ptr: bytes.as_ptr(),
-        len: bytes.len(),
-    }
-}
-
-struct StaticPluginDescriptor(PluginDescriptorV1);
-
-// SAFETY: descriptor and vtable refer only to immutable static data/function pointers.
-unsafe impl Sync for StaticPluginDescriptor {}
-
 static STATE: OnceLock<Mutex<PluginState>> = OnceLock::new();
-
-static MACHINE_VTABLE_V1: MachinePluginVTableV1 = MachinePluginVTableV1 {
-    size: MachinePluginVTableV1::expected_size(),
-    list_profiles: plugin_list_profiles_v1,
-    create_instance: plugin_create_instance_v1,
-    destroy_instance: plugin_destroy_instance_v1,
-    instance_call: plugin_instance_call_v1,
-    free_buffer: plugin_free_buffer_v1,
-    step: plugin_step_v1,
-    halted: plugin_halted_v1,
-    pc: plugin_pc_v1,
-    pc_wide: plugin_pc_wide_v1,
-};
-
-static PLUGIN_DESCRIPTOR_V1: StaticPluginDescriptor = StaticPluginDescriptor(PluginDescriptorV1 {
-    abi_major: ABI_MAJOR_V1,
-    abi_minor: ABI_MINOR_V1,
-    kind: PluginKind::Machine,
-    id: static_slice(PLUGIN_ID),
-    version: static_slice(PLUGIN_VERSION),
-    vtable: (&MACHINE_VTABLE_V1 as *const MachinePluginVTableV1).cast(),
-});
 
 /// The "machine": NOPs forever, with a disk, a tape deck and 64K of memory.
 struct StubMachine {
@@ -151,28 +108,6 @@ impl PluginState {
 
 fn state() -> &'static Mutex<PluginState> {
     STATE.get_or_init(|| Mutex::new(PluginState::new()))
-}
-
-fn status_from_error(error: &str) -> StatusCode {
-    if error.contains("unknown machine instance handle") {
-        StatusCode::NotFound
-    } else if error.contains("unsupported") {
-        StatusCode::Unsupported
-    } else {
-        StatusCode::InvalidRequest
-    }
-}
-
-fn decode_request<T: serde::de::DeserializeOwned>(req: RcSlice) -> Result<T, CodecError> {
-    // SAFETY: caller owns request bytes for call duration.
-    plugin_api::decode_message(unsafe { req.as_bytes() })
-}
-
-fn encode_ok<T: serde::Serialize>(value: &T) -> RcCallResult {
-    match plugin_api::encode_message(value) {
-        Ok(bytes) => RcCallResult::ok_bytes(bytes),
-        Err(e) => e.into_call_result(),
-    }
 }
 
 fn machine_profile() -> MachineProfile {
@@ -580,71 +515,39 @@ fn handle_instance_call(
     Ok(MachineInstanceCallResponse { response })
 }
 
-unsafe extern "C" fn plugin_free_buffer_v1(buffer: RcBuffer) {
-    // SAFETY: caller guarantees this buffer originated from RcBuffer::from_vec.
-    let _ = unsafe { buffer.into_vec() };
-}
-
-unsafe extern "C" fn plugin_list_profiles_v1(req: RcSlice) -> RcCallResult {
+fn plugin_list_profiles(_request: ListProfilesRequest) -> Result<ListProfilesResponse, String> {
     plugin_api::guard::guarded_call("list_profiles", || {
-        let request: plugin_api::ListProfilesRequest = match decode_request(req) {
-            Ok(req) => req,
-            Err(e) => return e.into_call_result(),
-        };
-        let _ = request.include_experimental;
-        encode_ok(&plugin_api::ListProfilesResponse {
+        Ok(ListProfilesResponse {
             profiles: vec![machine_profile()],
         })
     })
 }
 
-unsafe extern "C" fn plugin_create_instance_v1(req: RcSlice) -> RcCallResult {
-    plugin_api::guard::guarded_call("create_instance", || {
-        let request: MachineCreateRequest = match decode_request(req) {
-            Ok(req) => req,
-            Err(e) => return e.into_call_result(),
-        };
-        match create_machine(request) {
-            Ok(response) => encode_ok(&response),
-            Err(error) => RcCallResult::error_with_message(status_from_error(&error), &error),
+fn plugin_create_instance(request: MachineCreateRequest) -> Result<MachineCreateResponse, String> {
+    plugin_api::guard::guarded_call("create_instance", || create_machine(request))
+}
+
+fn plugin_destroy_instance(instance: MachineInstanceHandle) -> Result<(), String> {
+    plugin_api::guard::guarded_call("destroy_instance", || {
+        let mut state = state()
+            .lock()
+            .map_err(|_| "plugin state mutex poisoned".to_string())?;
+        if state.instances.remove(&instance).is_some() {
+            Ok(())
+        } else {
+            Err(format!("unknown machine instance handle {instance}"))
         }
     })
 }
 
-unsafe extern "C" fn plugin_destroy_instance_v1(instance: MachineInstanceHandle) -> RcStatus {
-    plugin_api::guard::guarded(
-        "destroy_instance",
-        RcStatus::from_code(StatusCode::InternalError),
-        || {
-            let Ok(mut state) = state().lock() else {
-                return RcStatus::from_code(StatusCode::InternalError);
-            };
-            if state.instances.remove(&instance).is_some() {
-                RcStatus::ok()
-            } else {
-                RcStatus::from_code(StatusCode::NotFound)
-            }
-        },
-    )
-}
-
-unsafe extern "C" fn plugin_instance_call_v1(
+fn plugin_instance_call(
     instance: MachineInstanceHandle,
-    req: RcSlice,
-) -> RcCallResult {
-    plugin_api::guard::guarded_call("instance_call", || {
-        let request: MachineInstanceCallRequest = match decode_request(req) {
-            Ok(req) => req,
-            Err(e) => return e.into_call_result(),
-        };
-        match handle_instance_call(instance, request) {
-            Ok(response) => encode_ok(&response),
-            Err(error) => RcCallResult::error_with_message(status_from_error(&error), &error),
-        }
-    })
+    request: MachineInstanceCallRequest,
+) -> Result<MachineInstanceCallResponse, String> {
+    plugin_api::guard::guarded_call("instance_call", || handle_instance_call(instance, request))
 }
 
-extern "C" fn plugin_step_v1(instance: MachineInstanceHandle) -> u32 {
+fn plugin_step(instance: MachineInstanceHandle) -> u32 {
     if plugin_api::guard::has_crashed() {
         return 4;
     }
@@ -659,11 +562,11 @@ extern "C" fn plugin_step_v1(instance: MachineInstanceHandle) -> u32 {
     })
 }
 
-extern "C" fn plugin_halted_v1(_instance: MachineInstanceHandle) -> u8 {
-    u8::from(plugin_api::guard::has_crashed())
+fn plugin_halted(_instance: MachineInstanceHandle) -> bool {
+    plugin_api::guard::has_crashed()
 }
 
-extern "C" fn plugin_pc_v1(instance: MachineInstanceHandle) -> u16 {
+fn plugin_pc(instance: MachineInstanceHandle) -> u64 {
     plugin_api::guard::guarded("pc", 0, || {
         let Ok(state) = state().lock() else {
             return 0;
@@ -671,17 +574,24 @@ extern "C" fn plugin_pc_v1(instance: MachineInstanceHandle) -> u16 {
         state
             .instances
             .get(&instance)
-            .map_or(0, |record| record.machine.pc)
+            .map_or(0, |record| u64::from(record.machine.pc))
     })
 }
 
-extern "C" fn plugin_pc_wide_v1(instance: MachineInstanceHandle) -> u64 {
-    u64::from(plugin_pc_v1(instance))
-}
+static PLUGIN: FnPlugin = FnPlugin {
+    id: PLUGIN_ID,
+    version: PLUGIN_VERSION,
+    list_profiles: plugin_list_profiles,
+    create_instance: plugin_create_instance,
+    destroy_instance: plugin_destroy_instance,
+    instance_call: plugin_instance_call,
+    step: plugin_step,
+    halted: plugin_halted,
+    pc: plugin_pc,
+};
 
-/// # Safety
-///
-/// Returns immutable descriptor storage owned by this plugin.
-pub unsafe extern "C" fn entry_v1() -> *const PluginDescriptorV1 {
-    &PLUGIN_DESCRIPTOR_V1.0
+/// The stub machine, for the host's unit tests to link in.
+#[must_use]
+pub fn plugin() -> &'static dyn MachinePlugin {
+    &PLUGIN
 }

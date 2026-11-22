@@ -21,6 +21,7 @@ cpc-snapshot = { path = "../../formats/cpc-snapshot" }
 tracing = "0.1"
 
 [dev-dependencies]
+plugin-api = { path = "../../../../../shared/crates/plugin-api", features = ["testkit"] }
 toml = "0.8"
 
 [build-dependencies]

@@ -72,7 +72,6 @@ mod tests {
         StartupPluginReport {
             plugin_id: id.to_string(),
             plugin_version: version.to_string(),
-            abi: (1, 1),
             source: "x".to_string(),
             machine_ids: machines.iter().map(|m| m.to_string()).collect(),
         }

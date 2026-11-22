@@ -21,6 +21,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 
 use plugin_api::{BinaryBlob, DebugValue, MachineOptionInfo, MachineOptionKind};
 use serde::Deserialize;
@@ -188,13 +189,35 @@ pub(crate) fn parse(text: &str, origin: &str) -> Result<Vec<Entry>, String> {
         .collect()
 }
 
-/// The `*.firmware.toml` / `firmware.toml` files in the machine plugin
-/// folders, entries in file-name order. Unreadable or invalid files are
-/// returned as warnings, not failures.
+/// The folders searched for extra `firmware.toml` / `*.firmware.toml` files of the user's own: next to the program
+/// and the working directory. (The ones that ship with the machines are built into the program.)
+pub(crate) fn extra_search_dirs() -> Vec<PathBuf> {
+    if cfg!(test) {
+        return Vec::new();
+    }
+    let mut dirs = Vec::new();
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        dirs.push(dir.to_path_buf());
+    }
+    dirs.push(PathBuf::from("."));
+    dirs
+}
+
+/// The firmware tables built into the program, then any `*.firmware.toml` / `firmware.toml` the user put in a search
+/// folder, entries in file-name order. Unreadable or invalid files are returned as warnings, not failures.
 pub(crate) fn discover() -> (Vec<Entry>, Vec<String>, Vec<String>) {
     let (mut entries, mut warnings, mut searched) = (Vec::new(), Vec::new(), Vec::new());
+    for (origin, text) in crate::families::firmware_manifests() {
+        match parse(text, origin) {
+            Ok(found) => entries.extend(found),
+            Err(e) => warnings.push(e),
+        }
+    }
+    searched.push("built in".to_string());
     let mut files = Vec::new();
-    for dir in crate::plugin_bridge::plugin_search_dirs() {
+    for dir in extra_search_dirs() {
         searched.push(dir.display().to_string());
         let Ok(read) = fs::read_dir(&dir) else {
             continue;
@@ -604,7 +627,7 @@ pub(crate) fn print_matches(machine: Option<&str>, out: &mut impl Write) -> Resu
     }
     if entries.is_empty() {
         return Err(format!(
-            "no firmware.toml found next to the machine libraries (searched {})",
+            "no firmware table found (searched {})",
             searched.join(", ")
         ));
     }

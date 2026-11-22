@@ -7,20 +7,10 @@ use std::sync::{Mutex, OnceLock};
 
 use c128::{C128, C128Key, JoystickButton, VicAccuracy};
 use machine::{AUDIO_SAMPLE_RATE, Machine, Region};
-use plugin_api::{
-    ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, BinaryBlob, BitmapExplorerDefaults,
-    BitmapPaletteColor, ChipSnapshot, CodecError, CpuFamily, DebugCommand, DebugResponse,
-    DebugValue, DisassemblyLine, ExecutionMode, MACHINE_PROFILE_CONTRACT_VERSION,
-    MachineCapability, MachineCommand, MachineCreateRequest, MachineCreateResponse,
-    MachineInstanceCallRequest, MachineInstanceCallResponse, MachineInstanceHandle,
-    MachineMetadata, MachineOptionInfo, MachineOptionKind, MachinePluginVTableV1, MachineProfile,
-    MachineResponse, MediaKind, MediaSnapshot, NamedValue, PluginDescriptorV1, PluginKind,
-    REQUIRED_MACHINE_DEBUG_CAPABILITIES, RcBuffer, RcCallResult, RcSlice, RcStatus, RegisterField,
-    RegisterSnapshot, StatusCode,
-};
+use plugin_api::{AddressSpaceInfo, BinaryBlob, BitmapExplorerDefaults, BitmapPaletteColor, ChipSnapshot, CpuFamily, DebugCommand, DebugResponse, DebugValue, DisassemblyLine, ExecutionMode, FnPlugin, ListProfilesRequest, ListProfilesResponse, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest, MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse, MachineInstanceHandle, MachineMetadata, MachineOptionInfo, MachineOptionKind, MachinePlugin, MachineProfile, MachineResponse, MediaKind, MediaSnapshot, NamedValue, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RegisterField, RegisterSnapshot};
 
-const PLUGIN_ID: &[u8] = b"retroclawd.c128.machine";
-const PLUGIN_VERSION: &[u8] = build_info::version_tag!().as_bytes();
+const PLUGIN_ID: &str = "retroclawd.c128.machine";
+const PLUGIN_VERSION: &str = build_info::version_tag!();
 
 use drive_link as drive;
 
@@ -82,41 +72,7 @@ fn bitmap_defaults() -> BitmapExplorerDefaults {
     }
 }
 
-const fn static_slice(bytes: &'static [u8]) -> RcSlice {
-    RcSlice {
-        ptr: bytes.as_ptr(),
-        len: bytes.len(),
-    }
-}
-
-struct StaticPluginDescriptor(PluginDescriptorV1);
-
-// SAFETY: descriptor and vtable refer only to immutable static data/function pointers.
-unsafe impl Sync for StaticPluginDescriptor {}
-
 static STATE: OnceLock<Mutex<PluginState>> = OnceLock::new();
-
-static MACHINE_VTABLE_V1: MachinePluginVTableV1 = MachinePluginVTableV1 {
-    size: MachinePluginVTableV1::expected_size(),
-    list_profiles: plugin_list_profiles_v1,
-    create_instance: plugin_create_instance_v1,
-    destroy_instance: plugin_destroy_instance_v1,
-    instance_call: plugin_instance_call_v1,
-    free_buffer: plugin_free_buffer_v1,
-    step: plugin_step_v1,
-    halted: plugin_halted_v1,
-    pc: plugin_pc_v1,
-    pc_wide: plugin_pc_wide_v1,
-};
-
-static PLUGIN_DESCRIPTOR_V1: StaticPluginDescriptor = StaticPluginDescriptor(PluginDescriptorV1 {
-    abi_major: ABI_MAJOR_V1,
-    abi_minor: ABI_MINOR_V1,
-    kind: PluginKind::Machine,
-    id: static_slice(PLUGIN_ID),
-    version: static_slice(PLUGIN_VERSION),
-    vtable: (&MACHINE_VTABLE_V1 as *const MachinePluginVTableV1).cast(),
-});
 
 struct PluginState {
     next_instance: MachineInstanceHandle,
@@ -208,28 +164,6 @@ impl PluginState {
 
 fn state() -> &'static Mutex<PluginState> {
     STATE.get_or_init(|| Mutex::new(PluginState::new()))
-}
-
-fn status_from_error(error: &str) -> StatusCode {
-    if error.contains("unknown machine instance handle") {
-        StatusCode::NotFound
-    } else if error.contains("unsupported") {
-        StatusCode::Unsupported
-    } else {
-        StatusCode::InvalidRequest
-    }
-}
-
-fn decode_request<T: serde::de::DeserializeOwned>(req: RcSlice) -> Result<T, CodecError> {
-    // SAFETY: caller owns request bytes for call duration.
-    plugin_api::decode_message(unsafe { req.as_bytes() })
-}
-
-fn encode_ok<T: serde::Serialize>(value: &T) -> RcCallResult {
-    match plugin_api::encode_message(value) {
-        Ok(bytes) => RcCallResult::ok_bytes(bytes),
-        Err(e) => e.into_call_result(),
-    }
 }
 
 fn file_option(key: &str, flag: &str, description: &str, required: bool) -> MachineOptionInfo {
@@ -1301,95 +1235,39 @@ fn handle_instance_call(
     Ok(MachineInstanceCallResponse { response })
 }
 
-unsafe extern "C" fn plugin_free_buffer_v1(buffer: RcBuffer) {
-    // SAFETY: caller guarantees this buffer originated from RcBuffer::from_vec.
-    let _ = unsafe { buffer.into_vec() };
-}
-
-unsafe extern "C" fn plugin_list_profiles_v1(req: RcSlice) -> RcCallResult {
-    plugin_api::guard::guarded_call("list_profiles", || unsafe {
-        plugin_list_profiles_inner(req)
+fn plugin_list_profiles(_request: ListProfilesRequest) -> Result<ListProfilesResponse, String> {
+    plugin_api::guard::guarded_call("list_profiles", || {
+        Ok(ListProfilesResponse {
+            profiles: vec![machine_profile()],
+        })
     })
 }
 
-unsafe fn plugin_list_profiles_inner(req: RcSlice) -> RcCallResult {
-    let request: plugin_api::ListProfilesRequest = match decode_request(req) {
-        Ok(req) => req,
-        Err(e) => return e.into_call_result(),
-    };
-    let _ = request.include_experimental;
-
-    let response = plugin_api::ListProfilesResponse {
-        profiles: vec![machine_profile()],
-    };
-    encode_ok(&response)
+fn plugin_create_instance(request: MachineCreateRequest) -> Result<MachineCreateResponse, String> {
+    plugin_api::guard::guarded_call("create_instance", || create_machine(request))
 }
 
-unsafe extern "C" fn plugin_create_instance_v1(req: RcSlice) -> RcCallResult {
-    plugin_api::guard::guarded_call("create_instance", || unsafe {
-        plugin_create_instance_inner(req)
+fn plugin_destroy_instance(instance: MachineInstanceHandle) -> Result<(), String> {
+    plugin_api::guard::guarded_call("destroy_instance", || {
+        let mut state = state()
+            .lock()
+            .map_err(|_| "plugin state mutex poisoned".to_string())?;
+        if state.instances.remove(&instance).is_some() {
+            Ok(())
+        } else {
+            Err(format!("unknown machine instance handle {instance}"))
+        }
     })
 }
 
-unsafe fn plugin_create_instance_inner(req: RcSlice) -> RcCallResult {
-    let request: MachineCreateRequest = match decode_request(req) {
-        Ok(req) => req,
-        Err(e) => return e.into_call_result(),
-    };
-
-    match create_machine(request) {
-        Ok(response) => encode_ok(&response),
-        Err(error) => RcCallResult::error_with_message(status_from_error(&error), &error),
-    }
-}
-
-unsafe extern "C" fn plugin_destroy_instance_v1(instance: MachineInstanceHandle) -> RcStatus {
-    plugin_api::guard::guarded(
-        "destroy_instance",
-        RcStatus::from_code(StatusCode::InternalError),
-        || unsafe { plugin_destroy_instance_inner(instance) },
-    )
-}
-
-unsafe fn plugin_destroy_instance_inner(instance: MachineInstanceHandle) -> RcStatus {
-    let mut state = match state().lock() {
-        Ok(guard) => guard,
-        Err(_) => return RcStatus::from_code(StatusCode::InternalError),
-    };
-
-    if state.instances.remove(&instance).is_some() {
-        RcStatus::ok()
-    } else {
-        RcStatus::from_code(StatusCode::NotFound)
-    }
-}
-
-unsafe extern "C" fn plugin_instance_call_v1(
+fn plugin_instance_call(
     instance: MachineInstanceHandle,
-    req: RcSlice,
-) -> RcCallResult {
-    plugin_api::guard::guarded_call("instance_call", || unsafe {
-        plugin_instance_call_inner(instance, req)
-    })
+    request: MachineInstanceCallRequest,
+) -> Result<MachineInstanceCallResponse, String> {
+    plugin_api::guard::guarded_call("instance_call", || handle_instance_call(instance, request))
 }
 
-unsafe fn plugin_instance_call_inner(
-    instance: MachineInstanceHandle,
-    req: RcSlice,
-) -> RcCallResult {
-    let request: MachineInstanceCallRequest = match decode_request(req) {
-        Ok(req) => req,
-        Err(e) => return e.into_call_result(),
-    };
-
-    match handle_instance_call(instance, request) {
-        Ok(response) => encode_ok(&response),
-        Err(error) => RcCallResult::error_with_message(status_from_error(&error), &error),
-    }
-}
-
-/// Fast path for `MachinePluginVTableV1::step` (no serialization).
-extern "C" fn plugin_step_v1(instance: MachineInstanceHandle) -> u32 {
+fn plugin_step_v1(instance: MachineInstanceHandle) -> u32 {
     if plugin_api::guard::has_crashed() {
         // A crashed machine idles like a halted CPU; 0 would spin the host.
         return 4;
@@ -1407,8 +1285,7 @@ fn plugin_step_inner(instance: MachineInstanceHandle) -> u32 {
     }
 }
 
-/// Fast path for `MachinePluginVTableV1::halted`.
-extern "C" fn plugin_halted_v1(instance: MachineInstanceHandle) -> u8 {
+fn plugin_halted_v1(instance: MachineInstanceHandle) -> u8 {
     if plugin_api::guard::has_crashed() {
         return 1;
     }
@@ -1425,13 +1302,7 @@ fn plugin_halted_inner(instance: MachineInstanceHandle) -> u8 {
     }
 }
 
-/// Fast path for `MachinePluginVTableV1::pc`.
-extern "C" fn plugin_pc_v1(instance: MachineInstanceHandle) -> u16 {
-    plugin_api::guard::guarded("pc", 0, || plugin_pc_inner(instance) as u16)
-}
-
-/// Fast path for `MachinePluginVTableV1::pc_wide`.
-extern "C" fn plugin_pc_wide_v1(instance: MachineInstanceHandle) -> u64 {
+fn plugin_pc_wide_v1(instance: MachineInstanceHandle) -> u64 {
     plugin_api::guard::guarded("pc_wide", 0, || plugin_pc_inner(instance))
 }
 
@@ -1445,15 +1316,58 @@ fn plugin_pc_inner(instance: MachineInstanceHandle) -> u64 {
     }
 }
 
-/// # Safety
-///
-/// Returns immutable descriptor storage owned by this plugin.
-pub unsafe extern "C" fn entry_v1() -> *const PluginDescriptorV1 {
-    &PLUGIN_DESCRIPTOR_V1.0
+fn plugin_halted(instance: MachineInstanceHandle) -> bool {
+    plugin_halted_v1(instance) != 0
+}
+
+static PLUGIN: FnPlugin = FnPlugin {
+    id: PLUGIN_ID,
+    version: PLUGIN_VERSION,
+    list_profiles: plugin_list_profiles,
+    create_instance: plugin_create_instance,
+    destroy_instance: plugin_destroy_instance,
+    instance_call: plugin_instance_call,
+    step: plugin_step_v1,
+    halted: plugin_halted,
+    pc: plugin_pc_wide_v1,
+};
+
+/// The machines of this family, for the host to link in.
+#[must_use]
+pub fn plugin() -> &'static dyn MachinePlugin {
+    &PLUGIN
 }
 
 #[cfg(test)]
 mod tests {
+
+    // Byte-level shims over the typed functions, so these tests still check what a message looks like serialised.
+    use plugin_api::testkit::{RcCallResult, RcSlice, RcStatus, StatusCode};
+
+    fn plugin_list_profiles_v1(req: RcSlice) -> RcCallResult {
+        RcCallResult::of(
+            plugin_api::decode_message(req.as_bytes()).and_then(plugin_list_profiles),
+        )
+    }
+
+    fn plugin_create_instance_v1(req: RcSlice) -> RcCallResult {
+        RcCallResult::of(
+            plugin_api::decode_message(req.as_bytes()).and_then(plugin_create_instance),
+        )
+    }
+
+    fn plugin_destroy_instance_v1(instance: MachineInstanceHandle) -> RcStatus {
+        RcStatus {
+            code: u32::from(plugin_destroy_instance(instance).is_err()),
+        }
+    }
+
+    fn plugin_instance_call_v1(instance: MachineInstanceHandle, req: RcSlice) -> RcCallResult {
+        RcCallResult::of(
+            plugin_api::decode_message(req.as_bytes())
+                .and_then(|request| plugin_instance_call(instance, request)),
+        )
+    }
     use super::*;
 
     fn payload(result: RcCallResult) -> Vec<u8> {
@@ -1539,14 +1453,6 @@ mod tests {
         assert!(unsafe { plugin_destroy_instance_v1(instance) }.is_ok());
     }
 
-    fn descriptor_is_machine_plugin_v1() {
-        // SAFETY: entry function returns pointer to static descriptor.
-        let descriptor = unsafe { &*entry_v1() };
-        assert_eq!(descriptor.abi_major, ABI_MAJOR_V1);
-        assert_eq!(descriptor.abi_minor, ABI_MINOR_V1);
-        assert_eq!(descriptor.kind, PluginKind::Machine);
-    }
-
     fn the_profile_declares_the_five_roms_and_the_drive_options() {
         let profile = machine_profile();
         assert_eq!(profile.machine_id, "c128");
@@ -1569,7 +1475,6 @@ mod tests {
     /// Merged (every check kept): `descriptor_is_machine_plugin_v1`, `the_profile_declares_the_five_roms_and_the_drive_options`.
     #[test]
     fn descriptor_and_profile() {
-        descriptor_is_machine_plugin_v1();
         the_profile_declares_the_five_roms_and_the_drive_options();
     }
 

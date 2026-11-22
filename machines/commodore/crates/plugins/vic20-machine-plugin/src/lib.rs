@@ -4,17 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, OnceLock};
 
 use machine::Machine;
-use plugin_api::{
-    ABI_MAJOR_V1, ABI_MINOR_V1, AddressSpaceInfo, BitmapExplorerDefaults, BitmapPaletteColor,
-    ChipSnapshot, CpuFamily, CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine,
-    DiskStatus, ExecutionMode, ListProfilesRequest, ListProfilesResponse,
-    MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest,
-    MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse, MachineKeyInfo,
-    MachineMetadata, MachineOptionInfo, MachineOptionKind, MachinePluginVTableV1, MachineProfile,
-    MachineResponse, MediaKind, MediaSlot, MediaSnapshot, NamedValue, PluginDescriptorV1,
-    PluginKind, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RcBuffer, RcCallResult, RcSlice, RcStatus,
-    RegisterField, RegisterSnapshot, StatusCode, StepResult, TapeStatus,
-};
+use plugin_api::{AddressSpaceInfo, BitmapExplorerDefaults, BitmapPaletteColor, ChipSnapshot, CpuFamily, CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine, DiskStatus, ExecutionMode, FnPlugin, ListProfilesRequest, ListProfilesResponse, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest, MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse, MachineKeyInfo, MachineMetadata, MachineOptionInfo, MachineOptionKind, MachinePlugin, MachineProfile, MachineResponse, MediaKind, MediaSlot, MediaSnapshot, NamedValue, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RegisterField, RegisterSnapshot, StepResult, TapeStatus};
 use serde::{Deserialize, Serialize};
 use vic20::{Expansion, Roms, Standard, Timing, Vic20};
 
@@ -860,48 +850,15 @@ fn with_instance<T>(
         .ok_or_else(|| format!("unknown Machine instance {id}"))?;
     action(instance)
 }
-fn encode<T: Serialize>(result: Result<T, String>) -> RcCallResult {
-    match result {
-        Ok(value) => match plugin_api::codec::encode_message(&value) {
-            Ok(bytes) => RcCallResult::ok_bytes(bytes),
-            Err(error) => error.into_call_result(),
-        },
-        Err(error) => RcCallResult::error_with_message(
-            if error.starts_with("unsupported") {
-                StatusCode::Unsupported
-            } else if error.starts_with("unknown Machine instance") {
-                StatusCode::NotFound
-            } else {
-                StatusCode::InvalidRequest
-            },
-            &error,
-        ),
-    }
-}
-
-unsafe extern "C" fn list_profiles(request: RcSlice) -> RcCallResult {
+fn list_profiles(_request: ListProfilesRequest) -> Result<ListProfilesResponse, String> {
     plugin_api::guard::guarded_call("list_profiles", || {
-        // SAFETY: the caller keeps the request buffer alive for this call.
-        match plugin_api::codec::decode_message::<ListProfilesRequest>(unsafe {
-            request.as_bytes()
-        }) {
-            Ok(_) => encode(Ok(ListProfilesResponse {
-                profiles: vec![profile()],
-            })),
-            Err(error) => error.into_call_result(),
-        }
+        Ok(ListProfilesResponse {
+            profiles: vec![profile()],
+        })
     })
 }
-unsafe extern "C" fn create_instance(request: RcSlice) -> RcCallResult {
+fn create_instance(request: MachineCreateRequest) -> Result<MachineCreateResponse, String> {
     plugin_api::guard::guarded_call("create_instance", || {
-        // SAFETY: the caller keeps the request buffer alive for this call.
-        let request = match plugin_api::codec::decode_message::<MachineCreateRequest>(unsafe {
-            request.as_bytes()
-        }) {
-            Ok(request) => request,
-            Err(error) => return error.into_call_result(),
-        };
-        encode((|| {
             let instance = Instance::create(request)?;
             let metadata = instance.metadata();
             let mut registry = registry()
@@ -916,47 +873,31 @@ unsafe extern "C" fn create_instance(request: RcSlice) -> RcCallResult {
                 instance: id,
                 metadata,
             })
-        })())
     })
 }
-unsafe extern "C" fn destroy_instance(id: u64) -> RcStatus {
-    plugin_api::guard::guarded(
-        "destroy_instance",
-        RcStatus::from_code(StatusCode::InternalError),
-        || {
-            let mut registry = registry().lock().expect("VIC-20 Plugin registry poisoned");
-            if registry.instances.remove(&id).is_some() {
-                RcStatus::ok()
-            } else {
-                RcStatus::from_code(StatusCode::NotFound)
-            }
-        },
-    )
+fn destroy_instance(id: u64) -> Result<(), String> {
+    plugin_api::guard::guarded_call("destroy_instance", || {
+        let mut registry = registry().lock().map_err(|_| "registry poisoned".to_string())?;
+        if registry.instances.remove(&id).is_some() {
+            Ok(())
+        } else {
+            Err(format!("unknown Machine instance {id}"))
+        }
+    })
 }
-unsafe extern "C" fn instance_call(id: u64, request: RcSlice) -> RcCallResult {
+fn instance_call(
+    id: u64,
+    request: MachineInstanceCallRequest,
+) -> Result<MachineInstanceCallResponse, String> {
     plugin_api::guard::guarded_call("instance_call", || {
-        // SAFETY: the caller keeps the request buffer alive for this call.
-        let request =
-            match plugin_api::codec::decode_message::<MachineInstanceCallRequest>(unsafe {
-                request.as_bytes()
-            }) {
-                Ok(request) => request,
-                Err(error) => return error.into_call_result(),
-            };
-        encode(with_instance(id, |instance| {
+        with_instance(id, |instance| {
             Ok(MachineInstanceCallResponse {
                 response: instance.command(request.command)?,
             })
-        }))
+        })
     })
 }
-unsafe extern "C" fn free_buffer(buffer: RcBuffer) {
-    plugin_api::guard::guarded("free_buffer", (), || {
-        // SAFETY: this allocation originated from this Plugin's RcBuffer.
-        drop(unsafe { buffer.into_vec() });
-    });
-}
-extern "C" fn step(id: u64) -> u32 {
+fn step(id: u64) -> u32 {
     if plugin_api::guard::has_crashed() {
         return 4;
     }
@@ -964,7 +905,7 @@ extern "C" fn step(id: u64) -> u32 {
         with_instance(id, |instance| Ok(instance.step())).expect("VIC-20 fast step failed")
     })
 }
-extern "C" fn halted(id: u64) -> u8 {
+fn halted_raw(id: u64) -> u8 {
     if plugin_api::guard::has_crashed() {
         return 1;
     }
@@ -973,51 +914,32 @@ extern "C" fn halted(id: u64) -> u8 {
             .expect("VIC-20 fast halted query failed")
     })
 }
-extern "C" fn pc_wide(id: u64) -> u64 {
+fn halted(id: u64) -> bool {
+    halted_raw(id) != 0
+}
+fn pc_wide(id: u64) -> u64 {
     plugin_api::guard::guarded("pc_wide", 0, || {
         with_instance(id, |instance| Ok(instance.machine.pc()))
             .expect("VIC-20 fast PC query failed")
     })
 }
-extern "C" fn pc(id: u64) -> u16 {
-    pc_wide(id) as u16
-}
 
-const fn static_slice(bytes: &'static [u8]) -> RcSlice {
-    RcSlice {
-        ptr: bytes.as_ptr(),
-        len: bytes.len(),
-    }
-}
-struct StaticDescriptor(PluginDescriptorV1);
-// SAFETY: the descriptor references immutable static data and function pointers.
-unsafe impl Sync for StaticDescriptor {}
-static VTABLE: MachinePluginVTableV1 = MachinePluginVTableV1 {
-    size: MachinePluginVTableV1::expected_size(),
+static PLUGIN: FnPlugin = FnPlugin {
+    id: "retroclawd.vic20.machine",
+    version: build_info::version_tag!(),
     list_profiles,
     create_instance,
     destroy_instance,
     instance_call,
-    free_buffer,
     step,
     halted,
-    pc,
-    pc_wide,
+    pc: pc_wide,
 };
-static DESCRIPTOR: StaticDescriptor = StaticDescriptor(PluginDescriptorV1 {
-    abi_major: ABI_MAJOR_V1,
-    abi_minor: ABI_MINOR_V1,
-    kind: PluginKind::Machine,
-    id: static_slice(b"retroclawd.vic20.machine"),
-    version: static_slice(build_info::version_tag!().as_bytes()),
-    vtable: (&VTABLE as *const MachinePluginVTableV1).cast(),
-});
 
-/// # Safety
-///
-/// The returned descriptor is immutable static storage owned by this Plugin.
-pub unsafe extern "C" fn entry_v1() -> *const PluginDescriptorV1 {
-    &DESCRIPTOR.0
+/// The machines of this family, for the host to link in.
+#[must_use]
+pub fn plugin() -> &'static dyn MachinePlugin {
+    &PLUGIN
 }
 
 #[cfg(test)]
@@ -1505,39 +1427,26 @@ mod tests {
     }
 
     #[test]
-    fn c_abi_owns_buffers_and_fast_calls_advance_the_same_machine() {
-        fn payload(result: RcCallResult) -> Vec<u8> {
-            assert_eq!(result.status.code, StatusCode::Ok as u32);
-            // SAFETY: this test consumes each Plugin-owned buffer once.
-            unsafe { result.payload.into_vec() }
-        }
-        let bytes = plugin_api::encode_message(&request()).unwrap();
-        // SAFETY: the request bytes outlive the synchronous ABI call.
-        let created: MachineCreateResponse = plugin_api::decode_message(&payload(unsafe {
-            create_instance(RcSlice::from_bytes(&bytes))
-        }))
-        .unwrap();
+    fn typed_calls_and_fast_calls_advance_the_same_machine() {
+        let created = create_instance(request()).unwrap();
         let id = created.instance;
         assert_eq!(pc_wide(id), 0xe000);
         assert_eq!(step(id), 3);
-        let bytes = plugin_api::encode_message(&MachineInstanceCallRequest {
-            command: MachineCommand::SaveState,
-        })
+        let saved = instance_call(
+            id,
+            MachineInstanceCallRequest {
+                command: MachineCommand::SaveState,
+            },
+        )
         .unwrap();
-        // SAFETY: the request bytes outlive the synchronous ABI call.
-        let result: MachineInstanceCallResponse = plugin_api::decode_message(&payload(unsafe {
-            instance_call(id, RcSlice::from_bytes(&bytes))
-        }))
-        .unwrap();
-        assert!(matches!(result.response, MachineResponse::StateBlob(_)));
-        // SAFETY: this handle came from create_instance and is destroyed once.
-        assert!(unsafe { destroy_instance(id) }.is_ok());
-        // SAFETY: the encoded request remains valid, but the handle is gone.
-        let result = unsafe { instance_call(id, RcSlice::from_bytes(&bytes)) };
-        assert_eq!(result.status.code, StatusCode::NotFound as u32);
-        // SAFETY: the error payload belongs to this Plugin.
-        unsafe {
-            free_buffer(result.payload);
-        }
+        assert!(matches!(saved.response, MachineResponse::StateBlob(_)));
+        assert!(destroy_instance(id).is_ok());
+        let gone = instance_call(
+            id,
+            MachineInstanceCallRequest {
+                command: MachineCommand::SaveState,
+            },
+        );
+        assert!(gone.unwrap_err().contains("unknown Machine instance"));
     }
 }

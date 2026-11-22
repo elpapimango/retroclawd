@@ -183,9 +183,7 @@ pub(crate) fn plugins(
     wrap_into(
         &mut out,
         &format!(
-            "plugin ABI {}.{} (a plugin needs the same major and at least this minor), protocol {}, machine profile contract {}",
-            plugin_api::ABI_MAJOR_V1,
-            plugin_api::ABI_MINOR_V1,
+            "machine protocol {}, machine profile contract {} (the machines are built into this program)",
             plugin_api::PROTOCOL_VERSION,
             plugin_api::MACHINE_PROFILE_CONTRACT_VERSION
         ),
@@ -203,10 +201,8 @@ pub(crate) fn plugins(
             for plugin in &report.plugins {
                 let _ = writeln!(
                     out,
-                    "  {}  (ABI {}.{})",
+                    "  {}",
                     crate::version::plugin_line(plugin),
-                    plugin.abi.0,
-                    plugin.abi.1
                 );
                 wrap_into(
                     &mut out,
@@ -326,7 +322,6 @@ mod tests {
             plugins: vec![crate::plugin_bridge::StartupPluginReport {
                 plugin_id: "retroclawd.cpc.machine".into(),
                 plugin_version: "0.1.0+98.b7c8d9e0f1.2026-10-17".into(),
-                abi: (1, 2),
                 source: "plugins/cpc_machine_plugin.dll".into(),
                 machine_ids: vec!["cpc464".into(), "cpc664".into(), "cpc6128".into()],
             }],

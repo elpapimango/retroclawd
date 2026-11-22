@@ -16,7 +16,6 @@ rfd = "0.17"
 arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
 bevy = { version = "0.19", default-features = false, features = ["2d", "keyboard", "mouse", "bevy_ui", "bevy_text", "bevy_ui_render", "default_font", "bevy_audio"] }
 tracing = "0.1"
-libloading = "0.8"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 sha1 = "0.10"
@@ -32,18 +31,51 @@ game-config = { path = "../../crates/formats/game-config" }
 app-config = { path = "../../crates/formats/app-config" }
 file-loader = { path = "../../crates/formats/file-loader" }
 pok = { path = "../../crates/formats/pok", optional = true }
+# The machines, linked into the program. One feature per family (and per kind of machine, for the
+# slimmer builds); a build with none has no machine to run.
+zx81-machine-plugin = { path = "../../machines/sinclair/crates/plugins/zx81-machine-plugin", optional = true }
+zx-spectrum-machine-plugin = { path = "../../machines/sinclair/crates/plugins/zx-spectrum-machine-plugin", optional = true }
+cpc-machine-plugin = { path = "../../machines/amstrad/crates/plugins/cpc-machine-plugin", optional = true }
+c64-machine-plugin = { path = "../../machines/commodore/crates/plugins/c64-machine-plugin", optional = true }
+c128-machine-plugin = { path = "../../machines/commodore/crates/plugins/c128-machine-plugin", optional = true }
+vic20-machine-plugin = { path = "../../machines/commodore/crates/plugins/vic20-machine-plugin", optional = true }
+atari-st-machine-plugin = { path = "../../machines/atari/crates/plugins/atari-st-machine-plugin", optional = true }
+atari-8bit-machine-plugin = { path = "../../machines/atari/crates/plugins/atari-8bit-machine-plugin", optional = true }
+neogeo-machine-plugin = { path = "../../machines/snk/crates/plugins/neogeo-machine-plugin", optional = true }
+sega-machine-plugin = { path = "../../machines/sega/crates/plugins/sega-machine-plugin", optional = true }
 tiny_http = { version = "0.12", optional = true }
 tracing-subscriber = { version = "0.3", features = ["fmt", "time"], optional = true }
 
 [features]
-default = ["debug-ui", "debug-zrcp", "debug-log"]
-# The debuggers are modules of the application, not plugins (`src/debuggers/`).
-# Each is optional; a build without them has no `--debugger`, ZRCP or `--plugin debug-log`.
+# `rcd` is the player: every machine, no debugging code at all. `rcdd` is the same program with the `debug`
+# feature (debuggers, ZRCP, tracing, watch points, the diagnostic reports), see `[[bin]]` below.
+default = ["all-machines"]
+all-machines = ["home", "console", "arcade"]
+# The machines, by kind. A family feature links that family's machines into the program.
+home = ["sinclair", "amstrad", "commodore", "atari"]
+console = ["sega", "snk"]
+arcade = ["snk"]
+sinclair = ["dep:zx81-machine-plugin", "dep:zx-spectrum-machine-plugin"]
+amstrad = ["dep:cpc-machine-plugin"]
+commodore = ["dep:c64-machine-plugin", "dep:c128-machine-plugin", "dep:vic20-machine-plugin"]
+atari = ["dep:atari-st-machine-plugin", "dep:atari-8bit-machine-plugin"]
+snk = ["dep:neogeo-machine-plugin"]
+sega = ["dep:sega-machine-plugin"]
+# Everything for developing: the debuggers and every trace/diagnostic hook in the program and the machines.
+debug = ["debug-ui", "debug-zrcp", "debug-log"]
 debug-ui = ["dep:tiny_http", "dep:pok"]
 debug-zrcp = []
 debug-log = ["dep:tracing-subscriber"]
 profiling = ["bevy/trace_tracy"]
 
+[[bin]]
+name = "rcd"
+path = "src/main.rs"
+
+[[bin]]
+name = "rcdd"
+path = "src/main.rs"
+required-features = ["debug"]
 
 [build-dependencies]
 winresource = "0.1"

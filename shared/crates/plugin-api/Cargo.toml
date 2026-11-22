@@ -6,4 +6,15 @@ license = "GPL-3.0-or-later"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+
+[features]
+# Byte-level request/response helpers for plugin unit tests (not used by any binary).
+testkit = ["dep:bincode"]
+
+[dependencies.bincode]
+version = "2"
+features = ["serde"]
+optional = true
+
+[dev-dependencies]
 bincode = { version = "2", features = ["serde"] }

@@ -1,23 +1,19 @@
-//! Panic containment for the plugin side of the C boundary.
+//! Panic containment around a machine's calls.
 //!
-//! A Rust panic must never unwind out of an `extern "C"` function (that
-//! aborts the whole process, taking the host and every other machine with
-//! it). Plugins wrap the body of every exported function in [`guarded`] /
-//! [`guarded_call`]: a panic is caught, the first one is remembered (its text
-//! is what the host shows), and the call returns an error value. After a
-//! crash the plugin is treated as dead -- see [`has_crashed`] -- and its
-//! fast-path functions report a halted machine rather than looping forever.
-//!
-//! The state is per library: every plugin links its own copy of this crate.
+//! A panic inside a machine must not take the whole program (and its debugger,
+//! save-state writer and disk exit policies) down with no explanation. Every
+//! call a plugin answers is wrapped in [`guarded`] / [`guarded_call`]: a panic
+//! is caught, the first one is remembered (its text is what the host shows),
+//! and the call returns an error value. After a crash the machine is treated
+//! as dead -- see [`has_crashed`] -- and its fast-path functions report a
+//! halted machine rather than looping forever.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Mutex;
 
-use crate::abi::{RcCallResult, StatusCode};
-
 static CRASH: Mutex<Option<String>> = Mutex::new(None);
 
-/// The text of the first panic caught in this library, if any.
+/// The text of the first panic caught, if any.
 #[must_use]
 pub fn crash_message() -> Option<String> {
     CRASH
@@ -25,7 +21,7 @@ pub fn crash_message() -> Option<String> {
         .map_or_else(|e| e.into_inner().clone(), |g| g.clone())
 }
 
-/// Whether a panic was ever caught in this library.
+/// Whether a panic was ever caught.
 #[must_use]
 pub fn has_crashed() -> bool {
     crash_message().is_some()
@@ -61,21 +57,15 @@ pub fn guarded<T>(site: &str, on_panic: T, f: impl FnOnce() -> T) -> T {
     }
 }
 
-/// Runs a call that returns an [`RcCallResult`]; a panic (or an earlier
-/// crash of this plugin) becomes an `InternalError` carrying the text.
-pub fn guarded_call(site: &str, f: impl FnOnce() -> RcCallResult) -> RcCallResult {
+/// Runs a call that returns a `Result`; a panic (or an earlier crash) becomes
+/// an error carrying the text.
+pub fn guarded_call<T>(site: &str, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
     if let Some(message) = crash_message() {
-        return RcCallResult::error_with_message(
-            StatusCode::InternalError,
-            &format!("the plugin crashed earlier ({message})"),
-        );
+        return Err(format!("the plugin crashed earlier ({message})"));
     }
     match catch_unwind(AssertUnwindSafe(f)) {
         Ok(result) => result,
-        Err(payload) => {
-            let text = record(site, payload.as_ref());
-            RcCallResult::error_with_message(StatusCode::InternalError, &text)
-        }
+        Err(payload) => Err(record(site, payload.as_ref())),
     }
 }
 
@@ -105,11 +95,8 @@ mod tests {
         );
 
         // Calls after a crash are refused with the original text.
-        let result = guarded_call("instance_call", RcCallResult::empty_ok);
-        assert_eq!(result.status.code, StatusCode::InternalError as u32);
-        // SAFETY: produced by `error_with_message` in this library.
-        let text = String::from_utf8(unsafe { result.payload.into_vec() }).unwrap();
-        assert!(text.contains("crashed earlier"), "{text}");
-        assert!(text.contains("index out of range"), "{text}");
+        let error = guarded_call("instance_call", || Ok(())).unwrap_err();
+        assert!(error.contains("crashed earlier"), "{error}");
+        assert!(error.contains("index out of range"), "{error}");
     }
 }

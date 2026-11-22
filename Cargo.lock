@@ -89,6 +89,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "acia6551"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -232,6 +239,13 @@ dependencies = [
  "anstyle",
  "once_cell_polyfill",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "antic"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -410,6 +424,72 @@ dependencies = [
 ]
 
 [[package]]
+name = "atari-8bit"
+version = "0.1.0"
+dependencies = [
+ "antic",
+ "atari-media",
+ "bincode",
+ "gtia",
+ "machine",
+ "mos6502",
+ "pia-6520",
+ "pokey",
+ "serde",
+ "sha1",
+]
+
+[[package]]
+name = "atari-8bit-machine-plugin"
+version = "0.1.0"
+dependencies = [
+ "atari-8bit",
+ "bincode",
+ "build-info",
+ "gtia",
+ "machine",
+ "mos6502",
+ "plugin-api",
+ "serde",
+]
+
+[[package]]
+name = "atari-media"
+version = "0.1.0"
+
+[[package]]
+name = "atari-st"
+version = "0.1.0"
+dependencies = [
+ "ay-3-8910",
+ "bincode",
+ "blitter",
+ "crc32fast",
+ "ikbd",
+ "machine",
+ "mc68000",
+ "mc6850",
+ "mc68901",
+ "serde",
+ "sha1",
+ "st-floppy",
+ "st-shifter",
+ "wd1770",
+]
+
+[[package]]
+name = "atari-st-machine-plugin"
+version = "0.1.0"
+dependencies = [
+ "atari-st",
+ "build-info",
+ "machine",
+ "mc68000",
+ "plugin-api",
+ "serde",
+]
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -433,6 +513,14 @@ name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
+
+[[package]]
+name = "ay-3-8910"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "base64"
@@ -1913,6 +2001,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "blitter"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2001,6 +2096,116 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
+name = "c128"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "c1541",
+ "cia6526",
+ "d64",
+ "d71",
+ "d81",
+ "drive-link",
+ "machine",
+ "mos6502",
+ "serde",
+ "sid",
+ "vdc8563",
+ "vic-ii",
+ "z80",
+]
+
+[[package]]
+name = "c128-machine-plugin"
+version = "0.1.0"
+dependencies = [
+ "build-info",
+ "c128",
+ "c1541",
+ "d64",
+ "d71",
+ "d81",
+ "drive-link",
+ "g64",
+ "machine",
+ "mos6502",
+ "plugin-api",
+ "serde",
+ "toml 0.8.23",
+ "z80",
+]
+
+[[package]]
+name = "c1541"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "cia6526",
+ "d64",
+ "d71",
+ "d81",
+ "machine",
+ "mos6502",
+ "serde",
+ "via6522",
+ "wd1770",
+]
+
+[[package]]
+name = "c64"
+version = "0.1.0"
+dependencies = [
+ "acia6551",
+ "bincode",
+ "c1541",
+ "c64-cartridge",
+ "c64-tape",
+ "cbm-dos",
+ "cia6526",
+ "cs8900a",
+ "d64",
+ "d71",
+ "d81",
+ "machine",
+ "mos6502",
+ "serde",
+ "sid",
+ "vic-ii",
+]
+
+[[package]]
+name = "c64-cartridge"
+version = "0.1.0"
+
+[[package]]
+name = "c64-machine-plugin"
+version = "0.1.0"
+dependencies = [
+ "build-info",
+ "c1541",
+ "c64",
+ "c64-cartridge",
+ "c64-tape",
+ "d64",
+ "d71",
+ "d81",
+ "drive-link",
+ "g64",
+ "machine",
+ "mos6502",
+ "plugin-api",
+ "serde",
+ "toml 0.8.23",
+]
+
+[[package]]
+name = "c64-tape"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "calloop"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2025,6 +2230,10 @@ dependencies = [
  "wayland-backend",
  "wayland-client",
 ]
+
+[[package]]
+name = "cbm-dos"
+version = "0.1.0"
 
 [[package]]
 name = "cc"
@@ -2068,10 +2277,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "chd"
+version = "0.1.0"
+dependencies = [
+ "claxon",
+ "flate2",
+ "lzma-rust2",
+ "ruzstd",
+ "sha1",
+]
+
+[[package]]
 name = "chunked_transfer"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e4de3bc4ea267985becf712dc6d9eed8b04c953b3fcfb339ebc87acd9804901"
+
+[[package]]
+name = "cia6526"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "clap"
@@ -2113,6 +2340,12 @@ name = "clap_lex"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
+
+[[package]]
+name = "claxon"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bfbf56724aa9eca8afa4fcfadeb479e722935bb2a0900c2d37e0cc477af0688"
 
 [[package]]
 name = "clipboard-win"
@@ -2330,6 +2563,52 @@ dependencies = [
 ]
 
 [[package]]
+name = "cpc"
+version = "0.1.0"
+dependencies = [
+ "ay-3-8910",
+ "bincode",
+ "cpc-snapshot",
+ "dsk",
+ "i8255",
+ "machine",
+ "nec765",
+ "serde",
+ "tracing",
+ "z80",
+ "zx-tape",
+]
+
+[[package]]
+name = "cpc-cartridge"
+version = "0.1.0"
+
+[[package]]
+name = "cpc-machine-plugin"
+version = "0.1.0"
+dependencies = [
+ "build-info",
+ "cpc",
+ "cpc-cartridge",
+ "cpc-snapshot",
+ "dsk",
+ "machine",
+ "plugin-api",
+ "serde",
+ "toml 0.8.23",
+ "tracing",
+ "z80",
+ "zx-tape",
+]
+
+[[package]]
+name = "cpc-snapshot"
+version = "0.1.0"
+dependencies = [
+ "z80",
+]
+
+[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2403,6 +2682,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cs8900a"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "ctrlc"
 version = "3.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2418,6 +2704,29 @@ name = "cursor-icon"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
+
+[[package]]
+name = "d64"
+version = "0.1.0"
+dependencies = [
+ "cbm-dos",
+ "d71",
+ "d81",
+]
+
+[[package]]
+name = "d71"
+version = "0.1.0"
+dependencies = [
+ "cbm-dos",
+]
+
+[[package]]
+name = "d81"
+version = "0.1.0"
+dependencies = [
+ "cbm-dos",
+]
 
 [[package]]
 name = "dasp_sample"
@@ -2479,6 +2788,13 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer",
  "crypto-common",
+]
+
+[[package]]
+name = "disc"
+version = "0.1.0"
+dependencies = [
+ "chd",
 ]
 
 [[package]]
@@ -2551,6 +2867,20 @@ name = "dpi"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
+
+[[package]]
+name = "drive-link"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "c1541",
+ "c64",
+ "d64",
+ "d71",
+ "d81",
+ "machine",
+ "serde",
+]
 
 [[package]]
 name = "dsk"
@@ -2863,6 +3193,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "g64"
+version = "0.1.0"
+dependencies = [
+ "d64",
+]
+
+[[package]]
 name = "game-config"
 version = "0.1.0"
 dependencies = [
@@ -2893,6 +3230,22 @@ checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
 dependencies = [
  "typenum",
  "version_check",
+]
+
+[[package]]
+name = "genesis"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "crc32fast",
+ "machine",
+ "mc68000",
+ "md-cart",
+ "serde",
+ "sn76489",
+ "vdp",
+ "ym2612",
+ "z80",
 ]
 
 [[package]]
@@ -3062,6 +3415,13 @@ name = "grid"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b40ca9252762c466af32d0b1002e91e4e1bc5398f77455e55474deb466355ff5"
+
+[[package]]
+name = "gtia"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "guillotiere"
@@ -3284,6 +3644,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "i8255"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "icu_collections"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3430,6 +3797,13 @@ checksum = "cb68373c0d6620ef8105e855e7745e18b0d00d3bdb07fb532e434244cdb9a714"
 dependencies = [
  "icu_normalizer",
  "icu_properties",
+]
+
+[[package]]
+name = "ikbd"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -3740,6 +4114,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
+name = "lzma-rust2"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "490750560fa7851fbbf5d3ab1a8750f09350ed361ed8aed85b1e1e40587812ee"
+
+[[package]]
+name = "m68k"
+version = "0.14.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6e4f48ab35e05ea00285865cd57f8346657100655e4bd54c69725c32bfabe12"
+
+[[package]]
 name = "mach2"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3760,6 +4146,48 @@ checksum = "d1525a2a28c7f4fa0fc98bb91ae755d1e2d1505079e05539e35bc876b5d65ae9"
 dependencies = [
  "regex-automata",
 ]
+
+[[package]]
+name = "mc68000"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "m68k",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mc6850"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "mc68901"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "mcd-asic"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "mcd-gate-array"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "md-cart"
+version = "0.1.0"
 
 [[package]]
 name = "memchr"
@@ -3897,6 +4325,45 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee6cda3051665f1fb8d9e08fc35c96d5a244fb1be711a03b71118828afc9a873"
 dependencies = [
  "jni-sys 0.3.1",
+]
+
+[[package]]
+name = "nec765"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "dsk",
+ "serde",
+]
+
+[[package]]
+name = "neo-set"
+version = "0.1.0"
+dependencies = [
+ "zip",
+]
+
+[[package]]
+name = "neogeo"
+version = "0.1.0"
+dependencies = [
+ "machine",
+ "mc68000",
+ "neo-set",
+ "ym2610",
+ "z80",
+ "zip",
+]
+
+[[package]]
+name = "neogeo-machine-plugin"
+version = "0.1.0"
+dependencies = [
+ "build-info",
+ "neogeo",
+ "plugin-api",
+ "serde",
+ "ym2610",
 ]
 
 [[package]]
@@ -4530,6 +4997,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pia-6520"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "pin-project"
 version = "1.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4601,6 +5075,13 @@ dependencies = [
 
 [[package]]
 name = "pok"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "pokey"
 version = "0.1.0"
 dependencies = [
  "serde",
@@ -4870,6 +5351,121 @@ dependencies = [
 ]
 
 [[package]]
+name = "rc-common"
+version = "0.1.0"
+
+[[package]]
+name = "rc-suite"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "cpc-snapshot",
+ "png",
+ "rcasm",
+ "rcdisk",
+ "rcld",
+ "rcsnap",
+ "serde",
+ "sha2",
+ "toml 0.8.23",
+ "zx-tape",
+]
+
+[[package]]
+name = "rcasm"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "machine",
+ "mc68000",
+ "mos6502",
+ "rc-common",
+ "z80",
+]
+
+[[package]]
+name = "rcchd"
+version = "0.1.0"
+dependencies = [
+ "chd",
+ "clap",
+ "rc-common",
+]
+
+[[package]]
+name = "rcdis"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "machine",
+ "mc68000",
+ "mos6502",
+ "rc-common",
+ "rcasm",
+ "z80",
+]
+
+[[package]]
+name = "rcdisk"
+version = "0.1.0"
+dependencies = [
+ "atari-media",
+ "cbm-dos",
+ "clap",
+ "d64",
+ "d71",
+ "d81",
+ "dsk",
+ "g64",
+ "rc-common",
+ "rcasm",
+]
+
+[[package]]
+name = "rcld"
+version = "0.1.0"
+dependencies = [
+ "atari-media",
+ "c64-cartridge",
+ "clap",
+ "rc-common",
+ "rcasm",
+ "rcdisk",
+ "rcsnap",
+ "rctape",
+ "serde",
+ "toml 0.8.23",
+]
+
+[[package]]
+name = "rcsnap"
+version = "0.1.0"
+dependencies = [
+ "c64-cartridge",
+ "clap",
+ "cpc-cartridge",
+ "cpc-snapshot",
+ "rc-common",
+ "rcasm",
+ "sna-snapshot",
+ "szx-snapshot",
+ "z80",
+ "z80-snapshot",
+ "zx81-snapshot",
+]
+
+[[package]]
+name = "rctape"
+version = "0.1.0"
+dependencies = [
+ "c64-tape",
+ "clap",
+ "rc-common",
+ "rcasm",
+ "zx-tape",
+]
+
+[[package]]
 name = "read-fonts"
 version = "0.39.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5004,21 +5600,27 @@ version = "0.1.0"
 dependencies = [
  "app-config",
  "arboard",
+ "atari-8bit-machine-plugin",
+ "atari-st-machine-plugin",
  "bevy",
  "build-info",
+ "c128-machine-plugin",
+ "c64-machine-plugin",
  "clap",
  "cpal",
+ "cpc-machine-plugin",
  "dsk",
  "file-loader",
  "game-config",
- "libloading",
  "machine",
  "mos6502",
+ "neogeo-machine-plugin",
  "plugin-api",
  "png",
  "pok",
  "reqwest",
  "rfd",
+ "sega-machine-plugin",
  "serde",
  "serde_json",
  "sha1",
@@ -5029,10 +5631,20 @@ dependencies = [
  "toml 0.8.23",
  "tracing",
  "tracing-subscriber",
+ "vic20-machine-plugin",
  "winit",
  "winresource",
  "z80",
  "zip",
+ "zx-spectrum-machine-plugin",
+ "zx81-machine-plugin",
+]
+
+[[package]]
+name = "rf5c164"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -5204,10 +5816,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
+name = "ruzstd"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69e4ce4a039f42bf25920b95667e4d789e98749ab11bbb8d2c2936f788421bb5"
+
+[[package]]
 name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
+name = "safe_arch"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42c6efa15875e6ecb39ca61fb0b0c1a40b84fac5a5ffe71eef7d1000c8eb3f5f"
+dependencies = [
+ "bytemuck",
+]
 
 [[package]]
 name = "same-file"
@@ -5273,6 +5900,36 @@ checksum = "6ce2691df843ecc5d231c0b14ece2acc3efb62c0a398c7e1d875f3983ce020e3"
 dependencies = [
  "core-foundation-sys",
  "libc",
+]
+
+[[package]]
+name = "sega-machine-plugin"
+version = "0.1.0"
+dependencies = [
+ "build-info",
+ "disc",
+ "genesis",
+ "machine",
+ "md-cart",
+ "plugin-api",
+ "segacd",
+ "serde",
+]
+
+[[package]]
+name = "segacd"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "crc32fast",
+ "disc",
+ "genesis",
+ "machine",
+ "mc68000",
+ "mcd-asic",
+ "mcd-gate-array",
+ "rf5c164",
+ "serde",
 ]
 
 [[package]]
@@ -5372,6 +6029,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.17",
+ "digest",
+]
+
+[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5385,6 +6053,13 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+
+[[package]]
+name = "sid"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "simd-adler32"
@@ -5407,6 +6082,13 @@ name = "simdutf8"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
+
+[[package]]
+name = "sinclair-keyboard"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "skrifa"
@@ -5484,6 +6166,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sn76489"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "sna-snapshot"
+version = "0.1.0"
+dependencies = [
+ "z80",
+]
+
+[[package]]
 name = "socket2"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5509,6 +6205,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9571ea910ebd84c86af4b3ed27f9dbdc6ad06f17c5f96146b2b671e2976744f"
 dependencies = [
  "bitflags 2.13.1",
+]
+
+[[package]]
+name = "st-floppy"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "serde",
+ "wd1770",
+]
+
+[[package]]
+name = "st-shifter"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -5630,6 +6342,14 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-io-kit",
  "windows",
+]
+
+[[package]]
+name = "szx-snapshot"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "z80",
 ]
 
 [[package]]
@@ -6247,6 +6967,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "vdc8563"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "vdp"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "vec_map"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6257,6 +6991,65 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "via6522"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "vic-i"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "serde",
+]
+
+[[package]]
+name = "vic-ii"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "wide",
+]
+
+[[package]]
+name = "vic20"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "c1541",
+ "c64-tape",
+ "d64",
+ "drive-link",
+ "machine",
+ "mos6502",
+ "serde",
+ "sha1",
+ "via6522",
+ "vic-i",
+ "vic20-cartridge",
+]
+
+[[package]]
+name = "vic20-cartridge"
+version = "0.1.0"
+
+[[package]]
+name = "vic20-machine-plugin"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "build-info",
+ "machine",
+ "mos6502",
+ "plugin-api",
+ "serde",
+ "vic-i",
+ "vic20",
+]
 
 [[package]]
 name = "virtue"
@@ -6463,6 +7256,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "wd1770"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "weak-table"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6665,6 +7465,16 @@ dependencies = [
  "raw-window-handle",
  "serde",
  "web-sys",
+]
+
+[[package]]
+name = "wide"
+version = "1.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d920ac99c3c8edce110cb8d07dbb324d6d026011dce85b1e9355b70f0adacc4f"
+dependencies = [
+ "bytemuck",
+ "safe_arch",
 ]
 
 [[package]]
@@ -7219,6 +8029,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e01738255b5a16e78bbb83e7fbba0a1e7dd506905cfc53f4622d89015a03fbb5"
 
 [[package]]
+name = "ym2610"
+version = "0.1.0"
+dependencies = [
+ "ay-3-8910",
+]
+
+[[package]]
+name = "ym2612"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "yoke"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7245,8 +8069,16 @@ dependencies = [
 name = "z80"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "machine",
  "serde",
+]
+
+[[package]]
+name = "z80-snapshot"
+version = "0.1.0"
+dependencies = [
+ "z80",
 ]
 
 [[package]]
@@ -7377,3 +8209,79 @@ dependencies = [
  "log",
  "simd-adler32",
 ]
+
+[[package]]
+name = "zx-spectrum"
+version = "0.1.0"
+dependencies = [
+ "ay-3-8910",
+ "bincode",
+ "dsk",
+ "machine",
+ "nec765",
+ "serde",
+ "sinclair-keyboard",
+ "sna-snapshot",
+ "szx-snapshot",
+ "z80",
+ "z80-snapshot",
+ "zx-tape",
+]
+
+[[package]]
+name = "zx-spectrum-machine-plugin"
+version = "0.1.0"
+dependencies = [
+ "build-info",
+ "dsk",
+ "machine",
+ "plugin-api",
+ "serde",
+ "sna-snapshot",
+ "szx-snapshot",
+ "toml 0.8.23",
+ "z80",
+ "z80-snapshot",
+ "zx-spectrum",
+ "zx-tape",
+]
+
+[[package]]
+name = "zx-tape"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "serde",
+]
+
+[[package]]
+name = "zx81"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "machine",
+ "serde",
+ "sinclair-keyboard",
+ "z80",
+ "zx-tape",
+ "zx81-snapshot",
+]
+
+[[package]]
+name = "zx81-machine-plugin"
+version = "0.1.0"
+dependencies = [
+ "build-info",
+ "machine",
+ "plugin-api",
+ "serde",
+ "toml 0.8.23",
+ "z80",
+ "zx-tape",
+ "zx81",
+ "zx81-snapshot",
+]
+
+[[package]]
+name = "zx81-snapshot"
+version = "0.1.0"

@@ -1,26 +1,16 @@
 use std::collections::{HashMap, HashSet};
-use std::env;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use machine::{AUDIO_SAMPLE_RATE, Addr, Machine};
 use plugin_api::{
-    ABI_MAJOR_V1, ABI_MINOR_V1, BinaryBlob, ChipSnapshot, CpuFamily, DebugCommand, DebugResponse,
-    DebugValue, HostMouseButton, ListProfilesRequest, ListProfilesResponse,
-    MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest,
-    MachineCreateResponse, MachineDebugCapability, MachineInstanceCallRequest,
-    MachineInstanceCallResponse, MachineInstanceHandle, MachineMetadata, MachinePluginVTableV1,
-    MachineProfile, MachineResponse, MediaKind, MediaSlot, NamedValue, PluginDescriptorV1,
-    PluginEntryV1, PluginKind, PortHitInfo, PortWatchSpec, REQUIRED_MACHINE_DEBUG_CAPABILITIES,
-    RcBuffer, RcCallResult, RcSlice, decode_message, encode_message,
+    BinaryBlob, ChipSnapshot, CpuFamily, DebugCommand, DebugResponse, DebugValue, HostMouseButton,
+    ListProfilesRequest, ListProfilesResponse, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability,
+    MachineCommand, MachineCreateRequest, MachineCreateResponse, MachineDebugCapability,
+    MachineInstanceCallRequest, MachineInstanceCallResponse, MachineInstanceHandle,
+    MachineMetadata, MachinePlugin, MachineProfile, MachineResponse, MediaKind, MediaSlot,
+    NamedValue, PortHitInfo, PortWatchSpec, REQUIRED_MACHINE_DEBUG_CAPABILITIES,
 };
-
-const MACHINE_PLUGIN_ENV_VAR: &str = "RETROCLAWD_MACHINE_PLUGIN";
-const MACHINE_PLUGINS_ENV_VAR: &str = "RETROCLAWD_MACHINE_PLUGINS";
-const MACHINE_PLUGIN_DIRS_ENV_VAR: &str = "RETROCLAWD_MACHINE_PLUGIN_DIRS";
-const MACHINE_PLUGIN_ENTRY_SYMBOLS: [&[u8]; 2] =
-    [b"retroclawd_plugin_entry_v1\0", b"plugin_entry_v1\0"];
 
 static REGISTER_LABELS: OnceLock<Mutex<HashMap<String, &'static str>>> = OnceLock::new();
 static RUNTIME_CATALOG: OnceLock<Result<RuntimeCatalog, String>> = OnceLock::new();
@@ -82,8 +72,6 @@ pub(crate) struct OverlayDebugSnapshot {
 pub(crate) struct StartupPluginReport {
     pub(crate) plugin_id: String,
     pub(crate) plugin_version: String,
-    /// The `(major, minor)` plugin ABI the library was built against.
-    pub(crate) abi: (u16, u16),
     pub(crate) source: String,
     pub(crate) machine_ids: Vec<String>,
 }
@@ -97,7 +85,7 @@ pub(crate) struct StartupReport {
 
 #[derive(Clone)]
 struct HostedBackend {
-    plugin: Arc<PluginV1MachineBackend>,
+    plugin: Arc<PluginBackend>,
 }
 
 /// What to do with a modified disk image when the machine goes away.
@@ -199,240 +187,32 @@ fn intern_register_label(label: &str) -> &'static str {
     leaked
 }
 
-fn status_label(code: u32) -> &'static str {
-    match code {
-        0x0000_0000 => "ok",
-        0x0000_0001 => "unknown",
-        0x0000_0002 => "invalid request",
-        0x0000_0003 => "unsupported",
-        0x0000_0004 => "not found",
-        0x0000_0005 => "io",
-        0x0000_0006 => "decode",
-        0x0000_0007 => "encode",
-        0x0000_0008 => "abi mismatch",
-        0x0000_0009 => "internal",
-        _ => "unknown",
-    }
-}
-
-fn copy_and_free_payload(vtable: &MachinePluginVTableV1, payload: RcBuffer) -> Vec<u8> {
-    let bytes = if payload.ptr.is_null() || payload.len == 0 {
-        Vec::new()
-    } else {
-        // SAFETY: plugin returned a buffer valid for len bytes until free_buffer.
-        unsafe { std::slice::from_raw_parts(payload.ptr, payload.len) }.to_vec()
-    };
-    // SAFETY: plugin contract says free_buffer owns/frees this payload.
-    unsafe { (vtable.free_buffer)(payload) };
-    bytes
-}
-
-fn decode_call_payload(
-    vtable: &MachinePluginVTableV1,
-    result: RcCallResult,
-) -> Result<Vec<u8>, String> {
-    let status = result.status;
-    if !status.is_ok() {
-        // A plugin may explain the failure as UTF-8 text in the payload.
-        let message = String::from_utf8_lossy(&copy_and_free_payload(vtable, result.payload))
-            .trim()
-            .to_string();
-        if !message.is_empty() {
-            return Err(message);
-        }
-        return Err(format!(
-            "machine plugin call failed: {} ({})",
-            status.code,
-            status_label(status.code)
-        ));
-    }
-    Ok(copy_and_free_payload(vtable, result.payload))
-}
-
-fn rc_slice_utf8(slice: RcSlice) -> String {
-    // SAFETY: descriptor bytes are plugin-owned static data by ABI contract.
-    let bytes = unsafe { slice.as_bytes() };
-    String::from_utf8_lossy(bytes).to_string()
-}
-
-struct PluginHost {
-    vtable: MachinePluginVTableV1,
-}
-
-impl PluginHost {
-    fn validate_descriptor_compatibility(
-        descriptor: &PluginDescriptorV1,
-        host_abi_major: u16,
-        host_abi_minor: u16,
-    ) -> Result<(), String> {
-        plugin_api::compat::check_descriptor(
-            descriptor,
-            "machine",
-            PluginKind::Machine,
-            host_abi_major,
-            host_abi_minor,
-        )
-    }
-
-    fn from_descriptor(descriptor: &PluginDescriptorV1) -> Result<Self, String> {
-        Self::validate_descriptor_compatibility(descriptor, ABI_MAJOR_V1, ABI_MINOR_V1)?;
-        // SAFETY: descriptor.vtable validated non-null above and points at a vtable layout.
-        let vtable = unsafe { *descriptor.vtable.cast::<MachinePluginVTableV1>() };
-        plugin_api::compat::check_vtable_size(
-            "machine",
-            MachinePluginVTableV1::expected_size(),
-            vtable.size,
-        )?;
-        Ok(Self { vtable })
-    }
-
-    fn list_profiles(&self, req: ListProfilesRequest) -> Result<ListProfilesResponse, String> {
-        let req_bytes = encode_message(&req).map_err(|e| e.to_string())?;
-        // SAFETY: request slice points to Rust-owned bytes for call duration.
-        let result = unsafe { (self.vtable.list_profiles)(RcSlice::from_bytes(&req_bytes)) };
-        let payload = decode_call_payload(&self.vtable, result)?;
-        decode_message(&payload).map_err(|e| e.to_string())
-    }
-
-    fn create_instance(&self, req: MachineCreateRequest) -> Result<MachineCreateResponse, String> {
-        let req_bytes = encode_message(&req).map_err(|e| e.to_string())?;
-        // SAFETY: request slice points to Rust-owned bytes for call duration.
-        let result = unsafe { (self.vtable.create_instance)(RcSlice::from_bytes(&req_bytes)) };
-        let payload = decode_call_payload(&self.vtable, result)?;
-        decode_message(&payload).map_err(|e| e.to_string())
-    }
-
-    fn destroy_instance(&self, instance: MachineInstanceHandle) -> Result<(), String> {
-        // SAFETY: instance handle came from this plugin's create_instance response.
-        let status = unsafe { (self.vtable.destroy_instance)(instance) };
-        if status.is_ok() {
-            Ok(())
-        } else {
-            Err(format!(
-                "machine plugin destroy failed: {} ({})",
-                status.code,
-                status_label(status.code)
-            ))
-        }
-    }
-
-    fn instance_call(
-        &self,
-        instance: MachineInstanceHandle,
-        req: MachineInstanceCallRequest,
-    ) -> Result<MachineInstanceCallResponse, String> {
-        let req_bytes = encode_message(&req).map_err(|e| e.to_string())?;
-        // SAFETY: request slice points to Rust-owned bytes for call duration.
-        let result =
-            unsafe { (self.vtable.instance_call)(instance, RcSlice::from_bytes(&req_bytes)) };
-        let payload = decode_call_payload(&self.vtable, result)?;
-        decode_message(&payload).map_err(|e| e.to_string())
-    }
-
-    /// Fast path for `Machine::step` -- bypasses `instance_call`'s
-    /// bincode-encode/FFI/bincode-decode round trip entirely, since this is
-    /// called once per emulated CPU instruction (see `emu_thread.rs`'s
-    /// `advance_one_frame`). See `MachinePluginVTableV1::step`'s own doc
-    /// comment in `plugin-api` for the full rationale.
-    fn step_fast(&self, instance: MachineInstanceHandle) -> u32 {
-        // SAFETY: instance handle came from this plugin's create_instance
-        // response; the vtable's ABI-minor-gated `step` field is guaranteed
-        // present by `from_descriptor`'s own compatibility check.
-        unsafe { (self.vtable.step)(instance) }
-    }
-
-    /// Fast path for `Machine::halted` -- see `step_fast`'s own doc comment.
-    fn halted_fast(&self, instance: MachineInstanceHandle) -> bool {
-        // SAFETY: see `step_fast`.
-        unsafe { (self.vtable.halted)(instance) != 0 }
-    }
-
-    /// Fast path for `Machine::pc` -- see `step_fast`'s own doc comment.
-    fn pc_fast(&self, instance: MachineInstanceHandle) -> u64 {
-        // SAFETY: see `step_fast`.
-        unsafe { (self.vtable.pc_wide)(instance) }
-    }
-}
-
-struct PluginV1MachineBackend {
-    host: PluginHost,
-    abi: (u16, u16),
+/// One machine family, linked into the program.
+struct PluginBackend {
+    plugin: &'static dyn MachinePlugin,
     templates: Mutex<HashMap<MachineInstanceHandle, MachineCreateRequest>>,
     plugin_id: String,
     plugin_version: String,
-    source: PathBuf,
+    source: String,
 }
 
-impl PluginV1MachineBackend {
-    fn from_descriptor(descriptor: &PluginDescriptorV1, source: PathBuf) -> Result<Self, String> {
-        let plugin_id = rc_slice_utf8(descriptor.id);
-        let plugin_version = rc_slice_utf8(descriptor.version);
-        let host = PluginHost::from_descriptor(descriptor)?;
-        Ok(Self {
-            host,
-            abi: (descriptor.abi_major, descriptor.abi_minor),
+impl PluginBackend {
+    fn new(plugin: &'static dyn MachinePlugin) -> Self {
+        Self {
+            plugin,
             templates: Mutex::new(HashMap::new()),
-            plugin_id,
-            plugin_version,
-            source,
-        })
-    }
-
-    fn load_from_static(entry: PluginEntryV1, source: PathBuf) -> Result<Self, String> {
-        // SAFETY: a plugin entry returns a pointer to immutable static data.
-        let descriptor =
-            unsafe { plugin_api::compat::descriptor_from_entry(entry(), "machine", ABI_MAJOR_V1)? };
-        Self::from_descriptor(descriptor, source)
-    }
-
-    fn load_from_library(path: &Path) -> Result<Self, String> {
-        // SAFETY: loading explicit host-selected shared library path.
-        let library = unsafe { libloading::Library::new(path) }.map_err(|e| {
-            format!(
-                "failed to load machine plugin library {}: {e}",
-                path.display()
-            )
-        })?;
-        let leaked_library: &'static libloading::Library = Box::leak(Box::new(library));
-
-        let mut descriptor: Option<PluginDescriptorV1> = None;
-        let mut last_symbol_error: Option<String> = None;
-        for symbol in MACHINE_PLUGIN_ENTRY_SYMBOLS {
-            // SAFETY: symbol bytes are static and null-terminated.
-            match unsafe { leaked_library.get::<PluginEntryV1>(symbol) } {
-                Ok(entry) => {
-                    // SAFETY: plugin-owned function pointer contract; the
-                    // descriptor is immutable static data of a library that
-                    // is never unloaded, and is only interpreted after its
-                    // ABI major version matched.
-                    descriptor = Some(*unsafe {
-                        plugin_api::compat::descriptor_from_entry(entry(), "machine", ABI_MAJOR_V1)
-                    }?);
-                    break;
-                }
-                Err(e) => {
-                    last_symbol_error = Some(e.to_string());
-                }
-            }
+            plugin_id: plugin.id().to_string(),
+            plugin_version: plugin.version().to_string(),
+            source: "built in".to_string(),
         }
-
-        let descriptor = descriptor.ok_or_else(|| {
-            format!(
-                "machine plugin entry symbol not found (tried {:?}): {}",
-                MACHINE_PLUGIN_ENTRY_SYMBOLS,
-                last_symbol_error.unwrap_or_else(|| "no symbol probe attempted".to_string())
-            )
-        })?;
-
-        Self::from_descriptor(&descriptor, path.to_path_buf())
     }
 
     fn list_profiles(&self, req: ListProfilesRequest) -> Result<ListProfilesResponse, String> {
-        self.host.list_profiles(req)
+        self.plugin.list_profiles(req)
     }
 
     fn create_instance(&self, req: MachineCreateRequest) -> Result<MachineCreateResponse, String> {
-        let response = self.host.create_instance(req.clone())?;
+        let response = self.plugin.create_instance(req.clone())?;
         let mut templates = self.templates.lock().unwrap();
         templates.insert(response.instance, req);
         Ok(response)
@@ -441,7 +221,7 @@ impl PluginV1MachineBackend {
     fn destroy_instance(&self, instance: MachineInstanceHandle) -> Result<(), String> {
         let mut templates = self.templates.lock().unwrap();
         templates.remove(&instance);
-        self.host.destroy_instance(instance)
+        self.plugin.destroy_instance(instance)
     }
 
     fn instance_call(
@@ -449,19 +229,19 @@ impl PluginV1MachineBackend {
         instance: MachineInstanceHandle,
         req: MachineInstanceCallRequest,
     ) -> Result<MachineInstanceCallResponse, String> {
-        self.host.instance_call(instance, req)
+        self.plugin.instance_call(instance, req)
     }
 
     fn step_fast(&self, instance: MachineInstanceHandle) -> u32 {
-        self.host.step_fast(instance)
+        self.plugin.step(instance)
     }
 
     fn halted_fast(&self, instance: MachineInstanceHandle) -> bool {
-        self.host.halted_fast(instance)
+        self.plugin.halted(instance)
     }
 
     fn pc_fast(&self, instance: MachineInstanceHandle) -> u64 {
-        self.host.pc_fast(instance)
+        self.plugin.pc(instance)
     }
 
     fn clone_instance(
@@ -519,126 +299,15 @@ impl PluginV1MachineBackend {
 struct LoadedPluginSummary {
     plugin_id: String,
     plugin_version: String,
-    abi: (u16, u16),
-    source: PathBuf,
+    source: String,
     machine_ids: Vec<String>,
 }
 
 struct RuntimeCatalog {
     plugins: Vec<LoadedPluginSummary>,
     profiles: Vec<MachineProfile>,
-    machine_backends: HashMap<String, Arc<PluginV1MachineBackend>>,
+    machine_backends: HashMap<String, Arc<PluginBackend>>,
     warnings: Vec<String>,
-}
-
-fn parse_path_list(var: &str) -> Vec<PathBuf> {
-    env::var_os(var)
-        .map(|value| env::split_paths(&value).collect())
-        .unwrap_or_default()
-}
-
-fn plugin_file_extension() -> &'static str {
-    #[cfg(target_os = "windows")]
-    {
-        "dll"
-    }
-    #[cfg(target_os = "linux")]
-    {
-        "so"
-    }
-    #[cfg(target_os = "macos")]
-    {
-        "dylib"
-    }
-}
-
-fn is_dynamic_library(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case(plugin_file_extension()))
-}
-
-fn looks_like_machine_plugin_filename(path: &Path) -> bool {
-    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
-    };
-    let lower = file_name.to_ascii_lowercase();
-    lower.contains("machine") && lower.contains("plugin")
-}
-
-/// Where machine plugin libraries are looked for when nothing is configured:
-/// a `plugins` folder next to the program, the program's own folder (where
-/// `cargo build --workspace` leaves them) and a `plugins` folder in the
-/// working directory. Unit tests look nowhere by default.
-fn default_plugin_dirs() -> Vec<PathBuf> {
-    if cfg!(test) {
-        return Vec::new();
-    }
-    let mut dirs = Vec::new();
-    if let Ok(exe) = env::current_exe()
-        && let Some(dir) = exe.parent()
-    {
-        dirs.push(dir.join("plugins"));
-        dirs.push(dir.to_path_buf());
-    }
-    dirs.push(PathBuf::from("plugins"));
-    dirs
-}
-
-/// `RETROCLAWD_MACHINE_PLUGIN_DIRS` if set, otherwise `default_plugin_dirs`.
-pub(crate) fn plugin_search_dirs() -> Vec<PathBuf> {
-    let dirs = parse_path_list(MACHINE_PLUGIN_DIRS_ENV_VAR);
-    if dirs.is_empty() {
-        default_plugin_dirs()
-    } else {
-        dirs
-    }
-}
-
-fn plugin_candidate_paths() -> Vec<PathBuf> {
-    let mut explicit = Vec::new();
-    if let Some(path) = env::var_os(MACHINE_PLUGIN_ENV_VAR) {
-        explicit.push(PathBuf::from(path));
-    }
-    explicit.extend(parse_path_list(MACHINE_PLUGINS_ENV_VAR));
-
-    // Directories searched when no explicit plugin is named:
-    // `RETROCLAWD_MACHINE_PLUGIN_DIRS` if set, otherwise the default
-    // locations next to the program (see `default_plugin_dirs`).
-    let mut candidates = if explicit.is_empty() {
-        let dirs = plugin_search_dirs();
-
-        let mut from_dirs = Vec::new();
-        for dir in dirs {
-            let Ok(entries) = fs::read_dir(&dir) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file()
-                    && is_dynamic_library(&path)
-                    && looks_like_machine_plugin_filename(&path)
-                {
-                    from_dirs.push(path);
-                }
-            }
-        }
-        from_dirs
-    } else {
-        explicit
-    };
-
-    let mut deduped = Vec::new();
-    let mut seen = HashSet::new();
-    for path in candidates.drain(..) {
-        let normalized = path.canonicalize().unwrap_or(path.clone());
-        let key = normalized.to_string_lossy().to_lowercase();
-        if seen.insert(key) {
-            deduped.push(path);
-        }
-    }
-    deduped.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
-    deduped
 }
 
 fn debug_capability_label(capability: MachineDebugCapability) -> &'static str {
@@ -721,14 +390,14 @@ fn validate_profile_contract_with_version(
     profile: &MachineProfile,
     plugin_id: &str,
     plugin_version: &str,
-    source: &Path,
+    source: &str,
     host_contract_version: u16,
 ) -> Result<Option<String>, String> {
     if profile.contract_version != host_contract_version {
         return Err(format!(
             "machine profile contract mismatch for {} from {} ({}@{}): host={}, plugin={}",
             profile.machine_id,
-            source.display(),
+            source,
             plugin_id,
             plugin_version,
             host_contract_version,
@@ -766,7 +435,7 @@ fn validate_profile_contract_with_version(
     Err(format!(
         "profile {} from {} ({}@{}) is missing required debug contract capabilities: {}",
         profile.machine_id,
-        source.display(),
+        source,
         plugin_id,
         plugin_version,
         missing_labels
@@ -777,7 +446,7 @@ fn validate_profile_contract(
     profile: &MachineProfile,
     plugin_id: &str,
     plugin_version: &str,
-    source: &Path,
+    source: &str,
 ) -> Result<Option<String>, String> {
     validate_profile_contract_with_version(
         profile,
@@ -788,67 +457,34 @@ fn validate_profile_contract(
     )
 }
 
-/// The stub machine plugin, linked straight into a unit-test binary so the
-/// host tests have a machine to drive (the real machines live in their family
-/// repositories and are never linked into this one). The shipped
-/// binary links no machine at all: every machine is a plugin library loaded
-/// from disk (see `default_plugin_dirs`), so removing a machine means
-/// deleting its library.
-#[cfg(test)]
-fn bundled_machine_plugin_entries() -> Vec<(&'static str, PluginEntryV1)> {
-    vec![(
-        "test-machine-plugin",
-        test_machine_plugin_impl::entry_v1 as PluginEntryV1,
-    )]
-}
-
-#[cfg(not(test))]
-fn bundled_machine_plugin_entries() -> Vec<(&'static str, PluginEntryV1)> {
-    Vec::new()
-}
-
-fn bundled_backend_candidates() -> Vec<(String, Result<PluginV1MachineBackend, String>)> {
-    bundled_machine_plugin_entries()
-        .into_iter()
-        .map(|(name, entry)| {
-            let source = PathBuf::from(format!("bundled:{name}"));
-            (
-                source.display().to_string(),
-                PluginV1MachineBackend::load_from_static(entry, source),
-            )
-        })
-        .collect()
+/// The machine families linked into this program: the ones the build selected, plus the stub
+/// machine in this program's own unit tests.
+fn linked_plugins() -> Vec<&'static dyn MachinePlugin> {
+    #[allow(unused_mut)]
+    let mut plugins: Vec<&'static dyn MachinePlugin> = crate::families::all();
+    #[cfg(test)]
+    plugins.push(test_machine_plugin_impl::plugin());
+    plugins
 }
 
 type LoadedBackends = (
     Vec<LoadedPluginSummary>,
     Vec<MachineProfile>,
-    HashMap<String, Arc<PluginV1MachineBackend>>,
+    HashMap<String, Arc<PluginBackend>>,
     Vec<String>,
 );
 
-fn load_backend_candidates(
-    backend_candidates: Vec<(String, Result<PluginV1MachineBackend, String>)>,
-) -> Result<LoadedBackends, String> {
-    let mut plugins = Vec::new();
+fn load_backends(plugins: Vec<&'static dyn MachinePlugin>) -> Result<LoadedBackends, String> {
+    let mut summaries = Vec::new();
     let mut profiles = Vec::new();
-    let mut machine_backends: HashMap<String, Arc<PluginV1MachineBackend>> = HashMap::new();
+    let mut machine_backends: HashMap<String, Arc<PluginBackend>> = HashMap::new();
     let mut warnings = Vec::new();
 
-    for (candidate_label, backend_result) in backend_candidates {
-        let backend = match backend_result {
-            Ok(backend) => backend,
-            Err(error) => {
-                warnings.push(format!("skip {candidate_label}: {error}"));
-                continue;
-            }
-        };
-
+    for plugin in plugins {
+        let backend = Arc::new(PluginBackend::new(plugin));
         let plugin_id = backend.plugin_id.clone();
         let plugin_version = backend.plugin_version.clone();
-        let abi = backend.abi;
         let source = backend.source.clone();
-        let backend = Arc::new(backend);
 
         let response = match backend.list_profiles(ListProfilesRequest {
             include_experimental: false,
@@ -856,10 +492,7 @@ fn load_backend_candidates(
             Ok(response) => response,
             Err(error) => {
                 warnings.push(format!(
-                    "skip {} ({}@{}): list_profiles failed: {error}",
-                    source.display(),
-                    plugin_id,
-                    plugin_version
+                    "skip {plugin_id}@{plugin_version}: list_profiles failed: {error}"
                 ));
                 continue;
             }
@@ -884,71 +517,24 @@ fn load_backend_candidates(
             profiles.push(profile);
         }
 
-        plugins.push(LoadedPluginSummary {
+        summaries.push(LoadedPluginSummary {
             plugin_id,
             plugin_version,
-            abi,
             source,
             machine_ids,
         });
     }
 
-    Ok((plugins, profiles, machine_backends, warnings))
+    Ok((summaries, profiles, machine_backends, warnings))
 }
 
 fn discover_runtime_catalog() -> Result<RuntimeCatalog, String> {
-    let explicit_dynamic = env::var_os(MACHINE_PLUGIN_ENV_VAR).is_some()
-        || env::var_os(MACHINE_PLUGINS_ENV_VAR).is_some();
-    discover_runtime_catalog_from(
-        plugin_candidate_paths(),
-        explicit_dynamic,
-        plugin_search_dirs(),
-    )
-}
-
-/// The discovery proper, with its inputs given: the library files to try, whether the user named libraries
-/// explicitly, and the folders to mention when nothing is found. (Separate from the environment so a test can run it
-/// without touching process-wide variables.)
-fn discover_runtime_catalog_from(
-    candidates: Vec<PathBuf>,
-    explicit_dynamic: bool,
-    searched_dirs: Vec<PathBuf>,
-) -> Result<RuntimeCatalog, String> {
-    if candidates.is_empty() && explicit_dynamic {
-        return Err(
-            "no machine plugin candidates found from RETROCLAWD_MACHINE_PLUGIN or RETROCLAWD_MACHINE_PLUGINS"
-                .to_string(),
-        );
-    }
-
-    let scanned_disk = !candidates.is_empty();
-    let backend_candidates: Vec<(String, Result<PluginV1MachineBackend, String>)> = if scanned_disk
-    {
-        candidates
-            .into_iter()
-            .map(|path| {
-                let label = path.display().to_string();
-                let result = PluginV1MachineBackend::load_from_library(&path);
-                (label, result)
-            })
-            .collect()
-    } else {
-        bundled_backend_candidates()
-    };
-
-    let (mut plugins, mut profiles, machine_backends, warnings) =
-        load_backend_candidates(backend_candidates)?;
+    let (mut plugins, mut profiles, machine_backends, warnings) = load_backends(linked_plugins())?;
 
     if profiles.is_empty() {
-        let mut message = format!(
-            "no machine plugins found: put the machine plugin libraries (*_machine_plugin.{}) in one of {} (searched; set RETROCLAWD_MACHINE_PLUGIN_DIRS to look elsewhere)",
-            plugin_file_extension(),
-            searched_dirs
-                .iter()
-                .map(|d| d.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
+        let mut message =
+            "no machines are built into this program (build with at least one machine family feature)"
+                .to_string();
         if !warnings.is_empty() {
             message.push_str("; probe errors:\n");
             message.push_str(&warnings.join("\n"));
@@ -957,11 +543,7 @@ fn discover_runtime_catalog_from(
     }
 
     profiles.sort_by(|a, b| a.machine_id.cmp(&b.machine_id));
-    plugins.sort_by(|a, b| {
-        a.plugin_id
-            .cmp(&b.plugin_id)
-            .then_with(|| a.source.cmp(&b.source))
-    });
+    plugins.sort_by(|a, b| a.plugin_id.cmp(&b.plugin_id));
 
     Ok(RuntimeCatalog {
         plugins,
@@ -987,8 +569,7 @@ pub(crate) fn startup_report() -> Result<StartupReport, String> {
             .map(|p| StartupPluginReport {
                 plugin_id: p.plugin_id.clone(),
                 plugin_version: p.plugin_version.clone(),
-                abi: p.abi,
-                source: p.source.display().to_string(),
+                source: p.source.clone(),
                 machine_ids: p.machine_ids.clone(),
             })
             .collect(),
@@ -2173,18 +1754,13 @@ impl Machine for HostedMachine {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::c_void;
-    use std::path::Path;
-
     use plugin_api::{
-        ABI_MAJOR_V1, ABI_MINOR_V1, CpuFamily, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability,
-        MachineDebugCapability, MachineInstanceHandle, MachinePluginVTableV1, MachineProfile,
-        MediaKind, PluginDescriptorV1, PluginKind, RcCallResult, RcSlice, RcStatus, StatusCode,
+        CpuFamily, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineDebugCapability,
+        MachineProfile, MediaKind,
     };
 
     use super::{
-        ListProfilesRequest, PluginHost, PluginV1MachineBackend, chip_blob_u16_pairs,
-        validate_profile_contract, validate_profile_contract_with_version,
+        chip_blob_u16_pairs, validate_profile_contract, validate_profile_contract_with_version,
     };
 
     #[test]
@@ -2247,67 +1823,6 @@ mod tests {
         chip_blob_u16_pairs_drops_a_trailing_odd_byte();
     }
 
-    unsafe extern "C" fn test_list_profiles(_req: RcSlice) -> RcCallResult {
-        RcCallResult::error(StatusCode::Unsupported)
-    }
-
-    unsafe extern "C" fn test_create_instance(_req: RcSlice) -> RcCallResult {
-        RcCallResult::error(StatusCode::Unsupported)
-    }
-
-    unsafe extern "C" fn test_destroy_instance(_instance: MachineInstanceHandle) -> RcStatus {
-        RcStatus::ok()
-    }
-
-    unsafe extern "C" fn test_instance_call(
-        _instance: MachineInstanceHandle,
-        _req: RcSlice,
-    ) -> RcCallResult {
-        RcCallResult::error(StatusCode::Unsupported)
-    }
-
-    unsafe extern "C" fn test_free_buffer(_buffer: plugin_api::RcBuffer) {}
-
-    extern "C" fn test_step(_instance: MachineInstanceHandle) -> u32 {
-        0
-    }
-
-    extern "C" fn test_halted(_instance: MachineInstanceHandle) -> u8 {
-        1
-    }
-
-    extern "C" fn test_pc(_instance: MachineInstanceHandle) -> u16 {
-        0
-    }
-
-    extern "C" fn test_pc_wide(_instance: MachineInstanceHandle) -> u64 {
-        0
-    }
-
-    static TEST_VTABLE: MachinePluginVTableV1 = MachinePluginVTableV1 {
-        size: MachinePluginVTableV1::expected_size(),
-        list_profiles: test_list_profiles,
-        create_instance: test_create_instance,
-        destroy_instance: test_destroy_instance,
-        instance_call: test_instance_call,
-        free_buffer: test_free_buffer,
-        step: test_step,
-        halted: test_halted,
-        pc: test_pc,
-        pc_wide: test_pc_wide,
-    };
-
-    fn test_descriptor(abi_major: u16, abi_minor: u16) -> PluginDescriptorV1 {
-        PluginDescriptorV1 {
-            abi_major,
-            abi_minor,
-            kind: PluginKind::Machine,
-            id: RcSlice::empty(),
-            version: RcSlice::empty(),
-            vtable: (&TEST_VTABLE as *const MachinePluginVTableV1).cast::<c_void>(),
-        }
-    }
-
     fn profile_with_debug_contract() -> MachineProfile {
         MachineProfile {
             machine_id: "zx81".to_string(),
@@ -2337,195 +1852,6 @@ mod tests {
         }
     }
 
-    fn descriptor_compat_accepts_newer_minor_on_same_major() {
-        let descriptor = test_descriptor(ABI_MAJOR_V1, ABI_MINOR_V1 + 1);
-        PluginHost::validate_descriptor_compatibility(&descriptor, ABI_MAJOR_V1, ABI_MINOR_V1)
-            .expect("newer plugin minor should be accepted");
-    }
-
-    fn descriptor_compat_rejects_older_minor_against_newer_host() {
-        let descriptor = test_descriptor(ABI_MAJOR_V1, 1);
-        let err = PluginHost::validate_descriptor_compatibility(&descriptor, ABI_MAJOR_V1, 2)
-            .expect_err("older plugin minor must be rejected by newer host");
-        assert_eq!(
-            err,
-            "machine plugin ABI minor too old: host requires >= 2, plugin=1"
-        );
-    }
-
-    fn descriptor_compat_rejects_major_mismatch() {
-        let descriptor = test_descriptor(ABI_MAJOR_V1 + 1, ABI_MINOR_V1);
-        let err =
-            PluginHost::validate_descriptor_compatibility(&descriptor, ABI_MAJOR_V1, ABI_MINOR_V1)
-                .expect_err("major mismatch must fail");
-        assert_eq!(err, "machine plugin ABI major mismatch: host=1, plugin=2");
-    }
-    /// Merged (every check kept): `descriptor_compat_accepts_newer_minor_on_same_major`, `descriptor_compat_rejects_older_minor_against_newer_host`, `descriptor_compat_rejects_major_mismatch`.
-    #[test]
-    fn descriptor_compat() {
-        descriptor_compat_accepts_newer_minor_on_same_major();
-        descriptor_compat_rejects_older_minor_against_newer_host();
-        descriptor_compat_rejects_major_mismatch();
-    }
-
-    // ---- Version skew between host and plugin (policy: docs/plugin-abi.md) ----
-
-    /// What a future plugin (newer ABI minor) looks like to this host: the
-    /// vtable it knows about, then fields appended after it.
-    #[repr(C)]
-    struct FutureVTable {
-        base: MachinePluginVTableV1,
-        appended_in_a_later_minor: usize,
-    }
-
-    static FUTURE_VTABLE: FutureVTable = FutureVTable {
-        base: MachinePluginVTableV1 {
-            size: std::mem::size_of::<FutureVTable>() as u32,
-            list_profiles: test_list_profiles,
-            create_instance: test_create_instance,
-            destroy_instance: test_destroy_instance,
-            instance_call: test_instance_call,
-            free_buffer: test_free_buffer,
-            step: test_step_future,
-            halted: test_halted,
-            pc: test_pc,
-            pc_wide: test_pc_wide,
-        },
-        appended_in_a_later_minor: 0xDEAD_BEEF,
-    };
-
-    extern "C" fn test_step_future(_instance: MachineInstanceHandle) -> u32 {
-        4242
-    }
-
-    /// An ABI-minor-0 plugin: the vtable ended after `free_buffer`.
-    #[repr(C)]
-    struct MinorZeroVTable {
-        size: u32,
-        list_profiles: plugin_api::abi::MachineListProfilesFnV1,
-        create_instance: plugin_api::abi::MachineCreateInstanceFnV1,
-        destroy_instance: plugin_api::abi::MachineDestroyInstanceFnV1,
-        instance_call: plugin_api::abi::MachineInstanceCallFnV1,
-        free_buffer: plugin_api::abi::FreeBufferFnV1,
-    }
-
-    static MINOR_ZERO_VTABLE: MinorZeroVTable = MinorZeroVTable {
-        size: std::mem::size_of::<MinorZeroVTable>() as u32,
-        list_profiles: test_list_profiles,
-        create_instance: test_create_instance,
-        destroy_instance: test_destroy_instance,
-        instance_call: test_instance_call,
-        free_buffer: test_free_buffer,
-    };
-
-    fn descriptor_with(vtable: *const c_void, abi_minor: u16) -> PluginDescriptorV1 {
-        PluginDescriptorV1 {
-            abi_major: ABI_MAJOR_V1,
-            abi_minor,
-            kind: PluginKind::Machine,
-            id: RcSlice::empty(),
-            version: RcSlice::empty(),
-            vtable,
-        }
-    }
-
-    #[test]
-    fn a_newer_plugin_with_a_larger_vtable_loads_and_its_known_fields_work() {
-        let descriptor = descriptor_with(
-            (&FUTURE_VTABLE as *const FutureVTable).cast::<c_void>(),
-            ABI_MINOR_V1 + 1,
-        );
-        let host = PluginHost::from_descriptor(&descriptor)
-            .expect("a newer minor with a larger vtable must load");
-        assert_eq!(host.step_fast(1), 4242);
-        assert!(FUTURE_VTABLE.appended_in_a_later_minor != 0);
-    }
-
-    #[test]
-    fn an_older_minor_plugin_is_refused_without_reading_its_short_vtable() {
-        // The host's vtable has three more fields than this plugin's; the
-        // refusal must come from the version, never from reading past it.
-        let descriptor = descriptor_with(
-            (&MINOR_ZERO_VTABLE as *const MinorZeroVTable).cast::<c_void>(),
-            0,
-        );
-        let Err(err) = PluginHost::from_descriptor(&descriptor) else {
-            panic!("minor 0 must be refused by an ABI-minor-1 host");
-        };
-        assert_eq!(
-            err,
-            "machine plugin ABI minor too old: host requires >= 2, plugin=0"
-        );
-    }
-
-    #[test]
-    fn a_minor_one_plugin_without_pc_wide_is_refused_by_a_minor_two_host() {
-        // Minor 1 ended after `pc`; this host calls `pc_wide`, so it must
-        // never be allowed to read the missing field.
-        let descriptor = descriptor_with(
-            (&MINOR_ZERO_VTABLE as *const MinorZeroVTable).cast::<c_void>(),
-            1,
-        );
-        let Err(err) = PluginHost::from_descriptor(&descriptor) else {
-            panic!("minor 1 must be refused by an ABI-minor-2 host");
-        };
-        assert_eq!(
-            err,
-            "machine plugin ABI minor too old: host requires >= 2, plugin=1"
-        );
-    }
-
-    #[test]
-    fn a_plugin_that_claims_the_right_minor_but_ships_a_short_vtable_is_refused() {
-        // Reading a host-sized struct from the short one would run past it, so
-        // the loader trusts the `size` field before using any later field.
-        let err = plugin_api::compat::check_vtable_size(
-            "machine",
-            MachinePluginVTableV1::expected_size(),
-            MINOR_ZERO_VTABLE.size,
-        )
-        .unwrap_err();
-        assert!(err.contains("vtable too small"), "{err}");
-    }
-
-    unsafe extern "C" fn skewed_list_profiles(_req: RcSlice) -> RcCallResult {
-        // A plugin built against a different protocol: right envelope, the
-        // version a newer or older schema would write.
-        let bytes = plugin_api::encode(&plugin_api::ProtocolEnvelope {
-            protocol_version: plugin_api::PROTOCOL_VERSION + 1,
-            payload: ListProfilesRequest {
-                include_experimental: true,
-            },
-        })
-        .unwrap();
-        RcCallResult::ok_bytes(bytes)
-    }
-
-    unsafe extern "C" fn freeing_free_buffer(buffer: plugin_api::RcBuffer) {
-        // SAFETY: produced by `RcBuffer::from_vec` in this process.
-        let _ = unsafe { buffer.into_vec() };
-    }
-
-    #[test]
-    fn a_plugin_speaking_another_protocol_version_is_reported_as_such() {
-        let vtable = MachinePluginVTableV1 {
-            list_profiles: skewed_list_profiles,
-            free_buffer: freeing_free_buffer,
-            ..TEST_VTABLE
-        };
-        let host = PluginHost { vtable };
-        let err = host
-            .list_profiles(ListProfilesRequest {
-                include_experimental: false,
-            })
-            .expect_err("a protocol skew must be an error");
-        assert!(err.contains("protocol version mismatch"), "{err}");
-        assert!(
-            err.contains(&format!("expected {}", plugin_api::PROTOCOL_VERSION)),
-            "{err}"
-        );
-    }
-
     #[test]
     fn validate_profile_contract_accepts_full_debug_contract() {
         let profile = profile_with_debug_contract();
@@ -2533,7 +1859,7 @@ mod tests {
             &profile,
             "retroclawd.test.machine",
             "0.1.0",
-            Path::new("plugin.dll"),
+            "plugin.dll",
         )
         .expect("validation should pass");
         assert!(warning.is_none());
@@ -2547,7 +1873,7 @@ mod tests {
             &profile,
             "retroclawd.test.machine",
             "0.1.0",
-            Path::new("plugin.dll"),
+            "plugin.dll",
         )
         .expect_err("newer plugin contract must fail against old host");
         assert_eq!(
@@ -2562,7 +1888,7 @@ mod tests {
             &profile,
             "retroclawd.test.machine",
             "0.1.0",
-            Path::new("plugin.dll"),
+            "plugin.dll",
             MACHINE_PROFILE_CONTRACT_VERSION + 1,
         )
         .expect_err("older plugin contract must fail against newer host");
@@ -2590,7 +1916,7 @@ mod tests {
             &profile,
             "retroclawd.test.machine",
             "0.1.0",
-            Path::new("plugin.dll"),
+            "plugin.dll",
         )
         .expect("validation should emit warning, not error");
         assert_eq!(
@@ -2613,73 +1939,13 @@ mod tests {
             &profile,
             "retroclawd.test.machine",
             "0.1.0",
-            Path::new("plugin.dll"),
+            "plugin.dll",
         )
         .expect_err("missing required debug capability must fail");
         assert_eq!(
             err,
             "profile zx81 from plugin.dll (retroclawd.test.machine@0.1.0) is missing required debug contract capabilities: disassembly"
         );
-    }
-
-    #[test]
-    fn a_library_that_is_not_a_plugin_is_skipped_with_a_warning_and_nothing_else_is_loaded() {
-        // Machines are only ever loaded from libraries: a file that merely
-        // has the right name must not bring the (test-only) linked machines
-        // back, it is reported and the catalog stays empty.
-        let dir = std::env::temp_dir().join(format!(
-            "retroclawd_plugin_bogus_test_{}_{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&dir).expect("create temp plugin dir");
-        let bogus = dir.join(format!(
-            "cpc_machine_plugin.{}",
-            super::plugin_file_extension()
-        ));
-        std::fs::write(&bogus, b"not a real dynamic library").expect("write bogus plugin file");
-
-        // The discovery is given the file directly: no process-wide environment variable is touched, so no other
-        // test (several initialise the shared machine catalog) can see this bogus library.
-        let result = super::discover_runtime_catalog_from(vec![bogus], false, vec![dir.clone()]);
-        std::fs::remove_dir_all(&dir).ok();
-
-        let Err(error) = result else {
-            panic!("a bogus library provides no machines");
-        };
-        assert!(error.contains("no machine plugins found"), "{error}");
-        assert!(
-            error.contains("failed to load machine plugin library"),
-            "{error}"
-        );
-    }
-
-    /// The real thing: a machine shared library built by a family repository
-    /// is a complete plugin that exports its entry point and brings its
-    /// machines' profiles with it. This workspace builds no machine library,
-    /// so the test runs only when `RETROCLAWD_TEST_MACHINE_LIBRARY` names one
-    /// (the family repositories' CI points it at their own build).
-    #[test]
-    fn a_built_machine_library_loads_on_its_own_and_lists_its_machines() {
-        let Some(library) =
-            std::env::var_os("RETROCLAWD_TEST_MACHINE_LIBRARY").map(std::path::PathBuf::from)
-        else {
-            eprintln!("skipped: RETROCLAWD_TEST_MACHINE_LIBRARY is not set");
-            return;
-        };
-        assert!(library.is_file(), "{} is not a file", library.display());
-        let backend = PluginV1MachineBackend::load_from_library(&library)
-            .expect("the built library is a loadable plugin");
-        let profiles = backend
-            .list_profiles(ListProfilesRequest {
-                include_experimental: false,
-            })
-            .expect("profiles")
-            .profiles;
-        assert!(!profiles.is_empty(), "{library:?} offers no machine");
     }
 
     #[test]

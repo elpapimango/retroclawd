@@ -8,6 +8,7 @@ mod debugger;
 mod debuggers;
 mod dialogs;
 mod emu_thread;
+mod families;
 mod firmware;
 mod gui;
 mod host_files;
@@ -813,7 +814,6 @@ fn apply_plugin_runtime(plugin_values: &[String]) -> Result<PluginRuntime, Strin
     let mut runtime = PluginRuntime {
         debugger_plugins: Vec::new(),
     };
-    let mut machine_paths = Vec::<PathBuf>::new();
 
     for raw_selector in plugin_values {
         let selector = raw_selector.trim();
@@ -844,8 +844,9 @@ fn apply_plugin_runtime(plugin_values: &[String]) -> Result<PluginRuntime, Strin
                 return Err(format!("--plugin has empty value in {selector:?}"));
             }
             if kind.eq_ignore_ascii_case("machine") {
-                machine_paths.push(PathBuf::from(value));
-                continue;
+                return Err(format!(
+                    "--plugin {selector:?}: the machines are built into this program and are not loaded from files"
+                ));
             }
             if debuggers::canonical_selector(kind).is_some() {
                 return Err(format!(
@@ -863,14 +864,9 @@ fn apply_plugin_runtime(plugin_values: &[String]) -> Result<PluginRuntime, Strin
             continue;
         }
 
-        machine_paths.push(PathBuf::from(selector));
-    }
-
-    if !machine_paths.is_empty() {
-        let joined = env::join_paths(machine_paths.iter())
-            .map_err(|e| format!("invalid --plugin machine path list: {e}"))?;
-        // SAFETY: called during process startup before worker threads are spawned.
-        unsafe { env::set_var("RETROCLAWD_MACHINE_PLUGINS", joined) };
+        return Err(format!(
+            "unsupported --plugin selector {selector:?}; the machines are built into this program, the selectors are debug-ui[:...], debug-log[:...], debug-zrcp[:...] or debugger[:...]"
+        ));
     }
 
     Ok(runtime)
@@ -2161,11 +2157,9 @@ fn main() -> ExitCode {
     for plugin in &startup.plugins {
         tracing::info!(
             target: "retroclawd.startup",
-            "machine plugin {}@{} (ABI {}.{}) [{}] -> {}",
+            "machine family {}@{} [{}] -> {}",
             plugin.plugin_id,
             plugin.plugin_version,
-            plugin.abi.0,
-            plugin.abi.1,
             plugin.source,
             plugin.machine_ids.join(", ")
         );
