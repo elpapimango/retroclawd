@@ -1,0 +1,529 @@
+machine = "atari-800"
+# Only explicitly identified Altirra replacement ROMs are verified.
+# See docs/atari800-gaps.md for reference capture, limits and missing acceptance.
+
+[reference]
+emulator = "Atari800"
+version = "7.2.1 Win64, source 63a381884175e3cbfc745ff00dfb3d70d928eb50; Altirra Hardware Reference 2026-01-02 for POKEY divisors and raster counts"
+command = "python capture_atari800_screen.py OS OUT --basic BASIC --atari800 atari800.exe --region pal|ntsc --frames 300; private config, explicit ROMs, -nopatchall, alternating BLINE 156/0 and native F10 screenshot; S3 adds --program atari800-program.bin --org 0x2000 --frames 5 --memory 0x4000:256 --memory-out S3-program.bin"
+
+[files]
+rom-os = "atari/roms/atari800/altirraos_800.rom"
+rom-basic = "atari/roms/atari800/altirra_basic.rom"
+
+[[scenario]]
+id = "S1"
+kind = "screen"
+frames = 300
+golden = "atari-800/S1-pal.png"
+golden_sha256 = "5ebcc2676340d4cc8e19fda2fd4fdf3f927ca5aafb6b8118331d2175358a5081"
+compare = { mode = "similarity", max_mad = 0.01, normalize = true, crop = [0.08333333333333333, 0.1, 0.9166666666666666, 0.16666666666666666], golden_crop = [0.023809523809523808, 0.1, 0.9761904761904762, 0.16666666666666666], reason = "Compare all 320x16 pixels containing the stable replacement BASIC banner and Ready prompt; the next row is a blinking cursor. Remove only border geometry and palette differences, not glyph differences. Full video fidelity remains experimental." }
+
+[[scenario]]
+id = "S1-accurate"
+kind = "screen"
+frames = 300
+args = ["--execution-mode", "accurate"]
+golden = "atari-800/S1-pal.png"
+golden_sha256 = "5ebcc2676340d4cc8e19fda2fd4fdf3f927ca5aafb6b8118331d2175358a5081"
+compare = { mode = "similarity", max_mad = 0.01, normalize = true, crop = [0.08333333333333333, 0.1, 0.9166666666666666, 0.16666666666666666], golden_crop = [0.023809523809523808, 0.1, 0.9761904761904762, 0.16666666666666666], reason = "Stable 320x16 banner and Ready prompt, excluding the following blinking-cursor row; normalize palette and border only." }
+
+[[scenario]]
+id = "S1-ntsc"
+kind = "screen"
+frames = 300
+args = ["--region", "ntsc"]
+golden = "atari-800/S1-ntsc.png"
+golden_sha256 = "c309075dfe83c6781e78e24418eaf6382244db42d5dc934e88c8252815a3b682"
+compare = { mode = "similarity", max_mad = 0.01, normalize = true, crop = [0.08333333333333333, 0.1, 0.9166666666666666, 0.16666666666666666], golden_crop = [0.023809523809523808, 0.07142857142857142, 0.9761904761904762, 0.14285714285714285], reason = "Same stable 320x16 banner and Ready prompt; Atari800's actual NTSC PNG is 336x224 with text at y=16, not PAL's 336x240 with text at y=24. Exclude only the blinking-cursor row and normalize palette." }
+
+[[scenario]]
+id = "S1-ntsc-accurate"
+kind = "screen"
+frames = 300
+args = ["--region", "ntsc", "--execution-mode", "accurate"]
+golden = "atari-800/S1-ntsc.png"
+golden_sha256 = "c309075dfe83c6781e78e24418eaf6382244db42d5dc934e88c8252815a3b682"
+compare = { mode = "similarity", max_mad = 0.01, normalize = true, crop = [0.08333333333333333, 0.1, 0.9166666666666666, 0.16666666666666666], golden_crop = [0.023809523809523808, 0.07142857142857142, 0.9761904761904762, 0.14285714285714285], reason = "Same stable 320x16 banner and Ready prompt; Atari800's actual NTSC PNG is 336x224 with text at y=16, not PAL's 336x240 with text at y=24. Exclude only the blinking-cursor row and normalize palette." }
+
+[[scenario]]
+id = "S1-screen-memory"
+kind = "memory"
+frames = 300
+start = 40000
+len = 80
+golden = "atari-800/S1-pal.bin"
+golden_sha256 = "49203dcf0fc322d87322897435b1ce49d255f5a4478eac913dfd0c44df309f81"
+
+[[scenario]]
+id = "S1-screen-memory-accurate"
+kind = "memory"
+frames = 300
+args = ["--execution-mode", "accurate"]
+start = 40000
+len = 80
+golden = "atari-800/S1-pal.bin"
+golden_sha256 = "49203dcf0fc322d87322897435b1ce49d255f5a4478eac913dfd0c44df309f81"
+
+[[scenario]]
+id = "S1-screen-memory-ntsc"
+kind = "memory"
+frames = 300
+args = ["--region", "ntsc"]
+start = 40000
+len = 80
+golden = "atari-800/S1-ntsc.bin"
+golden_sha256 = "49203dcf0fc322d87322897435b1ce49d255f5a4478eac913dfd0c44df309f81"
+
+[[scenario]]
+id = "S1-screen-memory-ntsc-accurate"
+kind = "memory"
+frames = 300
+args = ["--region", "ntsc", "--execution-mode", "accurate"]
+start = 40000
+len = 80
+golden = "atari-800/S1-ntsc.bin"
+golden_sha256 = "49203dcf0fc322d87322897435b1ce49d255f5a4478eac913dfd0c44df309f81"
+
+[[scenario]]
+id = "S2"
+kind = "screen"
+frames = 500
+args = ["--type-after", "150", "--type", "PRINT 12*34\n"]
+status = "known-gap"
+gap = { reason = "Host keyboard execution produces 408, but the reference monitor/SDL automation accepted Return and no printable characters. No typed reference golden was captured; do not substitute Host output.", evidence = "docs/atari800-gaps.md#s2-reference-keyboard" }
+
+[[scenario]]
+id = "S2-accurate"
+kind = "screen"
+frames = 500
+args = ["--execution-mode", "accurate", "--type-after", "150", "--type", "PRINT 12*34\n"]
+status = "known-gap"
+gap = { reason = "Local POKEY keyboard execution passes; printable reference input remains blocked and no golden is captured.", evidence = "docs/atari800-gaps.md#s2-reference-keyboard" }
+
+[[scenario]]
+id = "S2-ntsc"
+kind = "screen"
+frames = 500
+args = ["--region", "ntsc", "--type-after", "150", "--type", "PRINT 12*34\n"]
+status = "known-gap"
+gap = { reason = "Local POKEY keyboard execution passes; printable reference input remains blocked and no golden is captured.", evidence = "docs/atari800-gaps.md#s2-reference-keyboard" }
+
+[[scenario]]
+id = "S2-ntsc-accurate"
+kind = "screen"
+frames = 500
+args = ["--region", "ntsc", "--execution-mode", "accurate", "--type-after", "150", "--type", "PRINT 12*34\n"]
+status = "known-gap"
+gap = { reason = "Local POKEY keyboard execution passes; printable reference input remains blocked and no golden is captured.", evidence = "docs/atari800-gaps.md#s2-reference-keyboard" }
+
+[[scenario]]
+id = "S3-program"
+kind = "memory"
+frames = 5
+files = { program = "atari/software/scenarios/atari800-program.bin" }
+args = ["--org", "0x2000"]
+start = 16384
+len = 256
+golden = "atari-800/S3-program.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-program-accurate"
+kind = "memory"
+frames = 5
+files = { program = "atari/software/scenarios/atari800-program.bin" }
+args = ["--execution-mode", "accurate", "--org", "0x2000"]
+start = 16384
+len = 256
+golden = "atari-800/S3-program.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-program-ntsc"
+kind = "memory"
+frames = 5
+files = { program = "atari/software/scenarios/atari800-program.bin" }
+args = ["--region", "ntsc", "--org", "0x2000"]
+start = 16384
+len = 256
+golden = "atari-800/S3-program.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-program-ntsc-accurate"
+kind = "memory"
+frames = 5
+files = { program = "atari/software/scenarios/atari800-program.bin" }
+args = ["--region", "ntsc", "--execution-mode", "accurate", "--org", "0x2000"]
+start = 16384
+len = 256
+golden = "atari-800/S3-program.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+# Altirra Hardware Reference 5.4: pure tone = CPU / (2 * 28 * (AUDF + 1)).
+# The test Program sets AUDF1=150, AUDC1=$AF, AUDCTL=0, SKCTL=3.
+# Tone gates do not establish reference RMS or analogue mixer calibration.
+[[scenario]]
+id = "S4"
+kind = "audio"
+frames = 150
+files = { program = "atari/software/scenarios/atari800-program.bin" }
+args = ["--org", "0x2000"]
+audio = { from_s = 0.5, to_s = 2.0, tone_hz = 209.7265, tone_tolerance_pct = 0.5, min_amplitude = 0.01 }
+
+[[scenario]]
+id = "S4-accurate"
+kind = "audio"
+frames = 150
+files = { program = "atari/software/scenarios/atari800-program.bin" }
+args = ["--execution-mode", "accurate", "--org", "0x2000"]
+audio = { from_s = 0.5, to_s = 2.0, tone_hz = 209.7265, tone_tolerance_pct = 0.5, min_amplitude = 0.01 }
+
+[[scenario]]
+id = "S4-ntsc"
+kind = "audio"
+frames = 150
+files = { program = "atari/software/scenarios/atari800-program.bin" }
+args = ["--region", "ntsc", "--org", "0x2000"]
+audio = { from_s = 0.5, to_s = 2.0, tone_hz = 211.657, tone_tolerance_pct = 0.5, min_amplitude = 0.01 }
+
+[[scenario]]
+id = "S4-ntsc-accurate"
+kind = "audio"
+frames = 150
+files = { program = "atari/software/scenarios/atari800-program.bin" }
+args = ["--region", "ntsc", "--execution-mode", "accurate", "--org", "0x2000"]
+audio = { from_s = 0.5, to_s = 2.0, tone_hz = 211.657, tone_tolerance_pct = 0.5, min_amplitude = 0.01 }
+
+[[scenario]]
+id = "S5"
+kind = "state"
+frames = 300
+more_frames = 50
+
+[[scenario]]
+id = "S5-accurate"
+kind = "state"
+frames = 300
+more_frames = 50
+args = ["--execution-mode", "accurate"]
+
+[[scenario]]
+id = "S5-ntsc"
+kind = "state"
+frames = 300
+more_frames = 50
+args = ["--region", "ntsc"]
+
+[[scenario]]
+id = "S5-ntsc-accurate"
+kind = "state"
+frames = 300
+more_frames = 50
+args = ["--region", "ntsc", "--execution-mode", "accurate"]
+
+# 114 clocks per line, 312 PAL / 262 NTSC lines (reference manual 2.2).
+# Allow instruction-boundary overshoot in the Host's averaged frame count.
+[[scenario]]
+id = "S6"
+kind = "timing"
+frames = 100
+cycles_per_frame = 35568
+cycles_tolerance = 8
+
+[[scenario]]
+id = "S6-accurate"
+kind = "timing"
+frames = 100
+args = ["--execution-mode", "accurate"]
+cycles_per_frame = 35568
+cycles_tolerance = 8
+
+[[scenario]]
+id = "S6-ntsc"
+kind = "timing"
+frames = 100
+args = ["--region", "ntsc"]
+cycles_per_frame = 29868
+cycles_tolerance = 8
+
+[[scenario]]
+id = "S6-ntsc-accurate"
+kind = "timing"
+frames = 100
+args = ["--region", "ntsc", "--execution-mode", "accurate"]
+cycles_per_frame = 29868
+cycles_tolerance = 8
+
+[[scenario]]
+id = "S7"
+kind = "memory"
+frames = 5000
+files = { disk = "atari/software/diagnostics/acid800.atr" }
+start = 40000
+len = 960
+golden = "atari-800/S7-pal.bin"
+golden_sha256 = "9c075145199268332e04a16509c16c72a89a9b7530fed04db5f650e5d444d0c2"
+status = "known-gap"
+gap = { reason = "Acid800 completes: fast 43 passed/14 failed/1 skipped versus Atari800 25/32/1. Instruction batching retains 13 phase failures; the 800 also fails the XL-only banking test. The reference itself fails hardware tests, so its screen is not a conformance target.", evidence = "docs/atari800-gaps.md#xlxe-and-media-close-out" }
+
+[[scenario]]
+id = "S7-accurate"
+kind = "memory"
+frames = 5000
+files = { disk = "atari/software/diagnostics/acid800.atr" }
+args = ["--execution-mode", "accurate"]
+start = 40000
+len = 960
+golden = "atari-800/S7-pal.bin"
+golden_sha256 = "9c075145199268332e04a16509c16c72a89a9b7530fed04db5f650e5d444d0c2"
+status = "known-gap"
+gap = { reason = "Acid800 completes: accurate 56 passed/1 failed/1 skipped. The only failure is XL banking, unavailable on an original 800. Atari800 7.2.1 scores 25/32/1, so the preserved full reference screen differs. No golden or tolerance is changed.", evidence = "docs/atari800-gaps.md#xlxe-and-media-close-out" }
+
+[[scenario]]
+id = "S7-ntsc"
+kind = "memory"
+frames = 5000
+files = { disk = "atari/software/diagnostics/acid800.atr" }
+args = ["--region", "ntsc"]
+start = 40000
+len = 960
+golden = "atari-800/S7-ntsc.bin"
+golden_sha256 = "9c075145199268332e04a16509c16c72a89a9b7530fed04db5f650e5d444d0c2"
+status = "known-gap"
+gap = { reason = "NTSC Acid800 completes: fast 43 passed/14 failed/1 skipped, identical to PAL. Fast execution remains instruction-batched; the reference screen is not a hardware conformance target.", evidence = "docs/atari800-gaps.md#xlxe-and-media-close-out" }
+
+[[scenario]]
+id = "S7-ntsc-accurate"
+kind = "memory"
+frames = 5000
+files = { disk = "atari/software/diagnostics/acid800.atr" }
+args = ["--region", "ntsc", "--execution-mode", "accurate"]
+start = 40000
+len = 960
+golden = "atari-800/S7-ntsc.bin"
+golden_sha256 = "9c075145199268332e04a16509c16c72a89a9b7530fed04db5f650e5d444d0c2"
+status = "known-gap"
+gap = { reason = "NTSC Acid800 completes: accurate 56 passed/1 failed/1 skipped, identical to PAL. Only the XL-only banking test fails. The independently captured reference still fails applicable hardware tests; preserve its original golden.", evidence = "docs/atari800-gaps.md#xlxe-and-media-close-out" }
+
+# Both reference Regions and both Media paths independently reproduce the same
+# complete 256-byte pattern as S3 raw Program; the pinned bytes are unchanged.
+[[scenario]]
+id = "S3-xex"
+kind = "memory"
+frames = 300
+files = { program = "atari/software/scenarios/atari800-program.xex" }
+start = 16384
+len = 256
+golden = "atari-800/S3-program.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-xex-accurate"
+kind = "memory"
+frames = 300
+files = { program = "atari/software/scenarios/atari800-program.xex" }
+args = ["--execution-mode", "accurate"]
+start = 16384
+len = 256
+golden = "atari-800/S3-program.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-xex-ntsc"
+kind = "memory"
+frames = 300
+files = { program = "atari/software/scenarios/atari800-program.xex" }
+args = ["--region", "ntsc"]
+start = 16384
+len = 256
+golden = "atari-800/S3-program.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-xex-ntsc-accurate"
+kind = "memory"
+frames = 300
+files = { program = "atari/software/scenarios/atari800-program.xex" }
+args = ["--region", "ntsc", "--execution-mode", "accurate"]
+start = 16384
+len = 256
+golden = "atari-800/S3-program.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-atr"
+kind = "memory"
+frames = 300
+files = { disk = "atari/software/scenarios/atari800-boot.atr" }
+start = 16384
+len = 256
+golden = "atari-800/S3-program.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-atr-accurate"
+kind = "memory"
+frames = 300
+files = { disk = "atari/software/scenarios/atari800-boot.atr" }
+args = ["--execution-mode", "accurate"]
+start = 16384
+len = 256
+golden = "atari-800/S3-program.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-atr-ntsc"
+kind = "memory"
+frames = 300
+files = { disk = "atari/software/scenarios/atari800-boot.atr" }
+args = ["--region", "ntsc"]
+start = 16384
+len = 256
+golden = "atari-800/S3-program.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-atr-ntsc-accurate"
+kind = "memory"
+frames = 300
+files = { disk = "atari/software/scenarios/atari800-boot.atr" }
+args = ["--region", "ntsc", "--execution-mode", "accurate"]
+start = 16384
+len = 256
+golden = "atari-800/S3-program.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S5-atr"
+kind = "state"
+frames = 300
+more_frames = 50
+files = { disk = "atari/software/scenarios/atari800-boot.atr" }
+
+[[scenario]]
+id = "S5-atr-accurate"
+kind = "state"
+frames = 300
+more_frames = 50
+files = { disk = "atari/software/scenarios/atari800-boot.atr" }
+args = ["--execution-mode", "accurate"]
+
+[[scenario]]
+id = "S5-atr-ntsc"
+kind = "state"
+frames = 300
+more_frames = 50
+files = { disk = "atari/software/scenarios/atari800-boot.atr" }
+args = ["--region", "ntsc"]
+
+[[scenario]]
+id = "S5-atr-ntsc-accurate"
+kind = "state"
+frames = 300
+more_frames = 50
+files = { disk = "atari/software/scenarios/atari800-boot.atr" }
+args = ["--region", "ntsc", "--execution-mode", "accurate"]
+
+[[scenario]]
+id = "S3-car"
+kind = "memory"
+frames = 300
+files = { cartridge = "atari/software/scenarios/atari800-program.car" }
+start = 16384
+len = 256
+golden = "atari-800/S3-car-pal.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-car-accurate"
+kind = "memory"
+frames = 300
+files = { cartridge = "atari/software/scenarios/atari800-program.car" }
+args = ["--execution-mode", "accurate"]
+start = 16384
+len = 256
+golden = "atari-800/S3-car-pal.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-car-ntsc"
+kind = "memory"
+frames = 300
+files = { cartridge = "atari/software/scenarios/atari800-program.car" }
+args = ["--region", "ntsc"]
+start = 16384
+len = 256
+golden = "atari-800/S3-car-ntsc.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-car-ntsc-accurate"
+kind = "memory"
+frames = 300
+files = { cartridge = "atari/software/scenarios/atari800-program.car" }
+args = ["--region", "ntsc", "--execution-mode", "accurate"]
+start = 16384
+len = 256
+golden = "atari-800/S3-car-ntsc.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-xfd"
+kind = "memory"
+frames = 300
+files = { disk = "atari/software/scenarios/atari800-boot.xfd" }
+start = 16384
+len = 256
+golden = "atari-800/S3-xfd-pal.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-xfd-accurate"
+kind = "memory"
+frames = 300
+files = { disk = "atari/software/scenarios/atari800-boot.xfd" }
+args = ["--execution-mode", "accurate"]
+start = 16384
+len = 256
+golden = "atari-800/S3-xfd-pal.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-xfd-ntsc"
+kind = "memory"
+frames = 300
+files = { disk = "atari/software/scenarios/atari800-boot.xfd" }
+args = ["--region", "ntsc"]
+start = 16384
+len = 256
+golden = "atari-800/S3-xfd-ntsc.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-xfd-ntsc-accurate"
+kind = "memory"
+frames = 300
+files = { disk = "atari/software/scenarios/atari800-boot.xfd" }
+args = ["--region", "ntsc", "--execution-mode", "accurate"]
+start = 16384
+len = 256
+golden = "atari-800/S3-xfd-ntsc.bin"
+golden_sha256 = "7aefa1511529d5ae13d675c4f032d61d5b0c3df71a31e179d3384c7a8ae734dd"
+
+[[scenario]]
+id = "S3-cas-reference"
+kind = "memory"
+frames = 1500
+start = 16384
+len = 256
+status = "known-gap"
+gap = { reason = "All four real replacement OS profiles load and execute a cassette Program through CIO and actual motor/serial pins. A matching reference CIO automation/golden is not captured; a separate boot-tape fixture did not execute. CAS boot and reference acceptance are not claimed.", evidence = "docs/atari800-gaps.md#xlxe-and-media-close-out" }
+
+[[scenario]]
+id = "S4-reference-rms"
+kind = "audio"
+frames = 150
+status = "known-gap"
+gap = { reason = "S4 checks documented pitch and an audible signal, not reference RMS. Reference recording and analogue mixer calibration remain unverified.", evidence = "docs/atari800-gaps.md#s4-audio-and-s6-timing-limits" }

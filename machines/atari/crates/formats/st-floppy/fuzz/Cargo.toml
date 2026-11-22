@@ -1,0 +1,21 @@
+[package]
+name = "st-floppy-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+st-floppy = { path = ".." }
+
+[[bin]]
+name = "msa"
+path = "fuzz_targets/msa.rs"
+test = false
+doc = false
+
+# Not part of the atari workspace: `cargo +nightly fuzz run msa` from this crate's folder.
+[workspace]

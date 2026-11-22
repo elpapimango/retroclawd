@@ -1,0 +1,18 @@
+/target
+*.log
+dist/
+# Firmware and software are copyrighted or fetched, never committed. EmuTOS comes from `retroclawd --firmware auto`
+# (see firmware.toml); keep your own TOS dumps here.
+/roms/
+/software/
+# Local cross-repository testing only (see CLAUDE.md); never committed.
+/.cargo/
+
+# cargo-fuzz build output, corpora and crashes
+crates/**/fuzz/target/
+crates/**/fuzz/corpus/
+crates/**/fuzz/artifacts/
+
+# Python bytecode from the timing/ generators
+__pycache__/
+*.pyc

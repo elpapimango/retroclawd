@@ -1,0 +1,80 @@
+machine = "atari-800xl"
+display_name = "Atari 800XL"
+family = "atari"
+default_region = "pal"
+
+[implementation]
+status = "accepted-with-gaps"
+boot_verified = true
+note = "Integrated profile/MMU, native replacement-ROM tests and independent reference captures are complete. Remaining reference input/CAS/RMS and hardware limits are in docs/atari800-gaps.md."
+
+[core]
+reuse = "mos6502"
+variant = "NMOS 6502 with Atari HALT wiring; not a 65C02"
+tests = ["Klaus Dormann functional tests", "Tom Seddon single-instruction tests"]
+
+[chips]
+reuse = ["ANTIC", "GTIA", "POKEY", "MOS 6520 PIA"]
+new = ["Stock XL/XE memory routing in atari-8bit::mmu"]
+note = "No duplicated CPU or Chip implementation. PIA owns ORB/DDRB; MMU consumes effective output pins, not PORTB readback."
+
+[reference]
+emulator = "Atari800"
+version = "7.2.1 Win64"
+source_revision = "63a381884175e3cbfc745ff00dfb3d70d928eb50"
+source_url = "https://github.com/atari800/atari800"
+license = "GPL-2.0-or-later"
+archive_sha256 = "82eb30836613a03b3a82d594da71b47667f2eef844d9cd808e3a367f250613ab"
+note = "Verified with -xl, explicit replacement ROMs, both Regions and -nopatchall; per-profile manifest pins actual reference captures."
+
+[memory]
+ram_bytes = 65536
+os_bytes = 16384
+basic_bytes = 8192
+ram = "0000-ffff physical main RAM; d000-d7ff is permanently hidden by hardware"
+os = "PORTB bit 0 = 1: c000-cfff and d800-ffff, contiguous image offsets 0000-0fff and 1800-3fff"
+basic = "PORTB bit 1 = 0: a000-bfff; cartridge takes priority when supplied by the Machine"
+self_test = "PORTB bit 7 = 0 AND bit 0 = 1: 5000-57ff, OS image offsets 1000-17ff"
+portb = "Memory-control inputs have pull-ups; effective pins = ORB | !DDRB. Bits 2-6 do not bank memory."
+write_policy = "Writes into visible OS, BASIC and self-test ROM are discarded; they do not reach underlying RAM."
+reset = "XL/XE Reset also resets PIA to input mode, enabling OS and disabling BASIC/self-test through pull-ups (Altirra 2.5-2.6)."
+state = "Use an explicit versioned MMU/profile extension; preserve existing Atari 800 State layouts and validate all lengths before committing a restore."
+
+[firmware_policy]
+stock_roms_available = false
+note = "Only explicitly identified permissive replacements are sourced. No original Atari ROM, binary fixture, diagnostic or golden is committed."
+
+[[firmware]]
+option = "rom_os"
+label = "AltirraOS XL/XE 3.11 replacement, not original Atari firmware"
+size = 16384
+sha1 = "738b9590a29f424ad2c9d3f9cb1d170de79241f7"
+sha256 = "9de5a313fe3946f04fe236a8d3ceacb471fbed4ec5fc5db009732e1169946ccf"
+source = "https://github.com/atari800/atari800/blob/63a381884175e3cbfc745ff00dfb3d70d928eb50/src/roms/altirraos_xl.c"
+license = "Copyright 2008-2018 Avery Lee. Copying/distribution, with or without modification, permitted without royalty if copyright and notice are preserved; no warranty."
+
+[[firmware]]
+option = "rom_basic"
+label = "Altirra BASIC 1.59 replacement, not original Atari BASIC"
+size = 8192
+sha1 = "95778af5688ec180baa9db364577d113bfc189ea"
+source = "https://github.com/atari800/atari800/blob/63a381884175e3cbfc745ff00dfb3d70d928eb50/src/roms/altirra_basic.c"
+license = "Avery Lee permissive copyright/notice-preserving distribution permission; see atari-800.intake.toml."
+
+[scenarios]
+required = ["S1 boot", "S2 input", "S3 each supported medium", "S4 audio", "S5 state and reset", "S6 timing", "S7 hardware diagnostics"]
+optional = ["S8 instruction trace"]
+removed = []
+hardware_diagnostics = "Actual Acid800 1.2: accurate 57/0/1 and fast 44/13/1 in both PAL/NTSC. Reference Atari800 7.2.1 scores 26/31/1; its failing screen remains unchanged."
+note = "Native OS boot/input/reset/ATR/State is tested in both Regions/modes. D2 writes, CAR boot and CAS CIO execution have separate real-firmware proof; remaining acceptance gaps are recorded."
+
+[[source]]
+title = "Altirra Hardware Reference Manual, 2026-01-02"
+url = "https://www.virtualdub.org/downloads/Altirra%20Hardware%20Reference%20Manual.pdf"
+sections = ["2.1 CPU and ROM architecture", "2.5 PIA reset and floating inputs", "2.6 ROM control and writes", "2.7 extended memory", "14 PORTB, p.454"]
+note = "No hardware fact inferred from the existing Atari ST."
+
+[[source]]
+title = "Altirra Acid800 1.2"
+files = ["src/Acid800/source/mmu_xlbanking.s"]
+license = "Copyright 2010 Avery Lee, MIT-style permission notice in the source."

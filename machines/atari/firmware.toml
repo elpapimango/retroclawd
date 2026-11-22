@@ -1,0 +1,76 @@
+# Which firmware satisfies which machine option (see retroclawd-sinclair's firmware.toml for the format).
+#
+# EmuTOS (GPL-2.0, https://emutos.sourceforge.io/) is the firmware for development, tests and CI: the 192 KB
+# images are for the ST, STF, STFM and Mega ST ("only work with a plain 68000", readme.txt in the zip). It is not
+# committed anywhere; `retroclawd atari-st --firmware auto` downloads the official release zip, checks the zip's
+# SHA-1 (published by SourceForge for the file) and the image's SHA-1 (pinned by this project from the 2026-10-19
+# download: an integrity identifier, not an upstream signature; changing it needs a review), and caches the image.
+#
+#   url, archive_sha1, entry   where to fetch it when no RomM server has it: the zip, its SHA-1, the file inside
+#   when = { region = ... }    the PAL image (uk) for --region pal, the NTSC image (us) for --region ntsc
+
+[[rom]]
+machines = ["atari-st", "atari-mega-st"]
+option = "rom"
+label = "EmuTOS 1.4 192K (English, PAL)"
+sha1 = ["904ea9dc09ff8286f6e0272c12255dfe85beb17a"]
+url = "https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-192k-1.4.zip"
+archive_sha1 = "6f146a126065f0671a1df3d9a273c01f962e9d06"
+entry = "emutos-192k-1.4/etos192uk.img"
+when = { region = "pal" }
+
+[[rom]]
+machines = ["atari-st", "atari-mega-st"]
+option = "rom"
+label = "EmuTOS 1.4 192K (English, NTSC)"
+sha1 = ["c03ae6379c88b31303dd6ebe63087054f716cba0"]
+url = "https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-192k-1.4.zip"
+archive_sha1 = "6f146a126065f0671a1df3d9a273c01f962e9d06"
+entry = "emutos-192k-1.4/etos192us.img"
+when = { region = "ntsc" }
+
+# Explicitly identified replacements, matched only from cache or RomM.
+# Their upstream distribution is C arrays, not a supported direct ROM URL.
+# Supplying --rom-os / --rom-basic always takes precedence.
+[[rom]]
+machines = ["atari-800"]
+option = "rom_os"
+label = "AltirraOS 800 3.11 replacement (not original Atari firmware)"
+sha1 = ["24b16053b5a11ed2f35f208c9a061d973b8be3e7"]
+
+[[rom]]
+machines = ["atari-800", "atari-800xl", "atari-65xe", "atari-130xe"]
+option = "rom_basic"
+label = "Altirra BASIC 1.59 replacement (not original Atari BASIC)"
+sha1 = ["95778af5688ec180baa9db364577d113bfc189ea"]
+
+# AltirraOS XL/XE 3.11 from pinned Atari800 7.2.1 src/roms/altirraos_xl.c.
+# 16384 bytes; SHA-256 9de5a313fe3946f04fe236a8d3ceacb471fbed4ec5fc5db009732e1169946ccf.
+# Avery Lee's permissive copyright/notice-preserving terms apply; no ROM bytes
+# or unsupported direct C-source download URL are supplied.
+[[rom]]
+machines = ["atari-800xl", "atari-65xe", "atari-130xe"]
+option = "rom_os"
+label = "AltirraOS XL/XE 3.11 replacement (not original Atari firmware)"
+sha1 = ["738b9590a29f424ad2c9d3f9cb1d170de79241f7"]
+# The STE takes the 256 KB images (readme.txt of emutos-256k-1.4.zip: "STe / Mega STe"), mapped at $E00000. The image SHA-1s
+# are pinned from the 2026-10-23 download, as for the 192 KB ones.
+[[rom]]
+machines = ["atari-ste"]
+option = "rom"
+label = "EmuTOS 1.4 256K (English, PAL)"
+sha1 = ["b9dba5346cdd237fe4ba8d89d04bc4d82e4eec72"]
+url = "https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-256k-1.4.zip"
+archive_sha1 = "3cd44f8a60658859761d86170a0f17a294eba31c"
+entry = "emutos-256k-1.4/etos256uk.img"
+when = { region = "pal" }
+
+[[rom]]
+machines = ["atari-ste"]
+option = "rom"
+label = "EmuTOS 1.4 256K (English, NTSC)"
+sha1 = ["2e0a0160d14e5340913b330aa7fe817adcf62365"]
+url = "https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-256k-1.4.zip"
+archive_sha1 = "3cd44f8a60658859761d86170a0f17a294eba31c"
+entry = "emutos-256k-1.4/etos256us.img"
+when = { region = "ntsc" }

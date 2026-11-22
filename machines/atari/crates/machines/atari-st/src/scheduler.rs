@@ -1,0 +1,178 @@
+//! Machine time and the event queue (spec section 8).
+//!
+//! The master unit is one CPU clock, counted in a `u64` (about 73 000 years at 8 MHz). Every event has a time, a
+//! class that orders events falling on the same clock, and an insertion number that orders the rest, so the order
+//! is fully determined. Nothing reads the host clock.
+//!
+//! Frame timing (colour monitor). Sources are community measurements, two independent threads agreeing for PAL:
+//! "Main HW / Emulator constants" (https://www.atari-forum.com/viewtopic.php?t=24853): the PAL crystal is
+//! 32.084988 MHz, the CPU clock a quarter of it (8.021247 MHz), and a PAL frame 160256 CPU clocks; "Monochrome screen
+//! timings" (https://www.atari-forum.com/viewtopic.php?t=12243): 512 clocks per line and 313 lines at 50 Hz, 508 and
+//! 263 at 60 Hz. The NTSC crystal is given as 32.0424 and 32.04245 MHz by different posts
+//! (https://forums.atariage.com/topic/353761-mystery-of-the-sts-weird-clock-oscillator-frequency-choices); 32.0424
+//! is used until Atari's hardware specification settles it. To verify against that specification.
+
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+
+use serde::{Deserialize, Serialize};
+
+use crate::config::Region;
+
+pub const PAL_CRYSTAL_HZ: u32 = 32_084_988;
+pub const NTSC_CRYSTAL_HZ: u32 = 32_042_400;
+/// CPU clock = crystal / 4.
+pub const CPU_DIVIDER: u32 = 4;
+
+/// CPU clocks per frame: 512 x 313 at 50 Hz, 508 x 263 at 60 Hz.
+pub fn cycles_per_frame(region: Region) -> u64 {
+    match region {
+        Region::Pal => 512 * 313,
+        Region::Ntsc => 508 * 263,
+    }
+}
+
+pub fn crystal_hz(region: Region) -> u32 {
+    match region {
+        Region::Pal => PAL_CRYSTAL_HZ,
+        Region::Ntsc => NTSC_CRYSTAL_HZ,
+    }
+}
+
+/// `accurate` mode: the clock of a 4-clock bus cycle at which a device sees a read, and a write (0 = at the start of the
+/// cycle). Fitted with probe P06 (the MFP timer A data register read after the control register started the timer): the
+/// write at the start of its cycle, the read 3 clocks in.
+pub const READ_POINT: u64 = 3;
+pub const WRITE_POINT: u64 = 0;
+
+/// Classes order events on the same clock: video, then the MFP, ACIA, FDC, DMA, then CPU interrupt sampling.
+pub const CLASS_VIDEO: u8 = 0;
+pub const CLASS_MFP: u8 = 1;
+pub const CLASS_ACIA: u8 = 2;
+pub const CLASS_FDC: u8 = 3;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum Event {
+    /// The end of a line: the GLUE requests the HBL; after the frame's last line also the VBL.
+    LineEnd,
+    /// The MFP's next timer timeout; the number tells a stale event (one scheduled before a later MFP write) apart.
+    MfpTimeout(u64),
+    /// ACIA `port` has a character starting or completing; the generation tells a stale event apart.
+    AciaService { port: u8, generation: u64 },
+    /// The floppy controller's next byte time while it works; the generation tells a stale event apart.
+    FdcTick(u64),
+    /// `accurate` mode: the VBL request, a fixed time after the frame ends (last, so the states of `fast` mode keep
+    /// their bytes).
+    Vbl,
+}
+
+/// The shape of one frame in CPU clocks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FrameGeometry {
+    pub clocks_per_line: u32,
+    pub lines: u32,
+}
+
+impl FrameGeometry {
+    pub fn clocks(&self) -> u64 {
+        self.clocks_per_line as u64 * self.lines as u64
+    }
+}
+
+/// The frame for the sync mode (`$FF820A` bit 1) and the monitor. [H] colour 512 x 313 at 50 Hz, 508 x 263 at 60 Hz
+/// (sources above). A mono monitor's line is 224 clocks (same thread) and its frame 501 lines ([O], probe P14).
+pub fn geometry(sync_50hz: bool, monitor: st_shifter::Monitor) -> Result<FrameGeometry, String> {
+    match monitor {
+        st_shifter::Monitor::Colour if sync_50hz => Ok(FrameGeometry {
+            clocks_per_line: 512,
+            lines: 313,
+        }),
+        st_shifter::Monitor::Colour => Ok(FrameGeometry {
+            clocks_per_line: 508,
+            lines: 263,
+        }),
+        // [O] Hatari 2.6.1 (probe P14): 501 HBLs between two VBLs and a counted loop that fills 112 224 clocks.
+        st_shifter::Monitor::Mono => Ok(FrameGeometry {
+            clocks_per_line: 224,
+            lines: 501,
+        }),
+    }
+}
+
+/// The raster line of a frame of `lines` lines on which the picture's first line is drawn. [H?] 63 in the 313-line
+/// 50 Hz frame and 34 in the 263-line 60 Hz frame: provisional, to be measured against the reference emulator's
+/// picture (`docs/hardware-facts.md`, "Raster palette").
+pub fn first_display_line(lines: u32) -> u32 {
+    if lines == 501 {
+        st_shifter::MONO_START as u32
+    } else if lines >= 313 {
+        63
+    } else {
+        34
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Scheduler {
+    heap: BinaryHeap<Reverse<(u64, u8, u64, Event)>>,
+    seq: u64,
+}
+
+/// The queue as data: every pending event with its time, class and insertion number.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SchedulerState {
+    events: Vec<(u64, u8, u64, Event)>,
+    seq: u64,
+}
+
+impl SchedulerState {
+    /// Whether an ACIA event names a port that does not exist (a state from elsewhere).
+    pub fn has_bad_port(&self) -> bool {
+        self.events
+            .iter()
+            .any(|(_, _, _, e)| matches!(e, Event::AciaService { port, .. } if *port >= 2))
+    }
+}
+
+impl Scheduler {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The pending events, in time order, so equal queues give equal bytes.
+    pub fn snapshot(&self) -> SchedulerState {
+        let mut events: Vec<_> = self.heap.iter().map(|Reverse(e)| *e).collect();
+        events.sort_unstable();
+        SchedulerState {
+            events,
+            seq: self.seq,
+        }
+    }
+
+    pub fn restore(state: SchedulerState) -> Self {
+        Self {
+            heap: state.events.into_iter().map(Reverse).collect(),
+            seq: state.seq,
+        }
+    }
+
+    pub fn schedule(&mut self, at: u64, class: u8, event: Event) {
+        self.heap.push(Reverse((at, class, self.seq, event)));
+        self.seq += 1;
+    }
+
+    /// The time of the earliest event.
+    pub fn next_at(&self) -> Option<u64> {
+        self.heap.peek().map(|Reverse((at, ..))| *at)
+    }
+
+    /// The earliest event due at or before `now`, with its time and class.
+    pub fn pop_due(&mut self, now: u64) -> Option<(u64, u8, Event)> {
+        if self.next_at()? > now {
+            return None;
+        }
+        self.heap
+            .pop()
+            .map(|Reverse((at, class, _, event))| (at, class, event))
+    }
+}

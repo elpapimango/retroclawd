@@ -1,0 +1,84 @@
+machine = "atari-130xe"
+display_name = "Atari 130XE"
+family = "atari"
+default_region = "pal"
+
+[implementation]
+status = "accepted-with-gaps"
+boot_verified = true
+note = "Integrated stock 130XE CPU/ANTIC banking, native replacement-ROM tests and independent reference scenarios are complete. Remaining gaps are in docs/atari800-gaps.md."
+
+[core]
+reuse = "mos6502"
+variant = "NMOS 6502 with Atari HALT wiring; not a 65C02"
+tests = ["Klaus Dormann functional tests", "Tom Seddon single-instruction tests"]
+
+[chips]
+reuse = ["ANTIC", "GTIA", "POKEY", "MOS 6520 PIA"]
+new = ["Stock XL/XE MMU with independent CPU/ANTIC expanded-window enables"]
+note = "No additional CPU. CPU and ANTIC share one four-bank selection but have independent access enables."
+
+[reference]
+emulator = "Atari800"
+version = "7.2.1 Win64"
+source_revision = "63a381884175e3cbfc745ff00dfb3d70d928eb50"
+source_url = "https://github.com/atari800/atari800"
+license = "GPL-2.0-or-later"
+archive_sha256 = "82eb30836613a03b3a82d594da71b47667f2eef844d9cd808e3a367f250613ab"
+note = "Select XL/XE, stock 128K 130XE configuration, identical replacement ROMs/Region and -nopatchall. Do not substitute RAMBO/COMPY or an enlarged expansion."
+
+[memory]
+ram_bytes = 131072
+os_bytes = 16384
+basic_bytes = 8192
+main_ram = "00000-0ffff physical RAM; d000-d7ff always hidden by hardware"
+extended_ram = "10000-1ffff: four independent 16K banks, with no main-RAM aliases"
+window = "4000-7fff"
+bank_select = "PORTB bits 3:2: 00 -> 10000, 01 -> 14000, 10 -> 18000, 11 -> 1c000"
+cpu_enable = "PORTB bit 4 = 0 selects extended RAM for CPU reads/writes"
+antic_enable = "PORTB bit 5 = 0 selects extended RAM for ANTIC reads independently of CPU bit 4"
+os = "PORTB bit 0 = 1: c000-cfff and d800-ffff, image offsets 0000-0fff and 1800-3fff"
+basic = "PORTB bit 1 = 0: a000-bfff"
+self_test = "PORTB bit 7 = 0 AND bit 0 = 1: 5000-57ff, image offsets 1000-17ff; higher priority than extended RAM"
+portb = "Control pins configured as inputs pull high. Decode ORB | !DDRB, not register readback; unused bit 6 does not bank memory."
+write_policy = "No writes through visible ROM. Self-test blocks writes to both main and expanded RAM. Disabled windows leave hidden memory untouched."
+reset = "PIA resets on XL/XE Reset; all-input pull-ups enable OS, disable BASIC/self-test and select main RAM for CPU and ANTIC."
+state = "Preserve old Atari 800 State layouts. A separate profile/MMU extension validates identity and 128K allocation before restore mutation; existing PIA state owns ORB/DDRB."
+
+[firmware_policy]
+stock_roms_available = false
+note = "Explicit permissive replacements only. Never add stock proprietary firmware, ROM binaries, diagnostics or goldens to the repository."
+
+[[firmware]]
+option = "rom_os"
+label = "AltirraOS XL/XE 3.11 replacement, not original Atari firmware"
+size = 16384
+sha1 = "738b9590a29f424ad2c9d3f9cb1d170de79241f7"
+sha256 = "9de5a313fe3946f04fe236a8d3ceacb471fbed4ec5fc5db009732e1169946ccf"
+source = "https://github.com/atari800/atari800/blob/63a381884175e3cbfc745ff00dfb3d70d928eb50/src/roms/altirraos_xl.c"
+license = "Copyright 2008-2018 Avery Lee. Copying/distribution permitted without royalty with copyright and notice preserved; no warranty."
+
+[[firmware]]
+option = "rom_basic"
+label = "Altirra BASIC 1.59 replacement, not original Atari BASIC"
+size = 8192
+sha1 = "95778af5688ec180baa9db364577d113bfc189ea"
+source = "https://github.com/atari800/atari800/blob/63a381884175e3cbfc745ff00dfb3d70d928eb50/src/roms/altirra_basic.c"
+license = "Avery Lee permissive copyright/notice-preserving distribution permission; see atari-800.intake.toml."
+
+[scenarios]
+required = ["S1 boot", "S2 input", "S3 each supported medium", "S4 audio", "S5 state and reset", "S6 timing", "S7 hardware diagnostics"]
+optional = ["S8 instruction trace"]
+removed = []
+hardware_diagnostics = "Acid800 1.2 source/mmu_xlbanking.s covers ROM masks, blocked writes and self-test priority over an expanded bank. Focused tests also check all four banks and all four CPU/ANTIC enable combinations."
+note = "Actual NTSC accurate Acid800 scores 57/0/1. Native boot/input/reset/ATR/State is tested in both Regions/modes; separate firmware tests prove D2 writes, CAR boot and CAS CIO execution."
+
+[[source]]
+title = "Altirra Hardware Reference Manual, 2026-01-02"
+url = "https://www.virtualdub.org/downloads/Altirra%20Hardware%20Reference%20Manual.pdf"
+sections = ["2.1 CPU/ROM architecture", "2.5 PIA reset and unused bit 6", "2.6 ROM control", "2.7 window control, separate ANTIC access and self-test priority", "14 PORTB, p.454: exact four-bank addresses"]
+
+[[source]]
+title = "Altirra Acid800 1.2"
+files = ["src/Acid800/source/mmu_xlbanking.s"]
+license = "Copyright 2010 Avery Lee, MIT-style permission notice in source."

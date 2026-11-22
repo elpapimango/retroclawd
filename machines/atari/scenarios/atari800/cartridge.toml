@@ -1,0 +1,7 @@
+machine = "atari"
+output = "atari800-program.car"
+fill = 255
+
+[[input]]
+bin = "atari800-cartridge.bin"
+at = 0xa000

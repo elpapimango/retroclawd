@@ -1,0 +1,6 @@
+# rcld layout for hello.s: a relocatable GEMDOS program (rcld build hello.layout.toml -o hello.prg).
+machine = "atari-st"
+output = "hello.prg"
+
+[[input]]
+asm = ["hello.s"]
