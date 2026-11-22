@@ -1,0 +1,366 @@
+machine = "genesis"
+# Probe ROMs come from scenarios/build.sh (software/scenarios/, not committed). The goldens are the memory the probes leave
+# behind in Genesis Plus GX, PicoDrive, BlastEm and clownmdemu (they agree: scenarios/probe.py), never committed.
+
+[reference]
+emulator = "genesis-plus-gx"
+version = "1.7.4"
+command = "machines/sega/scenarios/probe.py scenarios/probes/pNN_name.s --save GOLDENS/genesis (libretro_run.py, --swap16)"
+
+# P00: the harness smoke test: $BEEF and $CAFEF00D copied to work RAM.
+[[scenario]]
+id = "P00"
+kind = "memory"
+frames = 20
+files = { rom = "sega/software/scenarios/p00_hello.md" }
+start = 16711680
+len = 16
+golden = "genesis/p00.bin"
+golden_sha256 = "300f9ecc4a6ce7776811ff903d83dc17a02a22278d9e1022a2f70bad876ef1c3"
+
+# P02: VDP memory access through the data port (VRAM even/odd addresses, increments, CRAM and VSRAM bits, wraps); the four
+# emulators agree on all of it but the read at VSRAM index 40 (clownmdemu differs) and the status word, which is not compared.
+[[scenario]]
+id = "P02"
+kind = "memory"
+frames = 30
+files = { rom = "sega/software/scenarios/p02_vdp_memory.md" }
+start = 16711680
+len = 94
+golden = "genesis/p02_vdp_memory.bin"
+golden_sha256 = "2ee7ee3dec808f188000588b52b4ca0b9014bd8328d516b71b85065a52acaf3b"
+
+# P03: byte accesses to the VDP ports: a byte written to the data or control port is the word with the byte in both halves.
+[[scenario]]
+id = "P03"
+kind = "memory"
+frames = 30
+files = { rom = "sega/software/scenarios/p03_vdp_bytes.md" }
+start = 16711680
+len = 32
+golden = "genesis/p03_vdp_bytes.bin"
+golden_sha256 = "34e1f442f7ac198c50b4519db0f13c1d67f97542b102c07f9a84bcf8101dc558"
+
+# P04: the I/O registers read as words (both bytes alike). PicoDrive reads $FF where the others read the pulled-up pins
+# ($7F): Genesis Plus GX and BlastEm are followed.
+[[scenario]]
+id = "P04"
+kind = "memory"
+frames = 30
+files = { rom = "sega/software/scenarios/p04_io_words.md" }
+start = 16711680
+len = 14
+golden = "genesis/p04_io_words.bin"
+golden_sha256 = "22fd1be1e253b1cfd37a7d3eeafc2872d1344ebbfdf0f5f0573a7a24a0a900ba"
+
+# P04B: even byte reads, the data register with TH driven, an output pin readback and the transmit register
+# (offsets $10-$1B of the probe; the serial control register's first read differs between emulators and is left out).
+[[scenario]]
+id = "P04B"
+kind = "memory"
+frames = 30
+files = { rom = "sega/software/scenarios/p04_io_words.md" }
+start = 16711696
+len = 12
+golden = "genesis/p04b_io_bytes.bin"
+golden_sha256 = "ab1c2175c74726f81e004689225e387b5139722d97a269991c27ebf5ddf829fb"
+
+# P05: the Z80 from both sides: Z80 RAM through the 68000 (bytes only, a word write keeps its high byte, a word read repeats
+# the byte), the RAM mirror at $2000, the YM2612 area, the ROM window and the bank register, and the Z80 running its own program
+# (A: 68000 side, B: RAM, C: mirror and YM reads, D: the window: $FF where the work RAM would be, E: the Z80 reached its end).
+# The VDP status the Z80 reads, and the register power-on values (open bus), differ with timing and are not compared.
+
+[[scenario]]
+id = "P05A"
+kind = "memory"
+frames = 40
+files = { rom = "sega/software/scenarios/p05_z80.md" }
+start = 16711692
+len = 12
+golden = "genesis/p05a_68k_side.bin"
+golden_sha256 = "aff910ce9fb9fd79d31ba1ea55b7755cec3accc883e1ed45fcca73e3137dba1e"
+
+[[scenario]]
+id = "P05B"
+kind = "memory"
+frames = 40
+files = { rom = "sega/software/scenarios/p05_z80.md" }
+start = 16711712
+len = 6
+golden = "genesis/p05b_z80_ram.bin"
+golden_sha256 = "ecd7fc4e571ed017bfb8285e9e2223d5be9b56d79c23f666a12885bfd915808e"
+
+[[scenario]]
+id = "P05C"
+kind = "memory"
+frames = 40
+files = { rom = "sega/software/scenarios/p05_z80.md" }
+start = 16711728
+len = 8
+golden = "genesis/p05c_z80_mirror_ym.bin"
+golden_sha256 = "15194ee62ca44a51535ca8c47e619351015a4162ab6211318ebd3e131ce84976"
+
+[[scenario]]
+id = "P05D"
+kind = "memory"
+frames = 40
+files = { rom = "sega/software/scenarios/p05_z80.md" }
+start = 16711744
+len = 5
+golden = "genesis/p05d_window.bin"
+golden_sha256 = "8db4192285a2ab30d0550be51d7c8db603f9bbff86b53da853fb2bdf3d79705e"
+
+[[scenario]]
+id = "P05E"
+kind = "memory"
+frames = 40
+files = { rom = "sega/software/scenarios/p05_z80.md" }
+start = 16711775
+len = 1
+golden = "genesis/p05e_done.bin"
+golden_sha256 = "ae3f4619b0413d70d3004b9131c3752153074e45725be13b9a148978895e359e"
+
+# S1 at frame 300: the Altered Beast intro art. Genesis Plus GX's picture, compared with a mean absolute difference: the emulators convert the
+# 3-bit colour levels to 8 bits differently (scenarios/compare_frames.py shows the pictures are identical once reduced to levels).
+[[scenario]]
+id = "S1-300"
+kind = "screen"
+frames = 300
+files = { rom = "sega/software/roms/altered-beast/ab.smd" }
+golden = "genesis/S1-altered-beast-300.png"
+golden_sha256 = "2e24b6280d2f7a3209515804bab9a250922a1fd1b24009e54434cb4feb4a933a"
+compare = { mode = "similarity", max_mad = 3.0, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+# S1 at frame 600: the SEGA logo has gone and the title screen is up. Genesis Plus GX's picture, compared with a mean absolute difference: the emulators convert the
+# 3-bit colour levels to 8 bits differently (scenarios/compare_frames.py shows the pictures are identical once reduced to levels).
+[[scenario]]
+id = "S1-600"
+kind = "screen"
+frames = 600
+files = { rom = "sega/software/roms/altered-beast/ab.smd" }
+golden = "genesis/S1-altered-beast-600.png"
+golden_sha256 = "ba242ce81812e63f0423c80f1dd01d39c8774fc74d1cf24c7067eab5cb56f510"
+compare = { mode = "similarity", max_mad = 3.0, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+# S1T: the TMSS boot ROM's licence screen at frame 120 (the console's own start-up, then Altered Beast): Genesis Plus GX with its
+# boot ROM enabled shows the same picture (identical once reduced to colour levels, frames 10-250 and 500).
+[[scenario]]
+id = "S1T"
+kind = "screen"
+frames = 120
+files = { rom = "sega/software/roms/altered-beast/ab.smd", rom-tmss = "sega/software/oracles/system/bios_MD.bin" }
+golden = "genesis/S1T-tmss-120.png"
+golden_sha256 = "fb6e4efc3862cc9ebc7b4d4cb606885fb65826ddc28134f92400d29de69b9d14"
+compare = { mode = "similarity", max_mad = 3.0, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+# P22: how many iterations of a 42-cycle loop fit in 20 lines (V counter 60 to 80), display off then on: 229 in Genesis Plus GX,
+# PicoDrive and BlastEm (a 488-cycle line would give 232; the 68000 loses 2 of every 130 cycles to the bus refresh, fact M16).
+# clownmdemu counts 232 (no refresh) and is not followed.
+[[scenario]]
+id = "P22"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p22_line_cycles.md" }
+start = 16711680
+len = 4
+golden = "genesis/p22_line_cycles.bin"
+golden_sha256 = "3db40f3b2432b37709586cd4489317f9d233bd786efcc306f558808feb93361a"
+
+# P30B: a Z80 loop reading the cartridge through its window while the 68000 counts a 42-cycle loop over 20 lines, then the Z80's
+# own count. The 68000 loses cycles for each access of the Z80 to its bus (Genesis Plus GX: 208 iterations against 229 without
+# the Z80; BlastEm 214, PicoDrive 213). Genesis Plus GX's dump is the golden.
+[[scenario]]
+id = "P30B"
+kind = "memory"
+frames = 90
+files = { rom = "sega/software/scenarios/p30b_z80_rom_loop.md" }
+start = 16711680
+len = 4
+golden = "genesis/p30b_z80_rom_loop.bin"
+golden_sha256 = "66a5eabec24cfc39a33961a118d7c18d06a54eb520e5878d8539de9faa8835af"
+compare = { mode = "exact" }
+status = "known-gap"
+gap = { reason = "the 68000 count is 209 against 208 and the Z80 count 4898 against 4099: the Z80 waits 3 clocks and the 68000 10 cycles for each access to the 68000's bus (the average of Genesis Plus GX's rule, which varies with the Z80 clock), but Genesis Plus GX's Z80 completes fewer iterations of the RAM loop as well (4010 against 4865 in BlastEm, PicoDrive and here), so its Z80 runs slower for a reason not found", evidence = "p30a_z80_ram_loop: Genesis Plus GX 00e5 0faa, PicoDrive 00e5 1302, BlastEm 00e5 1300, here 00e5 1301; p30b: 00d0 1003, 00d5 12cb, 00d6 12e0, here 00d1 1322 (probe.py scenarios/probes/p30b_z80_rom_loop.s --frames 90 --ram 0:4)" }
+
+# P29: the lines the V counter advances while the 68000 writes 200 words to the data port from line 20: VRAM in H40 and H32 with
+# the display on and off, CRAM and VSRAM with it on. Genesis Plus GX, PicoDrive and BlastEm agree (21, 7, 24, 7, 11, 11 lines);
+# clownmdemu does not hold the 68000 up and is not followed.
+[[scenario]]
+id = "P29"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p29_fifo_rate.md" }
+start = 16711680
+len = 12
+golden = "genesis/p29_fifo_rate.bin"
+golden_sha256 = "7985a1e77a22852218e6fd4c71dc41f0c244b799438379762b9193670ec67f17"
+
+# p34_bus_cram_h40_on: 1000 units of VDP DMA from line 20, the lines the V counter advanced until it was done (Genesis Plus GX's dump; BlastEm and
+# PicoDrive are within a line).
+[[scenario]]
+id = "P34-bus-cram-h40-on"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p34_bus_cram_h40_on.md" }
+start = 16711680
+len = 2
+golden = "genesis/p34_bus_cram_h40_on.bin"
+golden_sha256 = "797427cf8368051fe7b8e3e9d5ade9c5bc9d0cf96f4f3fad2a1e1d7848368188"
+
+# p34_bus_vram_h40_on: 1000 units of VDP DMA from line 20, the lines the V counter advanced until it was done (Genesis Plus GX's dump; BlastEm and
+# PicoDrive are within a line).
+[[scenario]]
+id = "P34-bus-vram-h40-on"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p34_bus_vram_h40_on.md" }
+start = 16711680
+len = 2
+golden = "genesis/p34_bus_vram_h40_on.bin"
+golden_sha256 = "f3a5441d11e0c900d8957d0e72f4a82f1490c4a0a4d9e1c0f3b29328e3898ed0"
+
+# p34_bus_vram_h32_on: 1000 units of VDP DMA from line 20, the lines the V counter advanced until it was done (Genesis Plus GX's dump; BlastEm and
+# PicoDrive are within a line).
+[[scenario]]
+id = "P34-bus-vram-h32-on"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p34_bus_vram_h32_on.md" }
+start = 16711680
+len = 2
+golden = "genesis/p34_bus_vram_h32_on.bin"
+golden_sha256 = "96ed520f5948ca82194267414b0b0cd4df82fe3f16dfdcf53d3c9a7dc6284821"
+
+# p34_fill_h32_on: 1000 units of VDP DMA from line 20, the lines the V counter advanced until it was done (Genesis Plus GX's dump; BlastEm and
+# PicoDrive are within a line).
+[[scenario]]
+id = "P34-fill-h32-on"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p34_fill_h32_on.md" }
+start = 16711680
+len = 2
+golden = "genesis/p34_fill_h32_on.bin"
+golden_sha256 = "267ff33d242cf99619876d639456f362147845ca99fdd30d4195275ab833c807"
+
+# p34_fill_h40_on: 1000 units of VDP DMA from line 20, the lines the V counter advanced until it was done (Genesis Plus GX's dump; BlastEm and
+# PicoDrive are within a line).
+[[scenario]]
+id = "P34-fill-h40-on"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p34_fill_h40_on.md" }
+start = 16711680
+len = 2
+golden = "genesis/p34_fill_h40_on.bin"
+golden_sha256 = "797427cf8368051fe7b8e3e9d5ade9c5bc9d0cf96f4f3fad2a1e1d7848368188"
+
+# p34_copy_h40_on: 1000 units of VDP DMA from line 20, the lines the V counter advanced until it was done (Genesis Plus GX's dump; BlastEm and
+# PicoDrive are within a line).
+[[scenario]]
+id = "P34-copy-h40-on"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p34_copy_h40_on.md" }
+start = 16711680
+len = 2
+golden = "genesis/p34_copy_h40_on.bin"
+golden_sha256 = "f3a5441d11e0c900d8957d0e72f4a82f1490c4a0a4d9e1c0f3b29328e3898ed0"
+
+# P40-im2-10: interlace mode 2 (probe p40_im2), frame 10: Genesis Plus GX's single field output; frames 10 and 11 are different fields.
+[[scenario]]
+id = "P40-im2-10"
+kind = "screen"
+frames = 10
+files = { rom = "sega/software/scenarios/p40_im2.md" }
+golden = "genesis/P40-im2-10.png"
+golden_sha256 = "bc5a44b49da709cd21d5cfb574f0e6f899322df9c2fd8b6f16736c6eeeb48447"
+compare = { mode = "similarity", max_mad = 3.0, reason = "another emulator's colour levels" }
+
+# P40-im2-11: interlace mode 2 (probe p40_im2), frame 11: Genesis Plus GX's single field output; frames 10 and 11 are different fields.
+[[scenario]]
+id = "P40-im2-11"
+kind = "screen"
+frames = 11
+files = { rom = "sega/software/scenarios/p40_im2.md" }
+golden = "genesis/P40-im2-11.png"
+golden_sha256 = "c1a48ad96b09db02b412ea2ee03c7f25d4d1cc1646b0d47f672098872e931ade"
+compare = { mode = "similarity", max_mad = 3.0, reason = "another emulator's colour levels" }
+
+# P41-im1-10: interlace mode 1 (probe p41_im1), frame 10: Genesis Plus GX's single field output; frames 10 and 11 are different fields.
+[[scenario]]
+id = "P41-im1-10"
+kind = "screen"
+frames = 10
+files = { rom = "sega/software/scenarios/p41_im1.md" }
+golden = "genesis/P41-im1-10.png"
+golden_sha256 = "f846290131e2510787621806b1ab680144b87bc14dfe1a041e1799854155d349"
+compare = { mode = "similarity", max_mad = 3.0, reason = "another emulator's colour levels" }
+
+# P42: the V counter and the field flag in the interlaced modes (Genesis Plus GX and BlastEm agree).
+[[scenario]]
+id = "P42"
+kind = "memory"
+frames = 200
+files = { rom = "sega/software/scenarios/p42_interlace_counter.md" }
+start = 16711680
+len = 24
+golden = "genesis/p42_interlace_counter.bin"
+golden_sha256 = "ee012563d08222c0f7a2a22996ba1a848ff9f28d429681fc238026d6a1697c3b"
+
+# P45: a J-Cart (Micro Machines 2's header): the extra pads at $380000 with TH high and low. Genesis Plus GX's dump is the golden; the
+# other cores have no J-Cart.
+[[scenario]]
+id = "P45"
+kind = "memory"
+frames = 5
+files = { rom = "sega/software/scenarios/p45_jcart.md" }
+start = 16711680
+len = 8
+golden = "genesis/p45_jcart.bin"
+golden_sha256 = "e447fe1421185ba24fe2179312c6f7f8a5f261bcf761fcc699348341acab4674"
+
+# p49_pal_bus_vram_v28: 1000 units of bus-to-VRAM DMA from line 20 on a PAL console, V28 (PAL header; Genesis Plus GX, PicoDrive and BlastEm agree within a line).
+[[scenario]]
+id = "P49-pal-v28"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p49_pal_bus_vram_v28.md" }
+start = 16711680
+len = 2
+golden = "genesis/p49_pal_bus_vram_v28.bin"
+golden_sha256 = "f3a5441d11e0c900d8957d0e72f4a82f1490c4a0a4d9e1c0f3b29328e3898ed0"
+
+# p49b_pal_bus_vram_v30: the same with V30 (240 active lines): the same 111 lines, the DMA ends inside the picture (PAL header; Genesis Plus GX, PicoDrive and BlastEm agree within a line).
+[[scenario]]
+id = "P49b-pal-v30"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p49b_pal_bus_vram_v30.md" }
+start = 16711680
+len = 2
+golden = "genesis/p49b_pal_bus_vram_v30.bin"
+golden_sha256 = "f3a5441d11e0c900d8957d0e72f4a82f1490c4a0a4d9e1c0f3b29328e3898ed0"
+
+# p49c_pal_cross_v28: the same from line 200, crossing the end of a 224-line picture (PAL header; Genesis Plus GX, PicoDrive and BlastEm agree within a line).
+[[scenario]]
+id = "P49c-pal-cross-v28"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p49c_pal_cross_v28.md" }
+start = 16711680
+len = 2
+golden = "genesis/p49c_pal_cross_v28.bin"
+golden_sha256 = "d8f7720bd76b8e048289b3eeebc5d41e20c35822d4652364a429ab7cb7ea6b1f"
+
+# p49c_pal_cross_v30: the same from line 200, crossing the end of a 240-line picture (PAL header; Genesis Plus GX, PicoDrive and BlastEm agree within a line).
+[[scenario]]
+id = "P49c-pal-cross-v30"
+kind = "memory"
+frames = 60
+files = { rom = "sega/software/scenarios/p49c_pal_cross_v30.md" }
+start = 16711680
+len = 2
+golden = "genesis/p49c_pal_cross_v30.bin"
+golden_sha256 = "3639618e90314d0feb7ce289d97468263ca4af996ffc621399d092e1f12aa1dd"
+

@@ -1,0 +1,9 @@
+[package]
+name = "sn76489"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "SN76489 programmable sound generator as in the Sega VDP: 3 tone channels and a noise channel"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

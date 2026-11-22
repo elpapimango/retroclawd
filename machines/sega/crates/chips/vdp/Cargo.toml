@@ -1,0 +1,9 @@
+[package]
+name = "vdp"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Sega 315-5313 video display processor (Mega Drive mode 5): ports, memory, DMA, timing and the picture"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

@@ -1,0 +1,122 @@
+machine = "segacd"
+# The BIOS (a US Model 2, bios_CD_U.bin: RomM firmware `us_scd2_9306.bin`) goes in machines/sega/roms/segacd/ and the discs in
+# machines/sega/software/discs/ (none of them committed). The goldens are Genesis Plus GX's pictures (scenarios/capture_segacd_goldens.py
+# prints their hashes), never committed.
+
+[reference]
+emulator = "genesis-plus-gx"
+version = "1.7.4"
+command = "machines/sega/scenarios/capture_segacd_goldens.py (libretro_run.py with the Sega CD BIOS as bios_CD_U.bin in the system folder)"
+
+[files]
+rom-bios = "sega/roms/segacd/us_scd2_9306.bin"
+
+# S1 at frames 300 and 600: the BIOS start-up animation (the Sega CD logo and the spinning earth), the same whatever disc is in.
+# Mean absolute difference of 2.7 to 3.0 is the colour-level conversion (as for the Genesis scenarios), the pictures agree otherwise.
+[[scenario]]
+id = "S1-300"
+kind = "screen"
+frames = 300
+files = { disc = "sega/software/discs/dl/Dragon's Lair (USA).cue" }
+golden = "segacd/S1-300.png"
+golden_sha256 = "890244c7e3984f5dceaea421bd7640f0702444bb60a73e06847223eea7e5f9ea"
+compare = { mode = "similarity", max_mad = 3.5, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+[[scenario]]
+id = "S1-600"
+kind = "screen"
+frames = 600
+files = { disc = "sega/software/discs/dl/Dragon's Lair (USA).cue" }
+golden = "segacd/S1-600.png"
+golden_sha256 = "49b9552bca657fc52073279fd5c9b646d0f0b26d3091c87d867b8b9a64a242e9"
+compare = { mode = "similarity", max_mad = 3.5, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+# S1 at frame 900: the BIOS's "PRESS THE START BUTTON" screen (earth, logo, text) as the disc check begins; 0.13 mean difference.
+[[scenario]]
+id = "S1-900"
+kind = "screen"
+frames = 900
+files = { disc = "sega/software/discs/dl/Dragon's Lair (USA).cue" }
+golden = "segacd/S1-900.png"
+golden_sha256 = "96615f955ea2b88bc0fc443dd98ef7a079205fb2668ae2d0948df7b781c73d77"
+compare = { mode = "similarity", max_mad = 0.5, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+# S3: three discs read by the BIOS (cue and BIN, whole boot-time handshake with the sub-CPU, the CD controller and the drive) to frame
+# 1200: Dragon's Lair has left the BIOS screen for its own picture, Silpheed and Lunar are still on the BIOS one (they load later).
+[[scenario]]
+id = "S3-dl"
+kind = "screen"
+frames = 1200
+files = { disc = "sega/software/discs/dl/Dragon's Lair (USA).cue" }
+golden = "segacd/S3-dl-1200.png"
+golden_sha256 = "a718a75e8ae3a8eca5334de973838897aa78aff57df752ae928f30dda35bd624"
+compare = { mode = "similarity", max_mad = 0.8, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+[[scenario]]
+id = "S3-silpheed"
+kind = "screen"
+frames = 1200
+files = { disc = "sega/software/discs/Silpheed (USA)/Silpheed (USA).cue" }
+golden = "segacd/S3-silpheed-1200.png"
+golden_sha256 = "735656bcf8ed5e48debbb2462608597aa8592dc2d0e790d4abb4ed43411fb663"
+compare = { mode = "similarity", max_mad = 0.5, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+[[scenario]]
+id = "S3-lunar"
+kind = "screen"
+frames = 1200
+files = { disc = "sega/software/discs/Lunar - The Silver Star (USA)/Lunar - The Silver Star (USA).cue" }
+golden = "segacd/S3-lunar-1200.png"
+golden_sha256 = "735656bcf8ed5e48debbb2462608597aa8592dc2d0e790d4abb4ed43411fb663"
+compare = { mode = "similarity", max_mad = 0.5, reason = "another emulator's colour levels: the pictures are identical once reduced to the 8 levels of each channel" }
+
+# S3 Final Fight CD at frame 2400: the game's own map screen. Its main-CPU program arrives in word RAM through a CD controller transfer made
+# in 1M mode (fact E18); before that was handled the machine stayed black. Another emulator's picture, so a similarity.
+[[scenario]]
+id = "S3-ffcd"
+kind = "screen"
+frames = 2400
+files = { disc = "sega/software/discs/Final Fight CD (USA)/Final Fight CD (USA).cue" }
+golden = "segacd/S3-ffcd-2400.png"
+golden_sha256 = "80549392098acd7d161482b18df32db4b06c11339126abbd4cec8f3460b8b142"
+compare = { mode = "similarity", max_mad = 5.0, reason = "another emulator's colour levels (4.0 measured: the map is scrolling and the two are not on the same frame)" }
+
+# S3 Snatcher at frame 1900: the Konami logo. Its graphics are loaded in 2M mode and found in the banks after the switch to 1M mode, which
+# keeps the words (fact E19); before that was handled the screen stayed black. Another emulator's picture, so a similarity.
+[[scenario]]
+id = "S3-snatcher"
+kind = "screen"
+frames = 1900
+files = { disc = "sega/software/discs/Snatcher (USA)/Snatcher (USA).cue" }
+golden = "segacd/S3-snatcher-1900.png"
+golden_sha256 = "a4037c544d3f8c5d99a2ec67c34f11d89d7b953b8df4f0d4ec4e26ef54b837d1"
+compare = { mode = "similarity", max_mad = 5.0, reason = "another emulator's colour levels (and its second controller port holds a light gun by default, ours a pad)" }
+
+# S4: the BIOS's CD player on an audio disc (scenarios/make_tone_disc.py) plays track 1, a 440 Hz tone. Start at frame 600 takes the
+# title screen to the player, Up moves its cursor onto the play button and A presses it (found with Genesis Plus GX, which plays the
+# same tone at the same level: RMS 8485 against 8481 here, fact E17).
+[[scenario]]
+id = "S4"
+kind = "audio"
+frames = 1500
+files = { disc = "sega/software/scenarios/segacd-tone.cue" }
+actions = ["600:key_down=Joy1Start", "610:key_up=Joy1Start", "700:key_down=Joy1Up", "712:key_up=Joy1Up", "800:key_down=Joy1A", "810:key_up=Joy1A"]
+audio = { from_s = 20.0, to_s = 24.0, tone_hz = 440.0, tone_tolerance_pct = 1.0, min_amplitude = 0.05 }
+
+# S5: the saved state is deterministic and a reload continues identically (the Mega-CD's own state, the drive's position and the
+# BIOS's own handshake in flight at frame 600).
+[[scenario]]
+id = "S5"
+kind = "state"
+frames = 600
+more_frames = 100
+files = { disc = "sega/software/discs/dl/Dragon's Lair (USA).cue" }
+
+# S6: the NTSC frame is 262 lines of 3420 master clocks.
+[[scenario]]
+id = "S6"
+kind = "timing"
+frames = 100
+files = { disc = "sega/software/discs/dl/Dragon's Lair (USA).cue" }
+cycles_per_frame = 896040
+cycles_tolerance = 100
