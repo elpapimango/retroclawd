@@ -1,0 +1,13 @@
+/target
+*.log
+dist/
+# ROMs, firmware, oracle cores and downloaded documents are never committed.
+/roms/
+/software/
+# Local cross-repository testing only; never committed.
+/.cargo/
+crates/**/fuzz/target/
+crates/**/fuzz/corpus/
+crates/**/fuzz/artifacts/
+__pycache__/
+*.pyc

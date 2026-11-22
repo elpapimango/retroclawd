@@ -1,0 +1,15 @@
+# Which firmware satisfies which machine option (see retroclawd-sinclair's firmware.toml for the format).
+#
+# The Neo Geo needs its system ROM set, `neogeo.zip`, as one zip: the 68000 BIOS files (sp-s2.sp1 and the other regions), the Z80
+# BIOS sm1.sm1, the fix tiles sfix.sfix and the shrink table 000-lo.lo. It is matched by the SHA-1 of the whole zip on the RomM
+# server (firmware id 259 there) and handed to the machine as it is, never unpacked. It is never committed. Two versions of the
+# set are known: the one RomM serves and the one a RetroArch / FinalBurn Neo install holds.
+
+[[rom]]
+machines = ["neogeo"]
+option = "rom_bios"
+label = "Neo Geo system ROM set (neogeo.zip)"
+sha1 = [
+  "420194cc1171adb1920d2ff05e3b7b9ae2b73942",
+  "deb62b0074b8cae4f162c257662136733cfc76ad",
+]

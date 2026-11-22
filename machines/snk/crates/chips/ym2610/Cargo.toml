@@ -1,0 +1,9 @@
+[package]
+name = "ym2610"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Yamaha YM2610 (OPNB): timers, the SSG, ADPCM-A and ADPCM-B, FM"
+
+[dependencies]
+ay-3-8910 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }

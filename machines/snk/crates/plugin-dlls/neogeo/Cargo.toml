@@ -1,0 +1,14 @@
+[package]
+name = "neogeo-machine-plugin-dll"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Shared-library build of neogeo-machine-plugin: only the C entry points, all logic lives in neogeo-machine-plugin"
+
+[lib]
+name = "neogeo_machine_plugin"
+crate-type = ["cdylib"]
+
+[dependencies]
+plugin-api = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
+neogeo-machine-plugin = { path = "../../plugins/neogeo-machine-plugin" }
