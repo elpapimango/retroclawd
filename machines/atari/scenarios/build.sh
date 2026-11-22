@@ -25,7 +25,7 @@ python "$here/make_scenarios.py" "$out"
 # files.st: two text files to list on the desktop.
 "$tools/rcdisk" create "$out/files.st" --force
 printf 'Hello from rcdisk.\r\n' > "$out/HELLO.TXT"
-printf 'A floppy made by rctools for the S3 scenario.\r\n' > "$out/README.TXT"
+printf 'A floppy made by retroclawd-tools for the S3 scenario.\r\n' > "$out/README.TXT"
 "$tools/rcdisk" add "$out/files.st" "$out/HELLO.TXT" "$out/README.TXT"
 rm "$out/HELLO.TXT" "$out/README.TXT"
 # hd.img: an 8M hard disk with an AHDI partition holding HELLO.TXT (S11: EmuTOS shows it as drive C).
