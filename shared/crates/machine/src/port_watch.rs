@@ -59,6 +59,7 @@ impl PortWatcher {
     /// Records one port access. With no watches set -- the normal case -- this
     /// is a single `is_empty` check. The first matching access since the last
     /// [`take_hit`](Self::take_hit) is the one kept.
+    #[cfg(any(feature = "debug", test))]
     #[inline]
     pub fn note(&mut self, port: u16, value: u8, write: bool) {
         if self.watches.is_empty() || self.hit.is_some() {
@@ -68,6 +69,11 @@ impl PortWatcher {
             self.hit = Some(PortHit { port, value, write });
         }
     }
+
+    /// Without the `debug` feature there are no watch points: nothing to record, nothing to cost.
+    #[cfg(not(any(feature = "debug", test)))]
+    #[inline(always)]
+    pub fn note(&mut self, _port: u16, _value: u8, _write: bool) {}
 
     /// Takes the latched hit, if any.
     pub fn take_hit(&mut self) -> Option<PortHit> {

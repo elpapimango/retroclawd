@@ -16,3 +16,7 @@ zx-tape = { path = "../../../../../shared/crates/formats/zx-tape" }
 serde = { version = "1", features = ["derive"] }
 bincode = { version = "2", features = ["serde"] }
 tracing = "0.1"
+
+[features]
+# Port watch points. Off in `rcd`, on in `rcdd`.
+debug = ["machine/debug"]

@@ -17,3 +17,7 @@ nec765 = { path = "../../../../../shared/crates/chips/nec765", features = ["dsk"
 dsk = { path = "../../../../../shared/crates/formats/dsk" }
 serde = { version = "1", features = ["derive"] }
 bincode = { version = "2", features = ["serde"] }
+
+[features]
+# Port watch points. Off in `rcd`, on in `rcdd`.
+debug = ["machine/debug"]

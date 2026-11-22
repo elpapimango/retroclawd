@@ -20,3 +20,7 @@ mc6850 = { path = "../../../../../shared/crates/chips/mc6850" }
 ikbd = { path = "../../chips/ikbd" }
 st-floppy = { path = "../../formats/st-floppy" }
 wd1770 = { path = "../../../../../shared/crates/chips/wd1770" }
+
+[features]
+# Instruction history, exception log, trace and memory watch points. Off in `rcd`, on in `rcdd`.
+debug = ["machine/debug"]

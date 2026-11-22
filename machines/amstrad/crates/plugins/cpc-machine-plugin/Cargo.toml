@@ -26,3 +26,6 @@ toml = "0.8"
 
 [build-dependencies]
 build-info = { path = "../../../../../shared/crates/build-info" }
+
+[features]
+debug = ["cpc/debug"]

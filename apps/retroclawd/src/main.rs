@@ -327,6 +327,7 @@ struct CommonArgs {
     #[arg(long = "hotkey", value_name = "ACTION=CHORD")]
     hotkey: Vec<String>,
 
+    #[cfg(feature = "debug")]
     /// A symbol file naming addresses in the debugger's disassembly (`; NAME` beside an operand).
     /// Repeatable, later files win. Accepts assembler listings (`NAME = $1234`, `NAME EQU 0x1234`),
     /// map files (`NAME 1234`) and VICE labels (`al C:1234 .NAME`); a path, URL or `archive.zip#entry`.
@@ -334,11 +335,11 @@ struct CommonArgs {
     #[arg(long = "symbols", value_name = "FILE")]
     symbols: Vec<String>,
 
+    #[cfg(feature = "debug")]
     /// Extra plugin selectors. Repeatable. Accepted forms:
     /// `debug-ui[:OPT[:OPT...]]`, `debug-log[:OPT[:OPT...]]`,
     /// `debug-zrcp[:OPT[:OPT...]]` (or legacy `debug-tcp[:OPT[:OPT...]]`),
     /// `debugger[:OPT[:OPT...]]` (legacy alias for `debug-ui`),
-    /// `machine=<path>`, or plain `<path>` (machine plugin path).
     ///
     /// Options use `:` as delimiter and are `KEY=VALUE` pairs.
     /// Examples:
@@ -602,6 +603,7 @@ struct CommonArgs {
     #[arg(long)]
     progress: bool,
 
+    #[cfg(feature = "debug")]
     /// Show a semi-transparent GUI debug overlay. Optional colon-delimited
     /// panel list: `cpu` (registers/HALT -- 6502 view includes A, P flags,
     /// PC, S, X, Y), `mem`/`memory` (hex dump + paging/bank summary),
@@ -1934,7 +1936,10 @@ fn main() -> ExitCode {
     // machine=<path>` may itself be what makes that machine discoverable
     // at all -- both must run before `plugin_bridge::startup_report`.
     let machine_hint = prescan_machine_arg(&normalized_args);
+    #[cfg(feature = "debug")]
     let plugin_values = prescan_plugin_values(&normalized_args);
+    #[cfg(not(feature = "debug"))]
+    let plugin_values: Vec<String> = Vec::new();
     let plugin_runtime = match apply_plugin_runtime(&plugin_values) {
         Ok(runtime) => runtime,
         Err(e) => {
@@ -2388,6 +2393,7 @@ fn main() -> ExitCode {
             }
         };
 
+    #[cfg(feature = "debug")]
     if let Err(e) = debug_symbols::load_user_files(&overrides::symbol_files(&config, &args.symbols))
     {
         eprintln!("--symbols: {e}");
@@ -2796,6 +2802,9 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         }
+        #[cfg(not(feature = "debug"))]
+        let overlay_panels: Option<gui::OverlayPanels> = None;
+        #[cfg(feature = "debug")]
         let overlay_panels = match args.show_overlay.as_deref() {
             None => None,
             Some(spec) => match gui::OverlayPanels::parse(spec) {

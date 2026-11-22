@@ -1165,6 +1165,7 @@ impl blitter::BlitBus for BlitPort<'_> {
 impl M68kBus for StBus {
     fn read(&mut self, addr: u32, size: Size, fc: FunctionCode) -> Result<u32, BusFault> {
         let result = self.read_access(addr, size, fc);
+        #[cfg(feature = "debug")]
         if !self.watch.is_empty()
             && let Ok(v) = result
         {
@@ -1181,6 +1182,7 @@ impl M68kBus for StBus {
         fc: FunctionCode,
     ) -> Result<(), BusFault> {
         let result = self.write_access(addr, size, value, fc);
+        #[cfg(feature = "debug")]
         if !self.watch.is_empty() && result.is_ok() {
             self.watch_check(addr, size, true, value, fc);
         }

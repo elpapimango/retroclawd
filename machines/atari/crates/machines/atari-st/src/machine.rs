@@ -692,10 +692,12 @@ impl Machine for AtariSt {
             return 4;
         }
         if self.cpu.run_state() == RunState::Running {
+            #[cfg(feature = "debug")]
             self.diag.instruction(self.cpu.pc, self.cpu.prefetch()[0]);
             self.bus.pc = self.cpu.pc;
         }
         let clocks = self.cpu.step(&mut self.bus);
+        #[cfg(feature = "debug")]
         if let Some(e) = self.cpu.take_exception() {
             self.diag.exception(e);
         }

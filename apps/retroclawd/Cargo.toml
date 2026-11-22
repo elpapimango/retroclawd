@@ -62,7 +62,11 @@ atari = ["dep:atari-st-machine-plugin", "dep:atari-8bit-machine-plugin"]
 snk = ["dep:neogeo-machine-plugin"]
 sega = ["dep:sega-machine-plugin"]
 # Everything for developing: the debuggers and every trace/diagnostic hook in the program and the machines.
-debug = ["debug-ui", "debug-zrcp", "debug-log"]
+debug = [
+    "debug-ui", "debug-zrcp", "debug-log", "machine/debug",
+    "zx81-machine-plugin?/debug", "zx-spectrum-machine-plugin?/debug", "cpc-machine-plugin?/debug",
+    "atari-st-machine-plugin?/debug",
+]
 debug-ui = ["dep:tiny_http", "dep:pok"]
 debug-zrcp = []
 debug-log = ["dep:tracing-subscriber"]

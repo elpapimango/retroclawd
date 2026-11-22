@@ -17,3 +17,6 @@ atari-st = { path = "../../machines/atari-st" }
 
 [build-dependencies]
 build-info = { path = "../../../../../shared/crates/build-info" }
+
+[features]
+debug = ["atari-st/debug"]
