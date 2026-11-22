@@ -8,7 +8,7 @@ machine = "c128"
 [reference]
 emulator = "vice"
 version = "3.10 (x128, GTK3 win64)"
-command = "retroclawd-tools/scripts/capture_vice_screen.py x128 CYCLES OUT.png --vicii --crop 0,3,384,264 [--keybuf 'print 12*34\\n']   (x128 -default +sound -warp -limitcycles CYCLES -exitscreenshotvicii)"
+command = "rctools/scripts/capture_vice_screen.py x128 CYCLES OUT.png --vicii --crop 0,3,384,264 [--keybuf 'print 12*34\\n']   (x128 -default +sound -warp -limitcycles CYCLES -exitscreenshotvicii)"
 
 [files]
 rom-basic = "commodore/software/scenarios/c128-basic-32k.rom"

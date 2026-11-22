@@ -5,7 +5,7 @@ args = ["--firmware", "auto"]
 [reference]
 emulator = "hatari"
 version = "2.6.1"
-command = "retroclawd-tools/scripts/capture_hatari_mem.py ROM FLOPPY VBLS ADDR LEN OUT --machine megast"
+command = "rctools/scripts/capture_hatari_mem.py ROM FLOPPY VBLS ADDR LEN OUT --machine megast"
 
 # P32: the real-time clock's registers in both banks.
 [[scenario]]

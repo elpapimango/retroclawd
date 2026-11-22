@@ -96,7 +96,7 @@ Shared chips used from `retroclawd-crates`: `ay-3-8910` (YM2149 variant), `mc685
 
 The EmuTOS tests (`crates/machines/atari-st/tests/emutos.rs`) need `RC_EMUTOS` (a path to `etos192uk.img`, or the
 `--firmware auto` cache) and, for the Hatari comparisons, `RC_GOLDENS` with `atari-st/emutos14-uk-trace.txt` and
-`atari-st/emutos14-uk-io-{256k,512k,1m,2m,2.5m,4m}.txt` from `retroclawd-tools/scripts/capture_hatari_trace.py`
+`atari-st/emutos14-uk-io-{256k,512k,1m,2m,2.5m,4m}.txt` from `rctools/scripts/capture_hatari_trace.py`
 (`--kind io --memsize 256|0|1|2|2560|4 --vbls 50`), plus `emutos14-uk-io-1m-1500.txt` (`--memsize 1 --vbls 1500`) and
 `emutos14-uk-io-1m-boot.txt` (the same with `--disk-a` and the boot floppy the test `boot_floppy_is_executable`
 writes to `RC_DUMP_BOOT_FLOPPY`). Without them they print where they looked and pass. The comparison rules (polling,
@@ -111,7 +111,7 @@ modified by being read. Never committed; without the variable the tests pass and
 
 - Hardware facts of Phase 2 (USART, ACSI, cartridge, raster, GEMDOS programs) are in `docs/hardware-facts.md` with their
   sources; the ACSI application notes (1985) and the Atari Compendium chapters 2 and 4 are the primary ones, by SHA-256.
-- Scenarios: `scenarios/build.sh` needs `retroclawd-tools` built (`rcdisk`, `rcld`); `hello.s` and `hello.layout.toml` make
+- Scenarios: `scenarios/build.sh` needs `rctools` built (`rcdisk`, `rcld`); `hello.s` and `hello.layout.toml` make
   `hello.prg`, `rcdisk hd` makes `hd.img`. `RC_SWEEP=<n>` multiplies the hostile-input loops of the tests (`msa`).
 - `tests/prg.rs` runs a hand-made GEMDOS program from `AUTO\PROG.PRG` (EmuTOS needed; `RC_DUMP_AUTO_FLOPPY=<file>` writes the
   floppy it builds). A program from AUTO runs in user mode: it must not write below `$800`.

@@ -1,6 +1,6 @@
 # Atari ST scenario media
 
-`build.sh` writes them into `software/scenarios/` (git-ignored), using `rcdisk` from retroclawd-tools and
+`build.sh` writes them into `software/scenarios/` (git-ignored), using `rcdisk` from rctools and
 `make_scenarios.py`. The 68000 code is written as words in `make_scenarios.py`, one instruction per line with its
 offset, because the project has no 68000 assembler yet. `crates/machines/atari-st/tests/scenarios.rs` runs each
 program and checks what it does.

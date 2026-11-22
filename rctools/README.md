@@ -1,4 +1,4 @@
-# retroclawd-tools
+# rctools
 
 Command-line tools for the machines [retroclawd](https://github.com/elpapimango/retroclawd) emulates (ZX81, ZX
 Spectrum, Amstrad CPC, Commodore 64/128): assemble, disassemble, and -- as they arrive -- open, create and

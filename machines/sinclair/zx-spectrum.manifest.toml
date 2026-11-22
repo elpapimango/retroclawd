@@ -7,7 +7,7 @@ args = ["--no-border"]
 [reference]
 emulator = "zesarux"
 version = "13.0"
-command = "retroclawd-tools/scripts/capture_zesarux_screen.py 48k 6 OUT.png --crop 48,56,256,192 [--keys 'p12*34\n' --after 1 | --load FILE]   (zesarux --machine 48k --realvideo, save-screen over ZRCP)"
+command = "rctools/scripts/capture_zesarux_screen.py 48k 6 OUT.png --crop 48,56,256,192 [--keys 'p12*34\n' --after 1 | --load FILE]   (zesarux --machine 48k --realvideo, save-screen over ZRCP)"
 
 [files]
 rom = "sinclair/roms/zx-spectrum/spec48.rom"

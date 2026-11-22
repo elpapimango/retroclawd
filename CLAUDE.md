@@ -4,35 +4,51 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## Project status
 
-The `retroclawd` application plus the integration tooling. **No machine and no shared crate lives in this
-repository.** Machines are shared libraries (`*_machine_plugin.so/.dll/.dylib`) loaded by the app through the
-C-ABI in `plugin-api` (policy: `shared/docs/plugin-abi.md`). Four other repositories hold everything else; all are
-git submodules here, and the three machine repositories depend on the shared crates by git revision:
+One repository, one cargo workspace, two executables. Since 2026-11-22 there are no plugin libraries, no C ABI and no
+git submodules: every machine is a normal crate linked into the program. Neither executable loads anything from disk
+to find its machines.
 
-| Repository (submodule path) | Holds |
+| Executable | What it is |
 |---|---|
-| `elpapimango/retroclawd-crates` (`shared/`) | `machine`, `plugin-api`, the `z80` and `mos6502` cores, `ay-3-8910`, `nec765`, `dsk`, `zx-tape`, the plugin ABI policy. No machine, no app code. |
-| `elpapimango/retroclawd-sinclair` (`machines/sinclair`) | ZX81, ZX Spectrum 48K/128K/+2/+2A/+3, snapshot formats `.z80/.sna/.szx/.p`, Sinclair keyboard |
-| `elpapimango/retroclawd-amstrad` (`machines/amstrad`) | CPC464/664/6128, CPC+ / GX4000, `.cpr` cartridges, SNA snapshots, i8255 |
-| `elpapimango/retroclawd-commodore` (`machines/commodore`) | Experimental VIC-20/VIC-I; C64, C128, 1541/1570/1571/1581, VIC-II, SID, CIAs, VIA, WD1770, VDC, CBM disk formats |
-| `elpapimango/retroclawd-atari` (`machines/atari`) | Atari ST/STF/STFM (`atari-st`, slice 1 of the 16-bit work: CPU, memory map, scheduler, EmuTOS to its first device) |
-| `elpapimango/retroclawd-snk` (`machines/snk`) | SNK Neo Geo (`neogeo`: MVS BIOS and cartridge sets boot to their screens, with sound) |
+| `rcd` | The player: every machine, no debugging code at all. |
+| `rcdd` | The same program built with the `debug` feature: debuggers (`debug-ui`, `debug-zrcp`, `debug-log`), `--show-overlay`, `--symbols`, port and memory watch points, instruction history and the diagnostic reports. |
 
-Stays here: the app (`apps/retroclawd`, including the debuggers `debug-ui`, `debug-zrcp`, `debug-log`: ordinary
-modules behind cargo features, no longer plugins), the app-only crates (`app-config`, `game-config`, `file-loader`, `pok`), `crates/plugins/test-machine-plugin` (a
-do-nothing machine used only by this repository's unit tests) and `tools/`. The app uses `shared/` by path; the
-families pin a `retroclawd-crates` commit (`rev = ...`), and `tools/bump_pin.sh` moves all of them together.
+Build both with `tools/build_all.sh` (`--tools` adds the assemblers and test tools; `--features home|console|arcade|<family>`
+selects machines; `--dev` is a debug-profile build). `rcdd` is built in `target/<profile>-debug/` and copied next to `rcd`, so
+the two never rebuild each other. `cargo test --workspace --features debug` runs every unit test (the debug hooks have tests);
+`cargo test -p retroclawd` checks the app without them. Cargo features pick the machines: `home` (`sinclair`, `amstrad`,
+`commodore`, `atari`), `console` (`sega`, `snk`), `arcade` (`snk`); default `all-machines`. `rcda`/`rcdc`/`rcdh` (arcade-,
+console-, home-only builds) need only a `[[bin]]` per name with those features: not done yet.
 
-The detailed per-crate notes are in each repository's `CLAUDE.md`; the pre-split status narrative is kept in
-`docs/project-status-before-split.md`.
+Layout (every directory is a workspace member crate or holds them):
 
-Everything at once: `tools/build_all.sh` / `tools\build_all.ps1` (checks out `shared/` and the families, builds the
-app and every family, stages the libraries in `target/<profile>/plugins/`); `tools/smoke_test.sh` boots every machine
-and compares the boot screens; `tools/check_all.sh` runs every check (build, unit tests of every repository, smoke test, every
-scenario manifest, the rc-suite cases; `--acid` adds the CPC acid suite) and `tools/bump_pin.sh --push` runs it before pushing.
-Using one machine on its own: build the family repository (`cargo build --release
---workspace`) and put the resulting libraries in a `plugins/` folder next to the `retroclawd` executable, or point
-`RETROCLAWD_MACHINE_PLUGIN_DIRS` at them. `retroclawd --list-plugins` shows what was found.
+| Path | Holds |
+|---|---|
+| `shared/` | `machine`, `plugin-api` (the machine protocol types and the `MachinePlugin` trait; nothing foreign-function), the `z80`, `mos6502`, `mc68000` cores, `ay-3-8910`, `nec765`, `wd1770`, `mc6850`, `pia-6520`, `dsk`, `zx-tape`, `build-info` |
+| `machines/sinclair` | ZX81, ZX Spectrum 48K/128K/+2/+2A/+3, snapshot formats `.z80/.sna/.szx/.p`, Sinclair keyboard |
+| `machines/amstrad` | CPC464/664/6128, CPC+ / GX4000, `.cpr` cartridges, SNA snapshots, i8255 |
+| `machines/commodore` | Experimental VIC-20/VIC-I; C64, C128, 1541/1570/1571/1581, VIC-II, SID, CIAs, VIA, WD1770, VDC, CBM disk formats |
+| `machines/atari` | Atari ST/STF/STFM/Mega ST/STE (`atari-st`) and the 8-bit Atari 800/XL/XE/130XE (`atari-8bit`) |
+| `machines/snk` | SNK Neo Geo (`neogeo`) |
+| `machines/sega` | Sega Mega Drive / Genesis and Mega-CD |
+| `apps/retroclawd` | The application (`rcd`, `rcdd`): GUI, headless runs, the debuggers. `src/families.rs` links the machine families (and embeds their `firmware.toml`) by cargo feature |
+| `crates/` | App-only crates: `app-config`, `game-config`, `file-loader`, `pok`, and `plugins/test-machine-plugin` (a do-nothing machine for the app's own unit tests) |
+| `rctools/` | The tools (`rcasm`, `rcdis`, `rcdisk`, `rcchd`, `rctape`, `rcsnap`, `rcld`) and `rc-suite` (`rc-scenarios`, the integration suites). Formerly the `rctools` repository |
+| `tools/` | Scripts: `build_all.sh`, `smoke_test.sh`, `check_all.sh`, `fetch_*.sh` |
+
+A machine family crate set is `crates/machines/<machine>` (the emulation), `crates/chips/*`, `crates/formats/*` and
+`crates/plugins/<family>-machine-plugin`: the last is the glue that answers the host's typed requests (`MachinePlugin`,
+registered in `apps/retroclawd/src/families.rs`). The per-family `CLAUDE.md` files hold the detailed notes; the
+pre-split status narrative is in `docs/project-status-before-split.md`.
+
+The scripts `tools/check_all.sh` (build, unit tests, smoke test, every scenario manifest, the rc-suite cases; `--acid`
+adds the CPC acid suite) and `tools/smoke_test.sh` (boots every machine headless and compares the boot screens) run
+against `rcd`; the scenario manifests and the rc-suite run against `rcdd` (they use trace and diagnostic options only
+the debug build has: `RETROCLAWD_BIN=target/release/rcdd`).
+
+Everything below that mentions "plugin" libraries, `RETROCLAWD_MACHINE_PLUGIN_DIRS`, `--plugin machine=`, submodules, pins
+(`tools/bump_pin.sh`) or the separate `retroclawd-*` repositories describes the state before the merge: the machines are
+now linked in, and those repositories are archived (history is kept in this one).
 
 **Common execution policy:** `plugin_api::ExecutionMode` declares and parses the
 ordinary `execution_mode` Option (`--execution-mode fast|accurate`). A Plugin
@@ -90,21 +106,20 @@ declares `Program` but wants the host to read the load address, and used to fail
 ## Scenario manifests (2026-10-18)
 
 Every machine has a `machines/<family>/<id>.manifest.toml` (zx81, zx-spectrum, zx-spectrum-128, zx-spectrum-2a3, cpc464/664/6128, c64,
-c128) holding the playbook's standard scenarios as data, run by `rc-scenarios` of `retroclawd-tools` against the **release** `retroclawd`
-and its plugins. References: ZEsarUX 13.0 and VICE 3.10 (the CPC Plus and GX4000 have none). Build the test media first
+c128) holding the playbook's standard scenarios as data, run by `rc-scenarios` (`rctools/`) against the **release** `rcdd`. References: ZEsarUX 13.0 and VICE 3.10 (the CPC Plus and GX4000 have none). Build the test media first
 (`machines/<family>/scenarios/build.sh`, output in the git-ignored `software/scenarios/`), then:
 
 ```
-RETROCLAWD_BIN=target/release/retroclawd RETROCLAWD_MACHINE_PLUGIN_DIRS=target/release/plugins RC_ROMS=machines   RC_GOLDENS=<folder with the goldens> rc-scenarios run machines/sinclair/zx81.manifest.toml
+RETROCLAWD_BIN=target/release/rcdd RC_ROMS=machines RC_GOLDENS=<folder with the goldens> rc-scenarios run machines/sinclair/zx81.manifest.toml
 ```
 
-Goldens are never committed (a folder of your own, or RomM by hash); `retroclawd-tools/scripts/capture_*.py` regenerate them. Known gaps
+Goldens are never committed (a folder of your own, or RomM by hash); `rctools/scripts/capture_*.py` regenerate them. Known gaps
 (`status = "known-gap"`, evidence under `machines/<family>/docs/`): none open. Closed 2026-10-19: the CPC diagnostics' CRTC/FDC lines
-(compared with Caprice32 instead of ZEsarUX, whose FDC detection fails there; `retroclawd-tools/scripts/capture_caprice_screen.py`), the C64's
+(compared with Caprice32 instead of ZEsarUX, whose FDC detection fails there; `rctools/scripts/capture_caprice_screen.py`), the C64's
 fast loader now returns through the KERNAL's own SEARCHING/LOADING routines, and the C64 dead test's clock (the CIA TOD clock honours CRA
 `TODIN`, so a PAL machine left at 60 Hz runs at 5/6 speed, as VICE and the hardware do). The S6 frame-length gaps were closed 2026-10-19: each machine reports its exact
 frame through `Machine::frame_rate` / `MachineMetadata::frame_rate` (ZX81 312 x 207 T-states, its line corrected from 208 to 207; CPC
-79872; C64/C128 one raster frame, 19656 PAL), and the host paces and budgets by it. Details and the compare options are in `retroclawd-tools/CLAUDE.md`.
+79872; C64/C128 one raster frame, 19656 PAL), and the host paces and budgets by it. Details and the compare options are in `rctools/CLAUDE.md`.
 
 ## SNK Neo Geo (2026-10-31)
 
@@ -137,7 +152,7 @@ PIA/POKEY pins. State v5 preserves profile/MMU/Media/control phases and reads
 v1-v4 only on 800; preserve original files for rollback.
 Accurate Acid800 reaches 56/1/1 on 800 (XL-only banking fails) and 57/0/1
 on XL/XE. Reference keyboard/CAS/RMS capture and diagnostic screen parity
-remain explicit gaps (every pinned golden is reproducible: 2026-10-30, `retroclawd-tools/scripts/capture_atari8bit_goldens.py`, manifests 44/0/10 each); original Atari firmware and general games are not proven.
+remain explicit gaps (every pinned golden is reproducible: 2026-10-30, `rctools/scripts/capture_atari8bit_goldens.py`, manifests 44/0/10 each); original Atari firmware and general games are not proven.
 Read the Family intakes and
 `machines/atari/docs/atari800-gaps.md` before extending it. C16/Plus4 stay parked.
 
@@ -167,9 +182,9 @@ common/mod.rs`. A stop has a bounded report (`--diag-file`, `--trace-file`). `--
 mono frame's line count is sourced.
 Firmware: `--firmware auto` now also downloads from a `firmware.toml` `url` (zip SHA-1 `archive_sha1`, file `entry`,
 both hashes checked) and caches it under `<cache>/firmware/<sha1>.bin`; lookup order cache, RomM, URL; `when = { region =
-... }` matches `--region`. Reference emulator: Hatari 2.6.1 (black box; `retroclawd-tools/scripts/capture_hatari_trace.py`).
+... }` matches `--region`. Reference emulator: Hatari 2.6.1 (black box; `rctools/scripts/capture_hatari_trace.py`).
 Slice 6 (the Phase 1 exit): `machines/atari/atari-st.manifest.toml` (S1 desktop against Hatari's picture by
-similarity, `retroclawd-tools/scripts/capture_hatari_screen.py`; S2/S2J/S2M/S3 keys, joystick, mouse and a floppy made
+similarity, `rctools/scripts/capture_hatari_screen.py`; S2/S2J/S2M/S3 keys, joystick, mouse and a floppy made
 by `rcdisk` (`.st`, FAT12, `rcdisk boot`) as exact goldens made by retroclawd, since headless Hatari takes no input;
 S4 YM2149 tone; S6 frame length), media from `machines/atari/scenarios/build.sh`. `--at mouse_move=DX,DY` (split into
 steps of at most 127) and `--at mouse_down|mouse_up=left|right|middle` drive the mouse in batch runs (`scripted.rs`).
@@ -184,7 +199,7 @@ replaces a file unasked), the full IKBD command set, a read-only cartridge at `$
 bus error), a raster palette by line and a log of sync/resolution writes, and ACSI hard disks (`--acsi0 ... --acsi7` raw
 images, AHDI/FAT16 made by `rcdisk hd`, EmuTOS shows drive C). A `.prg` given to `--program` goes to the plugin as
 `MediaKind::Program` when the machine declares it (`program_goes_to_plugin`): the plugin builds a 720K floppy holding
-`AUTO\NAME.PRG` (`st_floppy::boot`) and EmuTOS runs it. `retroclawd-tools` gained the 68000 toolchain: `rcasm --cpu 68000`
+`AUTO\NAME.PRG` (`st_floppy::boot`) and EmuTOS runs it. `rctools` gained the 68000 toolchain: `rcasm --cpu 68000`
 (`-f gemdos` for a relocatable `.PRG`), `rcdis --cpu 68000`, `rcld` with `machine = "atari-st"`, `rc_common::prg` (the GEMDOS
 executable format) and `rcdisk hd`. The manifest now has S3W, S5, S8P, S9S, S10 and S11 as well. Scenario media build: `machines/atari/scenarios/build.sh`.
 **Phase 3 (2026-10-23, slices 13-17; plan `docs/superpowers/plans/2026-10-22-atari-st-phase3.md`, spec Status 2026-10-23).**
@@ -194,7 +209,7 @@ to date at the cycle of the access (`events.rs`, `waits.rs`), the Shifter keeps 
 (`fetch.rs`: picture window and left/right/top/bottom borders; `render_exact`, `render_overscan`: the `borders = on` option's
 832 x 552 canvas) and the mono monitor works (`--monitor mono`: 501 lines of 224 clocks). Every timing fact was observed with
 a probe, a 68000 program in `machines/atari/timing/` that runs in Hatari 2.6.1 (a black box, memory dumped with the debugger's
-`savebin` by `retroclawd-tools/scripts/capture_hatari_mem.py`) and here; `machines/atari/docs/timing-oracle.md`,
+`savebin` by `rctools/scripts/capture_hatari_mem.py`) and here; `machines/atari/docs/timing-oracle.md`,
 `timing/README.md`, `docs/hardware-facts.md` "Timing (Phase 3)". The probes found a real defect (the FDC was not ticked until it
 set Busy, so completion came at frame boundaries and EmuTOS lost a revolution per sector: boot 137 frames slower than Hatari;
 fixed in the shared `wd1770`), the floppy rotation facts (6267-byte revolution, 116-byte index pulse, 614-byte sector pitch,
@@ -222,8 +237,8 @@ open), SSF2 mapper (> 4 MB or header `SEGA SSF`), battery SRAM (`sram_file`, sav
 wait, 10 CPU cycles lost by the 68000, waits for DMA), VDP DMA holds the 68000. Save states are `RCST` v2 (ROM CRC, region, chip,
 full validation, fuzzed by `RC_SWEEP`). Interlace modes 1 and 2 (single field), serial EEPROM boards (EA, Sega, Acclaim) and the Sonic & Knuckles lock-on (`--lock-on`)
 are done, and since 2026-10-29 so are Codemasters J-Cart pads, cheat codes (option `cheats`: Game Genie `XXXX-YYYY`, `AAAAAA:DDDD`; no lock-on cartridge ROM), weave interlace (`interlace_output=weave`), the Sega Mouse, 4-Way Play and Menacer (options `port1`/`port2`), the Sonic 2 lock-on chip mechanism (`lock_on_chip`, untested against a real dump), `--execution-mode fast|accurate` (fast drops refresh, Z80 cost and FIFO stalls; `docs/benchmarks.md`) and mid-line palette/backdrop changes (fact V34). Not done: 32X, real Game Genie/Action Replay cartridge ROMs; see `TODO.md` "Sega Mega Drive". Oracles for comparison are the libretro cores in a RetroArch install
-(`retroclawd-tools/scripts/libretro_run.py`; Genesis Plus GX is the main reference); `machines/sega/scenarios/` has the probes
+(`rctools/scripts/libretro_run.py`; Genesis Plus GX is the main reference); `machines/sega/scenarios/` has the probes
 (`probe.py`), the frame comparison against Genesis Plus GX (`compare_frames.py`, `batch_compare.py`) and `sweep.py` (every game of
 `software/roms/` for N frames). Manifest: `machines/sega/genesis.manifest.toml` (`rc-scenarios`).
 
-**Sega CD (2026-10-29, slices 1-2 of 9; spec `docs/superpowers/specs/2026-10-29-sega-cd-design.md`, plans `docs/superpowers/plans/2026-10-29-sega-cd.md` and `...-slice2.md`)**: machine id `segacd` in the same plugin library, a Genesis with an `Expansion` (family-internal hook on the cartridge port, `genesis::Expansion`) that owns the Mega-CD: `crates/machines/segacd` (second `mc68000` as the sub-CPU at 12.5 MHz from the master clock by an exact integer ratio, 512 KB program RAM with bank window and write protect, 256 KB word RAM in 2M mode with DMNA/RET hand-over, 8 KB backup RAM, the BIOS at `$000000` and the mode-1 windows `$400000/$420000/$600000`), `crates/chips/mcd-gate-array` (both register sets, mailboxes, stopwatch, timer, interrupt levels; forced-reset sequence), `crates/formats/disc` (cue/BIN/ISO reader, sector reads, TOC, test-disc builder). Facts C1-C16 and D1-D3 in `machines/sega/docs/hardware-facts.md` come from the scanned Mega-CD Hardware Manual (`MCD-HW`; Sega Retro's article pages need a browser, its image host does not). Options: `rom_bios` (131072 bytes, `--firmware auto` by console region through `firmware.toml`) and `disc` (a path to a `.cue`/`.iso`, opened at start-up; the drive is not emulated yet). The debugger has a third CPU `sub`. Slice 3a (2026-10-29, same day): the CD drive port (`mcd-gate-array/src/cdd.rs`: ten-nibble status and command packets, checksum, HOCK, a level 4 interrupt every 1/75 s, power-on all-zero packet then no-disc answers), the CD controller's register file (`cdc.rs`, LC8951 tables, no decoder yet) and the PCM chip's registers and wave RAM (`crates/chips/rf5c164`, nothing played) are in; the real US BIOS now runs its whole start-up through the drive handshake and stops at the graphics unit's registers (sub write `$FF8058`, slice 7), with a black picture (Genesis Plus GX shows the logo and PRESS THE START BUTTON at frame 3000). The graphics ASIC (`crates/chips/mcd-asic`: stamp map, trace vector, image buffer, font converter, priority modes; facts G1-G9; rotation sense unverified) is in ahead of its slice, and with the one-cycle-late VDP DMA from word RAM (fact C17) the real US BIOS draws its Sega CD screen (earth, logo, PRESS THE START BUTTON) like Genesis Plus GX (mean difference 0.5 per channel at frame 3000). Slice 3b (partly, 2026-10-29): the CD controller decodes blocks into its 16 KB buffer (headers, pointers, STAT3 clearing the decoder interrupt, level 5), transfers go to the host port or by DMA to program RAM, word RAM and the PCM chip (`mcd-gate-array/src/cdc.rs`), and `crates/machines/segacd/src/drive.rs` is a disc-backed drive (`--disc x.cue`, facts E11-E15: table of contents reports, seek, read, one block per 1/75 s, `Drive` trait in `cdd.rs`). **Disc boot works (2026-10-29, later):** the real BIOS now boots the Dragon's Lair disc to its title screen. What it needed besides the drive model: a head in the lead-in reports the first (data) track and RS8 bit 2, seeks last 12 periods, the controller sees the headers of the lead-in sectors the BIOS seeks into, the data/music bit 8 of `$FF8036`, a write to either byte address of the flag word sets that CPU's flags (facts C9, E15), the 1M/1M word RAM mode with its swap protocol and the cell image (`$220000`) and dot image (`$080000`) views (C8, C18, C19; the BIOS boots in 1M mode). Debug aids: `crates/machines/segacd/tests/bios.rs` (ignored; `RC_BIOS`, `RC_DISC`, `RC_CDDLOG=short`, `RC_IOLOG`/`RC_IOFILTER`/`RC_SUBWATCH`, `RC_MAINIO`, `RC_RAMWATCH`, `RC_DUMP_RAM`, `RC_TRACE`, `RC_LIST`/`RC_SUBLIST`), and `libretro_run.py` with Genesis Plus GX and `--ram-at` to compare the BIOS's RAM variables over time (RAM dumps are byte-swapped in pairs). Later the same day: sub-CPU addresses repeat every 1 MB and main word RAM every 256 KB (facts C20, C21), which let Silpheed reach its Sega logo and Shining Force CD and Lunar reach the BIOS prompt about unformatted backup RAM; the 8 KB backup RAM now persists in a file (option `backup_ram`, default `saves/segacd-backup.brm`, read at start, written at exit when changed). **Audio and backup RAM (2026-10-29, later):** the RF5C164 plays (`rf5c164`: 384 source clocks a sample, 5.11 address step, `$FF` loop byte, envelope and pan, facts P4-P6), the drive plays audio tracks (command 3 on an audio track, 588 stereo frames a period, fact E17) and `segacd/src/audio.rs` adds both to the Genesis output through the `Expansion::mix_audio` hook (C22); CD audio matches Genesis Plus GX (RMS 4469 against 4471 on a synthetic tone disc through the BIOS CD player). Lunar and Shining Force CD ask to format the backup RAM, then run (C23); the file is the `backup_ram` option. **Disc routing (2026-10-30):** a text machine option whose value is `romm:<id>` or a `.zip` (the `disc` option) is unpacked whole into `<cache>/unpacked/` by `apps/retroclawd/src/media_set.rs` (zip-slip safe, once per archive version, a marker file makes an interrupted unpacking redo, sets unused for 7 days are pruned) and replaced by the `.cue` (else `.gdi/.iso/.chd/.toc`) inside; a lone file from RomM passes through. Checked by booting Dragon's Lair from a zip. **CHD and save states (2026-10-30):** `--disc x.chd` works (CHD v5, `machines/sega/crates/formats/chd`, verified against the SHA-1 in the header of a 266 MB real file; GD-ROM and parent files are refused in words; a pregap type starting with `V` is stored in the track's frames, any other is silence, found against chdman 2026-10-30). That crate is a general CHD library now (all nine hunk codecs both ways, parents, a writer, in-place metadata edits) and `rcchd` in `retroclawd-tools` is `chdman`'s work on top of it: createcd (cue/bin, iso, gdi) / createhd / createdvd / createraw, the extracts, copy, addmeta/delmeta/dumpmeta, checked against chdman 0.289 (its files read here, ours pass its verify with the same SHA-1s, uncompressed files byte-identical), and the Mega-CD has save states (`Expansion::save_state`, RCST schema 3: sub-CPU, RAM, gate array, CDC/CDD, PCM, graphics unit, drive position; BIOS and disc identity are checked; real BIOS plus Dragon's Lair, Silpheed and Lunar resume bit-exactly). `machines/sega/segacd.manifest.toml` (S1, S3 on three discs, S5, S4 and S6 against Genesis Plus GX: 11 pass, no gap). Final Fight CD (black screen) was a dropped CD controller transfer to word RAM in 1M mode (fact E18, fixed 2026-10-30; found by tracing a private build of Genesis Plus GX, see `machines/sega/CLAUDE.md` "Final Fight CD, solved"). A boot sweep of ten discs (2026-10-30) found Snatcher and Eternal Champions black too: two more bugs, the word RAM mode switch losing its contents (fact E19) and the table of contents report's track digit (fact E20), both fixed the same day; Earthworm Jim stopped on a read of `$FF800A` (the CDC DMA address reads back, fact E21, fixed the same day); all ten discs now boot.
+**Sega CD (2026-10-29, slices 1-2 of 9; spec `docs/superpowers/specs/2026-10-29-sega-cd-design.md`, plans `docs/superpowers/plans/2026-10-29-sega-cd.md` and `...-slice2.md`)**: machine id `segacd` in the same plugin library, a Genesis with an `Expansion` (family-internal hook on the cartridge port, `genesis::Expansion`) that owns the Mega-CD: `crates/machines/segacd` (second `mc68000` as the sub-CPU at 12.5 MHz from the master clock by an exact integer ratio, 512 KB program RAM with bank window and write protect, 256 KB word RAM in 2M mode with DMNA/RET hand-over, 8 KB backup RAM, the BIOS at `$000000` and the mode-1 windows `$400000/$420000/$600000`), `crates/chips/mcd-gate-array` (both register sets, mailboxes, stopwatch, timer, interrupt levels; forced-reset sequence), `crates/formats/disc` (cue/BIN/ISO reader, sector reads, TOC, test-disc builder). Facts C1-C16 and D1-D3 in `machines/sega/docs/hardware-facts.md` come from the scanned Mega-CD Hardware Manual (`MCD-HW`; Sega Retro's article pages need a browser, its image host does not). Options: `rom_bios` (131072 bytes, `--firmware auto` by console region through `firmware.toml`) and `disc` (a path to a `.cue`/`.iso`, opened at start-up; the drive is not emulated yet). The debugger has a third CPU `sub`. Slice 3a (2026-10-29, same day): the CD drive port (`mcd-gate-array/src/cdd.rs`: ten-nibble status and command packets, checksum, HOCK, a level 4 interrupt every 1/75 s, power-on all-zero packet then no-disc answers), the CD controller's register file (`cdc.rs`, LC8951 tables, no decoder yet) and the PCM chip's registers and wave RAM (`crates/chips/rf5c164`, nothing played) are in; the real US BIOS now runs its whole start-up through the drive handshake and stops at the graphics unit's registers (sub write `$FF8058`, slice 7), with a black picture (Genesis Plus GX shows the logo and PRESS THE START BUTTON at frame 3000). The graphics ASIC (`crates/chips/mcd-asic`: stamp map, trace vector, image buffer, font converter, priority modes; facts G1-G9; rotation sense unverified) is in ahead of its slice, and with the one-cycle-late VDP DMA from word RAM (fact C17) the real US BIOS draws its Sega CD screen (earth, logo, PRESS THE START BUTTON) like Genesis Plus GX (mean difference 0.5 per channel at frame 3000). Slice 3b (partly, 2026-10-29): the CD controller decodes blocks into its 16 KB buffer (headers, pointers, STAT3 clearing the decoder interrupt, level 5), transfers go to the host port or by DMA to program RAM, word RAM and the PCM chip (`mcd-gate-array/src/cdc.rs`), and `crates/machines/segacd/src/drive.rs` is a disc-backed drive (`--disc x.cue`, facts E11-E15: table of contents reports, seek, read, one block per 1/75 s, `Drive` trait in `cdd.rs`). **Disc boot works (2026-10-29, later):** the real BIOS now boots the Dragon's Lair disc to its title screen. What it needed besides the drive model: a head in the lead-in reports the first (data) track and RS8 bit 2, seeks last 12 periods, the controller sees the headers of the lead-in sectors the BIOS seeks into, the data/music bit 8 of `$FF8036`, a write to either byte address of the flag word sets that CPU's flags (facts C9, E15), the 1M/1M word RAM mode with its swap protocol and the cell image (`$220000`) and dot image (`$080000`) views (C8, C18, C19; the BIOS boots in 1M mode). Debug aids: `crates/machines/segacd/tests/bios.rs` (ignored; `RC_BIOS`, `RC_DISC`, `RC_CDDLOG=short`, `RC_IOLOG`/`RC_IOFILTER`/`RC_SUBWATCH`, `RC_MAINIO`, `RC_RAMWATCH`, `RC_DUMP_RAM`, `RC_TRACE`, `RC_LIST`/`RC_SUBLIST`), and `libretro_run.py` with Genesis Plus GX and `--ram-at` to compare the BIOS's RAM variables over time (RAM dumps are byte-swapped in pairs). Later the same day: sub-CPU addresses repeat every 1 MB and main word RAM every 256 KB (facts C20, C21), which let Silpheed reach its Sega logo and Shining Force CD and Lunar reach the BIOS prompt about unformatted backup RAM; the 8 KB backup RAM now persists in a file (option `backup_ram`, default `saves/segacd-backup.brm`, read at start, written at exit when changed). **Audio and backup RAM (2026-10-29, later):** the RF5C164 plays (`rf5c164`: 384 source clocks a sample, 5.11 address step, `$FF` loop byte, envelope and pan, facts P4-P6), the drive plays audio tracks (command 3 on an audio track, 588 stereo frames a period, fact E17) and `segacd/src/audio.rs` adds both to the Genesis output through the `Expansion::mix_audio` hook (C22); CD audio matches Genesis Plus GX (RMS 4469 against 4471 on a synthetic tone disc through the BIOS CD player). Lunar and Shining Force CD ask to format the backup RAM, then run (C23); the file is the `backup_ram` option. **Disc routing (2026-10-30):** a text machine option whose value is `romm:<id>` or a `.zip` (the `disc` option) is unpacked whole into `<cache>/unpacked/` by `apps/retroclawd/src/media_set.rs` (zip-slip safe, once per archive version, a marker file makes an interrupted unpacking redo, sets unused for 7 days are pruned) and replaced by the `.cue` (else `.gdi/.iso/.chd/.toc`) inside; a lone file from RomM passes through. Checked by booting Dragon's Lair from a zip. **CHD and save states (2026-10-30):** `--disc x.chd` works (CHD v5, `machines/sega/crates/formats/chd`, verified against the SHA-1 in the header of a 266 MB real file; GD-ROM and parent files are refused in words; a pregap type starting with `V` is stored in the track's frames, any other is silence, found against chdman 2026-10-30). That crate is a general CHD library now (all nine hunk codecs both ways, parents, a writer, in-place metadata edits) and `rcchd` in `rctools` is `chdman`'s work on top of it: createcd (cue/bin, iso, gdi) / createhd / createdvd / createraw, the extracts, copy, addmeta/delmeta/dumpmeta, checked against chdman 0.289 (its files read here, ours pass its verify with the same SHA-1s, uncompressed files byte-identical), and the Mega-CD has save states (`Expansion::save_state`, RCST schema 3: sub-CPU, RAM, gate array, CDC/CDD, PCM, graphics unit, drive position; BIOS and disc identity are checked; real BIOS plus Dragon's Lair, Silpheed and Lunar resume bit-exactly). `machines/sega/segacd.manifest.toml` (S1, S3 on three discs, S5, S4 and S6 against Genesis Plus GX: 11 pass, no gap). Final Fight CD (black screen) was a dropped CD controller transfer to word RAM in 1M mode (fact E18, fixed 2026-10-30; found by tracing a private build of Genesis Plus GX, see `machines/sega/CLAUDE.md` "Final Fight CD, solved"). A boot sweep of ten discs (2026-10-30) found Snatcher and Eternal Champions black too: two more bugs, the word RAM mode switch losing its contents (fact E19) and the table of contents report's track digit (fact E20), both fixed the same day; Earthworm Jim stopped on a read of `$FF800A` (the CDC DMA address reads back, fact E21, fixed the same day); all ten discs now boot.

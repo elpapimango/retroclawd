@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Downloads the open-source diagnostic programs the retroclawd-tools suites run (crates/rc-suite) into the git-ignored
+# Downloads the open-source diagnostic programs the rctools suites run (crates/rc-suite) into the git-ignored
 # machines/<family>/software/diagnostics/ folders, pinned to a release and verified by SHA-256. They are third-party
 # software with their own licences: they are fetched here, never committed.
 #

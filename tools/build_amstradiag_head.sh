@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the AmstradDiag disk from the *repository head* (the release v1.3 has no sound test; it was added in 2024), into the
-# git-ignored machines/amstrad/software/diagnostics/AmstradDiagHead.dsk that the sound case of retroclawd-tools' CPC suite runs.
+# git-ignored machines/amstrad/software/diagnostics/AmstradDiagHead.dsk that the sound case of rctools' CPC suite runs.
 #
 #   tools/build_amstradiag_head.sh
 #

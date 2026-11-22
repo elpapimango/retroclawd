@@ -83,7 +83,7 @@ pub fn golden(name: &str) -> Option<Vec<String>> {
         Ok(text) => Some(text.lines().map(str::to_string).collect()),
         Err(_) => {
             eprintln!(
-                "no golden at {} (retroclawd-tools/scripts/capture_hatari_trace.py makes it)",
+                "no golden at {} (rctools/scripts/capture_hatari_trace.py makes it)",
                 path.display()
             );
             None

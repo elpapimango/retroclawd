@@ -1,12 +1,9 @@
 name: Release artifacts
 
-# Manual: builds the app (and the debugger plugin libraries) on each platform and
-# uploads the archives made by .github/scripts/package_release.sh (layout and
-# naming: docs/plugin-abi.md, "Release artifacts"). The machine libraries come
-# from the family repositories (retroclawd-sinclair / -amstrad / -commodore),
-# whose own CI uploads them; unpack them into a `plugins/` folder beside the app
-# or pass their folder to the script with --machines. Only the Linux leg has been
-# run by hand so far; check the Windows and macOS legs the first time they are used.
+# Manual: builds `rcd` (play) and `rcdd` (develop) on each platform and uploads the archives made by
+# .github/scripts/package_release.sh. Each archive holds the two executables and nothing else: every machine
+# is linked into them. Only the Linux leg has been run by hand so far; check the Windows and macOS legs the
+# first time they are used.
 on:
   workflow_dispatch:
 
@@ -19,9 +16,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
-      - name: check out shared/ (retroclawd-crates)
-        shell: bash
-        run: git submodule update --init shared
       - if: matrix.os == 'ubuntu-24.04'
         uses: ./.github/actions/setup-rust-linux
       - run: bash .github/scripts/package_release.sh

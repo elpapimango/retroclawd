@@ -2093,7 +2093,7 @@ fn main() -> ExitCode {
         let report = match &machine_report {
             Ok(report) => report,
             Err(e) => {
-                eprintln!("failed to discover machine plugins: {e}");
+                eprintln!("failed to list the machines: {e}");
                 return ExitCode::FAILURE;
             }
         };
@@ -2152,7 +2152,7 @@ fn main() -> ExitCode {
     let startup = match &machine_report {
         Ok(report) => report,
         Err(e) => {
-            eprintln!("failed to discover machine plugins: {e}");
+            eprintln!("failed to list the machines: {e}");
             return ExitCode::FAILURE;
         }
     };

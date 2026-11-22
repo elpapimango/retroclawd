@@ -64,10 +64,10 @@ given keys or mouse input headlessly, so the ST's input scenarios have `exact` g
 
 ## What this is
 
-`retroclawd-tools`: command-line tools on top of the retroclawd crates. A standalone Cargo workspace (it is **not** a
+`rctools`: command-line tools on top of the retroclawd crates. A standalone Cargo workspace (it is **not** a
 submodule of the application and the application never builds it). Done: `rcasm` (assembler), `rcdis`
 (disassembler), `rcdisk` (disk images), `rctape` (tape images), `rcchd` (CHD files: the work of `chdman`), `rcsnap` (snapshots, cartridges), `rcld` (linker / packager) (linker / packager). The original
-brief, with the decisions already taken, is `docs/prompts/retroclawd-tools.md` in the
+brief, with the decisions already taken, is `docs/prompts/rctools.md` in the
 [`retroclawd`](https://github.com/elpapimango/retroclawd) repository -- except that this repository stands on its
 own instead of being a fifth submodule.
 

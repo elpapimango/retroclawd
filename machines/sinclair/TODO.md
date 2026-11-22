@@ -154,7 +154,7 @@ and 70 908 x 50 = 3 545 400 Hz for the 128K/+2/+2A/+3 (311 lines of 228 T), so t
 real frame and the frame interrupt comes that often (it was 70 938 T for every model). No `Machine` trait change, ABI bump or pin
 bump was needed. The price: `frame_hz` is a whole number of Hz and the real rates are 50.08 and 50.02 Hz, so wall-clock pace is
 0.16% / 0.04% slow (the beeper that much flat; it used to be 1.3% sharp on the 48K). The debugger's ZRCP `get-cpu-frequency` still
-reports the real 3 500 000 / 3 546 900. Verified by the three frame cases in `retroclawd-tools` (their gap markers are gone) with
+reports the real 3 500 000 / 3 546 900. Verified by the three frame cases in `rctools` (their gap markers are gone) with
 contention, the 128K paging cases and the smoke boot screens unchanged. If exact wall-clock pace ever matters, the way out is a
 cycles-per-frame notion in `Machine` (shared crate, ABI bump).
 

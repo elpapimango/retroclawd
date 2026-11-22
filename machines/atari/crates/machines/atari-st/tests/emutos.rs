@@ -48,7 +48,7 @@ fn emutos_runs_deterministically_to_its_first_io_access() {
     }
 }
 
-/// The reference trace: one PC per line (`{pc:06X}`), from `retroclawd-tools/scripts/capture_hatari_trace.py`,
+/// The reference trace: one PC per line (`{pc:06X}`), from `rctools/scripts/capture_hatari_trace.py`,
 /// kept with the other goldens (`RC_GOLDENS`), never committed.
 fn hatari_trace() -> Option<Vec<u32>> {
     let path = std::env::var_os("RC_GOLDENS")

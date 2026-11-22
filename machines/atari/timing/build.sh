@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Builds the timing probes (p*.s) into software/scenarios/timing/pNN.st (not committed), each a boot floppy.
-#   timing/build.sh [path to the retroclawd-tools target dir]   default ../../../retroclawd-tools/target/debug
+#   timing/build.sh [path to the rctools target dir]   default ../../../target/release
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-tools="${1:-$here/../../../../retroclawd-tools/target/debug}"
+tools="${1:-$here/../../../target/release}"
 out="$here/../software/scenarios/timing"
 mkdir -p "$out"
 for gen in "$here"/gen_p*.py; do [ -e "$gen" ] && python "$gen"; done

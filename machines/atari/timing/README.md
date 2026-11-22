@@ -2,7 +2,7 @@
 
 68000 programs that measure the ST's timing from the inside; `../docs/timing-oracle.md` says how they are built, run in
 Hatari and compared. `build.sh` builds `software/scenarios/timing/pNN.st` (not committed; `p22` also needs the blank disk
-`blank-hd.img` it makes) with the tools of `retroclawd-tools` (`rcasm`, `rcdisk`). The numbers follow the order the probes
+`blank-hd.img` it makes) with the tools of `rctools` (`rcasm`, `rcdisk`). The numbers follow the order the probes
 were written in; the Phase 3 plan's table is indicative only (its P03, P05, P08 and P11 to P13 slots were folded into
 others or renumbered, see the ledger in the plan's workspace and `docs/hardware-facts.md`, "Timing (Phase 3)").
 

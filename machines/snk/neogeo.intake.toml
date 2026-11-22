@@ -28,7 +28,7 @@ standalone = "C:/Users/matti/Workspace/Emulators/fbneo/fbneo64.exe (and fbneo64d
 source_url = "https://github.com/finalburnneo/FBNeo"
 libretro_source_url = "https://github.com/libretro/FBNeo"
 license = "non-commercial (FBNeo license.txt): read for understanding only, no code, tables or constants copied"
-method = "Black box through retroclawd-tools/scripts/libretro_run.py (frames, audio, state, RAM dumps), as for Genesis Plus GX; the standalone build only to look at its debug output."
+method = "Black box through rctools/scripts/libretro_run.py (frames, audio, state, RAM dumps), as for Genesis Plus GX; the standalone build only to look at its debug output."
 reference_output = "304x224 picture (the visible 320x224 minus the 8 px FBNeo crops each side in its libretro build, to confirm), 59.18 fps, audio rate 47995 Hz (from --info 2026-10-31)"
 note = "FBNeo is a high-level-friendly emulator that is cycle-approximate for the Neo Geo: a picture and audio comparison by similarity is the right test, never cycle equality."
 

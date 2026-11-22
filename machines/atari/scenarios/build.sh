@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Builds the media the Atari ST scenario manifest loads into software/scenarios/ (not committed), with
-# retroclawd-tools' rcdisk and make_scenarios.py (see README.md).
-#   scenarios/build.sh [path to the retroclawd-tools target dir]   default ../../../retroclawd-tools/target/debug
+# rctools' rcdisk and make_scenarios.py (see README.md).
+#   scenarios/build.sh [path to the rctools target dir]   default ../../../target/release
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-tools="${1:-$here/../../../../retroclawd-tools/target/debug}"
+tools="${1:-$here/../../../target/release}"
 out="$here/../software/scenarios"
 mkdir -p "$out"
 python "$here/make_scenarios.py" "$out"
@@ -25,7 +25,7 @@ python "$here/make_scenarios.py" "$out"
 # files.st: two text files to list on the desktop.
 "$tools/rcdisk" create "$out/files.st" --force
 printf 'Hello from rcdisk.\r\n' > "$out/HELLO.TXT"
-printf 'A floppy made by retroclawd-tools for the S3 scenario.\r\n' > "$out/README.TXT"
+printf 'A floppy made by rctools for the S3 scenario.\r\n' > "$out/README.TXT"
 "$tools/rcdisk" add "$out/files.st" "$out/HELLO.TXT" "$out/README.TXT"
 rm "$out/HELLO.TXT" "$out/README.TXT"
 # hd.img: an 8M hard disk with an AHDI partition holding HELLO.TXT (S11: EmuTOS shows it as drive C).

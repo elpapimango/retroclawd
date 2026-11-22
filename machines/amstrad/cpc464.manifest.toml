@@ -8,7 +8,7 @@ args = ["--no-border"]
 [reference]
 emulator = "zesarux"
 version = "13.0"
-command = "retroclawd-tools/scripts/capture_zesarux_screen.py CPC464 8 OUT.png --crop 0,-16,768,576 [--keys 'print 1234 mod 100{ENTER}' --after 2 | --load FILE --keys 'cat{ENTER}' --after 3]   (zesarux --machine CPC464 --realvideo, save-screen over ZRCP)"
+command = "rctools/scripts/capture_zesarux_screen.py CPC464 8 OUT.png --crop 0,-16,768,576 [--keys 'print 1234 mod 100{ENTER}' --after 2 | --load FILE --keys 'cat{ENTER}' --after 3]   (zesarux --machine CPC464 --realvideo, save-screen over ZRCP)"
 
 [files]
 rom = "amstrad/roms/cpc/cpc464.rom"

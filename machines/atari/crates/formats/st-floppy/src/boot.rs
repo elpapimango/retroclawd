@@ -3,7 +3,7 @@
 //! TOS runs the programs in the `AUTO` folder of the boot drive before it starts the desktop, so a disk like this
 //! boots straight into the program (spec section 15: "PRG on the ST without GEMDOS emulation"). The writer is the
 //! boot-only subset of a FAT12 writer: one directory, one file, a deterministic layout and time stamp, nothing the
-//! machine does not need. `rcdisk st` in `retroclawd-tools` makes real disks; this is a deliberate small duplicate
+//! machine does not need. `rcdisk st` in `rctools` makes real disks; this is a deliberate small duplicate
 //! (the tools cannot be a dependency of this repository).
 //!
 //! Layout ([H] *Atari ST Internals* pp.178-179 for the BPB; the FAT12 layout is the standard DOS one): 512-byte

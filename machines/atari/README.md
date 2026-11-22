@@ -15,7 +15,7 @@ EmuTOS 1.4 boots to its desktop, boots an executable floppy, and takes keys, the
 accesses are compared with Hatari 2.6.1's in the tests (`crates/machines/atari-st/tests/common/mod.rs` documents the
 rules). Every hardware fact used is listed with its source in `docs/hardware-facts.md`.
 
-Scenarios: `atari-st.manifest.toml` (run by `rc-scenarios` of retroclawd-tools, see the application's CLAUDE.md) checks
+Scenarios: `atari-st.manifest.toml` (run by `rc-scenarios` of rctools, see the application's CLAUDE.md) checks
 the desktop against Hatari 2.6.1, keys, joystick and mouse through `--at`, a floppy made by `rcdisk` listed on the
 desktop, a YM2149 tone and the frame length. Its media come from `scenarios/build.sh` (`scenarios/README.md`), built
 into the git-ignored `software/scenarios/`.
@@ -82,7 +82,7 @@ recording/turbo and `--tape-speed` other than 1 are refused explicitly.
 Disk exports preserve ATR/XFD format; the Host's normal writeback/save policies
 protect modified Media. A sector peripheral is not an emulated 810 CPU/FDC.
 
-Build scenario Media with `scenarios/build.sh <retroclawd-tools executable folder>`.
+Build scenario Media with `scenarios/build.sh <rctools executable folder>`.
 Run `rc-scenarios run atari-800.manifest.toml` with `RETROCLAWD_BIN`,
 `RETROCLAWD_MACHINE_PLUGIN_DIRS`, `RC_ROMS` (parent of this Family) and
 `RC_GOLDENS` set. ROMs, generated Media and goldens stay out of git.

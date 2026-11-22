@@ -8,7 +8,7 @@ args = ["--no-border"]
 [reference]
 emulator = "zesarux"
 version = "13.0"
-command = "retroclawd-tools/scripts/capture_zesarux_screen.py P341 6 OUT.png --crop 48,56,256,192 [--load FILE --seconds 25]   (zesarux --machine P341 --realvideo, save-screen over ZRCP)"
+command = "rctools/scripts/capture_zesarux_screen.py P341 6 OUT.png --crop 48,56,256,192 [--load FILE --seconds 25]   (zesarux --machine P341 --realvideo, save-screen over ZRCP)"
 
 [files]
 rom = "sinclair/roms/zx-spectrum/plus3.rom"

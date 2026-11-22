@@ -152,7 +152,7 @@ consumed by the host:
 | `machine` | retroclawd-crates | `Addr`, `FrameRate`, `AudioFormat`, `SymbolTable` |
 | `build-info` | retroclawd-crates | Plugin version tag |
 
-### 2.10 retroclawd-tools **[R]**
+### 2.10 rctools **[R]**
 
 - **`rcasm`** (`crates/rcasm/src/{asm,expr,cpu,text}.rs`):
   - Expressions are `i64`.
@@ -174,7 +174,7 @@ consumed by the host:
 | retroclawd-atari (new) | `crates/machines/atari-st`, `crates/chips/{mc68901,st-shifter,st-glue-mmu,ikbd}`, `crates/formats/{st-floppy,msa,ahdi,gemdos-fat,atari-prg}`, plugin + cdylib, `firmware.toml`, manifests, `scenarios/` |
 | retroclawd-commodore | Depend on the moved `wd1770` (pin bump) |
 | retroclawd (host) | Submodule; `firmware.rs` URL source + hash + disk cache, and `when = { region = "ntsc" }` (today `when` only sees resolved machine options, not the host's `--region`) for O6; `--program` extension routing by machine; `--capture-at` register names from the plugin; 68000 arm in `assemble_for`; `--org`/`--dump-memory` widths |
-| retroclawd-tools | `rcasm` 68000 target and 24/32-bit origin; `rcdis` 68000; `rcld` sections + Atari PRG writer; `rcdisk` ST/MSA + AHDI/GEMDOS adapters; pin bump |
+| rctools | `rcasm` 68000 target and 24/32-bit origin; `rcdis` 68000; `rcld` sections + Atari PRG writer; `rcdisk` ST/MSA + AHDI/GEMDOS adapters; pin bump |
 
 ### 2.12 A separate retroclawd-atari repository? **[P] Yes**
 
@@ -846,7 +846,7 @@ As the brief's §28. Concretely for Phase 1:
 3. **Core effort** (O1) is the schedule risk; the oracle-backed approach bounds the correctness risk.
 4. **`.stx` / Pasti documentation provenance** and licence.
 5. **Host `.prg` collision** must land before anyone tests Atari programs through `--program`.
-6. **retroclawd-tools pins an older `retroclawd-crates`** (`a8cfb2ef`); a bump comes before the 68000 tool work.
+6. **rctools pins an older `retroclawd-crates`** (`a8cfb2ef`); a bump comes before the 68000 tool work.
 
 ---
 

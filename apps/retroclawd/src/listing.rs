@@ -213,7 +213,7 @@ pub(crate) fn plugins(
                 );
                 wrap_into(
                     &mut out,
-                    &format!("library:  {}", plugin.source),
+                    &format!("from:     {}", plugin.source),
                     width,
                     "    ",
                     "              ",

@@ -13,7 +13,7 @@ ROOT = os.path.dirname(HERE)
 REPO = os.path.dirname(os.path.dirname(ROOT))
 CORE = os.path.join(os.environ.get("RC_ORACLE_CORES", r"C:\Users\matti\Workspace\Emulators\RetroArch-Win64\cores"),
                     "genesis_plus_gx_libretro.dll")
-RUNNER = os.path.join(REPO, "..", "retroclawd-tools", "scripts", "libretro_run.py")
+RUNNER = os.path.join(REPO, "..", "rctools", "scripts", "libretro_run.py")
 HOST = os.path.join(REPO, "target", "release", "retroclawd.exe")
 SYSTEM = os.path.join(ROOT, "software", "oracles", "system")
 ENV = dict(os.environ, RETROCLAWD_MACHINE_PLUGIN_DIRS=os.path.join(ROOT, "target", "release"))

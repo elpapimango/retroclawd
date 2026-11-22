@@ -21,7 +21,7 @@ masked) and ends in `bra.s *`.
 
 ## The two sides
 
-- Hatari: `retroclawd-tools/scripts/capture_hatari_mem.py ROM FLOPPY VBLS ADDR LEN OUT.bin`. It starts Hatari with a debugger
+- Hatari: `rctools/scripts/capture_hatari_mem.py ROM FLOPPY VBLS ADDR LEN OUT.bin`. It starts Hatari with a debugger
   script (`--parse`) holding a breakpoint at VBL number VBLS whose action `savebin`s the memory and quits. Options used:
   `--machine st --memsize 1 --cpu-exact true --video-timing ws3 --monitor rgb --sound off --fast-forward on`, and an empty
   throw-away `--configfile`, so the user's configuration cannot change the result. `ws3` is Hatari's own default wake-up
@@ -34,7 +34,7 @@ Goldens are Hatari's dumps (`RC_GOLDENS/atari-st/timing/pNN.bin`), never committ
 
 ```
 timing/build.sh
-python retroclawd-tools/scripts/capture_hatari_mem.py <etos192uk.img> software/scenarios/timing/pNN.st VBLS 0xC000 LEN \
+python rctools/scripts/capture_hatari_mem.py <etos192uk.img> software/scenarios/timing/pNN.st VBLS 0xC000 LEN \
     ../goldens/atari-st/timing/pNN.bin --hatari <hatari.exe>
 ```
 

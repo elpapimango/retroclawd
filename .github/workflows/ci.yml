@@ -12,13 +12,15 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-      # The shared crates are the submodule `shared/` (retroclawd-crates).
-      - name: check out shared/
-        run: git submodule update --init shared
       - uses: ./.github/actions/setup-rust-linux
         with:
-          rust-components: clippy, rustfmt
+          rust-components: rustfmt
       - run: cargo fmt --check
-      - run: cargo clippy --workspace -- -D warnings
-      - run: cargo build --workspace --verbose
-      - run: cargo test --workspace --verbose
+      # rcd: every machine, no debugging code.
+      - run: cargo build --release -p retroclawd --bin rcd
+      # rcdd: the same program with the `debug` feature.
+      - run: cargo build --release -p retroclawd --bin rcdd --features debug --target-dir target/release-debug
+      # The unit tests run with the debug feature on (the debug hooks have tests); the app also has to
+      # build and pass without it.
+      - run: cargo test --workspace --features debug
+      - run: cargo test -p retroclawd

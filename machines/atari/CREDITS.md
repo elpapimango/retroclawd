@@ -101,7 +101,7 @@
 - **Hatari 2.6.1** (GPL-2.0+, https://www.hatari-emu.org/, Windows build
   https://framagit.org/hatari/releases/-/raw/main/v2.6.1/hatari-2.6.1_windows64.zip, SHA-256
   `996ff8df1fd6bd909ded90d5460d5639f3d8dee2c74921f3983a4cd10ff02812`): the reference emulator, run as a black box
-  only (`retroclawd-tools/scripts/capture_hatari_trace.py` makes the CPU trace `tests/emutos.rs` compares). No code,
+  only (`rctools/scripts/capture_hatari_trace.py` makes the CPU trace `tests/emutos.rs` compares). No code,
   table or comment of it is copied.
 - **Hardware documents** (read, never committed; each fact used is listed with its page in
   `docs/hardware-facts.md`):
@@ -116,7 +116,7 @@
   - *Atari Compendium* chapter 2, "GEMDOS executable files" (the program file header and fixup table),
     http://bus-error.nokturnal.pl/atari_compendium/html/chap2.htm (page SHA-256
     `6941f8b1af4f32561703335fc5644944c929febf569c34724cc09a79b62a6fd9`; used for `st-floppy`'s boot floppy and
-    `retroclawd-tools`' `.PRG` writer).
+    `rctools`' `.PRG` writer).
   - TOS documentation, "The system vectors", https://freemint.github.io/tos.hyp/en/the_system_vectors.html.
   - "A millisecond timer", ST-Log 34 (July 1989), https://www.atarimagazines.com/st-log/issue34/60_1_A_MILLISECOND_TIMER.php
     (the MFP timer clock).

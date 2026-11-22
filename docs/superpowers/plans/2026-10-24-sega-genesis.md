@@ -6,7 +6,7 @@
 
 **Architecture:** new family repository `retroclawd-sega` (submodule `machines/sega`), plugin `sega_machine_plugin`. `mc68000` and `z80` from `retroclawd-crates`; VDP, YM2612, SN76489, cartridge format and the machine live in the family. Master-clock scheduler: `step()` runs one 68000 instruction and brings the Z80, VDP and sound chips to the same master time lazily (the Atari `events.rs` model). No ABI change.
 
-**Tech Stack:** Rust 2024, `#![forbid(unsafe_code)]`, serde + bincode for states, `rcasm`/`rcdis` from `retroclawd-tools` for probe ROMs, Python 3 `ctypes` for the libretro oracle host.
+**Tech Stack:** Rust 2024, `#![forbid(unsafe_code)]`, serde + bincode for states, `rcasm`/`rcdis` from `rctools` for probe ROMs, Python 3 `ctypes` for the libretro oracle host.
 
 **Spec:** `docs/superpowers/specs/2026-10-24-sega-genesis-design.md`
 
@@ -50,7 +50,7 @@
 
 ### Task 3: Oracle host and fetch script
 
-**Files:** Create in `retroclawd-tools`: `scripts/libretro_run.py`, `scripts/fetch_oracles.py`, `tests/test_libretro_run.py`-style self-check script. In the host `tools/fetch_oracles.{sh,ps1}` thin wrappers.
+**Files:** Create in `rctools`: `scripts/libretro_run.py`, `scripts/fetch_oracles.py`, `tests/test_libretro_run.py`-style self-check script. In the host `tools/fetch_oracles.{sh,ps1}` thin wrappers.
 **Interfaces:** `libretro_run.py CORE.dll ROM --frames N [--bios-dir D] [--input script.txt] --out-frame F.png --out-ram R.bin --out-audio A.wav`. Input script lines `FRAME BUTTONS` (RetroPad button names). RAM output is `RETRO_MEMORY_SYSTEM_RAM`; also writes `--save-state S.bin` via `retro_serialize` when asked.
 - [ ] Cores are the RetroArch-installed ones (owner confirmed 2026-10-24); `fetch_oracles.py` only locates them (`--retroarch DIR`, default `C:\Users\matti\Workspace\Emulators\RetroArch-Win64`), records SHA-256 in `docs/sources.md`, fetches `bios_MD.bin` from RomM by hash into `software/oracles/system/` and clones the reference source repos into `software/refsrc/` (git-ignored).
 - [ ] Self-check: run the Altered Beast ROM (`romm:6174`, cached by the host) for 300 frames in Genesis Plus GX with `bios_MD.bin` in the system dir; the PNG is 320x224 and not a single colour; the RAM dump is 64 KiB; running twice gives identical bytes (determinism).

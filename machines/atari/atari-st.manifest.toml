@@ -11,7 +11,7 @@ args = ["--firmware", "auto"]
 [reference]
 emulator = "hatari"
 version = "2.6.1"
-command = "retroclawd-tools/scripts/capture_hatari_screen.py etos192uk.img VBLS OUT.png   (hatari --machine st --memsize 1 --borders off --statusbar off; a debugger breakpoint at the VBL takes the screenshot)"
+command = "rctools/scripts/capture_hatari_screen.py etos192uk.img VBLS OUT.png   (hatari --machine st --memsize 1 --borders off --statusbar off; a debugger breakpoint at the VBL takes the screenshot)"
 
 # S1: the EmuTOS desktop after 1500 frames. Hatari 2.6.1 draws the same 640x400 picture (capture_hatari_screen.py 1500).
 [[scenario]]
@@ -309,7 +309,7 @@ cycles_tolerance = 170
 
 # P01 (Phase 3 timing probes, machines/atari/timing/): the harness smoke test. The probe floppy boots through a shared
 # stub (stub.s), writes 16 bytes at $C000 and loops; the golden is Hatari 2.6.1's dump of the same memory
-# (retroclawd-tools/scripts/capture_hatari_mem.py ... 600 0xC000 16): the same bytes, exactly. Later probes (P02-P20)
+# (rctools/scripts/capture_hatari_mem.py ... 600 0xC000 16): the same bytes, exactly. Later probes (P02-P20)
 # compare timing the same way; docs/timing-oracle.md.
 [[scenario]]
 id = "P01"

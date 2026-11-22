@@ -8,7 +8,7 @@ args = ["--no-border"]
 [reference]
 emulator = "zesarux"
 version = "13.0"
-command = "retroclawd-tools/scripts/capture_zesarux_screen.py 128k 6 OUT.png --crop 48,56,256,192 [--load FILE --seconds 25]   (zesarux --machine 128k --realvideo, save-screen over ZRCP)"
+command = "rctools/scripts/capture_zesarux_screen.py 128k 6 OUT.png --crop 48,56,256,192 [--load FILE --seconds 25]   (zesarux --machine 128k --realvideo, save-screen over ZRCP)"
 
 [files]
 rom = "sinclair/roms/zx-spectrum/128.rom"

@@ -7,7 +7,7 @@ machine = "c64"
 [reference]
 emulator = "vice"
 version = "3.10 (x64sc, GTK3 win64)"
-command = "retroclawd-tools/scripts/capture_vice_screen.py x64sc CYCLES OUT.png --crop 0,3,384,264 [--keybuf 'print 12*34\n' | -- -autostart FILE]   (x64sc -default +sound -warp -limitcycles CYCLES -exitscreenshot)"
+command = "rctools/scripts/capture_vice_screen.py x64sc CYCLES OUT.png --crop 0,3,384,264 [--keybuf 'print 12*34\n' | -- -autostart FILE]   (x64sc -default +sound -warp -limitcycles CYCLES -exitscreenshot)"
 
 [files]
 rom-kernal = "commodore/roms/c64/kernal-901227-03.bin"

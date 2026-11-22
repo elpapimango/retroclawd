@@ -12,7 +12,7 @@ does, runs EmuTOS and the owner's games without a stop, and `check_all` runs bot
 
 **Architecture:**
 - Same repositories and layout as Phase 2. The CPU bus work is in `retroclawd-crates`; everything else is in
-  `retroclawd-atari`; probe tooling in `retroclawd-tools`; the host changes only for the one new plugin option the
+  `retroclawd-atari`; probe tooling in `rctools`; the host changes only for the one new plugin option the
   frame canvas needs (Task 37) and for docs and pins.
 - **The truth source is an oracle, not memory.** Atari's hardware specification is still unreachable and the timing
   facts of this phase (wait states, beam position, border-opening cycles, interrupt latency) are not in any datasheet.
@@ -41,7 +41,7 @@ Phase 4 (Blitter, STE, Mega ST RTC, the STE Shifter) is a separate plan and is o
 |---|---|---|
 | retroclawd-crates | `atari-phase3` | 27-28 (`mc68000` bus cycles) |
 | retroclawd-atari | `atari-st-slice13` ... `atari-st-slice17` (one per slice, merged to `main` locally before the next starts) | all others |
-| retroclawd-tools | `atari-phase3-tools` | 26 (`capture_hatari_mem.py`), 47 (bench driver if needed) |
+| rctools | `atari-phase3-tools` | 26 (`capture_hatari_mem.py`), 47 (bench driver if needed) |
 | retroclawd (host) | `master` | 37 (canvas), 50 (docs, pins) |
 
 ## Global Constraints
@@ -164,10 +164,10 @@ ruling written to the ledger. In particular:
 
 ## Slice 13: oracle and the CPU's bus cycles
 
-### Task 26: the timing oracle (retroclawd-tools, retroclawd-atari)
+### Task 26: the timing oracle (rctools, retroclawd-atari)
 
 **Files:**
-- Create: `retroclawd-tools/scripts/capture_hatari_mem.py`, `machines/atari/timing/build.sh`,
+- Create: `rctools/scripts/capture_hatari_mem.py`, `machines/atari/timing/build.sh`,
   `machines/atari/timing/p01_smoke.s`, `machines/atari/timing/README.md`, `machines/atari/docs/timing-oracle.md`
 - Modify: `machines/atari/atari-st.manifest.toml` (P01), `machines/atari/docs/hardware-facts.md` (a "Timing (Phase 3)"
   section header and the method)

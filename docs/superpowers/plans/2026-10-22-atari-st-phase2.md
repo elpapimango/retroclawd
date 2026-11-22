@@ -11,7 +11,7 @@ generated floppy.
 
 **Architecture:**
 - Same shape as Phase 1: emulation in `retroclawd-atari`, shared chips in `retroclawd-crates`, tools in
-  `retroclawd-tools`, host changes only where a protocol or routing gap forces them.
+  `rctools`, host changes only where a protocol or routing gap forces them.
 - Six slices, each ending with something visible (a scenario, a round trip, a screenshot) and a green `check_all`:
   7 floppy write, 8 save states, 9 peripherals and the IKBD, 10 GLUE/cartridge/raster, 11 68000 toolchain,
   12 ACSI. Slices 7-10 touch the machine and are ordered by dependency (8 needs the state of everything 7 adds; 9 and
@@ -33,7 +33,7 @@ formats), §14 (ACSI), §15 (tools), §17 (plugin/ABI), §19 (save states), §20
 |---|---|---|
 | retroclawd-atari | `atari-st-slice7` ... `atari-st-slice12` (one per slice, merged to `main` before the next starts) | 7-10, 12; Task 20's floppy builder |
 | retroclawd-crates | `atari-phase2` | `wd1770` write/format support if the shared chip lacks it (Task 1), `mc6850` MIDI clock if needed (Task 9) |
-| retroclawd-tools | `atari-phase2-tools` | 11 (rcasm, rcdis, rcld, PRG), 12 (`rcdisk` partitions and FAT16), `rc-scenarios` additions |
+| rctools | `atari-phase2-tools` | 11 (rcasm, rcdis, rcld, PRG), 12 (`rcdisk` partitions and FAT16), `rc-scenarios` additions |
 | retroclawd (host) | `master` | `.prg` routing (Task 20), docs, pins (`--at save_disk` already exists) |
 
 ## Global Constraints
@@ -415,7 +415,7 @@ only. Say so in the doc comment so nobody mistakes the log for emulated overscan
 
 ### Task 17: scenario S10 (raster) against Hatari
 
-**Files:** `scenarios/raster.st`, manifest, `retroclawd-tools/scripts/capture_hatari_screen.py` only if it needs an
+**Files:** `scenarios/raster.st`, manifest, `rctools/scripts/capture_hatari_screen.py` only if it needs an
 option
 
 A boot program writes a different palette entry 0 on every 20th line from an HBL handler (so the picture is coloured
@@ -425,12 +425,12 @@ and set `max_mad` from measurement, not a guess. Three identical runs; merge sli
 
 ---
 
-## Slice 11: 68000 toolchain (retroclawd-tools, can run in parallel after Task 4)
+## Slice 11: 68000 toolchain (rctools, can run in parallel after Task 4)
 
 ### Task 18: `.PRG` format and `rcld` output
 
 **Files:**
-- Create: `crates/rc-common/src/prg.rs` (header, relocation, symbols) in retroclawd-tools; `crates/rcld/src/` Atari
+- Create: `crates/rc-common/src/prg.rs` (header, relocation, symbols) in rctools; `crates/rcld/src/` Atari
   template; Test: `crates/rc-common/tests/prg.rs`, `crates/rcld/tests/prg.rs`
 
 **Interfaces:**
@@ -522,7 +522,7 @@ through `ExportDisk`-style export, atomic; Test: `tests/hard_disk.rs`
 
 ### Task 24: `rcdisk` partitions and FAT16; the `.stx` provenance note
 
-**Files:** retroclawd-tools `crates/rcdisk/src/{ahdi,fat16}.rs`, tests, `docs/rcdisk.md`; a note
+**Files:** rctools `crates/rcdisk/src/{ahdi,fat16}.rs`, tests, `docs/rcdisk.md`; a note
 `machines/atari/docs/stx-and-dim-provenance.md`
 
 **Interfaces:** `rcdisk hd new OUT.img --size SIZE --partition SIZE` (AHDI root sector with one `GEM`/`BGM`

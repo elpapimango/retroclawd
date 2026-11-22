@@ -30,7 +30,7 @@ The plugin ABI was audited once for 16-bit and console needs and bumped once (20
 Run in order.
 
 - **P0 Intake.** Fill the intake file: Family, Core (new or reused), Chips, reference emulator and version, hardware test suites, media formats, firmware hashes, Machine keys, scenario overrides. Primary sources only (data sheets, reference emulator source). Record sources in `CREDITS.md`.
-- **P1 Tools.** Make `retroclawd-tools` able to produce what the scenarios need: an assembler and disassembler target for the Core (`rcasm`, `rcdis`; round trip checked on random bytes and the Machine's ROMs), format support in `rcdisk`, `rctape` and `rcld` for its Media, symbol tables. The tools are a means, not a gate.
+- **P1 Tools.** Make `rctools` able to produce what the scenarios need: an assembler and disassembler target for the Core (`rcasm`, `rcdis`; round trip checked on random bytes and the Machine's ROMs), format support in `rcdisk`, `rctape` and `rcld` for its Media, symbol tables. The tools are a means, not a gate.
 - **P2 Core.** New Core crate, or a variant flag on an existing one, passing its public **Core test** suite (ZEXALL/ZEXDOC for Z80; Klaus Dormann and Tom Seddon for 6502; the public instruction tests for 68000). Core tests are separate from Acid tests.
 - **P3 Machine and Plugin.** Machine crate, Chips, Plugin crate, `plugin-dlls` cdylib, Options, Machine keys, overlay chip, debug contract, save state. Follow "Checklist: new machine plugin integration" in `TODO.md`.
 - **P4 Media.** Format crates, attach, eject, save, fast-load traps where the reference has them.
@@ -52,7 +52,7 @@ Same for every Machine. A Machine may add scenarios in its intake file, never re
 | S7 | Hardware test ROMs shipped for the platform | Their own pass/fail output |
 | S8 | CPU trace of the first N instructions after reset, when the reference can emit one | Trace golden |
 
-Scenarios are data: a `<id>.manifest.toml` in the Family repository, run by `rc-scenarios run` (crate `rc-suite` of `retroclawd-tools`, which also holds the rules: every golden pinned by hash, a tolerance only with a written reason, a known gap only with evidence, a known gap that starts passing fails the run). Kinds: `screen`, `memory`, `audio`, `state` (S5), `timing` (S6). S8 (a CPU trace) has no kind yet because the plugin ABI has no instruction trace; it stays optional.
+Scenarios are data: a `<id>.manifest.toml` in the Family repository, run by `rc-scenarios run` (crate `rc-suite` of `rctools`, which also holds the rules: every golden pinned by hash, a tolerance only with a written reason, a known gap only with evidence, a known gap that starts passing fails the run). Kinds: `screen`, `memory`, `audio`, `state` (S5), `timing` (S6). S8 (a CPU trace) has no kind yet because the plugin ABI has no instruction trace; it stays optional.
 
 **A picture from another emulator is compared by similarity, not pixel for pixel.** The reference draws its own border, scale and palette, so only the content can agree: both pictures are reduced to a 64x48 luminance grid over a `crop` and compared by mean absolute difference (`max_mad`, with the reason written in the manifest). Pixel-exact comparison is only for goldens this project made itself. This replaces the earlier assumption of pixel-exact comparison against the reference.
 
@@ -70,4 +70,4 @@ reports it as not run; passing audio scenarios require measured expectations.
 
 ## Goldens
 
-Captured once by a script that runs the reference emulator headless on the scenarios (`scripts/capture_zesarux_screen.py`, `capture_zesarux_audio.py` and `capture_vice_screen.py` in `retroclawd-tools`), stored in RomM keyed by hash (they derive from copyrighted software, so they stay out of git like ROMs), and pinned by the manifest (reference name and version, exact command, hash). CI compares our output to the golden and never runs the reference emulator. A diff image is written when they differ. One script regenerates goldens when the reference version changes.
+Captured once by a script that runs the reference emulator headless on the scenarios (`scripts/capture_zesarux_screen.py`, `capture_zesarux_audio.py` and `capture_vice_screen.py` in `rctools`), stored in RomM keyed by hash (they derive from copyrighted software, so they stay out of git like ROMs), and pinned by the manifest (reference name and version, exact command, hash). CI compares our output to the golden and never runs the reference emulator. A diff image is written when they differ. One script regenerates goldens when the reference version changes.

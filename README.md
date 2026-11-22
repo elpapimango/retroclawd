@@ -10,79 +10,83 @@
 > code contributions or issue reports at this time; please don't open
 > pull requests or issues on this repo.
 
-A multi-machine retro-computer emulator written in Rust. Each machine is a shared library
-(`*_machine_plugin`) that the `retroclawd` application loads at run time; the application draws the
-picture in a Bevy window, plays the sound, handles keyboards, gamepads, hotkeys, media and the debuggers,
-and links no machine code itself.
+A multi-machine retro-computer and console emulator written in Rust. One program, every machine inside it: the
+application draws the picture in a Bevy window, plays the sound, handles keyboards, gamepads, hotkeys, media and the
+debuggers, and carries all the machines linked in. There are no machine libraries and nothing else to install.
 
-Machines (each family has its own repository, see Building):
+Two executables come out of the build:
+
+| | |
+|---|---|
+| `rcd` | **Play.** Every machine, no debugging code at all. |
+| `rcdd` | **Develop.** The same program built with the `debug` feature: the browser debugger, the ZRCP command interface, the log sink, `--show-overlay`, `--symbols`, port and memory watch points, instruction history and the diagnostic reports. |
+
+Machines:
 
 | Family | Machines | CPU |
 |---|---|---|
 | Sinclair | ZX81; ZX Spectrum 48K, 128K, +2, +2A, +3 | Z80 |
 | Amstrad | CPC464, CPC664, CPC6128, CPC464+/6128+, GX4000 | Z80 |
 | Commodore | Experimental VIC-20; C64, C128 (8502 and Z80, 40/80 columns), 1541/1570/1571/1581 drives | 6502, 6510/8502, Z80 |
-| Atari | Experimental 800/800XL/65XE/130XE; ST first-device bring-up (not a complete ST) | 6502, 68000 |
+| Atari | Experimental 800/800XL/65XE/130XE; ST, Mega ST, STE | 6502, 68000 |
+| Sega | Mega Drive / Genesis, Mega-CD | 68000, Z80 |
+| SNK | Neo Geo (MVS and AES sets) | 68000, Z80 |
 
 The CPU cores (Z80, validated with ZEXALL/ZEXDOC; NMOS 6502 with the illegal opcodes, validated with Klaus
-Dormann's and Tom Seddon's suites) and the chips several families share (AY-3-8910, uPD765A) live in
-`retroclawd-crates`. In short, the machines have: a real keyboard matrix, video and audio (the Spectrum's
+Dormann's and Tom Seddon's suites; 68000, validated against SingleStepTests) and the chips several families share
+live in `shared/`. In short, the machines have: a real keyboard matrix, video and audio (the Spectrum's
 beeper and AY, the CPC's PSG, the C64/C128's SID), real-time tape playback (`.tap`/`.tzx`/`.cdt`/`.pzx`/
 `.csw`/`.voc`/`.wav`, C64 `.tap`/`.t64`) with a turbo multiplier and fast-load traps, floppy images (`.dsk`/`.edsk`,
 `.d64`/`.d71`/`.d81` and more, writable with `--disk-save`/`--disk-writeback`), cartridges (C64 `.crt`, CPC+
 `.cpr`), snapshots (`.z80`, `.sna`, `.szx`, `.p`/`.p81`/`.81`) and this project's own `.state` save states.
 The application adds zip and URL inputs, an optional input-latency "run-ahead" mode, CRT shaders, gamepads,
-remappable keys and hotkeys, file dialogs, clipboard paste, and a browser debugger with disassembly and symbol
-names for the Z80 and 6502 machines. Per-machine detail is in each family repository's `README.md` and
-`CLAUDE.md`.
+remappable keys and hotkeys, file dialogs, clipboard paste, and (in `rcdd`) a browser debugger with disassembly and
+symbol names. Per-machine detail is in each family's `README.md` and `CLAUDE.md` under `machines/`.
 
 ## Building
 
-**One command** builds the app and all machines:
+**One command** builds both executables:
 
 ```
 git clone https://github.com/elpapimango/retroclawd
 cd retroclawd
-tools/build_all.sh            # release; add --debug for a debug build
+tools/build_all.sh            # release; --dev for a debug-profile build, --tools for the assemblers and test tools
 ```
 
-On Windows use PowerShell: `tools\build_all.ps1` (same arguments; also `smoke_test.ps1` and `bump_pin.ps1`). The `.ps1`
-files only start the bash scripts through Git for Windows' bash, so you need Git for Windows and Rust installed, nothing
-else. (The `.sh` files keep LF line endings through `.gitattributes`; a CRLF copy fails in bash.) The Windows route was run (build and
-smoke test) and passes.
+On Windows use PowerShell: `toolsuild_all.ps1` (same arguments; also `smoke_test.ps1`). The `.ps1` files only start the
+bash scripts through Git for Windows' bash, so you need Git for Windows and Rust installed, nothing else. (The `.sh`
+files keep LF line endings through `.gitattributes`; a CRLF copy fails in bash.)
 
-The script checks out the submodules (`shared/` and the three machine repositories under `machines/`),
-builds the app, builds each family, and copies every machine library into
-`target/release/plugins/` -- the folder the app searches next to its executable. Afterwards
-`target/release/retroclawd zx81 --rom <your ZX81 ROM>` just works.
-`--families commodore` builds only one family; `--update` first moves the submodules to the newest
-commit of each family's `main` (otherwise you get the commits this repository records).
+Afterwards `target/release/rcd zx81 --rom <your ZX81 ROM>` just works. Plain cargo does the same:
 
-How the repositories relate (all public, same account):
+```
+cargo build --release -p retroclawd --bin rcd
+cargo build --release -p retroclawd --bin rcdd --features debug --target-dir target/release-debug
+```
 
-| Repository | Holds |
+Smaller builds pick their machines by cargo feature: `--no-default-features --features home` (Sinclair, Amstrad,
+Commodore, Atari), `console` (Sega, SNK), `arcade` (SNK), or one family (`sinclair`, `amstrad`, `commodore`, `atari`,
+`sega`, `snk`). The separate `rcdd` target folder keeps both builds cached.
+
+The repository is one cargo workspace:
+
+| Path | Holds |
 |---|---|
-| [`retroclawd`](https://github.com/elpapimango/retroclawd) | the application (with its debuggers), the build/smoke/bump scripts |
-| [`retroclawd-crates`](https://github.com/elpapimango/retroclawd-crates) (`shared/`) | the shared crates: `machine`, `plugin-api` (ABI policy), the Z80 and 6502 cores, AY-3-8910, uPD765A, `.dsk`, tape formats |
-| [`retroclawd-sinclair`](https://github.com/elpapimango/retroclawd-sinclair) (`machines/sinclair`) | ZX81, ZX Spectrum 48K/128K/+2/+2A/+3 |
-| [`retroclawd-amstrad`](https://github.com/elpapimango/retroclawd-amstrad) (`machines/amstrad`) | Amstrad CPC464/664/6128, CPC+ and GX4000 |
-| [`retroclawd-commodore`](https://github.com/elpapimango/retroclawd-commodore) (`machines/commodore`) | Experimental VIC-20, C64, C128 and the 1541/1570/1571/1581 drives |
-| [`retroclawd-atari`](https://github.com/elpapimango/retroclawd-atari) (`machines/atari`) | Experimental 800/800XL/65XE/130XE with ANTIC/GTIA/POKEY; existing bounded ST bring-up |
+| `apps/retroclawd` | the application (`rcd`, `rcdd`) |
+| `shared/` | the shared crates: `machine`, `plugin-api` (the typed machine protocol), the Z80, 6502 and 68000 cores, AY-3-8910, uPD765A, WD1770, `.dsk`, tape formats |
+| `machines/<family>/` | `sinclair`, `amstrad`, `commodore`, `atari`, `sega`, `snk`: machines, chips, formats, ROM tables (`firmware.toml`), documentation, scenario manifests; `roms/` and `software/` hold your own, git-ignored dumps |
+| `crates/` | app-only crates (configuration files, file loading, POK cheats) |
+| `rctools/` | the command-line tools and the integration suites (see Tools) |
+| `tools/` | build, smoke-test and check scripts |
 
-- The application uses the shared crates **by path** through the `shared/` submodule and contains no machine
-  code; it loads the machine libraries (`*_machine_plugin`) at run time. Removing a machine is deleting its library.
-- Each machine repository is a separate Cargo workspace that depends on `retroclawd-crates` **by git
-  revision** (`rev = "..."` in its manifests) and builds its own libraries. It builds on its own too
-  (`cd machines/amstrad && cargo build --release --workspace`; or clone just that repository).
-- The ROMs and test software live in the machine repositories (`roms/`, `software/`).
-- Each submodule records one commit, so a checkout is reproducible.
-- Changing a shared crate: commit and push it in `shared/`, then run `tools/bump_pin.sh` (it checks the commit is
-  on GitHub, prints the plugin ABI/protocol diff, rewrites the families' pins, runs their tests and records the
-  new submodule commits; `--push` publishes the family commits). The app and the libraries must agree on
-  `plugin-api`'s ABI (`shared/docs/plugin-abi.md`).
-- `tools/smoke_test.sh` builds everything, boots every machine headless and checks the boot screens against
-  recorded hashes -- run it after changing a shared crate or a pin.
-- Cargo fetches `retroclawd-crates` by git (the scripts set `CARGO_NET_GIT_FETCH_WITH_CLI=true`).
+- `tools/smoke_test.sh` builds `rcd`, boots every machine headless and checks the boot screens against recorded
+  hashes. `tools/check_all.sh` runs every check (build, unit tests, smoke test, scenario manifests, integration suites).
+- `cargo test --workspace --features debug` runs every unit test; `cargo test -p retroclawd` checks the app without
+  the debug feature.
+
+The project used to be eight repositories (the app, `retroclawd-crates`, one per machine family, and
+`retroclawd-tools`) tied together by git submodules and a C plugin ABI; they were merged into this one with their
+history in November 2026, and the machines are now linked into the executables.
 
 On Linux, building the GUI needs two system packages (`apt install
 libwayland-dev libudev-dev` on Debian/Ubuntu) for Bevy's windowing and
@@ -90,24 +94,24 @@ gamepad support -- Windows and macOS builds don't need anything extra.
 
 ## Tools
 
-[`retroclawd-tools`](https://github.com/elpapimango/retroclawd-tools) (builds on its own; not part of this
-repository's build) holds command-line tools on the same crates: `rcasm`, a two-pass 6502/Z80 assembler whose symbol
-files `--symbols` reads, and `rcdis`, a disassembler that writes source `rcasm` assembles back to the same bytes. Disk
-and tape tools (`rcdisk`, `rctape`) and a linker (`rcld`) follow.
+`rctools/` (part of this workspace; `tools/build_all.sh --tools` builds it) holds command-line tools on the same
+crates: `rcasm`, a two-pass 6502/Z80/68000 assembler whose symbol files `--symbols` reads, and `rcdis`, a disassembler
+that writes source `rcasm` assembles back to the same bytes, disk, tape and CHD tools (`rcdisk`, `rctape`, `rcchd`),
+a linker (`rcld`), and `rc-scenarios`/`rc-suite`, the scenario runner and integration suites that drive `rcdd`.
 
 ## Running
 
 ```
-target/release/retroclawd <machine> [--rom <path-to-rom>] [options]      # after tools/build_all.sh
+target/release/rcd <machine> [--rom <path-to-rom>] [options]      # after tools/build_all.sh
 ```
 
 `<machine>` is a positional argument and must come first (e.g. `retroclawd
 cpc6128 --rom machines/amstrad/roms/cpc/cpc6128.rom`), the same convention `git`/`cargo`/`docker` use
 for their own leading subcommand-like argument. Machine ids are whatever libraries were found
-(`retroclawd -lm` prints the live list): `zx81`, `zx-spectrum`, `zx-spectrum-128`, `zx-spectrum-2a3`, `cpc464`,
+(`rcd -lm` prints the live list): `zx81`, `zx-spectrum`, `zx-spectrum-128`, `zx-spectrum-2a3`, `cpc464`,
 `cpc664`, `cpc6128`, `cpc464plus`, `cpc6128plus`, `gx4000`, `c64`, `c128`. The machine (and every other setting)
 can also come entirely from `--game-config`/`retroclawd.toml` -- see
-**Machine-specific options** below -- so `retroclawd cpc6128 --disk
+**Machine-specific options** below -- so `rcd cpc6128 --disk
 game.dsk` works with no `--rom` flag at all once that machine's ROM path is
 configured in `retroclawd.toml` (copy `retroclawd.example.toml`, which points at `machines/<family>/roms/` for your own dumps; the
 +2A/+3 ROM has no default path, so `zx-spectrum-2a3` needs `--rom`).
@@ -137,14 +141,14 @@ debugger plugin selection, dump/state flags, `--headless`, etc.).
 Two ways to see a given machine's own options:
 
 ```
-retroclawd cpc6128 --help     # common flags + cpc6128's own options
-retroclawd -lp                # every discovered plugin's options, machine and debugger
+rcd cpc6128 --help     # common flags + cpc6128's own options
+rcd -lp                # every discovered plugin's options, machine and debugger
 ```
 
 A flag only exists in a given machine's parsed command line if that
 machine actually declares it -- e.g. `--ram-banks` only parses under
 `cpc6128`/`cpc6128plus` (the only real hardware with that expansion slot);
-`retroclawd cpc464 --ram-banks 2` is a clean clap "unexpected argument"
+`rcd cpc464 --ram-banks 2` is a clean clap "unexpected argument"
 error, not a silent no-op.
 
 Every plugin-declared option can also be set in `retroclawd.toml` directly in
@@ -177,11 +181,11 @@ ram_banks = 3
 (keep the token out of anything you commit; the environment variables win).
 
 ```
-retroclawd romm platforms [--all]        # platforms with ROMs or firmware (--all: every platform)
-retroclawd romm games zx-spectrum        # a platform by id, slug or name; --search <text> narrows it
-retroclawd romm firmware [<platform>]    # id, name, size and SHA-1, as an aligned table
-retroclawd romm match [<machine>]        # which firmware on the server satisfies which machine option
-retroclawd cache list | clean (--days N | --all) | remove romm:<id>...
+rcd romm platforms [--all]        # platforms with ROMs or firmware (--all: every platform)
+rcd romm games zx-spectrum        # a platform by id, slug or name; --search <text> narrows it
+rcd romm firmware [<platform>]    # id, name, size and SHA-1, as an aligned table
+rcd romm match [<machine>]        # which firmware on the server satisfies which machine option
+rcd cache list | clean (--days N | --all) | remove romm:<id>...
 ```
 
 Copy an id into the next command: `romm:<id>` is a game and `romm:fw/<id>` a firmware file, accepted wherever a file
@@ -189,10 +193,10 @@ is (`--disk romm:42`, `--rom romm:fw/7`, `media = "romm:42"` in a game config). 
 with `RETROCLAWD_CACHE_DIR`; `cache clean --days 90` removes what has not been used for 90 days).
 
 **`--firmware auto`** (or `[romm] firmware = "auto"`) fills every ROM option you did not name -- from a flag, the
-game config or `retroclawd.toml` -- from the server's firmware, matched by SHA-1: `retroclawd c64 --firmware auto`
+game config or `retroclawd.toml` -- from the server's firmware, matched by SHA-1: `rcd c64 --firmware auto`
 needs no `--rom-*` flag at all. Which dump satisfies which option is data: each machine family has a `firmware.toml`
 (hashes only), staged next to its libraries as `<family>.firmware.toml` by `tools/build_all.sh`. A downloaded file is
-checked against the hash it was chosen by before a machine sees it, and `retroclawd romm match c128` shows what
+checked against the hash it was chosen by before a machine sees it, and `rcd romm match c128` shows what
 would be used (the C128's two BASIC halves are joined into the one image it needs).
 
 ### Batch mode (`--headless`)
@@ -200,7 +204,7 @@ would be used (the C128's two BASIC halves are joined into the one image it need
 For scripting, dumps, or debugging without a window, add `--headless`:
 
 ```
-retroclawd zx81 --rom machines/sinclair/roms/zx81/zx81.rom --headless --max-cycles 2000000 --dump-screen screen.png
+rcd zx81 --rom machines/sinclair/roms/zx81/zx81.rom --headless --max-cycles 2000000 --dump-screen screen.png
 ```
 
 This runs to completion in the terminal instead of opening a window --
@@ -254,7 +258,7 @@ batch mode means it spins forever) -- `--max-cycles` caps it, or Ctrl+C.
 
 Emulator actions are bound to key chords in `retroclawd.toml` -- `[hotkeys]`
 for every machine, `[machines.<id>.hotkeys]` to override per machine
-(`retroclawd --list-hotkeys [machine]` prints the effective table; `--hotkey ACTION=CHORD`, repeatable, binds one
+(`rcd --list-hotkeys [machine]` prints the effective table; `--hotkey ACTION=CHORD`, repeatable, binds one
 for a single run: `--hotkey pause=ctrl+KC_P --hotkey reset=none --hotkey modifier=alt_right`, the first flag for an
 action replacing what the config bound and later ones adding chords). Layers:
 built-in defaults, then `[hotkeys]`, then the machine's table, per binding;
@@ -373,7 +377,7 @@ that is removed when the program exits (a folder left by a killed run is swept a
 **Disc images in a zip, and from RomM.** A CD image is several files (a `.cue` sheet and its `.bin` tracks), so a machine
 option that names one, such as the Sega CD's `disc`, also takes a `.zip` or `romm:<id>`: the whole archive is unpacked
 into `<cache>/unpacked/` (once per archive version; sets unused for a week are removed) and the machine gets the `.cue`
-(else a `.gdi`, `.iso`, `.chd`, `.toc`) inside it. A `.chd` (version 5, cdzl/cdlz/cdfl) plays as it is, and a Sega CD game can be saved and loaded with the usual state hotkeys. `retroclawd segacd --firmware auto --disc romm:6764` plays a game
+(else a `.gdi`, `.iso`, `.chd`, `.toc`) inside it. A `.chd` (version 5, cdzl/cdlz/cdfl) plays as it is, and a Sega CD game can be saved and loaded with the usual state hotkeys. `rcd segacd --firmware auto --disc romm:6764` plays a game
 straight from the server; a single `.iso` or `.cue` on RomM is used as it is.
 
 **Debugger symbols**
@@ -388,7 +392,7 @@ labels (`al C:1234 .NAME`). Z80 `JR`/`DJNZ` and 6502 branches show their absolut
 
 `[keys]` in `retroclawd.toml` changes which emulated key a host key presses,
 for every machine; `[machines.<id>.keys]` overrides it per machine (per
-binding). `retroclawd <machine> --list-keys` prints the machine's key names
+binding). `rcd <machine> --list-keys` prints the machine's key names
 (with their aliases), the host key names, and the bindings in effect.
 
 ```toml
@@ -407,7 +411,7 @@ KC_LBRC = "at"
 ```
 
 - **Left side:** a host key or a chord, written like a hotkey (`KC_SCLN`,
-  `KC_AT`, `ctrl+KC_F1`; `retroclawd ... --list-keys` lists the names).
+  `KC_AT`, `ctrl+KC_F1`; `rcd ... --list-keys` lists the names).
   A chord's modifiers are matched exactly, and while a chord is held its
   modifiers are *not* sent to the machine, so `shift+2 = "at"` presses `At`
   and not `At` plus a stray Shift. A plain binding (`f = "b"`) still lets a
@@ -455,10 +459,10 @@ keymap = "keymaps/spectrum.toml"
   fixed binding that key is `KC_NUBS` (`KC_NONUS_BACKSLASH`). `ß`, `Æ` and `Œ` (two letters) type both, a frame apart.
 - **Not covered:** dead keys and characters with no letter form (`€`, `¿`) use the physical key; the typed character is
   read as each key goes down, so switching the host layout while the emulator runs just works.
-- `retroclawd <machine> --list-keys` shows the layout and keymap files in effect.
+- `rcd <machine> --list-keys` shows the layout and keymap files in effect.
 
 **Shipped keymaps:** `uk`, `us`, `es`, `de`, `fr`, `sv`, `no`, `da` (sources in `assets/keymaps/`, built into
-the program) are used by name: `retroclawd c64 --keymap de` or `[input] keymap = "de"`. Each selects the symbolic
+the program) are used by name: `rcd c64 --keymap de` or `[input] keymap = "de"`. Each selects the symbolic
 layout for that keyboard, which types the right characters on the ZX Spectrum, the CPC, the C64 and the other machines
 that declare what their keys type. The Atari ST, Mega ST and STE (whose keys are the US positions and whose EmuTOS
 uses the US table by default) have explicit bindings in each file, so e.g. Shift+2 on a German keyboard types `"`.
@@ -524,7 +528,7 @@ Buttons are named by position: bottom, right, left and top face button, shoulder
 | Amstrad CPC / CPC+ / GX4000 | bottom = Fire1, right = Fire2, left = Fire3 (shoulders and triggers too) |
 | every other machine | every face button, shoulder and trigger is the one fire button |
 
-`retroclawd <machine> --list-keys` prints what each button does. When a pad is plugged in the program prints its slot and name
+`rcd <machine> --list-keys` prints what each button does. When a pad is plugged in the program prints its slot and name
 (`pad 1: 8bitdo Ultimate Bluetooth Controller`), from the controller list in `assets/controllers/devices.toml`, which
 `tools/convert_autoconfig.py` makes from RetroArch's gamepad autoconfig profiles (`python tools/convert_autoconfig.py <RetroArch>/autoconfig`).
 Your own bindings below replace the layout one button at a time.
@@ -532,7 +536,7 @@ Your own bindings below replace the layout one button at a time.
 `[pads]` rebinds buttons; `[machines.<id>.pads]` overrides per machine. Pad
 slots are `[pads.1]`..`[pads.4]` (first pad seen = 1; unplugging one does not
 renumber the others). A button can press any machine key, not only joystick
-ones -- a list presses several, `"none"` unbinds. `retroclawd <machine>
+ones -- a list presses several, `"none"` unbinds. `rcd <machine>
 --list-keys` also prints the button names and the pad bindings in effect.
 
 ```toml
@@ -568,7 +572,7 @@ still double as the Spectrum/CPC joystick as before.
   key names, shifts and pacing); `\n` is Enter. `--type-after <FRAMES>` (default 150) is how long to wait for the prompt: a
   C128 with a real drive (`--true-drive`) probes it for a boot sector first and needs about 500. `--type-delay <MS>` sets the time
   between key events (default: the paste delay, 60); the ZX81 ROM scans keys once a frame and loses them that fast: use 160. For example
-  `retroclawd c128 ... --headless --frames 400 --type 'PRINT 12*34\n' --dump-memory 0x0400:1000` leaves `408` on the screen
+  `rcd c128 ... --headless --frames 400 --type 'PRINT 12*34\n' --dump-memory 0x0400:1000` leaves `408` on the screen
 - `--at <FRAME:ACTION[=FILE]>` (repeatable, needs `--frames`) -- run a hotkey or file-dialog action at the start of a frame
   (`FRAMES` itself means after the last frame, before the dumps): `reset`, `freeze`, `screenshot[=FILE]`, `quick_save`,
   `quick_load`, `state_slot_next`, `state_slot_prev`, `load_tape|load_disk|load_snapshot|load_state=FILE`, `eject_tape`,
@@ -617,8 +621,8 @@ still double as the Spectrum/CPC joystick as before.
   otherwise lose that first block. CPCEC does the same with a 2000 ms hold.
 - CPC's cassette motor policy (`--tape-mode`) and ZX Spectrum's fast-load
   trap (`--fast-tape-load`) are machine-declared options now -- see
-  **Machine-specific options** above; run `retroclawd cpc6128 --help` or
-  `retroclawd zx-spectrum --help` for their exact descriptions/defaults.
+  **Machine-specific options** above; run `rcd cpc6128 --help` or
+  `rcd zx-spectrum --help` for their exact descriptions/defaults.
 
 **Disk (`zx-spectrum-2a3`, `cpc664`, `cpc6128`, or `cpc6128plus`)**
 - `--disk-b <path>` -- a disk for the second drive, drive B (the CPC664/6128's or +3's external drive; a machine without one refuses it).
@@ -742,20 +746,20 @@ Example: load and run a standalone test program instead of the ROM's own
 boot code, then dump the first 16 bytes of RAM afterward:
 
 ```
-retroclawd zx81 --rom machines/sinclair/roms/zx81/zx81.rom --program program.bin --headless --dump-memory 0x4000:16
+rcd zx81 --rom machines/sinclair/roms/zx81/zx81.rom --program program.bin --headless --dump-memory 0x4000:16
 ```
 
 Example: boot a ROM for a while, then save what's on screen:
 
 ```
-retroclawd zx81 --rom machines/sinclair/roms/zx81/zx81.rom --headless --max-cycles 2000000 --dump-screen screen.png
-retroclawd zx-spectrum --rom machines/sinclair/roms/zx-spectrum/spec48.rom --headless --max-cycles 2000000 --dump-screen screen.png
+rcd zx81 --rom machines/sinclair/roms/zx81/zx81.rom --headless --max-cycles 2000000 --dump-screen screen.png
+rcd zx-spectrum --rom machines/sinclair/roms/zx-spectrum/spec48.rom --headless --max-cycles 2000000 --dump-screen screen.png
 ```
 
 Example: boot with both debugger UI + debug-log plugins:
 
 ```
-retroclawd zx-spectrum --rom machines/sinclair/roms/zx-spectrum/spec48.rom --plugin debug-ui:port=9090 --plugin debug-log:stdout
+rcd zx-spectrum --rom machines/sinclair/roms/zx-spectrum/spec48.rom --plugin debug-ui:port=9090 --plugin debug-log:stdout
 # then open http://127.0.0.1:9090/
 ```
 
@@ -763,7 +767,7 @@ Example: CPC with its own machine-declared options, RAM expansion, and an
 expansion ROM slot:
 
 ```
-retroclawd cpc6128 --rom machines/amstrad/roms/cpc/cpc6128.rom --ram-banks 3 --rom-slot 7=amsdos.rom --tape-mode caprice
+rcd cpc6128 --rom machines/amstrad/roms/cpc/cpc6128.rom --ram-banks 3 --rom-slot 7=amsdos.rom --tape-mode caprice
 ```
 
 
@@ -843,7 +847,7 @@ for supported headers, size limits and explicit-output behavior.
 - `--mode c128|c64` (boot into C128 or C64 mode), `--display 40|80` (VIC-IIe or VDC screen), `--vic-accuracy
   line|cycle`, `--run` (auto-type `LOAD`/`RUN` for the attached media), `--drive-type 1541|1570|1571|1581`,
   `--true-drive` (a real drive CPU on the IEC bus), and the ROM options `--rom-kernal`, `--rom-basic`,
-  `--rom-char`, `--rom-c64-kernal`, `--rom-c64-basic`. `retroclawd c128 --help` has the full list.
+  `--rom-char`, `--rom-c64-kernal`, `--rom-c64-basic`. `rcd c128 --help` has the full list.
 
 **Commodore execution modes (`c64`, `c128`)**
 
@@ -892,10 +896,10 @@ See `CLAUDE.md` for the workspace's crate layout and architecture notes.
 
 ## License
 
-retroclawd is free software under the **GNU General Public License v3.0 or later** (see `LICENSE`). Third-party
+rcd is free software under the **GNU General Public License v3.0 or later** (see `LICENSE`). Third-party
 material keeps its own terms and is credited in `CREDITS.md`: the CRT shaders are ports of GPL-licensed libretro
 shaders (see `CREDITS.md`). No ROM image or piece of commercial software is part of this repository or its
-history; you need your own dumps (or `retroclawd --firmware auto` with a RomM server).
+history; you need your own dumps (or `rcd --firmware auto` with a RomM server).
 
 ## Contributing / issues
 

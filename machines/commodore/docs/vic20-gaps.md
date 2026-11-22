@@ -143,7 +143,7 @@ gap markers; the updated manifest passes without unexpected closed gaps.
 
 ### Reference capture recipe
 
-**2026-10-30:** every golden of the manifest is reproduced by `retroclawd-tools/scripts/capture_vic20_goldens.py KIND REGION`
+**2026-10-30:** every golden of the manifest is reproduced by `rctools/scripts/capture_vic20_goldens.py KIND REGION`
 (`s1 s2 program tape disk cartridge s7-cartridge s7-kernal`), and the SHA-256 of each result equals the pinned `golden_sha256`
 (S1, S2, S3 and S7 checked in both regions), using the installed **VICE 3.10** (the recipe below was written against 3.9). Only the
 names of two options changed: 3.10 has `+trapdevice1` / `+trapdevice8` where 3.9 had `+virtualdev1` / `+virtualdev8` (fast tape and
@@ -174,7 +174,7 @@ images**, not the raw doubled-width reference PNGs. Crop the rectangle above
 and remove one column from each identical pair. The following conversion uses
 the existing tools PNG codec and refuses nonidentical pairs. Save it outside
 the repository and invoke it as
-`python convert.py <retroclawd-tools> <raw.png> <golden.png> <pal|ntsc>`.
+`python convert.py <rctools> <raw.png> <golden.png> <pal|ntsc>`.
 
 ```python
 import sys

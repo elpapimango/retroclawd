@@ -1,6 +1,6 @@
-# Prompt: build `retroclawd-tools`
+# Prompt: build `rctools`
 
-> **Status (2026-10-13):** all six tools are built and pushed (<https://github.com/elpapimango/retroclawd-tools>): `rcasm`,
+> **Status (2026-10-13):** all six tools are built and pushed (<https://github.com/elpapimango/rctools>): `rcasm`,
 > `rcdis`, `rcdisk` (CBM and CP/M images), `rctape` (TZX/TAP, `.t64`), `rcsnap` (snapshots, cartridges) and `rcld`
 > (linker / packager).
 > Two decisions below changed: the repository is **standalone** (not a fifth submodule of the
@@ -14,7 +14,7 @@ repositories for the details of the crates you will use.
 
 ## Goal
 
-Create **`elpapimango/retroclawd-tools`** (private, same account; the owner creates the empty repository, the
+Create **`elpapimango/rctools`** (private, same account; the owner creates the empty repository, the
 session attaches it with `add_repo`): command-line tools built on the retroclawd crates to **open, create, read,
 write and convert tape and disk images**, and to **disassemble, assemble and link programs that run on our
 machines** (ZX81, ZX Spectrum, Amstrad CPC, C64, C128). Rust, cross-platform (Linux, macOS, Windows), no machine

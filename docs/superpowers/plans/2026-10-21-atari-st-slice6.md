@@ -42,7 +42,7 @@ Previous plan: `docs/superpowers/plans/2026-10-21-atari-st-slices3-5.md`.
 
 | Repository | Branch | Work |
 |---|---|---|
-| retroclawd-tools | `atari-phase1-exit` | Task 1 (`rcdisk` st), Task 3 (Hatari screenshot script) |
+| rctools | `atari-phase1-exit` | Task 1 (`rcdisk` st), Task 3 (Hatari screenshot script) |
 | retroclawd (host) | `master` | Task 2 (`--at` mouse), Task 7 (`check_all`), docs |
 | retroclawd-atari | `atari-st-slice6` | Task 4 (scenario programs and build), Task 5 (manifest), Task 6 (injected fault) |
 | retroclawd-crates | `singlestep-expected` | Task 6 (SingleStepTests expected-failure list and its justification) |
@@ -63,7 +63,7 @@ Also:
   missing. Nothing proprietary, and no TOS, is needed.
 - **New FAT12 facts** come from Microsoft's *FAT: General Overview of On-Disk Format* (v1.03, 2000) `[H]`,
   directory entries and FAT12 packing, and from *Atari ST Internals* pp.178-179 (the ST's BPB values) `[H]`. They
-  go in `retroclawd-tools/CREDITS.md` with URL and SHA-256.
+  go in `rctools/CREDITS.md` with URL and SHA-256.
 - **Scenario programs** are 68000 machine code written as hex words with a comment per instruction (no 68000
   assembler exists yet; spec §15 is later). They are checked by running them in tests, not by eye alone.
 
@@ -87,7 +87,7 @@ Also:
 
 ---
 
-### Task 1: `rcdisk st`: Atari FAT12 `.st` disks (retroclawd-tools)
+### Task 1: `rcdisk st`: Atari FAT12 `.st` disks (rctools)
 
 **Files:**
 - Create: `crates/rcdisk/src/st.rs` (adapter on the crate's `Disk` trait), `crates/rcdisk/tests/st.rs`
@@ -151,7 +151,7 @@ Also:
   --headless --frames 1600 --at 1500:mouse_move=-200,-100 --dump-screen x.png` shows the pointer moved (by eye).
 - [ ] **Step 5: Commit** (host): "--at: mouse_move, mouse_down, mouse_up".
 
-### Task 3: Hatari screenshot capture (retroclawd-tools)
+### Task 3: Hatari screenshot capture (rctools)
 
 **Files:**
 - Create: `scripts/capture_hatari_screen.py`
@@ -240,7 +240,7 @@ says:
 
 - [ ] **Step 1:** Capture S1's golden with Task 3's script into `RC_GOLDENS/atari-st/`.
 - [ ] **Step 2:** Write the manifest without hashes. Generate each `exact` golden three times with `rc-scenarios`
-  (its golden-writing mode; read `retroclawd-tools/CLAUDE.md` for the command) and check the three are identical.
+  (its golden-writing mode; read `rctools/CLAUDE.md` for the command) and check the three are identical.
   Look at each picture and say in the manifest comment what it shows. Then record the hashes.
 - [ ] **Step 3: Run** `rc-scenarios run machines/atari/atari-st.manifest.toml` with the release binary and plugins.
   Expected: every scenario passes.

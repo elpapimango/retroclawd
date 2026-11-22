@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 here = os.path.dirname(os.path.abspath(__file__))
-tools = os.path.join(here, "..", "..", "..", "..", "retroclawd-tools")
+tools = os.path.join(here, "..", "..", "..", "..", "rctools")
 
 
 def run(rom, hatari, addr, size):

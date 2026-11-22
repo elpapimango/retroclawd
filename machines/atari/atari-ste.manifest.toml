@@ -6,7 +6,7 @@ args = ["--firmware", "auto"]
 [reference]
 emulator = "hatari"
 version = "2.6.1"
-command = "retroclawd-tools/scripts/capture_hatari_mem.py ROM FLOPPY VBLS ADDR LEN OUT --machine ste; capture_hatari_screen.py --machine ste"
+command = "rctools/scripts/capture_hatari_mem.py ROM FLOPPY VBLS ADDR LEN OUT --machine ste; capture_hatari_screen.py --machine ste"
 
 # S16: the EmuTOS STE desktop after 1500 frames: the Blitter draws the menu text and the pointer; pixel for pixel Hatari's picture.
 [[scenario]]

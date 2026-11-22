@@ -8,7 +8,7 @@ args = ["--no-border"]
 [reference]
 emulator = "zesarux"
 version = "13.0"
-command = "retroclawd-tools/scripts/capture_zesarux_screen.py CPC664 8 OUT.png --crop 0,-16,768,576 [--keys 'print 1234 mod 100{ENTER}' --after 2 | --load FILE --keys 'cat{ENTER}' --after 3]   (zesarux --machine CPC664 --realvideo, save-screen over ZRCP)"
+command = "rctools/scripts/capture_zesarux_screen.py CPC664 8 OUT.png --crop 0,-16,768,576 [--keys 'print 1234 mod 100{ENTER}' --after 2 | --load FILE --keys 'cat{ENTER}' --after 3]   (zesarux --machine CPC664 --realvideo, save-screen over ZRCP)"
 
 [files]
 rom = "amstrad/roms/cpc/cpc664.rom"
@@ -76,7 +76,7 @@ compare = { mode = "similarity", max_mad = 1.0, crop = [0.05, 0.46, 0.95, 0.68],
 
 # S7-hw: the CRTC and FDC lines of the same screen. ZEsarUX reports CRTC 04 (the ASIC's type) and FDC NONE with the disk it
 # loaded from in the drive, so this one is compared with Caprice32 4.6 instead (docs/cpc-diag-crtc-fdc-gap.md): its CRTC
-# answers as a type 0, so ours runs with --crtc-type 0. Golden: retroclawd-tools/scripts/capture_caprice_screen.py 1 1250
+# answers as a type 0, so ours runs with --crtc-type 0. Golden: rctools/scripts/capture_caprice_screen.py 1 1250
 # OUT.png --keys 'run"diag' -O system.ram_size=64 AmstradDiag.dsk
 [[scenario]]
 id = "S7-hw"

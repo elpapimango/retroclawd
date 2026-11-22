@@ -27,7 +27,7 @@ mouse and joystick reach it through the IKBD.
 
 **Tech Stack:**
 - Rust 2024 and `serde`. No new external dependencies.
-- retroclawd-tools: the Python standard library.
+- rctools: the Python standard library.
 
 **Spec:** `docs/superpowers/specs/2026-10-19-atari-st-design.md`:
 - sections 5, 6, 8, 9, 10, 12, 13 and 21;
@@ -43,7 +43,7 @@ Slice 2's plan is `docs/superpowers/plans/2026-10-20-atari-st-slice2.md`.
 | retroclawd-crates (`shared/`) | `atari-slices-3-5` | Tasks 1-3: YM2149 variant, `mc6850`, `wd1770` moved |
 | retroclawd-atari (`machines/atari`) | `atari-st-slices3-5` | Tasks 4-14 |
 | retroclawd-commodore (`machines/commodore`) | `wd1770-from-crates` | Task 3: use the shared `wd1770`, delete the local copy |
-| retroclawd-tools | `hatari-disk-trace` | Task 5: `--disk-a` and an extra-trace option for the capture script |
+| rctools | `hatari-disk-trace` | Task 5: `--disk-a` and an extra-trace option for the capture script |
 | retroclawd (host) | `master` | Task 13: `.st` media extension. Task 15: docs and submodule pointers |
 
 ## Global Constraints
@@ -333,10 +333,10 @@ EmuTOS touches is already in `io.rs`'s decode table. Slices 3-5 make every `Devi
 
 # Slice 4: ACIAs and the IKBD
 
-### Task 5: Hatari capture options (retroclawd-tools)
+### Task 5: Hatari capture options (rctools)
 
 **Files:**
-- Modify: `retroclawd-tools/scripts/capture_hatari_trace.py`, and the CLAUDE.md capture notes
+- Modify: `rctools/scripts/capture_hatari_trace.py`, and the CLAUDE.md capture notes
 
 **Interfaces:**
 - Produces:
@@ -761,7 +761,7 @@ EmuTOS touches is already in `io.rs`'s decode table. Slices 3-5 make every `Devi
   1. retroclawd-crates `atari-slices-3-5` → `main`;
   2. `tools/bump_pin.sh <new rev>` (moves every family's pin, runs their tests, commits);
   3. retroclawd-commodore `wd1770-from-crates` → `main` (after the bump, so its manifest points at the new rev);
-  4. retroclawd-atari and retroclawd-tools branches → `main`;
+  4. retroclawd-atari and rctools branches → `main`;
   5. the host commit with all submodule pointers.
 
   Push only after the answer.

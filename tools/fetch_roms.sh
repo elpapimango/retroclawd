@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fills the git-ignored machines/<family>/roms folders that tools/smoke_test.sh and the retroclawd-tools
+# Fills the git-ignored machines/<family>/roms folders that tools/smoke_test.sh and the rctools
 # suites (crates/rc-suite) read, with the firmware your RomM server holds. Each file is picked by SHA-1 (the same hashes as the
 # machines/<family>/firmware.toml files), downloaded, and verified before it is kept.
 #

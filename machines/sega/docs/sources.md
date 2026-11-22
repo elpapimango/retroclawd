@@ -44,7 +44,7 @@ Installed in RetroArch: `C:\Users\matti\Workspace\Emulators\RetroArch-Win64\core
 
 ## Oracle host and corpus
 
-`retroclawd-tools/scripts/libretro_run.py CORE ROM --frames N ...` runs a core and writes frame, RAM (`RETRO_MEMORY_SYSTEM_RAM`),
+`rctools/scripts/libretro_run.py CORE ROM --frames N ...` runs a core and writes frame, RAM (`RETRO_MEMORY_SYSTEM_RAM`),
 audio and state. Checked 2026-10-24 on Altered Beast (RomM game 6174, `Altered Beast.smd`, 524 800 bytes, SHA-1 of the file inside
 the zip `316eb916907b6d2c2f1ce363b8c43d5584c16b0d`): Genesis Plus GX, PicoDrive and BlastEm run the `.smd` directly and give the
 same RAM for a de-interleaved copy (`scenarios/smd2md.py`, validated by the ROM header checksum); clownmdemu needs the

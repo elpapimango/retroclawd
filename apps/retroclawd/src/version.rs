@@ -38,12 +38,12 @@ pub(crate) fn summary(report: Option<&StartupReport>) -> String {
     out.push('\n');
     match report {
         Some(report) if !report.plugins.is_empty() => {
-            out.push_str("machine plugins:\n");
+            out.push_str("machines:\n");
             for plugin in &report.plugins {
                 out.push_str(&format!("  {}\n", plugin_line(plugin)));
             }
         }
-        Some(_) => out.push_str("machine plugins: (none found)\n"),
+        Some(_) => out.push_str("machines: (none found)\n"),
         None => {}
     }
     out
@@ -112,7 +112,7 @@ mod tests {
         assert_eq!(plugin_line(&report.plugins[1]), "old 0.1.0");
         let text = summary(Some(&report));
         assert!(
-            text.contains("machine plugins:\n  cpc 0.1.0 build 98"),
+            text.contains("machines:\n  cpc 0.1.0 build 98"),
             "{text}"
         );
         assert!(

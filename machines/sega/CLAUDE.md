@@ -72,7 +72,7 @@ Huffman of 256 byte symbols, tree in two stages), `flac` (`flac.rs`: our own enc
 `cdzl`/`cdzs`/`cdlz`/`cdfl`), `image.rs` (`Image`: header, compressed and plain maps, metadata, parent files, `verify`), `chd`'s `Chd` (the CD view,
 now built on `Image`), `writer.rs` (`Writer`: parallel hunk compression, best codec per hunk, repeated hunks and hunks the parent holds as references,
 `mapenc.rs` for the compressed map, metadata chain, raw and overall SHA-1; uncompressed files are written the way chdman writes them, byte for byte),
-`edit.rs` (add, replace and delete metadata in place, `write_hashes`). The tool on top is `rcchd` in `retroclawd-tools`. chdman 0.289 is the oracle
+`edit.rs` (add, replace and delete metadata in place, `write_hashes`). The tool on top is `rcchd` in `rctools`. chdman 0.289 is the oracle
 (`tests/chdman.rs`, `RC_CHDMAN=path cargo test -p chd --test chdman -- --ignored`): its files of every codec read and verify here, ours pass `chdman verify`
 with the same SHA-1s. **A pregap type starting with `V` means the pregap's frames are stored in the track (cue `INDEX 00`); any other type (chdman writes
 `MODE1` for a cue `PREGAP`) means silence.** The first version of the reader had this the other way round (found with chdman on both kinds of cue); audio

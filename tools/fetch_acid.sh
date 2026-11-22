@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copies the third-party acid tests the retroclawd-tools suites run (crates/rc-suite) from a folder you already have into the
+# Copies the third-party acid tests the rctools suites run (crates/rc-suite) from a folder you already have into the
 # git-ignored machines/<family>/software/acid/ folders, verified by SHA-256. They have their own licences: they are copied
 # here for local testing, never committed.
 #

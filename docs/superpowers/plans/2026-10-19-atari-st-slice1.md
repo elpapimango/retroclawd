@@ -116,7 +116,7 @@ apps/retroclawd/src/main.rs              pass region into firmware::auto_fill
 tools/{build_all,check_all,smoke_test,bump_pin}.sh   family list gains `atari` (smoke test: not yet, see Task 16)
 ```
 
-### retroclawd-tools
+### rctools
 
 ```
 scripts/capture_hatari_trace.py          Hatari black-box CPU trace -> list of PCs
@@ -639,7 +639,7 @@ fn cached(sha1: &str) -> Option<Vec<u8>>        // <cache_root>/firmware/<sha1>.
 - Modify: `.gitmodules`, `machines/atari`, `tools/build_all.sh`, `tools/check_all.sh`, `tools/bump_pin.sh`
   (`atari` added to the default family lists; `smoke_test.sh` unchanged until the desktop milestone D)
 - Create: `machines/atari/crates/machines/atari-st/tests/emutos.rs`,
-  `retroclawd-tools/scripts/capture_hatari_trace.py`
+  `rctools/scripts/capture_hatari_trace.py`
 
 - [ ] **Step 1:** `git submodule add https://github.com/elpapimango/retroclawd-atari machines/atari`. Update the
   scripts. `tools/build_all.sh` → `atari_st_machine_plugin` is staged in `target/release/plugins`, with

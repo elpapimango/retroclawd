@@ -25,7 +25,7 @@ on the way is identical (address, size, value, PC) to Hatari 2.6.1's.
 
 **Tech Stack:**
 - Rust 2024 (rustc 1.98.1) and `serde`. No new external dependencies.
-- retroclawd-tools: a Python standard-library script.
+- rctools: a Python standard-library script.
 
 **Spec:** `docs/superpowers/specs/2026-10-19-atari-st-design.md`, sections 5, 6, 8, 9, 10, 11, 12, 16, 21 and 23
 (backlog items 3, 4 and 5). Slice 1's plan is `docs/superpowers/plans/2026-10-19-atari-st-slice1.md`.
@@ -35,7 +35,7 @@ on the way is identical (address, size, value, PC) to Hatari 2.6.1's.
 | Repository | Work |
 |---|---|
 | retroclawd-atari | Nearly all of it, on branch `atari-st-slice2` |
-| retroclawd-tools | Task 2's capture option, on branch `hatari-io-trace` |
+| rctools | Task 2's capture option, on branch `hatari-io-trace` |
 | retroclawd (host) | Documentation and the submodule pointer only (Task 9) |
 | retroclawd-crates | No change expected: no shared crate changes, so no pin bump. If the core needs a fix, it follows slice 1's flow (crates branch, `tools/bump_pin.sh`) |
 
@@ -213,7 +213,7 @@ The first write is `$0A` in every case. With 4 MiB, EmuTOS also reads `$4FFFFF`,
 - Modify: `config.rs` (`io_log_limit: u32`)
 - Modify: `crates/plugins/atari-st-machine-plugin/src/lib.rs` (option `io_trace_file`, Text, written on drop like
   `trace_file`)
-- Modify: `retroclawd-tools/scripts/capture_hatari_trace.py` (`--kind pc|io`)
+- Modify: `rctools/scripts/capture_hatari_trace.py` (`--kind pc|io`)
 - Test: `tests/emutos.rs`; a unit test in `iolog.rs`
 
 **Interfaces:**

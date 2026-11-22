@@ -26,7 +26,7 @@ bounded report instead of returning an invented value.
   learnt from source is written in our own words, labelled, and confirmed by a document or a probe on two oracles before it is
   coded. Tables that real hardware derives from a formula (the YM2612 sine and exponent tables) are generated from the formula in
   a documented `const fn`, never pasted. Source is read from a clone in `software/refsrc/<name>/` (git-ignored).
-- **[P] The reference oracle is a libretro host.** `retroclawd-tools/scripts/libretro_run.py` (Python `ctypes`) loads a core DLL,
+- **[P] The reference oracle is a libretro host.** `rctools/scripts/libretro_run.py` (Python `ctypes`) loads a core DLL,
   runs N frames with scripted input, and writes the frame (PNG), the audio (WAV) and the 68000 work RAM / Z80 RAM
   (`RETRO_MEMORY_SYSTEM_RAM`) to files. The cores are the ones installed in RetroArch (`C:\Users\matti\Workspace\Emulators\RetroArch-Win64\cores`: Genesis Plus GX v1.7.4, PicoDrive 2.05, BlastEm 1.0.1-pre, clownmdemu 1.6.12), loaded in place by path; their SHA-256 is recorded in the facts document. MAME's `genesis` driver, already installed in `Emulators/Mame`, is a fifth
   oracle for disagreements. Where two or more oracles agree and the documentation does not contradict them, that is a fact.

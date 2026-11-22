@@ -21,7 +21,7 @@ inventing a value.
 | *MC68901* | Motorola MC68901 Multi-Function Peripheral, Advance Information, January 1984, https://bitsavers.mirrorservice.org/components/motorola/68000/MC68901_Multi-Function_Peripheral_Jan84.pdf (SHA-256 `5441a092562cc5b55bb167298030647622132e0061c0be8d976e25fb60ba959c`) |
 | *TOS hyp* | TOS documentation, "The system vectors", https://freemint.github.io/tos.hyp/en/the_system_vectors.html |
 | *ST-Log 34* | "A millisecond timer", ST-Log issue 34, July 1989, p.60, https://www.atarimagazines.com/st-log/issue34/60_1_A_MILLISECOND_TIMER.php |
-| *Hatari io* | Hatari 2.6.1, `--machine st --tos etos192uk.img --memsize <n> --trace io_all,cpu_exception`; `retroclawd-tools/scripts/capture_hatari_trace.py --kind io` |
+| *Hatari io* | Hatari 2.6.1, `--machine st --tos etos192uk.img --memsize <n> --trace io_all,cpu_exception`; `rctools/scripts/capture_hatari_trace.py --kind io` |
 | *forum* | atari-forum.com threads cited in `scheduler.rs` (frame timing) |
 | *MC6850* | Motorola MC6850 data sheet (DS9493R, 1985), https://docs.ampnuts.ru/eevblog.docs/Tektronix/TLA_Ensoniq/Datasheets/MC6850.pdf (SHA-256 `294a8b9f557d03a2a7f4d736d060244f39216dad2d5479d2e47954feb4f34655`) |
 | *IKBD* | Atari, *Intelligent Keyboard (ikbd) Protocol*, revised 26 February 1985, scan in https://bitsavers.org/pdf/atari/ST/Atari_ST_GEM_Programming_1986/GEM_0883.pdf (SHA-256 `9f216bf7a02b9141b2bc3a9bb97225c18149d261aae4059b186e3119d3779d82`) |
@@ -254,7 +254,7 @@ Every `[H?]` and `[O]` row below not in that section is still unchecked.
 | Palette log | every palette write that changes a colour, with its line, in time order, at most 16 384 a frame; the palette register itself always takes the write | `[H?]` | a bound for memory, not hardware |
 | Sync mode and resolution writes | logged with the raster line and the cycles since the line began, at most 256 a frame (the oldest dropped), shown in the stop report; the picture does not use them and no border opens | `[H?]` | overscan is Phase 3 (spec section 5) |
 
-## ACSI hard disks (`acsi.rs`, `dma.rs`, `retroclawd-tools` `rcdisk hd`)
+## ACSI hard disks (`acsi.rs`, `dma.rs`, `rctools` `rcdisk hd`)
 
 | Fact | Value | Label | Source |
 |---|---|---|---|
@@ -275,7 +275,7 @@ Every `[H?]` and `[O]` row below not in that section is still unchecked.
 | Extended partitions | the first sector holds a standard root sector's headers: a partition (start from that sector) and an `XGM` link to the next (start `[H?]` from the first extended partition) | `[H]` / `[H?]` | same |
 | FAT16 | the BPB of a floppy with media `$F8`; 16-bit sector counts, so a partition of 32 MB or more has logical sectors above 512 bytes | `[H]` / `[H?]` | same page and *Internals* pp.178-179 |
 
-## GEMDOS programs (`st-floppy` `boot.rs`; `retroclawd-tools` `rc-common` `prg.rs`)
+## GEMDOS programs (`st-floppy` `boot.rs`; `rctools` `rc-common` `prg.rs`)
 
 | Fact | Value | Label | Source |
 |---|---|---|---|

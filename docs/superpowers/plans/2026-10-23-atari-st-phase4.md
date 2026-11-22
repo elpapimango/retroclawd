@@ -11,7 +11,7 @@ memory watchpoints; and from Phase 3 the fuzz runs, the ACSI `--disk-save`, IKBD
 
 **Architecture:**
 - Same repositories as Phase 3: CPU/shared chips in `retroclawd-crates` (branch `atari-phase4`), everything else in
-  `retroclawd-atari` (branch `atari-st-slice18`, one branch for the whole phase), probe tooling in `retroclawd-tools`
+  `retroclawd-atari` (branch `atari-st-slice18`, one branch for the whole phase), probe tooling in `rctools`
   (`atari-phase4-tools`), docs/pins/`--disk-save` in the host (`master`).
 - **The truth source is the oracle again.** Hatari 2.6.1 (`--machine megast|ste`, EmuTOS 256K for the STE) is run as a black
   box with probes (68000 programs) exactly as in Phase 3 (`docs/timing-oracle.md`); functional results (blitter output,

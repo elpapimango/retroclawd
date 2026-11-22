@@ -15,8 +15,8 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 CORES_DIR = os.environ.get("RC_ORACLE_CORES", r"C:\Users\matti\Workspace\Emulators\RetroArch-Win64\cores")
-RUNNER = os.environ.get("RC_LIBRETRO_RUN", os.path.join(ROOT, "..", "..", "..", "retroclawd-tools", "scripts", "libretro_run.py"))
-RCASM = os.environ.get("RCASM", os.path.join(ROOT, "..", "..", "..", "retroclawd-tools", "target", "release", "rcasm.exe"))
+RUNNER = os.environ.get("RC_LIBRETRO_RUN", os.path.join(ROOT, "..", "..", "..", "rctools", "scripts", "libretro_run.py"))
+RCASM = os.environ.get("RCASM", os.path.join(ROOT, "..", "..", "..", "rctools", "target", "release", "rcasm.exe"))
 SYSTEM = os.path.join(ROOT, "software", "oracles", "system")
 OUT = os.path.join(ROOT, "software", "out", "probes")
 
