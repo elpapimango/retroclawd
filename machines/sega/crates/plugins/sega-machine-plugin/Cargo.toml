@@ -8,9 +8,9 @@ license = "GPL-3.0-or-later"
 name = "sega_machine_plugin_impl"
 
 [dependencies]
-build-info = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
-machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
-plugin-api = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
+build-info = { path = "../../../../../shared/crates/build-info" }
+machine = { path = "../../../../../shared/crates/machine" }
+plugin-api = { path = "../../../../../shared/crates/plugin-api" }
 serde = { version = "1", features = ["derive"] }
 genesis = { path = "../../machines/genesis" }
 md-cart = { path = "../../formats/md-cart" }
@@ -18,4 +18,4 @@ segacd = { path = "../../machines/segacd" }
 disc = { path = "../../formats/disc" }
 
 [build-dependencies]
-build-info = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
+build-info = { path = "../../../../../shared/crates/build-info" }

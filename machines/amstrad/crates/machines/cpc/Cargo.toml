@@ -5,14 +5,14 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "39dfdcc276719bffd9da53ead351e0d3da14b1bb" }
-z80 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "39dfdcc276719bffd9da53ead351e0d3da14b1bb" }
-ay-3-8910 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "39dfdcc276719bffd9da53ead351e0d3da14b1bb" }
+machine = { path = "../../../../../shared/crates/machine" }
+z80 = { path = "../../../../../shared/crates/core/z80" }
+ay-3-8910 = { path = "../../../../../shared/crates/chips/ay-3-8910" }
 i8255 = { path = "../../chips/i8255" }
-nec765 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "39dfdcc276719bffd9da53ead351e0d3da14b1bb", features = ["dsk"] }
-dsk = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "39dfdcc276719bffd9da53ead351e0d3da14b1bb" }
+nec765 = { path = "../../../../../shared/crates/chips/nec765", features = ["dsk"] }
+dsk = { path = "../../../../../shared/crates/formats/dsk" }
 cpc-snapshot = { path = "../../formats/cpc-snapshot" }
-zx-tape = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "39dfdcc276719bffd9da53ead351e0d3da14b1bb" }
+zx-tape = { path = "../../../../../shared/crates/formats/zx-tape" }
 serde = { version = "1", features = ["derive"] }
 bincode = { version = "2", features = ["serde"] }
 tracing = "0.1"

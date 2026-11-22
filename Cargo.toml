@@ -1,34 +1,212 @@
 [workspace]
-# The shared crates (machine, plugin-api, z80, ...) come from the `shared` submodule
-# (retroclawd-crates) and are used by path; `shared` and `machines` are their own workspaces.
 resolver = "2"
-# The family repositories are checked out below machines/ (git submodules); each is its own workspace.
-exclude = ["machines", "shared"]
-members = ["crates/plugins/test-machine-plugin", "crates/formats/game-config", "crates/formats/app-config", "crates/formats/file-loader", "crates/formats/pok", "apps/retroclawd"]
+exclude = ["rctools/fuzz"]
+members = [
+  "shared/crates/machine",
+  "shared/crates/plugin-api",
+  "shared/crates/core/z80",
+  "shared/crates/core/6502",
+  "shared/crates/core/68000",
+  "shared/crates/chips/ay-3-8910",
+  "shared/crates/chips/mc6850",
+  "shared/crates/chips/nec765",
+  "shared/crates/chips/pia-6520",
+  "shared/crates/chips/wd1770",
+  "shared/crates/formats/dsk",
+  "shared/crates/formats/zx-tape",
+  "shared/crates/build-info",
+  "machines/sinclair/crates/machines/zx81",
+  "machines/sinclair/crates/machines/zx-spectrum",
+  "machines/sinclair/crates/plugins/zx81-machine-plugin",
+  "machines/sinclair/crates/plugins/zx-spectrum-machine-plugin",
+  "machines/sinclair/crates/formats/zx81-snapshot",
+  "machines/sinclair/crates/formats/z80-snapshot",
+  "machines/sinclair/crates/formats/sna-snapshot",
+  "machines/sinclair/crates/formats/szx-snapshot",
+  "machines/sinclair/crates/chips/sinclair-keyboard",
+  "machines/amstrad/crates/machines/cpc",
+  "machines/amstrad/crates/plugins/cpc-machine-plugin",
+  "machines/amstrad/crates/formats/cpc-cartridge",
+  "machines/amstrad/crates/formats/cpc-snapshot",
+  "machines/amstrad/crates/chips/i8255",
+  "machines/commodore/crates/formats/vic20-cartridge",
+  "machines/commodore/crates/machines/vic20",
+  "machines/commodore/crates/machines/c64",
+  "machines/commodore/crates/machines/c128",
+  "machines/commodore/crates/machines/1541",
+  "machines/commodore/crates/machines/drive-link",
+  "machines/commodore/crates/plugins/vic20-machine-plugin",
+  "machines/commodore/crates/plugins/c64-machine-plugin",
+  "machines/commodore/crates/plugins/c128-machine-plugin",
+  "machines/commodore/crates/formats/c64-tape",
+  "machines/commodore/crates/formats/c64-cartridge",
+  "machines/commodore/crates/formats/d64",
+  "machines/commodore/crates/formats/d71",
+  "machines/commodore/crates/formats/d81",
+  "machines/commodore/crates/formats/g64",
+  "machines/commodore/crates/formats/cbm-dos",
+  "machines/commodore/crates/chips/sid",
+  "machines/commodore/crates/chips/vic-ii",
+  "machines/commodore/crates/chips/vic-i",
+  "machines/commodore/crates/chips/via-6522",
+  "machines/commodore/crates/chips/cia-6526",
+  "machines/commodore/crates/chips/acia-6551",
+  "machines/commodore/crates/chips/cs8900a",
+  "machines/commodore/crates/chips/vdc-8563",
+  "machines/atari/crates/chips/ikbd",
+  "machines/atari/crates/formats/st-floppy",
+  "machines/atari/crates/chips/mc68901",
+  "machines/atari/crates/chips/st-shifter",
+  "machines/atari/crates/chips/blitter",
+  "machines/atari/crates/machines/atari-st",
+  "machines/atari/crates/plugins/atari-st-machine-plugin",
+  "machines/atari/crates/chips/antic",
+  "machines/atari/crates/chips/gtia",
+  "machines/atari/crates/chips/pokey",
+  "machines/atari/crates/machines/atari-8bit",
+  "machines/atari/crates/plugins/atari-8bit-machine-plugin",
+  "machines/atari/crates/formats/atari-media",
+  "machines/snk/crates/chips/ym2610",
+  "machines/snk/crates/formats/neo-set",
+  "machines/snk/crates/machines/neogeo",
+  "machines/snk/crates/plugins/neogeo-machine-plugin",
+  "machines/sega/crates/chips/ym2612",
+  "machines/sega/crates/chips/sn76489",
+  "machines/sega/crates/chips/vdp",
+  "machines/sega/crates/chips/mcd-gate-array",
+  "machines/sega/crates/chips/rf5c164",
+  "machines/sega/crates/chips/mcd-asic",
+  "machines/sega/crates/formats/md-cart",
+  "machines/sega/crates/formats/disc",
+  "machines/sega/crates/formats/chd",
+  "machines/sega/crates/machines/genesis",
+  "machines/sega/crates/machines/segacd",
+  "machines/sega/crates/plugins/sega-machine-plugin",
+  "rctools/crates/rc-common",
+  "rctools/crates/rcasm",
+  "rctools/crates/rcdis",
+  "rctools/crates/rcdisk",
+  "rctools/crates/rcchd",
+  "rctools/crates/rctape",
+  "rctools/crates/rcsnap",
+  "rctools/crates/rcld",
+  "rctools/crates/rc-suite",
+  "crates/plugins/test-machine-plugin",
+  "crates/formats/game-config",
+  "crates/formats/app-config",
+  "crates/formats/file-loader",
+  "crates/formats/pok",
+  "apps/retroclawd",
+]
 
-# `cargo build --release` strips symbol names (debug = false), which makes
-# profiling need a workaround (see TODO.md's Performance section). Use this
-# profile instead when profiling: same optimization level as release, but
-# with debug info so tools can resolve real function names.
-[profile.profiling]
-inherits = "release"
-debug = true
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[workspace.dependencies]
+atari-media = { path = "machines/atari/crates/formats/atari-media" }
+machine = { path = "shared/crates/machine" }
+z80 = { path = "shared/crates/core/z80" }
+mos6502 = { path = "shared/crates/core/6502" }
+mc68000 = { path = "shared/crates/core/68000" }
+cbm-dos = { path = "machines/commodore/crates/formats/cbm-dos" }
+d64 = { path = "machines/commodore/crates/formats/d64" }
+d71 = { path = "machines/commodore/crates/formats/d71" }
+d81 = { path = "machines/commodore/crates/formats/d81" }
+g64 = { path = "machines/commodore/crates/formats/g64" }
+c64-tape = { path = "machines/commodore/crates/formats/c64-tape" }
+dsk = { path = "shared/crates/formats/dsk" }
+zx-tape = { path = "shared/crates/formats/zx-tape" }
+z80-snapshot = { path = "machines/sinclair/crates/formats/z80-snapshot" }
+sna-snapshot = { path = "machines/sinclair/crates/formats/sna-snapshot" }
+szx-snapshot = { path = "machines/sinclair/crates/formats/szx-snapshot" }
+zx81-snapshot = { path = "machines/sinclair/crates/formats/zx81-snapshot" }
+cpc-snapshot = { path = "machines/amstrad/crates/formats/cpc-snapshot" }
+cpc-cartridge = { path = "machines/amstrad/crates/formats/cpc-cartridge" }
+c64-cartridge = { path = "machines/commodore/crates/formats/c64-cartridge" }
+chd = { path = "machines/sega/crates/formats/chd" }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+clap = { version = "4", features = ["derive"] }
 
 [profile.release]
 strip = true
 opt-level = "s"
 
-# The bulk of the release binary's size comes from Bevy/wgpu/winit (the
-# GUI/rendering stack), not the emulation core -- so `opt-level = "s"`
-# above applies everywhere by default (shrinking that stack, and
-# retroclawd's own non-hot-path GUI glue), but the actual per-instruction
-# hot path (everything `emu_thread::advance_one_frame`'s step loop calls
-# into every real *and* speculative run-ahead frame, 50-60 times/sec) is
-# pinned back to full optimization -- a real, measured tradeoff, not
-# guessed: see the ZEXALL/zx-spectrum-step timing comparison this was
-# verified against before committing to it.
-[profile.release.package.z80]
+[profile.profiling]
+inherits = "release"
+debug = true
+
+[profile.release.package.antic]
+opt-level = 3
+
+[profile.release.package.atari-8bit]
+opt-level = 3
+
+[profile.release.package.atari-media]
+opt-level = 3
+
+[profile.release.package.atari-st]
+opt-level = 3
+
+[profile.release.package.ay-3-8910]
+opt-level = 3
+
+[profile.release.package.c64-tape]
+opt-level = 3
+
+[profile.release.package.genesis]
+opt-level = 3
+
+[profile.release.package.gtia]
+opt-level = 3
+
+[profile.release.package.ikbd]
 opt-level = 3
 
 [profile.release.package.machine]
+opt-level = 3
+
+[profile.release.package.mc68000]
+opt-level = 3
+
+[profile.release.package.mc6850]
+opt-level = 3
+
+[profile.release.package.mc68901]
+opt-level = 3
+
+[profile.release.package.nec765]
+opt-level = 3
+
+[profile.release.package.neogeo]
+opt-level = 3
+
+[profile.release.package.pokey]
+opt-level = 3
+
+[profile.release.package.sid]
+opt-level = 3
+
+[profile.release.package.sinclair-keyboard]
+opt-level = 3
+
+[profile.release.package.st-shifter]
+opt-level = 3
+
+[profile.release.package.wd1770]
+opt-level = 3
+
+[profile.release.package.z80]
+opt-level = 3
+
+[profile.release.package.zx-spectrum]
+opt-level = 3
+
+[profile.release.package.zx-tape]
+opt-level = 3
+
+[profile.release.package.zx81]
 opt-level = 3

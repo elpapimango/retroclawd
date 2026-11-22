@@ -8,11 +8,11 @@ license = "GPL-3.0-or-later"
 name = "neogeo_machine_plugin_impl"
 
 [dependencies]
-build-info = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
-plugin-api = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
+build-info = { path = "../../../../../shared/crates/build-info" }
+plugin-api = { path = "../../../../../shared/crates/plugin-api" }
 serde = { version = "1", features = ["derive"] }
 ym2610 = { path = "../../chips/ym2610" }
 neogeo = { path = "../../machines/neogeo" }
 
 [build-dependencies]
-build-info = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
+build-info = { path = "../../../../../shared/crates/build-info" }

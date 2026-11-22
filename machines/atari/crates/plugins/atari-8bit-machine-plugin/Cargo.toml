@@ -10,12 +10,12 @@ name = "atari_8bit_machine_plugin_impl"
 [dependencies]
 atari-8bit = { path = "../../machines/atari-8bit" }
 gtia = { path = "../../chips/gtia" }
-machine = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
-plugin-api = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
-mos6502 = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
-build-info = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
+machine = { path = "../../../../../shared/crates/machine" }
+plugin-api = { path = "../../../../../shared/crates/plugin-api" }
+mos6502 = { path = "../../../../../shared/crates/core/6502" }
+build-info = { path = "../../../../../shared/crates/build-info" }
 serde = { version = "1", features = ["derive"] }
 bincode = { version = "2", features = ["serde"] }
 
 [build-dependencies]
-build-info = { git = "https://github.com/elpapimango/retroclawd-crates", rev = "0777d5e2366e97832f4554acc6e7c2d6e6a9d6ac" }
+build-info = { path = "../../../../../shared/crates/build-info" }
