@@ -329,7 +329,7 @@ mod tests {
             warnings: vec!["a warning ".repeat(12)],
         };
         let out = plugins(Ok(&report), &[], 60);
-        assert!(out.contains("  cpc 0.1.0 build 98 (b7c8d9e0f1, 2026-10-17)  (ABI 1.2)\n"));
+        assert!(out.contains("  cpc 0.1.0 build 98 (b7c8d9e0f1, 2026-10-17)\n"));
         assert!(out.contains("    machines: cpc464, cpc664, cpc6128\n"));
         assert!(out.contains("Debuggers"));
         for l in out.lines() {
