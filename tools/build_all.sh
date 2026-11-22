@@ -2,6 +2,7 @@
 # One command to build the emulator: `rcd` (play) and `rcdd` (develop).
 #
 #   tools/build_all.sh [--dev] [--only rcd|rcdd] [--features a,b] [--tools]
+#   tools/build_all.sh [--dev] --variant a|c|h
 #
 #   rcd    every machine, no debugging code at all (the player)
 #   rcdd   the same program built with the `debug` feature (debuggers, ZRCP, tracing, watch points, reports)
@@ -13,6 +14,8 @@
 #   --only X     build just rcd or just rcdd
 #   --features   machine selection, e.g. `home` or `console,arcade` (default: all-machines).
 #                `home` = Sinclair, Amstrad, Commodore, Atari; `console` = Sega, SNK; `arcade` = SNK
+#   --variant K  build only the single-kind program: rcda (arcade: SNK), rcdc (console: Sega, SNK) or rcdh (home
+#                computers: Sinclair, Amstrad, Commodore, Atari); no debug code, like rcd
 #   --tools      also build the retroclawd tools (rcasm, rcdis, rcdisk, rctape, rcchd, rc-scenarios, ...)
 #
 # Works in Git Bash on Windows, Linux and macOS.
@@ -21,16 +24,33 @@ cd "$(dirname "$0")/.."
 ROOT="$PWD"
 command -v cygpath >/dev/null 2>&1 && ROOT="$(cygpath -m "$PWD")"
 
-PROFILE=release; FLAGS=(--release); ONLY=""; FEATURES=""; TOOLS=0
+PROFILE=release; FLAGS=(--release); ONLY=""; FEATURES=""; TOOLS=0; VARIANT=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dev) PROFILE=debug; FLAGS=(); shift ;;
     --only) ONLY="$2"; shift 2 ;;
     --features) FEATURES="$2"; shift 2 ;;
+    --variant) VARIANT="$2"; shift 2 ;;
     --tools) TOOLS=1; shift ;;
-    *) echo "usage: $0 [--dev] [--only rcd|rcdd] [--features a,b] [--tools]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--dev] [--only rcd|rcdd] [--features a,b] [--tools] [--variant a|c|h]" >&2; exit 2 ;;
   esac
 done
+
+if [[ -n $VARIANT ]]; then
+  case "$VARIANT" in
+    a) BIN=rcda; FEAT=variant-arcade ;;
+    c) BIN=rcdc; FEAT=variant-console ;;
+    h) BIN=rcdh; FEAT=variant-home ;;
+    *) echo "--variant takes a, c or h" >&2; exit 2 ;;
+  esac
+  EXE=""; case "$(rustc -vV | sed -n 's/^host: //p')" in *windows*) EXE=".exe" ;; esac
+  echo "== $BIN ($PROFILE)"
+  cargo build ${FLAGS[@]+"${FLAGS[@]}"} -p retroclawd --bin "$BIN" --no-default-features --features "$FEAT" --target-dir "$ROOT/target/$PROFILE-$VARIANT"
+  mkdir -p "target/$PROFILE"
+  cp -f "target/$PROFILE-$VARIANT/$PROFILE/$BIN$EXE" "target/$PROFILE/$BIN$EXE"
+  ls -la "target/$PROFILE/$BIN$EXE"
+  exit 0
+fi
 
 SELECT=()
 if [[ -n $FEATURES ]]; then SELECT=(--no-default-features --features "$FEATURES"); fi

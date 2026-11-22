@@ -2,6 +2,19 @@
 
 use plugin_api::MachinePlugin;
 
+#[cfg(all(
+    feature = "variant-arcade",
+    any(feature = "sinclair", feature = "amstrad", feature = "commodore", feature = "atari", feature = "sega")
+))]
+compile_error!("rcda is the arcade-only program: build it with --no-default-features --features variant-arcade");
+#[cfg(all(
+    feature = "variant-console",
+    any(feature = "sinclair", feature = "amstrad", feature = "commodore", feature = "atari")
+))]
+compile_error!("rcdc is the console-only program: build it with --no-default-features --features variant-console");
+#[cfg(all(feature = "variant-home", any(feature = "sega", feature = "snk")))]
+compile_error!("rcdh is the home-computer-only program: build it with --no-default-features --features variant-home");
+
 /// Every machine family this build contains.
 #[allow(unused_mut, clippy::vec_init_then_push)]
 pub(crate) fn all() -> Vec<&'static dyn MachinePlugin> {

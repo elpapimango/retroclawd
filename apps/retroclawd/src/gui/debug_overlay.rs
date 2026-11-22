@@ -38,6 +38,7 @@ impl OverlayPanels {
     /// An unrecognized token is a clean `Err` -- same "fail before the
     /// window opens" convention `--shader`'s own path validation already
     /// uses (see `main.rs`'s call site).
+    #[cfg_attr(not(feature = "debug"), allow(dead_code))]
     pub(crate) fn parse(spec: &str) -> Result<Self, String> {
         if spec.eq_ignore_ascii_case("all") {
             return Ok(Self {

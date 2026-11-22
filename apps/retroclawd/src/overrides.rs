@@ -121,6 +121,7 @@ fn convert(value: &game_config::OneOrMany) -> OneOrMany {
 }
 
 /// The symbol files for a run: the game config's, then the command line's (later files win).
+#[cfg_attr(not(feature = "debug"), allow(dead_code))]
 pub(crate) fn symbol_files(game: &GameConfig, flags: &[String]) -> Vec<String> {
     let mut files = game
         .symbols

@@ -6,6 +6,8 @@
 //! Files: the PC trace (`trace_file`) and the stop report (`diag_file`, else stderr) are written here, so the
 //! machine crate does no I/O.
 
+#![cfg_attr(not(feature = "debug"), allow(unused_mut))]
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
@@ -273,12 +275,14 @@ fn machine_profile_for(chipset: Chipset) -> MachineProfile {
                 text("off"),
                 "Draw the picture with its borders (832x552; needs accuracy = accurate)",
             ),
+            #[cfg(feature = "debug")]
             option(
                 "trace_file",
                 MachineOptionKind::Text,
                 None,
                 "Write the PC of every instruction to this file",
             ),
+            #[cfg(feature = "debug")]
             option(
                 "watch",
                 MachineOptionKind::Text,
@@ -300,6 +304,7 @@ fn machine_profile_for(chipset: Chipset) -> MachineProfile {
                 Some(DebugValue::Bool(false)),
                 "Write-protect the floppy disks: the guest cannot change them (the controller sees the write-protect line)",
             ),
+            #[cfg(feature = "debug")]
             option(
                 "trace_limit",
                 MachineOptionKind::Int {
@@ -309,12 +314,14 @@ fn machine_profile_for(chipset: Chipset) -> MachineProfile {
                 Some(DebugValue::U64(DEFAULT_TRACE_LIMIT)),
                 "Instructions the trace file records",
             ),
+            #[cfg(feature = "debug")]
             option(
                 "io_trace_file",
                 MachineOptionKind::Text,
                 None,
                 "Write every I/O register access to this file, in the format of Hatari's --trace io_all",
             ),
+            #[cfg(feature = "debug")]
             option(
                 "diag_file",
                 MachineOptionKind::Text,
@@ -639,15 +646,15 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let mut monitor = Monitor::Colour;
     let mut borders = false;
     let mut model = "stfm".to_string();
-    let mut trace_file = None;
+    let mut trace_file: Option<PathBuf> = None;
     let mut trace_limit = DEFAULT_TRACE_LIMIT;
-    let mut diag_file = None;
-    let mut io_trace_file = None;
+    let mut diag_file: Option<PathBuf> = None;
+    let mut io_trace_file: Option<PathBuf> = None;
     let mut drives = 2u8;
     let mut write_protect = false;
     let mut lines = LineOptions::default();
     let mut rtc_time = None;
-    let mut watch = None;
+    let mut watch: Option<String> = None;
     let mut rtc_running = true;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
@@ -677,12 +684,16 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
                     other => return Err(format!("option \"monitor\": unknown value \"{other}\"")),
                 };
             }
+            #[cfg(feature = "debug")]
             ("trace_file", DebugValue::Text(v)) => trace_file = Some(PathBuf::from(v)),
+            #[cfg(feature = "debug")]
             ("watch", DebugValue::Text(v)) => watch = Some(v.clone()),
+            #[cfg(feature = "debug")]
             ("trace_limit", DebugValue::U64(v)) => trace_limit = *v,
             ("drives", DebugValue::U64(v @ 1..=2)) => drives = *v as u8,
             ("write_protect", DebugValue::Bool(v)) => write_protect = *v,
             ("drives", other) => return Err(format!("option \"drives\": 1 or 2, not {other:?}")),
+            #[cfg(feature = "debug")]
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(PathBuf::from(v)),
             ("rtc_time", DebugValue::Text(v)) if chipset.has_rtc() => {
                 rtc_time = Some(
@@ -698,6 +709,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
                 };
             }
             (key, value) if lines.accept(key, value) => {}
+            #[cfg(feature = "debug")]
             ("io_trace_file", DebugValue::Text(v)) => io_trace_file = Some(PathBuf::from(v)),
             (key, _) => {
                 return Err(format!(

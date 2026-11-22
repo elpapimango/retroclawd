@@ -3,6 +3,8 @@
 //! `plugin_api::guard`, and the raw fast path for `step`/`halted`/`pc`. The `unsafe` here is the C ABI boundary only;
 //! the machine crate forbids it.
 
+#![cfg_attr(not(feature = "debug"), allow(unused_mut))]
+
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -285,6 +287,7 @@ fn machine_profile() -> MachineProfile {
                 None,
                 "Where the cartridge's battery RAM is kept between sessions (default: saves/<game>-<hash>.srm); read at start, written when the game locks it after a change and at exit",
             ),
+            #[cfg(feature = "debug")]
             option(
                 "diag_file",
                 MachineOptionKind::Text,
@@ -464,7 +467,8 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let cartridge = md_cart::Cartridge::parse(rom).map_err(|e| e.to_string())?;
     let mut console_region = None;
     let mut tmss_choice = "auto".to_string();
-    let mut diag_file = None;
+    #[allow(unused_mut)]
+    let mut diag_file: Option<std::path::PathBuf> = None;
     let mut sram_file = None;
     let mut cheats = Vec::new();
     let mut weave = false;
@@ -481,6 +485,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
                         format!("option \"console_region\": unknown value \"{v}\"")
                     })?);
             }
+            #[cfg(feature = "debug")]
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(std::path::PathBuf::from(v)),
             ("port1" | "port2", DebugValue::Text(v)) => {
                 let kind = genesis::PadKind::parse(v)
@@ -580,7 +585,8 @@ fn create_segacd(req: MachineCreateRequest) -> Result<MachineCreateResponse, Str
         .ok_or_else(|| "missing required binary blob: rom_bios".to_string())?
         .to_vec();
     let mut region = Region::Usa;
-    let mut diag_file = None;
+    #[allow(unused_mut)]
+    let mut diag_file: Option<std::path::PathBuf> = None;
     let mut pads = [genesis::PadKind::Six; 2];
     let mut disc_path = None;
     let mut backup_file = None;
@@ -592,6 +598,7 @@ fn create_segacd(req: MachineCreateRequest) -> Result<MachineCreateResponse, Str
                 region = Region::parse(v)
                     .ok_or_else(|| format!("option \"console_region\": unknown value \"{v}\""))?;
             }
+            #[cfg(feature = "debug")]
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(std::path::PathBuf::from(v)),
             ("port1" | "port2", DebugValue::Text(v)) => {
                 let kind = genesis::PadKind::parse(v)

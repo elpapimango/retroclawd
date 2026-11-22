@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use bevy::input::mouse::MouseButton;
 use machine::Machine;
 
+#[cfg(feature = "debug")]
 use crate::debugger::{DebuggerCommandSender, DebuggerLink, DebuggerStateHandle};
 use crate::debuggers::format_debug_value;
 use crate::plugin_bridge::HostedMachine;
@@ -268,6 +269,7 @@ pub(crate) fn advance_one_frame(
 /// Debugger-enabled sibling to `advance_one_frame`: same frame interrupt +
 /// full cycle-budget stepping, but checks debugger breakpoints after each
 /// real instruction and pauses as soon as one matches.
+#[cfg(feature = "debug")]
 fn advance_one_frame_with_debugger(m: &mut HostedMachine, dbg: &mut DebuggerLink) -> u64 {
     m.request_interrupt();
 
@@ -879,7 +881,7 @@ fn tick(
     frame_buffer: &FrameBuffer,
     debug_snapshot: &DebugSnapshotHandle,
     control: &mut HostControl,
-    debugger: &mut Option<DebuggerLink>,
+    #[cfg(feature = "debug")] debugger: &mut Option<DebuggerLink>,
 ) {
     let tick_start = Instant::now();
     let run_ahead_frames = control.run_ahead_frames;
@@ -938,10 +940,14 @@ fn tick(
         machine.mouse_event(event);
     }
 
+    #[cfg(feature = "debug")]
     if let Some(dbg) = debugger.as_mut() {
         dbg.drain_commands(machine);
     }
+    #[cfg(feature = "debug")]
     let debugger_paused = debugger.as_ref().is_some_and(|d| d.is_paused());
+    #[cfg(not(feature = "debug"))]
+    let debugger_paused = false;
     // A hotkey pause freezes everything like a debugger pause does, but
     // without the debugger's single-step requests.
     // A crashed plugin answers every call with an error, and the step loop's clock query would panic this thread: say so once and
@@ -960,6 +966,7 @@ fn tick(
 
     let step_start = Instant::now();
     if is_paused {
+        #[cfg(feature = "debug")]
         if !control.paused
             && !control.dialog_open
             && let Some(dbg) = debugger.as_mut()
@@ -978,11 +985,14 @@ fn tick(
         // below it.
         #[cfg(feature = "profiling")]
         let _span = tracing::info_span!("emu_thread_step_budget").entered();
+        #[cfg(feature = "debug")]
         if let Some(dbg) = debugger.as_mut() {
             advance_one_frame_with_debugger(m, dbg);
         } else {
             advance_one_frame(m, |_| false);
         }
+        #[cfg(not(feature = "debug"))]
+        advance_one_frame(m, |_| false);
     }
     let step_elapsed = step_start.elapsed();
 
@@ -1063,6 +1073,7 @@ fn tick(
     }
     let render_elapsed = render_start.elapsed();
 
+    #[cfg(feature = "debug")]
     if let Some(dbg) = debugger.as_mut() {
         dbg.publish(machine);
     }
@@ -1099,7 +1110,9 @@ pub(crate) struct EmuThreadHandle {
     /// `Some` only when `spawn` was called with `debugger_enabled: true` --
     /// `gui::run_gui` only starts debugger plugin hosting when both are
     /// `Some`, so debugger-off runs never construct these at all.
+    #[cfg(feature = "debug")]
     pub(crate) debugger_commands: Option<DebuggerCommandSender>,
+    #[cfg(feature = "debug")]
     pub(crate) debugger_state: Option<DebuggerStateHandle>,
     stop: Arc<AtomicBool>,
     join: Option<JoinHandle<()>>,
@@ -1157,13 +1170,17 @@ pub(crate) fn spawn(
     // debugger-off means no channel, no shared state, and `tick`'s own
     // `debugger: &mut Option<DebuggerLink>` stays `None` for the thread's
     // entire lifetime.
+    #[cfg(feature = "debug")]
     let debugger_setup = debugger_enabled.then(|| {
         let (tx, rx) = mpsc::channel();
         let state = DebuggerLink::new_handle();
         (tx, rx, state)
     });
+    #[cfg(feature = "debug")]
     let debugger_commands = debugger_setup.as_ref().map(|(tx, _, _)| tx.clone());
+    #[cfg(feature = "debug")]
     let debugger_state = debugger_setup.as_ref().map(|(_, _, state)| state.clone());
+    #[cfg(feature = "debug")]
     let mut debugger_link = debugger_setup.map(|(_, rx, state)| DebuggerLink::new(rx, state));
 
     let thread_audio_queue = audio_queue.clone();
@@ -1326,6 +1343,7 @@ pub(crate) fn spawn(
                     &thread_frame_buffer,
                     &thread_debug_snapshot,
                     &mut control,
+                    #[cfg(feature = "debug")]
                     &mut debugger_link,
                 );
                 if overlay_data_wanted.load(Ordering::Relaxed)
@@ -1585,7 +1603,9 @@ pub(crate) fn spawn(
         command_tx,
         messages,
         mouse_tx,
+        #[cfg(feature = "debug")]
         debugger_commands,
+        #[cfg(feature = "debug")]
         debugger_state,
         stop,
         join: Some(join),
@@ -2014,6 +2034,7 @@ mod tests {
                 &frames,
                 &debug,
                 &mut rig.control,
+                #[cfg(feature = "debug")]
                 &mut None,
             );
             machine::Machine::pc(&rig.machine)
@@ -2064,6 +2085,7 @@ mod tests {
                 &frames,
                 &debug,
                 &mut rig.control,
+                #[cfg(feature = "debug")]
                 &mut None,
             );
         };
@@ -2149,6 +2171,7 @@ mod tests {
                 &frames,
                 &debug,
                 &mut rig.control,
+                #[cfg(feature = "debug")]
                 &mut None,
             );
         };

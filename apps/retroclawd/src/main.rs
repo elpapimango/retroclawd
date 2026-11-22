@@ -1,10 +1,16 @@
 mod builtin_keymaps;
+#[cfg(feature = "debug")]
 mod debug_symbols;
 #[cfg_attr(
     not(any(feature = "debug-ui", feature = "debug-zrcp")),
     allow(dead_code)
 )]
+#[cfg(feature = "debug")]
 mod debugger;
+#[cfg(feature = "debug")]
+mod debuggers;
+#[cfg(not(feature = "debug"))]
+#[path = "debuggers_stub.rs"]
 mod debuggers;
 mod dialogs;
 mod emu_thread;
@@ -246,6 +252,7 @@ fn prescan_game_config_machine(args: &[OsString]) -> Option<String> {
     None
 }
 
+#[cfg(feature = "debug")]
 /// Extracts every `--plugin VALUE` / `--plugin=VALUE` occurrence from raw
 /// argv without a full clap parse -- needed for the same reason as
 /// `prescan_machine_arg`: `--plugin machine=<path>` may itself select a
@@ -706,6 +713,7 @@ struct PluginRuntime {
     debugger_plugins: Vec<debuggers::LaunchSelection>,
 }
 
+#[cfg(feature = "debug")]
 fn parse_plugin_value(raw: &str) -> plugin_api::DebugValue {
     let trimmed = raw.trim();
     if trimmed.eq_ignore_ascii_case("true") {
@@ -724,6 +732,7 @@ fn parse_plugin_value(raw: &str) -> plugin_api::DebugValue {
     plugin_api::DebugValue::Text(trimmed.to_string())
 }
 
+#[cfg(feature = "debug")]
 fn debugger_selection_index(
     selections: &mut Vec<debuggers::LaunchSelection>,
     selector: &str,
@@ -739,6 +748,7 @@ fn debugger_selection_index(
     }
 }
 
+#[cfg(feature = "debug")]
 fn push_debugger_option(
     selection: &mut debuggers::LaunchSelection,
     selector: &str,
@@ -789,6 +799,7 @@ fn push_debugger_option(
     Ok(())
 }
 
+#[cfg(feature = "debug")]
 /// Splits a `--plugin` selector's option tail on `:`, except that a Windows
 /// drive prefix stays attached to its path: `C:\logs\out.log:debug` is two
 /// tokens (`C:\logs\out.log`, `debug`), not three (a single ASCII letter
@@ -812,6 +823,7 @@ fn split_plugin_tokens(tail: &str) -> Vec<String> {
     tokens
 }
 
+#[cfg(feature = "debug")]
 fn apply_plugin_runtime(plugin_values: &[String]) -> Result<PluginRuntime, String> {
     let mut runtime = PluginRuntime {
         debugger_plugins: Vec::new(),
@@ -872,6 +884,14 @@ fn apply_plugin_runtime(plugin_values: &[String]) -> Result<PluginRuntime, Strin
     }
 
     Ok(runtime)
+}
+
+/// Without the `debug` feature there are no `--plugin` selectors (the option does not exist).
+#[cfg(not(feature = "debug"))]
+fn apply_plugin_runtime(_plugin_values: &[String]) -> Result<PluginRuntime, String> {
+    Ok(PluginRuntime {
+        debugger_plugins: Vec::new(),
+    })
 }
 
 fn region_name(region: Region) -> &'static str {
@@ -3570,6 +3590,7 @@ mod tests {
         assert!(error.contains("nested `options` table is gone"), "{error}");
     }
 
+    #[cfg(feature = "debug")]
     fn debug_log_shorthand_maps_output_then_level() {
         // The exact selector shape from a real bug report (relative Windows path).
         let runtime = apply_plugin_runtime(&[r"debug-log:.\output.log:debug".to_string()]).unwrap();
@@ -3592,6 +3613,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "debug")]
     fn windows_drive_letters_stay_attached_to_their_path() {
         assert_eq!(
             split_plugin_tokens(r"C:\logs\out.log:debug"),
@@ -3618,6 +3640,7 @@ mod tests {
         assert_eq!(log.options[1].key, "level");
     }
     /// Merged (every check kept): `debug_log_shorthand_maps_output_then_level`, `windows_drive_letters_stay_attached_to_their_path`.
+    #[cfg(feature = "debug")]
     #[test]
     fn debug_log_shorthand() {
         debug_log_shorthand_maps_output_then_level();

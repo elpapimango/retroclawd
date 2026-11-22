@@ -235,6 +235,7 @@ pub fn run_gui(
     // sink was removed, so the plugin never started and `--plugin
     // debug-log:...` produced neither a file nor stdout output.)
     let debugger_enabled = !debugger_plugins.is_empty();
+    #[cfg(feature = "debug")]
     let debugger_plugin_launches = debugger_plugins;
 
     // Moves `machine` onto its own thread -- see `emu_thread`'s own doc
@@ -282,6 +283,7 @@ pub fn run_gui(
     // Rust drops locals in reverse declaration order. Named with a leading
     // underscore since nothing reads it again -- it's held purely for this
     // drop-order side effect.
+    #[cfg(feature = "debug")]
     let _debugger_plugin_handles = if debugger_plugin_launches.is_empty() {
         Vec::new()
     } else {

@@ -55,6 +55,12 @@ all-machines = ["home", "console", "arcade"]
 home = ["sinclair", "amstrad", "commodore", "atari"]
 console = ["sega", "snk"]
 arcade = ["snk"]
+# The single-kind programs: rcda (arcade), rcdc (console), rcdh (home). Build each with `--no-default-features`
+# and its own feature (tools/build_all.sh --variant a|c|h does); a variant that finds a machine of another kind
+# linked in does not compile.
+variant-arcade = ["arcade"]
+variant-console = ["console"]
+variant-home = ["home"]
 sinclair = ["dep:zx81-machine-plugin", "dep:zx-spectrum-machine-plugin"]
 amstrad = ["dep:cpc-machine-plugin"]
 commodore = ["dep:c64-machine-plugin", "dep:c128-machine-plugin", "dep:vic20-machine-plugin"]
@@ -65,7 +71,7 @@ sega = ["dep:sega-machine-plugin"]
 debug = [
     "debug-ui", "debug-zrcp", "debug-log", "machine/debug",
     "zx81-machine-plugin?/debug", "zx-spectrum-machine-plugin?/debug", "cpc-machine-plugin?/debug",
-    "atari-st-machine-plugin?/debug",
+    "atari-st-machine-plugin?/debug", "sega-machine-plugin?/debug", "neogeo-machine-plugin?/debug",
 ]
 debug-ui = ["dep:tiny_http", "dep:pok"]
 debug-zrcp = []
@@ -80,6 +86,21 @@ path = "src/main.rs"
 name = "rcdd"
 path = "src/main.rs"
 required-features = ["debug"]
+
+[[bin]]
+name = "rcda"
+path = "src/main.rs"
+required-features = ["variant-arcade"]
+
+[[bin]]
+name = "rcdc"
+path = "src/main.rs"
+required-features = ["variant-console"]
+
+[[bin]]
+name = "rcdh"
+path = "src/main.rs"
+required-features = ["variant-home"]
 
 [build-dependencies]
 winresource = "0.1"

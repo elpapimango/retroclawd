@@ -66,7 +66,8 @@ cargo build --release -p retroclawd --bin rcdd --features debug --target-dir tar
 
 Smaller builds pick their machines by cargo feature: `--no-default-features --features home` (Sinclair, Amstrad,
 Commodore, Atari), `console` (Sega, SNK), `arcade` (SNK), or one family (`sinclair`, `amstrad`, `commodore`, `atari`,
-`sega`, `snk`). The separate `rcdd` target folder keeps both builds cached.
+`sega`, `snk`). The separate `rcdd` target folder keeps both builds cached. `tools/build_all.sh --variant a|c|h` builds the
+single-kind programs `rcda` (arcade), `rcdc` (console) and `rcdh` (home computers).
 
 The repository is one cargo workspace:
 

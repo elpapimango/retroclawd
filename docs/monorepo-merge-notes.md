@@ -29,19 +29,19 @@ together, the checks are cheap and `--list-plugins` prints them).
 
 ## Left to review (not done, or done only partly)
 
-1. **Debug compile-out is partial.** Behind `feature = "debug"`: `--show-overlay`, `--symbols`, `--plugin` (and with them
-   the browser debugger, ZRCP and log sink, which have their own features), `machine::PortWatcher::note` (a no-op
-   without it), the Atari ST per-instruction history, exception log and memory watch points. Still compiled into `rcd`:
-   the per-machine diagnostic options of the other plugins (`diag_file` of Neo Geo and Mega Drive, the Neo Geo Z80 NMI
-   trace, `trace_*` options of the C64/CPC/Spectrum plugins), the debug overlay GUI systems (they sit idle when no
-   overlay was requested), the plugin-side `DebugCommand` handlers (answered only when a debugger asks), and
-   `emu_thread`'s `DebuggerLink` (an `Option` that is `None` in `rcd`, so nothing runs per frame). None of these sits on
-   a per-instruction path except what is listed above. Gating the rest is mechanical but wide (about 160 references in the
-   app alone) and was left for a separate pass.
-2. **`rcda` / `rcdc` / `rcdh`** (arcade / console / home builds): the cargo features `arcade`, `console`, `home` exist and
-   `tools/build_all.sh --features console` builds such a program under the name `rcd`; separate binary names are not
-   defined yet (each needs one `[[bin]]` plus its own `required-features`, and the single-`main.rs`-for-two-binaries
-   warning grows with each).
+1. **Debug compile-out.** Behind `feature = "debug"` (absent from `rcd`, `rcda`, `rcdc`, `rcdh`): `--show-overlay`, `--symbols`,
+   `--plugin`, the `debugger` and `debuggers` modules (browser debugger, ZRCP, log sink, the emulation thread's
+   `DebuggerLink` with breakpoints and stepping), `debug_symbols`, `machine::PortWatcher::note` (a no-op without it),
+   the Atari ST instruction history, exception log and memory watch points, and the machine options `trace_file`,
+   `trace_limit`, `io_trace_file`, `watch` and `diag_file` (Atari ST) and `diag_file` (Mega Drive, Neo Geo). Left in
+   `rcd` on purpose: the plugins' `MachineCommand::Debug` handlers (register, memory and chip-snapshot reads that the
+   host also uses for `--dump-memory`, auto-run and the tape display; they run only when asked, never per
+   instruction), the debug overlay GUI code (inert without `--show-overlay`, which is gone) and the cold code behind the
+   removed options (unreachable, not conditionally compiled). Unit tests that exercise debug-only options need
+   `--features debug` (CI and `cargo test --workspace --features debug` do that).
+2. **`rcda` / `rcdc` / `rcdh` exist** (`tools/build_all.sh --variant a|c|h`): arcade = Neo Geo; console = Mega Drive/Mega-CD
+   and Neo Geo; home = Sinclair, Amstrad, Commodore, Atari. No debug builds of them, and the release packaging script
+   still ships only `rcd` and `rcdd`. A variant built with another kind's machines linked in fails to compile.
 3. **Two `[[bin]]` entries share `src/main.rs`**, so cargo prints "file found to be present in multiple build targets"
    on every build. Harmless; the clean fix is moving the program into a library crate with two three-line `main`s.
 4. **`rcd` and `rcdd` need different cargo target folders** (`target/release` and `target/release-debug`) because the

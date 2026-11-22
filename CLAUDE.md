@@ -17,8 +17,9 @@ Build both with `tools/build_all.sh` (`--tools` adds the assemblers and test too
 selects machines; `--dev` is a debug-profile build). `rcdd` is built in `target/<profile>-debug/` and copied next to `rcd`, so
 the two never rebuild each other. `cargo test --workspace --features debug` runs every unit test (the debug hooks have tests);
 `cargo test -p retroclawd` checks the app without them. Cargo features pick the machines: `home` (`sinclair`, `amstrad`,
-`commodore`, `atari`), `console` (`sega`, `snk`), `arcade` (`snk`); default `all-machines`. `rcda`/`rcdc`/`rcdh` (arcade-,
-console-, home-only builds) need only a `[[bin]]` per name with those features: not done yet.
+`commodore`, `atari`), `console` (`sega`, `snk`), `arcade` (`snk`); default `all-machines`. The single-kind programs are `rcda` (arcade: SNK), `rcdc` (console: Sega, SNK) and `rcdh` (home computers):
+`tools/build_all.sh --variant a|c|h` (cargo features `variant-arcade|console|home` with `--no-default-features`; a
+variant with a machine of another kind linked in does not compile). They have no debug build.
 
 Layout (every directory is a workspace member crate or holds them):
 

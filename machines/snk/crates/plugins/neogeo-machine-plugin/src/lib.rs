@@ -3,6 +3,8 @@
 //! `plugin_api::guard`, and the raw fast path for `step`/`halted`/`pc`. The `unsafe` here is the C ABI boundary only;
 //! the machine crate forbids it.
 
+#![cfg_attr(not(feature = "debug"), allow(unused_mut))]
+
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -131,6 +133,7 @@ fn machine_profile() -> MachineProfile {
                     "The system ROM set: neogeo.zip as a whole (write neogeo.zip#* for a file; --firmware auto finds it on RomM): the 68000 BIOS files, sm1.sm1, sfix.sfix and 000-lo.lo",
                 )
             },
+            #[cfg(feature = "debug")]
             option(
                 "diag_file",
                 MachineOptionKind::Text,
@@ -226,10 +229,12 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             req.machine_id
         ));
     }
-    let mut diag_file = None;
+    #[allow(unused_mut)]
+    let mut diag_file: Option<std::path::PathBuf> = None;
     let mut game = None;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
+            #[cfg(feature = "debug")]
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(std::path::PathBuf::from(v)),
             ("rom", DebugValue::Text(v)) => game = Some(read_set("rom", v, MAX_GAME)?),
             ("execution_mode", _) => {}

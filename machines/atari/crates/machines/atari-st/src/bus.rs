@@ -1222,6 +1222,7 @@ impl StBus {
     }
 
     /// A watched access ended: the machine stops with it as its report (the first stop stays).
+    #[cfg(feature = "debug")]
     fn watch_check(&mut self, addr: u32, size: Size, write: bool, value: u32, fc: FunctionCode) {
         let bytes = if size == Size::Word { 2 } else { 1 };
         // Instruction fetches (function codes 2 and 6) are not data accesses: a watch on code does not trip on running it.

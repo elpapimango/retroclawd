@@ -681,6 +681,7 @@ impl HostedBackend {
             )),
         }
     }
+    #[cfg_attr(not(feature = "debug"), allow(dead_code))]
     fn set_register(
         &self,
         instance: MachineInstanceHandle,
@@ -1010,6 +1011,7 @@ fn is_crash_error(error: &str) -> bool {
     error.contains("panic in ") || error.contains("crashed earlier")
 }
 
+#[cfg_attr(not(feature = "debug"), allow(dead_code))]
 impl HostedMachine {
     pub(crate) fn machine_id(&self) -> &str {
         &self.machine_id

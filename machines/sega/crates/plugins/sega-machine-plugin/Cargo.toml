@@ -19,3 +19,7 @@ disc = { path = "../../formats/disc" }
 
 [build-dependencies]
 build-info = { path = "../../../../../shared/crates/build-info" }
+
+[features]
+# The diag_file option. Off in `rcd`, on in `rcdd`.
+debug = []

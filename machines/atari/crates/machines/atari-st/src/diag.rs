@@ -9,7 +9,9 @@ use mc68000::{Cpu, ExceptionRecord, FaultInfo, Size};
 
 use crate::bus::{IoStop, StopReason};
 
+#[cfg(feature = "debug")]
 const HISTORY: usize = 256;
+#[cfg(feature = "debug")]
 const EXCEPTIONS: usize = 64;
 
 #[derive(Debug, Default)]
@@ -30,6 +32,7 @@ impl Diag {
     }
 
     /// The instruction about to execute at `pc` (opcode `op`).
+    #[cfg(feature = "debug")]
     pub fn instruction(&mut self, pc: u32, op: u16) {
         if self.history.len() == HISTORY {
             self.history.pop_front();
@@ -40,6 +43,7 @@ impl Diag {
         }
     }
 
+    #[cfg(feature = "debug")]
     pub fn exception(&mut self, record: ExceptionRecord) {
         if self.exceptions.len() == EXCEPTIONS {
             self.exceptions.pop_front();
