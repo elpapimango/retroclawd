@@ -10,7 +10,7 @@
 # It downloads that commit's source, assembles the RAM build with sjasmplus (the one on PATH, else on Windows the official
 # sjasmplus 1.24.0 release, SHA-256 checked, unpacked into the temporary folder), checks the assembled program against the hash
 # it had when this was written, and puts it on a blank AMSDOS disk as DIAG (load and entry &0400) with `rcdisk` from
-# retroclawd-tools (RCDISK=<path>, else the sibling checkout's target/release or target/debug). Nothing downloaded is run except
+# this workspace (RCDISK=<path>, else target/release or target/debug). Nothing downloaded is run except
 # sjasmplus itself, and nothing is committed: the diagnostics are third-party software, fetched for local testing.
 #
 # Needs curl and python3 (or unzip). Exits 1 if a download, the assembly or a check fails.
@@ -53,11 +53,11 @@ mkdir "$srcdir/build"
 
 RCDISK="${RCDISK:-}"
 if [[ -z $RCDISK ]]; then
-  for c in ../retroclawd-tools/target/release/rcdisk ../retroclawd-tools/target/debug/rcdisk; do
+  for c in target/release/rcdisk target/debug/rcdisk; do
     for e in "" .exe; do [[ -x $c$e ]] && RCDISK="$c$e" && break 2; done
   done
 fi
-[[ -n $RCDISK ]] || { echo "rcdisk not found: build retroclawd-tools or set RCDISK=<path>" >&2; exit 1; }
+[[ -n $RCDISK ]] || { echo "rcdisk not found: run tools/build_all.sh --tools or set RCDISK=<path>" >&2; exit 1; }
 
 mkdir -p "$(dirname "$DEST")"
 "$RCDISK" create "$DEST" -f dsk --force >/dev/null

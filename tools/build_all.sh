@@ -1,95 +1,58 @@
 #!/usr/bin/env bash
-# One command to build the app AND the machines.
+# One command to build the emulator: `rcd` (play) and `rcdd` (develop).
 #
-#   tools/build_all.sh [--debug] [--families sinclair,amstrad,commodore,atari,sega,snk] [--update]
+#   tools/build_all.sh [--dev] [--only rcd|rcdd] [--features a,b] [--tools]
 #
-# The shared crates (retroclawd-crates) are the git submodule `shared/`; the machines live in three
-# repositories that are git submodules under machines/.
-# This script checks out the submodules it needs, builds the app (this workspace),
-# builds each family workspace, and puts every machine library into
-# target/<profile>/plugins/ -- where the app looks first -- so afterwards
+#   rcd    every machine, no debugging code at all (the player)
+#   rcdd   the same program built with the `debug` feature (debuggers, ZRCP, tracing, watch points, reports)
 #
-#   target/release/retroclawd zx81 --rom <your ZX81 ROM>
+# Both come out in target/<profile>/ (rcd from the normal build, rcdd copied from target/<profile>-debug/,
+# a separate cargo target folder so switching between the two never rebuilds everything).
 #
-# just works. Works in Git Bash on Windows, Linux and macOS.
-#   --debug      debug build instead of release
-#   --families   comma-separated subset (default: all three)
-#   --update     move each submodule (shared/ and the families) to the newest commit of its `main` first
-#                (default: the commit this repository records)
+#   --dev        a debug-profile build instead of release
+#   --only X     build just rcd or just rcdd
+#   --features   machine selection, e.g. `home` or `console,arcade` (default: all-machines).
+#                `home` = Sinclair, Amstrad, Commodore, Atari; `console` = Sega, SNK; `arcade` = SNK
+#   --tools      also build the retroclawd tools (rcasm, rcdis, rcdisk, rctape, rcchd, rc-scenarios, ...)
+#
+# Works in Git Bash on Windows, Linux and macOS.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
-# Git Bash on Windows: hand native programs (cargo, the app) C:/... style paths.
 command -v cygpath >/dev/null 2>&1 && ROOT="$(cygpath -m "$PWD")"
 
-PROFILE=release; FLAGS=(--release); FAMILIES="sinclair,amstrad,commodore,atari,sega,snk"; UPDATE=0
+PROFILE=release; FLAGS=(--release); ONLY=""; FEATURES=""; TOOLS=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --debug) PROFILE=debug; FLAGS=(); shift ;;
-    --families) FAMILIES="$2"; shift 2 ;;
-    --update) UPDATE=1; shift ;;
-    *) echo "usage: $0 [--debug] [--families a,b] [--update]" >&2; exit 2 ;;
+    --dev) PROFILE=debug; FLAGS=(); shift ;;
+    --only) ONLY="$2"; shift 2 ;;
+    --features) FEATURES="$2"; shift 2 ;;
+    --tools) TOOLS=1; shift ;;
+    *) echo "usage: $0 [--dev] [--only rcd|rcdd] [--features a,b] [--tools]" >&2; exit 2 ;;
   esac
 done
 
-# The family repositories pull the shared crates from this (private) repository
-# by git; use the git command line so your normal git credentials apply.
-export CARGO_NET_GIT_FETCH_WITH_CLI=true
-# One target folder for all families: the shared crates (z80, machine, ...) compile once.
-export CARGO_TARGET_DIR="$ROOT/target/families"
+SELECT=()
+if [[ -n $FEATURES ]]; then SELECT=(--no-default-features --features "$FEATURES"); fi
 
-case "$(rustc -vV | sed -n 's/^host: //p')" in
-  *windows*) LIB_GLOB='*_machine_plugin.dll' ;;
-  *apple*)   LIB_GLOB='lib*_machine_plugin.dylib' ;;
-  *)         LIB_GLOB='lib*_machine_plugin.so' ;;
-esac
+EXE=""; case "$(rustc -vV | sed -n 's/^host: //p')" in *windows*) EXE=".exe" ;; esac
 
-IFS=, read -ra FAM <<< "$FAMILIES"
-# The app builds against the shared crates by path, so shared/ is always needed.
-if [[ $UPDATE -eq 1 ]]; then git submodule update --init --remote shared; else git submodule update --init shared; fi
-for f in "${FAM[@]}"; do
-  [[ -d machines/$f ]] || { echo "unknown family: $f" >&2; exit 2; }
-  if [[ $UPDATE -eq 1 ]]; then
-    git submodule update --init --remote "machines/$f"
-  else
-    git submodule update --init "machines/$f"
-  fi
-done
-
-echo "== app + debugger plugins ($PROFILE)"
-CARGO_TARGET_DIR="$ROOT/target" cargo build --workspace "${FLAGS[@]}"
-
-PLUGINS="$ROOT/target/$PROFILE/plugins"
-# On Windows a deleted folder can linger (a scanner or a stray retroclawd.exe holds a library), and a copy into it then fails with
-# "No such file or directory": wait until the folder is really gone, and retry the copies.
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  rm -rf "$PLUGINS" 2>/dev/null
-  [[ ! -e "$PLUGINS" ]] && break
-  sleep 1
-done
-mkdir -p "$PLUGINS"
-stage() {  # stage SRC... DEST
-  local n
-  for n in 1 2 3 4 5 6 7 8 9 10; do
-    mkdir -p "$PLUGINS" && cp -f "$@" && return 0
-    sleep 1
-  done
-  echo "cannot copy $* after 10 tries" >&2
-  return 1
-}
-for f in "${FAM[@]}"; do
-  echo "== machines/$f ($PROFILE)"
-  ( cd "machines/$f" && cargo build --workspace "${FLAGS[@]}" )
-  shopt -s nullglob
-  libs=("$CARGO_TARGET_DIR/$PROFILE"/$LIB_GLOB)
-  shopt -u nullglob
-  if [[ ${#libs[@]} -gt 0 ]]; then stage "${libs[@]}" "$PLUGINS/"; fi
-  # What --firmware auto matches against RomM (hashes only, no ROMs).
-  if [[ -f "machines/$f/firmware.toml" ]]; then stage "machines/$f/firmware.toml" "$PLUGINS/$f.firmware.toml"; fi
-done
+if [[ -z $ONLY || $ONLY == rcd ]]; then
+  echo "== rcd ($PROFILE)"
+  cargo build ${FLAGS[@]+"${FLAGS[@]}"} -p retroclawd --bin rcd ${SELECT[@]+"${SELECT[@]}"}
+fi
+if [[ -z $ONLY || $ONLY == rcdd ]]; then
+  echo "== rcdd ($PROFILE, debug feature)"
+  if [[ -n $FEATURES ]]; then DBG_SELECT=(--no-default-features --features "debug,$FEATURES"); else DBG_SELECT=(--features debug); fi
+  cargo build ${FLAGS[@]+"${FLAGS[@]}"} -p retroclawd --bin rcdd --target-dir "$ROOT/target/$PROFILE-debug" "${DBG_SELECT[@]}"
+  mkdir -p "target/$PROFILE"
+  cp -f "target/$PROFILE-debug/$PROFILE/rcdd$EXE" "target/$PROFILE/rcdd$EXE"
+fi
+if [[ $TOOLS -eq 1 ]]; then
+  echo "== tools ($PROFILE)"
+  cargo build ${FLAGS[@]+"${FLAGS[@]}"} -p rc-common -p rcasm -p rcdis -p rcdisk -p rcchd -p rctape -p rcsnap -p rcld -p rc-suite
+fi
 
 echo
-echo "built: target/$PROFILE/retroclawd with machine libraries in target/$PROFILE/plugins/:"
-ls "$PLUGINS"
-echo
-"$ROOT/target/$PROFILE/retroclawd" --list-plugins | sed -n '1,12p'
+echo "built:"
+ls -la "target/$PROFILE"/rcd"$EXE" "target/$PROFILE"/rcdd"$EXE" 2>/dev/null || true

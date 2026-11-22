@@ -4,16 +4,15 @@
 # skipped) and compare the screenshot hashes with tools/smoke/baseline.sha256.
 # tools/fetch_roms.sh fills those folders from your RomM server.
 #
-#   tools/smoke_test.sh [--debug] [--no-build] [--update] [--families a,b]
+#   tools/smoke_test.sh [--dev] [--no-build] [--update] [--families a,b]
 #
-#   --debug       use the debug build (default: release)
-#   --no-build    do not run tools/build_all.sh first (use what is in target/<profile>)
+#   --dev         use the debug-profile build (default: release)
+#   --no-build    do not run tools/build_all.sh first (use target/<profile>/rcd)
 #   --update      write the current hashes to the baseline instead of comparing
 #                 (do this on purpose after a change that is meant to alter a picture)
 #   --families    only build/check these families (smoke cases of other families are skipped)
 #
-# It proves: the app finds and loads the libraries every family builds, each machine's ROM
-# loads, and the emulated machine still draws the same boot screen. Screenshots go to
+# It proves: every machine is linked into rcd, each machine's ROM loads, and the emulated machine still draws the same boot screen. Screenshots go to
 # target/smoke/<case>.png. Exit status 1 on a mismatch or a failed boot.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -24,33 +23,20 @@ command -v cygpath >/dev/null 2>&1 && ROOT="$(cygpath -m "$PWD")"
 PROFILE=release; BUILD=1; UPDATE=0; FAMILIES="sinclair,amstrad,commodore"; BUILD_FLAGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --debug) PROFILE=debug; BUILD_FLAGS+=(--debug); shift ;;
+    --dev) PROFILE=debug; BUILD_FLAGS+=(--dev); shift ;;
     --no-build) BUILD=0; shift ;;
     --update) UPDATE=1; shift ;;
     --families) FAMILIES="$2"; shift 2 ;;
-    *) echo "usage: $0 [--debug] [--no-build] [--update] [--families a,b]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--dev] [--no-build] [--update] [--families a,b]" >&2; exit 2 ;;
   esac
 done
 
 if [[ $BUILD -eq 1 ]]; then
-  tools/build_all.sh ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} --families "$FAMILIES" >/dev/null
+  tools/build_all.sh --only rcd ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} >/dev/null
 fi
 
-# The app uses shared/ (retroclawd-crates) by path; each family pins a commit of it. Different
-# commits are normal between bumps, but then the libraries were built against other shared code than
-# the app: say so (tools/bump_pin.sh brings them together).
-SHARED_HEAD="$(git -C shared rev-parse HEAD 2>/dev/null || true)"
-for f in sinclair amstrad commodore atari sega; do
-  [[ -d machines/$f ]] || continue
-  pin="$(git -C machines/$f grep -ho 'retroclawd-crates", rev = "[0-9a-f]*"' -- '*Cargo.toml' 2>/dev/null | grep -o '[0-9a-f]\{40\}' | sort -u | head -1 || true)"
-  if [[ -n $pin && -n $SHARED_HEAD && $pin != "$SHARED_HEAD" ]]; then
-    echo "note: machines/$f pins retroclawd-crates ${pin:0:10}, the app uses shared/ at ${SHARED_HEAD:0:10} (tools/bump_pin.sh aligns them)"
-  fi
-done
-
-APP="$ROOT/target/$PROFILE/retroclawd"
+APP="$ROOT/target/$PROFILE/rcd"
 [[ -x "$APP" || -x "$APP.exe" ]] || { echo "no app at $APP (run without --no-build)" >&2; exit 1; }
-export RETROCLAWD_MACHINE_PLUGIN_DIRS="$ROOT/target/$PROFILE/plugins"
 OUT="$ROOT/target/smoke"; rm -rf "$OUT"; mkdir -p "$OUT"
 BASELINE="$ROOT/tools/smoke/baseline.sha256"
 
