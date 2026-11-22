@@ -1,0 +1,94 @@
+machine = "c64"
+# Goldens are VICE 3.10 (x64sc) exit screenshots on retroclawd's 384x264 canvas (capture_vice_screen.py --crop 0,3,384,264:
+# VICE's picture is 272 rows with the screen 3 rows lower), taken after a fixed number of emulated cycles (-limitcycles), so
+# there is no timing noise. The palettes differ (normalize), the shapes agree pixel for pixel. S4 (SID) and S7 (hardware
+# test programs) are not here yet.
+
+[reference]
+emulator = "vice"
+version = "3.10 (x64sc, GTK3 win64)"
+command = "retroclawd-tools/scripts/capture_vice_screen.py x64sc CYCLES OUT.png --crop 0,3,384,264 [--keybuf 'print 12*34\n' | -- -autostart FILE]   (x64sc -default +sound -warp -limitcycles CYCLES -exitscreenshot)"
+
+[files]
+rom-kernal = "commodore/roms/c64/kernal-901227-03.bin"
+rom-basic = "commodore/roms/c64/basic-901226-01.bin"
+rom-char = "commodore/roms/c64/chargen-901225-01.bin"
+
+[[scenario]]
+id = "S1"
+kind = "screen"
+frames = 180
+golden = "c64/S1-boot.png"
+golden_sha256 = "eef070b71c2ea48aa18b07e631a28e25e4bae3ac721bb0a36e3c5eab8311518d"
+compare = { mode = "similarity", normalize = true, max_mad = 1.0, crop = [0.0, 0.1, 1.0, 0.3], reason = "VICE's palette differs from ours, so both pictures are stretched to the full range; the crop is the banner and the READY. line, above the blinking cursor" }
+
+[[scenario]]
+id = "S2"
+kind = "screen"
+frames = 400
+args = ["--type-after", "150", "--type-delay", "60", "--type", "PRINT 12*34\n"]
+golden = "c64/S2-print.png"
+golden_sha256 = "8fdeaecbb7888c3831e13514ff0f02f5883f1f74cb82a90c8f7937d38f6ce136"
+compare = { mode = "similarity", normalize = true, max_mad = 1.0, crop = [0.0, 0.1, 1.0, 0.38], reason = "VICE's palette differs from ours, so both pictures are stretched to the full range; the crop is the banner, the typed line and its answer 408, above the blinking cursor" }
+
+# VICE's autostart of a .d64 prints LOAD"*",8,1 / SEARCHING FOR * / LOADING / READY. / RUN / HELLO / READY.; retroclawd's
+# fast loader runs the KERNAL's own message routines after the load, so the screen is the same (closed 2026-10-19,
+# docs/c64-load-messages-gap.md).
+[[scenario]]
+id = "S3-d64"
+kind = "screen"
+frames = 900
+args = ["--type-after", "150", "--type-delay", "60", "--type", "load\"*\",8,1\nrun\n"]
+files = { disk = "commodore/software/scenarios/c64-hello.d64" }
+golden = "c64/S3-d64.png"
+golden_sha256 = "2fc58c0b5835738b825c489f86244c3eb525821a93c557debc47deea68e65e21"
+compare = { mode = "similarity", normalize = true, max_mad = 1.0, crop = [0.0, 0.1, 1.0, 0.6], reason = "VICE's palette differs from ours, so both pictures are stretched to the full range; the crop is the whole text area up to the cursor" }
+
+# S4: SID voice 1, triangle, frequency register 8861 (520.4 Hz), set by typed POKEs. VICE 3.10 (x64sc, recorded with -soundrecdev wav in real
+# time): 520.32 Hz at amplitude 0.071; retroclawd 520.38 Hz at amplitude 0.135. The pitch is the check; the level is a mixer
+# choice. The typing takes about 10 s at 60 ms per key event, hence the late window.
+[[scenario]]
+id = "S4"
+kind = "audio"
+frames = 900
+args = ["--type-after", "150", "--type-delay", "60", "--type", "poke54296,15:poke54277,0:poke54278,240:poke54273,34:poke54272,157:poke54276,17\n"]
+audio = { from_s = 15.0, to_s = 17.0, tone_hz = 520.4, tone_tolerance_pct = 1.0, min_amplitude = 0.05 }
+
+# S7: crystalct's Unified Diagnostic Cartridge (its dead test, which runs from the cartridge in Ultimax mode). The reference
+# is VICE 3.10 with the first 16 KiB of the 32K image attached as an Ultimax cartridge (-cartultimax: the standard diagnostic
+# at $8000, the dead test at $E000), 2000 frames in; retroclawd loads the same two halves as its own cartridge type
+# (software/scenarios/c64-unified-diag.crt, made by scenarios/build.sh). The dead test's title and its first two results agree;
+# S7-clock checks the clock it keeps at the bottom (closed 2026-10-19: the TOD clock now honours CRA TODIN, docs/c64-deadtest-clock-gap.md).
+[[scenario]]
+id = "S7"
+kind = "screen"
+frames = 2000
+files = { cartridge = "commodore/software/scenarios/c64-unified-diag.crt" }
+golden = "c64/S7-unified.png"
+golden_sha256 = "7625793dc3005ca2f8cae8be05927d969bad5eb653924053162703ba8559e679"
+compare = { mode = "similarity", normalize = true, max_mad = 1.0, crop = [0.09, 0.125, 0.75, 0.245], reason = "VICE's palette differs from ours, so both pictures are stretched to the full range; the crop stays inside the screen (the border colours are a third tone that stretching does not remove) and is the dead test's title, ZERO PAGE OK and STACK PAGE OK" }
+
+[[scenario]]
+id = "S7-clock"
+kind = "screen"
+frames = 2000
+files = { cartridge = "commodore/software/scenarios/c64-unified-diag.crt" }
+golden = "c64/S7-unified.png"
+golden_sha256 = "7625793dc3005ca2f8cae8be05927d969bad5eb653924053162703ba8559e679"
+compare = { mode = "similarity", normalize = true, max_mad = 1.0, crop = [0.45, 0.845, 0.915, 0.878], reason = "VICE's palette differs from ours, so both pictures are stretched to the full range; the crop is the bottom text row inside the screen (the border colours are a third tone that stretching does not remove) and holds the dead test's two clocks" }
+
+[[scenario]]
+id = "S5"
+kind = "state"
+frames = 400
+more_frames = 100
+args = ["--type-after", "150", "--type-delay", "60", "--type", "PRINT 12*34\n"]
+
+# VICE (PAL, x64sc) runs 63 cycles x 312 lines = 19656 cycles per frame at 985248 Hz (50.125 Hz); closed 2026-10-19
+# (docs/c64-timing-gap.md).
+[[scenario]]
+id = "S6"
+kind = "timing"
+frames = 100
+cycles_per_frame = 19656
+cycles_tolerance = 30
