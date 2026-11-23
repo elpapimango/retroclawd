@@ -24,3 +24,12 @@ wd1770 = { path = "../../../../../shared/crates/chips/wd1770" }
 [features]
 # Instruction history, exception log, trace and memory watch points. Off in `rcd`, on in `rcdd`.
 debug = ["machine/debug"]
+
+# These tests read the debug-only reports (instruction history, exceptions, watch points).
+[[test]]
+name = "diagnostics"
+required-features = ["debug"]
+
+[[test]]
+name = "watch"
+required-features = ["debug"]

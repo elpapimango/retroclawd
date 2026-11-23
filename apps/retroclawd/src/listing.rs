@@ -242,11 +242,18 @@ pub(crate) fn plugins(
         ),
     }
 
+    #[cfg(feature = "debug")]
     out.push_str("\nDebuggers (built in, selected with --plugin)\n");
+    #[cfg(not(feature = "debug"))]
+    out.push_str("\nDebuggers\n");
     if debuggers.is_empty() {
         wrap_into(
             &mut out,
-            "(none: this build has no debug-ui, debug-zrcp or debug-log feature)",
+            if cfg!(feature = "debug") {
+                "(none: this build has no debug-ui, debug-zrcp or debug-log feature)"
+            } else {
+                "(none: debuggers are only in rcdd, the debug build)"
+            },
             width,
             "  ",
             "  ",

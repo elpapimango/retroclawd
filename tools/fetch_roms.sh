@@ -3,9 +3,9 @@
 # suites (crates/rc-suite) read, with the firmware your RomM server holds. Each file is picked by SHA-1 (the same hashes as the
 # machines/<family>/firmware.toml files), downloaded, and verified before it is kept.
 #
-#   tools/fetch_roms.sh [--debug] [--force]
+#   tools/fetch_roms.sh [--dev] [--force]
 #
-#   --debug   use target/debug/retroclawd to list the server's firmware (default: release)
+#   --dev     use target/debug/rcd to list the server's firmware (default: release)
 #   --force   download again even when the file is already there with the right hash
 #
 # Needs ROMM_URL and ROMM_TOKEN in the environment (a read-only token is enough) and a built app
@@ -17,17 +17,16 @@ cd "$(dirname "$0")/.."
 PROFILE=release; FORCE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --debug) PROFILE=debug; shift ;;
+    --dev) PROFILE=debug; shift ;;
     --force) FORCE=1; shift ;;
-    *) echo "usage: $0 [--debug] [--force]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--dev] [--force]" >&2; exit 2 ;;
   esac
 done
 : "${ROMM_URL:?set ROMM_URL (the address of the RomM server)}"
 : "${ROMM_TOKEN:?set ROMM_TOKEN (a read-only RomM API token)}"
 
-APP="target/$PROFILE/retroclawd"
-[[ -x $APP || -x $APP.exe ]] || { echo "no app at $APP (run tools/build_all.sh${PROFILE:+ --$PROFILE})" >&2; exit 1; }
-export RETROCLAWD_MACHINE_PLUGIN_DIRS="$PWD/target/$PROFILE/plugins"
+APP="target/$PROFILE/rcd"
+[[ -x $APP || -x $APP.exe ]] || { echo "no app at $APP (run tools/build_all.sh$([[ $PROFILE = debug ]] && echo " --dev"))" >&2; exit 1; }
 
 sha() { if command -v sha1sum >/dev/null 2>&1; then sha1sum "$1" | cut -d' ' -f1; else shasum -a 1 "$1" | cut -d' ' -f1; fi; }
 

@@ -202,6 +202,17 @@ pub(crate) fn extra_search_dirs() -> Vec<PathBuf> {
         dirs.push(dir.to_path_buf());
     }
     dirs.push(PathBuf::from("."));
+    // The program's own folder is often the working directory too: search it once.
+    let mut seen = Vec::new();
+    dirs.retain(|d| {
+        let key = d.canonicalize().unwrap_or_else(|_| d.clone());
+        if seen.contains(&key) {
+            false
+        } else {
+            seen.push(key);
+            true
+        }
+    });
     dirs
 }
 

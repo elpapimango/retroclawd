@@ -11,8 +11,8 @@ import subprocess
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 REPO = os.path.dirname(os.path.dirname(ROOT))
-HOST = os.path.join(REPO, "target", "release", "retroclawd.exe")
-ENV = dict(os.environ, RETROCLAWD_MACHINE_PLUGIN_DIRS=os.path.join(ROOT, "target", "release"))
+HOST = os.environ.get("RETROCLAWD_BIN", os.path.join(REPO, "target", "release", "rcdd.exe"))
+ENV = dict(os.environ)
 
 
 def main():

@@ -15,7 +15,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 REPO = os.path.dirname(os.path.dirname(ROOT))
-HOST = os.path.join(REPO, "target", "release", "retroclawd.exe")
+HOST = os.environ.get("RETROCLAWD_BIN", os.path.join(REPO, "target", "release", "rcdd.exe"))
 LINE = 3420
 
 
@@ -44,7 +44,7 @@ def times(data, h40):
 
 
 def ours(rom, env):
-    e = dict(os.environ, RETROCLAWD_MACHINE_PLUGIN_DIRS=os.path.join(ROOT, "target", "release"), **env)
+    e = dict(os.environ, **env)
     r = subprocess.run([HOST, "genesis", "--rom", rom, "--headless", "--frames", "5", "--dump-memory", "0xFF0000:176"],
                        capture_output=True, text=True, env=e)
     d = bytearray()
@@ -68,7 +68,7 @@ def first_empty(data):
 
 
 def status_ours(rom, env):
-    e = dict(os.environ, RETROCLAWD_MACHINE_PLUGIN_DIRS=os.path.join(ROOT, "target", "release"), **env)
+    e = dict(os.environ, **env)
     r = subprocess.run([HOST, "genesis", "--rom", rom, "--headless", "--frames", "5", "--dump-memory", "0xFF0000:88"],
                        capture_output=True, text=True, env=e)
     d = bytearray()

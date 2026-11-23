@@ -12,12 +12,12 @@ REPO = os.path.dirname(os.path.dirname(ROOT))
 CORE = os.path.join(os.environ.get("RC_ORACLE_CORES", r"C:\Users\matti\Workspace\Emulators\RetroArch-Win64\cores"),
                     "genesis_plus_gx_libretro.dll")
 RUNNER = os.path.join(REPO, "..", "rctools", "scripts", "libretro_run.py")
-HOST = os.path.join(REPO, "target", "release", "retroclawd.exe")
+HOST = os.environ.get("RETROCLAWD_BIN", os.path.join(REPO, "target", "release", "rcdd.exe"))
 OUT = os.path.join(ROOT, "software", "out", "ramscan")
 
 
 def ours(rom, n):
-    env = dict(os.environ, RETROCLAWD_MACHINE_PLUGIN_DIRS=os.path.join(ROOT, "target", "release"))
+    env = dict(os.environ)
     r = subprocess.run([HOST, "genesis", "--rom", rom, "--headless", "--frames", str(n), "--dump-memory", "0xFF0000:65536"],
                        capture_output=True, text=True, env=env)
     d = bytearray(0x10000)

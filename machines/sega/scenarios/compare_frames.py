@@ -21,8 +21,7 @@ import pngdiff  # noqa: E402
 REPO = os.path.dirname(os.path.dirname(ROOT))
 CORES = os.environ.get("RC_ORACLE_CORES", r"C:\Users\matti\Workspace\Emulators\RetroArch-Win64\cores")
 RUNNER = os.path.join(REPO, "..", "rctools", "scripts", "libretro_run.py")
-HOST = os.environ.get("RETROCLAWD_BIN", os.path.join(REPO, "target", "release", "retroclawd.exe"))
-PLUGINS = os.environ.get("RETROCLAWD_MACHINE_PLUGIN_DIRS", os.path.join(ROOT, "target", "release"))
+HOST = os.environ.get("RETROCLAWD_BIN", os.path.join(REPO, "target", "release", "rcdd.exe"))
 SYSTEM = os.path.join(ROOT, "software", "oracles", "system")
 
 RETROPAD = {"Up": "up", "Down": "down", "Left": "left", "Right": "right", "Start": "start", "A": "y", "B": "b", "C": "a",
@@ -96,7 +95,7 @@ def main():
                 cmd += ["--at", f"{frame}:key_down=Joy1{button}"]
             if frame + hold <= n:
                 cmd += ["--at", f"{frame + hold}:key_up=Joy1{button}"]
-        env = dict(os.environ, RETROCLAWD_MACHINE_PLUGIN_DIRS=PLUGINS)
+        env = dict(os.environ)
         r = subprocess.run(cmd, capture_output=True, text=True, env=env)
         if r.returncode != 0 or "stop:" in r.stderr:
             print(f"frame {n}: retroclawd failed: {(r.stderr or r.stdout).strip()[:300]}")

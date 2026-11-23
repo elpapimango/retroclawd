@@ -17,8 +17,7 @@ sys.path.insert(0, HERE)
 import pngdiff  # noqa: E402
 
 REPO = os.path.dirname(os.path.dirname(ROOT))
-HOST = os.environ.get("RETROCLAWD_BIN", os.path.join(REPO, "target", "release", "retroclawd.exe"))
-PLUGINS = os.environ.get("RETROCLAWD_MACHINE_PLUGIN_DIRS", os.path.join(ROOT, "target", "release"))
+HOST = os.environ.get("RETROCLAWD_BIN", os.path.join(REPO, "target", "release", "rcdd.exe"))
 OUT = os.path.join(ROOT, "software", "out", "sweep")
 
 
@@ -36,7 +35,7 @@ def run(job):
     gid, name, rom, frames = job
     os.makedirs(OUT, exist_ok=True)
     png = os.path.join(OUT, f"{gid}.png")
-    env = dict(os.environ, RETROCLAWD_MACHINE_PLUGIN_DIRS=PLUGINS)
+    env = dict(os.environ)
     r = subprocess.run([HOST, "genesis", "--rom", rom, "--headless", "--frames", str(frames), "--dump-screen", png],
                        capture_output=True, text=True, env=env, timeout=600)
     notes = []

@@ -2413,6 +2413,10 @@ fn main() -> ExitCode {
             }
         };
 
+    #[cfg(not(feature = "debug"))]
+    if config.symbols.is_some() {
+        eprintln!("warning: `symbols` in the game config is ignored: this is rcd; use rcdd for debugging");
+    }
     #[cfg(feature = "debug")]
     if let Err(e) = debug_symbols::load_user_files(&overrides::symbol_files(&config, &args.symbols))
     {

@@ -56,7 +56,7 @@ def main():
                 cmd += ["--at", f"{f}:key_down=Joy1{b}"]
             if f + h <= n:
                 cmd += ["--at", f"{f + h}:key_up=Joy1{b}"]
-        env = dict(os.environ, RETROCLAWD_MACHINE_PLUGIN_DIRS=PLUGINS)
+        env = dict(os.environ)
         subprocess.run(cmd, check=True, capture_output=True, env=env)
         wa, ha, pa = pngdiff.read_png(gp)
         wb, hb, pb = pngdiff.read_png(ours)

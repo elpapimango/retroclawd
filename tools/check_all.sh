@@ -47,7 +47,7 @@ if [[ $BUILD -eq 1 ]]; then
 fi
 
 if [[ $UNIT -eq 1 ]]; then
-  step unit cargo test --workspace --release
+  step unit cargo test --workspace --features debug --release
 fi
 
 step smoke tools/smoke_test.sh --no-build
