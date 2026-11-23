@@ -9,7 +9,8 @@ use plugin_api::MachinePlugin;
         feature = "amstrad",
         feature = "commodore",
         feature = "atari",
-        feature = "sega"
+        feature = "sega",
+        feature = "nec"
     )
 ))]
 compile_error!(
@@ -27,7 +28,10 @@ compile_error!(
 compile_error!(
     "rcdc is the console-only program: build it with --no-default-features --features variant-console"
 );
-#[cfg(all(feature = "variant-home", any(feature = "sega", feature = "snk")))]
+#[cfg(all(
+    feature = "variant-home",
+    any(feature = "sega", feature = "snk", feature = "nec")
+))]
 compile_error!(
     "rcdh is the home-computer-only program: build it with --no-default-features --features variant-home"
 );
@@ -58,6 +62,8 @@ pub(crate) fn all() -> Vec<&'static dyn MachinePlugin> {
     plugins.push(neogeo_machine_plugin_impl::plugin());
     #[cfg(feature = "sega")]
     plugins.push(sega_machine_plugin_impl::plugin());
+    #[cfg(feature = "nec")]
+    plugins.push(pcengine_machine_plugin_impl::plugin());
     plugins
 }
 
@@ -94,6 +100,11 @@ pub(crate) fn firmware_manifests() -> Vec<(&'static str, &'static str)> {
     manifests.push((
         "machines/sega/firmware.toml",
         include_str!("../../../machines/sega/firmware.toml"),
+    ));
+    #[cfg(feature = "nec")]
+    manifests.push((
+        "machines/nec/firmware.toml",
+        include_str!("../../../machines/nec/firmware.toml"),
     ));
     manifests
 }

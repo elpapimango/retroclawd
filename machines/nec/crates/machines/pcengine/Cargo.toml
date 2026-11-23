@@ -1,0 +1,15 @@
+[package]
+name = "pcengine"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "NEC PC Engine / TurboGrafx-16 (HuCard): the CPU's bus, timer, interrupts, joypads and the line scheduler"
+
+[dependencies]
+huc6280 = { package = "rc-huc6280", version = "0.1" }
+huc6270 = { path = "../../chips/huc6270" }
+huc6260 = { path = "../../chips/huc6260" }
+huc6280-psg = { path = "../../chips/huc6280-psg" }
+pce-card = { path = "../../formats/pce-card" }
+serde = { version = "1", features = ["derive"] }
+bincode = { version = "2", features = ["serde"] }

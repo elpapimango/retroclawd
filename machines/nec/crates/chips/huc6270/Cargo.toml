@@ -1,0 +1,9 @@
+[package]
+name = "huc6270"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Hudson HuC6270 video display controller (PC Engine): VRAM, background, sprites, DMA, raster interrupts"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

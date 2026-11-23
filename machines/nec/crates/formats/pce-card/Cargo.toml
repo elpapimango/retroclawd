@@ -1,0 +1,8 @@
+[package]
+name = "pce-card"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "HuCard (PC Engine / TurboGrafx-16 cartridge) images: header, bit order, bank mapping, the Street Fighter II mapper"
+
+[dependencies]
