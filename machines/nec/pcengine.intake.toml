@@ -11,7 +11,7 @@ note = "2026-11-22: HuCards boot to their title screens through `rcd pcengine`; 
 [core]
 reuse = []
 variant = "HuC6280 (new core in shared/crates/core/huc6280)"
-tests = ["unit tests of the instruction semantics in the crate (decimal, T flag, block transfers, interrupts, mapping)", "no public instruction-level test suite exists for the HuC6280; correctness is the comparison with the reference over 30 games (scenarios/sweep.py)"]
+tests = ["unit tests of the instruction semantics in the crate (decimal, T flag, block transfers, interrupts, mapping)", "no public instruction-level test suite exists for the HuC6280; correctness is the comparison with the reference over 84 games (scenarios/sweep.py)"]
 note = "A 65C02 superset. The shared mos6502 core is NMOS (no 65C02 opcodes, different decimal mode) so a new core was written rather than adding a variant."
 
 [chips]
