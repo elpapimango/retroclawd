@@ -1,12 +1,12 @@
 //! A deliberately dull machine plugin for retroclawd's own unit tests.
 //!
-//! The host repository holds no machine code (every real machine lives in a
-//! family repository and ships as a shared library), but the host's tests still
+//! The host repository holds no machine code (every real machine lives under
+//! `machines/` and is linked in by `families.rs`), but the host's tests still
 //! need *a* machine to drive: stepping, pausing, media attach/eject, state
 //! export. `stub-machine` is that: 64K of RAM, a program counter that walks
 //! through NOPs, a disk slot that accepts `.dsk` images, a tape slot that
 //! accepts `.tap`, `.sna` snapshots and a state blob. It is linked only into
-//! the host's test binary and is never built as a shared library.
+//! the host's test binary and is not part of the shipped program.
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 

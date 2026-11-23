@@ -1754,7 +1754,7 @@ mod tests {
             include_experimental: false,
         };
         let req_bytes = plugin_api::encode_message(&req).expect("encode request");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let result = unsafe { plugin_list_profiles_v1(RcSlice::from_bytes(&req_bytes)) };
         let bytes = payload(result);
         let response: plugin_api::ListProfilesResponse =
@@ -1775,7 +1775,7 @@ mod tests {
     fn create_instance_and_get_pc_round_trip() {
         let create_req =
             plugin_api::encode_message(&create_request("zx-spectrum")).expect("encode create req");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let create_result = unsafe { plugin_create_instance_v1(RcSlice::from_bytes(&create_req)) };
         let create_payload = payload(create_result);
         let create: MachineCreateResponse =
@@ -1785,7 +1785,7 @@ mod tests {
             command: MachineCommand::GetPc,
         };
         let call_req_bytes = plugin_api::encode_message(&call_req).expect("encode call request");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let call_result = unsafe {
             plugin_instance_call_v1(create.instance, RcSlice::from_bytes(&call_req_bytes))
         };
@@ -1804,7 +1804,7 @@ mod tests {
     fn set_controls_and_snapshot_save_round_trip() {
         let create_req =
             plugin_api::encode_message(&create_request("zx-spectrum")).expect("encode create req");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let create_result = unsafe { plugin_create_instance_v1(RcSlice::from_bytes(&create_req)) };
         let create_payload = payload(create_result);
         let create: MachineCreateResponse =
@@ -1814,7 +1814,7 @@ mod tests {
             let command = MachineCommand::SetBorder { enabled: false };
             let req = plugin_api::encode_message(&MachineInstanceCallRequest { command })
                 .expect("encode command request");
-            // SAFETY: ABI function consumes request bytes only during call.
+            // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
             let result =
                 unsafe { plugin_instance_call_v1(create.instance, RcSlice::from_bytes(&req)) };
             let payload = payload(result);
@@ -1829,7 +1829,7 @@ mod tests {
             },
         })
         .expect("encode snapshot save request");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let save_result =
             unsafe { plugin_instance_call_v1(create.instance, RcSlice::from_bytes(&save_req)) };
         let save_payload = payload(save_result);
@@ -1848,7 +1848,7 @@ mod tests {
     fn debug_chip_snapshots_expose_generic_overlay_chip_for_gui_panel() {
         let create_req = plugin_api::encode_message(&create_request("zx-spectrum-2a3"))
             .expect("encode create req");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let create_result = unsafe { plugin_create_instance_v1(RcSlice::from_bytes(&create_req)) };
         let create_payload = payload(create_result);
         let create: MachineCreateResponse =
@@ -1858,7 +1858,7 @@ mod tests {
             command: MachineCommand::Debug(DebugCommand::GetChipSnapshots),
         };
         let call_req_bytes = plugin_api::encode_message(&call_req).expect("encode call request");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let call_result = unsafe {
             plugin_instance_call_v1(create.instance, RcSlice::from_bytes(&call_req_bytes))
         };
@@ -1898,7 +1898,7 @@ mod tests {
     fn debug_chip_snapshots_generic_overlay_omits_disk_fields_on_48k() {
         let create_req =
             plugin_api::encode_message(&create_request("zx-spectrum")).expect("encode create req");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let create_result = unsafe { plugin_create_instance_v1(RcSlice::from_bytes(&create_req)) };
         let create_payload = payload(create_result);
         let create: MachineCreateResponse =
@@ -1908,7 +1908,7 @@ mod tests {
             command: MachineCommand::Debug(DebugCommand::GetChipSnapshots),
         };
         let call_req_bytes = plugin_api::encode_message(&call_req).expect("encode call request");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let call_result = unsafe {
             plugin_instance_call_v1(create.instance, RcSlice::from_bytes(&call_req_bytes))
         };

@@ -1,7 +1,7 @@
-//! The `atari-st` machine plugin: profile, options and commands over the `atari-st` machine crate. The C entry
-//! points follow the other machine plugins (`zx81-machine-plugin` of retroclawd-sinclair): an instance registry
-//! behind a mutex, every exported function wrapped by `plugin_api::guard`, and the raw fast path for
-//! `step`/`halted`/`pc`. The `unsafe` here is the C ABI boundary only; the machine crate forbids it.
+//! The `atari-st` machine plugin: profile, options and commands over the `atari-st` machine crate. It is linked into
+//! the program and answers the host through `plugin_api::MachinePlugin`: an instance registry behind a mutex, every
+//! entry point wrapped by `plugin_api::guard`, and the plain fast path for `step`/`halted`/`pc`. The machine crate
+//! forbids `unsafe`.
 //!
 //! Files: the PC trace (`trace_file`) and the stop report (`diag_file`, else stderr) are written here, so the
 //! machine crate does no I/O.

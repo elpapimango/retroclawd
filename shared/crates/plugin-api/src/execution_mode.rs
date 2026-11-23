@@ -8,7 +8,7 @@ use crate::{DebugValue, MachineOptionInfo, MachineOptionKind, NamedValue};
 /// The execution policy selected when a Machine is created.
 ///
 /// This is not a wire type. Options carry its lowercase text representation,
-/// so introducing this helper does not change the Plugin protocol or ABI.
+/// so introducing this helper does not change the machine protocol.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionMode {
     /// The Machine's documented optimized execution path.

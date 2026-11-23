@@ -1,4 +1,4 @@
-//! Atari 8-bit Plugin. Only the C ABI boundary uses unsafe code.
+//! Atari 8-bit machine family: the glue between the host's typed requests and the machine crates.
 use atari_8bit::{Atari800, Profile, Roms, Timing};
 use machine::Machine;
 use plugin_api::{AddressSpaceInfo, BitmapExplorerDefaults, BitmapPaletteColor, CartridgeStatus, ChipSnapshot, CpuFamily, CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine, DiskStatus, ExecutionMode, FnPlugin, ListProfilesRequest, ListProfilesResponse, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest, MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse, MachineKeyInfo, MachineMetadata, MachineOptionInfo, MachineOptionKind, MachinePlugin, MachineProfile, MachineResponse, MediaKind, MediaSlot, MediaSnapshot, NamedValue, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RegisterField, RegisterSnapshot, StepResult, TapeStatus};

@@ -3,7 +3,7 @@
 //!
 //! They are ordinary modules of the application, each behind a cargo feature of
 //! the same name (all on by default), not plugins: there is no library to load,
-//! no ABI and no serialisation between a debugger and the application. A
+//! and no serialisation between a debugger and the application. A
 //! debugger talks to the emulation thread through [`HostBridge`], an in-process
 //! request/response handle onto [`host::HostApiContext`].
 //!

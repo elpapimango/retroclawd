@@ -1397,7 +1397,7 @@ mod tests {
 
     fn create() -> MachineInstanceHandle {
         let bytes = plugin_api::encode_message(&request()).unwrap();
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let result = unsafe { plugin_create_instance_v1(RcSlice::from_bytes(&bytes)) };
         let response: MachineCreateResponse = plugin_api::decode_message(&payload(result)).unwrap();
         response.instance
@@ -1405,7 +1405,7 @@ mod tests {
 
     fn call(instance: MachineInstanceHandle, command: MachineCommand) -> RcCallResult {
         let bytes = plugin_api::encode_message(&MachineInstanceCallRequest { command }).unwrap();
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         unsafe { plugin_instance_call_v1(instance, RcSlice::from_bytes(&bytes)) }
     }
 
@@ -1490,7 +1490,7 @@ mod tests {
 
     fn create_with(req: &MachineCreateRequest) -> RcCallResult {
         let bytes = plugin_api::encode_message(req).unwrap();
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         unsafe { plugin_create_instance_v1(RcSlice::from_bytes(&bytes)) }
     }
 

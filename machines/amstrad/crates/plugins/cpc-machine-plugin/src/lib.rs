@@ -1844,7 +1844,7 @@ mod tests {
             },
         };
         let bytes = plugin_api::encode_message(&request).expect("encode key event");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let result = unsafe { plugin_instance_call_v1(instance, RcSlice::from_bytes(&bytes)) };
         payload(result);
     }
@@ -1895,7 +1895,7 @@ mod tests {
     fn send(instance: MachineInstanceHandle, command: MachineCommand) {
         let request = MachineInstanceCallRequest { command };
         let bytes = plugin_api::encode_message(&request).expect("encode command");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let result = unsafe { plugin_instance_call_v1(instance, RcSlice::from_bytes(&bytes)) };
         payload(result);
     }
@@ -2009,7 +2009,7 @@ mod tests {
             include_experimental: false,
         };
         let req_bytes = plugin_api::encode_message(&req).expect("encode request");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let result = unsafe { plugin_list_profiles_v1(RcSlice::from_bytes(&req_bytes)) };
         let bytes = payload(result);
         let response: plugin_api::ListProfilesResponse =
@@ -2041,7 +2041,7 @@ mod tests {
     fn create_instance_and_get_pc_round_trip() {
         let create_req =
             plugin_api::encode_message(&create_request("cpc464")).expect("encode create req");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let create_result = unsafe { plugin_create_instance_v1(RcSlice::from_bytes(&create_req)) };
         let create_payload = payload(create_result);
         let create: MachineCreateResponse =
@@ -2051,7 +2051,7 @@ mod tests {
             command: MachineCommand::GetPc,
         };
         let call_req_bytes = plugin_api::encode_message(&call_req).expect("encode call request");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let call_result = unsafe {
             plugin_instance_call_v1(create.instance, RcSlice::from_bytes(&call_req_bytes))
         };
@@ -2069,7 +2069,7 @@ mod tests {
     fn attach_program_and_read_memory_round_trip() {
         let create_req =
             plugin_api::encode_message(&create_request("cpc464")).expect("encode create req");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let create_result = unsafe { plugin_create_instance_v1(RcSlice::from_bytes(&create_req)) };
         let create_payload = payload(create_result);
         let create: MachineCreateResponse =
@@ -2088,7 +2088,7 @@ mod tests {
             },
         };
         let attach_bytes = plugin_api::encode_message(&attach_req).expect("encode attach request");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let attach_result =
             unsafe { plugin_instance_call_v1(create.instance, RcSlice::from_bytes(&attach_bytes)) };
         let attach_payload = payload(attach_result);
@@ -2104,7 +2104,7 @@ mod tests {
             },
         };
         let read_bytes = plugin_api::encode_message(&read_req).expect("encode read request");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let read_result =
             unsafe { plugin_instance_call_v1(create.instance, RcSlice::from_bytes(&read_bytes)) };
         let read_payload = payload(read_result);
@@ -2137,7 +2137,7 @@ mod tests {
     fn debug_chip_snapshots_expose_overlay_telemetry() {
         let create_req =
             plugin_api::encode_message(&create_request("cpc464")).expect("encode create req");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let create_result = unsafe { plugin_create_instance_v1(RcSlice::from_bytes(&create_req)) };
         let create_payload = payload(create_result);
         let create: MachineCreateResponse =
@@ -2147,7 +2147,7 @@ mod tests {
             command: MachineCommand::Debug(DebugCommand::GetChipSnapshots),
         };
         let call_req_bytes = plugin_api::encode_message(&call_req).expect("encode call request");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let call_result = unsafe {
             plugin_instance_call_v1(create.instance, RcSlice::from_bytes(&call_req_bytes))
         };
@@ -2203,7 +2203,7 @@ mod tests {
     ) -> Result<MachineResponse, String> {
         let request = MachineInstanceCallRequest { command };
         let bytes = plugin_api::encode_message(&request).expect("encode request");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let result = unsafe { plugin_instance_call_v1(instance, RcSlice::from_bytes(&bytes)) };
         if result.status.code == StatusCode::Ok as u32 {
             Ok(plugin_api::decode_message(&payload(result)).expect("decode response"))
@@ -2326,7 +2326,7 @@ mod tests {
     fn gx4000_instance_creates_and_renders_a_frame() {
         let create_req =
             plugin_api::encode_message(&create_request("gx4000")).expect("encode create req");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let create_result = unsafe { plugin_create_instance_v1(RcSlice::from_bytes(&create_req)) };
         let create_payload = payload(create_result);
         let create: MachineCreateResponse =
@@ -2336,7 +2336,7 @@ mod tests {
             command: MachineCommand::RenderFrame,
         };
         let call_req_bytes = plugin_api::encode_message(&call_req).expect("encode call request");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let call_result = unsafe {
             plugin_instance_call_v1(create.instance, RcSlice::from_bytes(&call_req_bytes))
         };
@@ -2361,7 +2361,7 @@ mod tests {
     fn gx4000_rejects_tape_media() {
         let create_req =
             plugin_api::encode_message(&create_request("gx4000")).expect("encode create req");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let create_result = unsafe { plugin_create_instance_v1(RcSlice::from_bytes(&create_req)) };
         let create: MachineCreateResponse =
             plugin_api::decode_message(&payload(create_result)).expect("decode create response");
@@ -2388,7 +2388,7 @@ mod tests {
     fn analog_joystick_key_event_reaches_the_asic() {
         let create_req =
             plugin_api::encode_message(&create_request("cpc6128plus")).expect("encode create req");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let create_result = unsafe { plugin_create_instance_v1(RcSlice::from_bytes(&create_req)) };
         let create: MachineCreateResponse =
             plugin_api::decode_message(&payload(create_result)).expect("decode create response");
@@ -2400,7 +2400,7 @@ mod tests {
             },
         };
         let key_req_bytes = plugin_api::encode_message(&key_req).expect("encode key request");
-        // SAFETY: ABI function consumes request bytes only during call.
+        // SAFETY: test shim over `plugin_api::testkit`; the request bytes outlive the call.
         let key_result = unsafe {
             plugin_instance_call_v1(create.instance, RcSlice::from_bytes(&key_req_bytes))
         };

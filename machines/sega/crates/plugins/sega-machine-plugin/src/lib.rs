@@ -1,7 +1,6 @@
-//! The `genesis` machine plugin: profile, options and commands over the `genesis` machine crate. The C entry
-//! points follow the other machine plugins: an instance registry behind a mutex, every exported function wrapped by
-//! `plugin_api::guard`, and the raw fast path for `step`/`halted`/`pc`. The `unsafe` here is the C ABI boundary only;
-//! the machine crate forbids it.
+//! The `genesis` machine plugin: profile, options and commands over the `genesis` machine crate. It is linked into the program and answers the host through `plugin_api::MachinePlugin`: an instance registry
+//! behind a mutex, every entry point wrapped by `plugin_api::guard`, and the plain fast path for `step`/`halted`/`pc`.
+//! The machine crate forbids `unsafe`.
 
 #![cfg_attr(not(feature = "debug"), allow(unused_mut))]
 
