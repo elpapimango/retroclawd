@@ -31,6 +31,6 @@ Run: `rcd pcengine --rom romm:7161` (Air Zonk) or `--rom game.pce`; no firmware 
 ## Tools
 
 `cargo run --release -p pcengine --example probe` (env `ROM`, `FRAMES`, `OUT` PPM, `PRESS=frame:Key,...`, `RC_TRACE`, `RC_TRACE_END`, `RAMOUT`,
-`AUDIOOUT` WAV, `VRAMAT`); `scenarios/sweep.py` (games in probe and reference, `--side-by-side DIR`), `audio_compare.py`, `build.py` (test cards), `capture_pce_goldens.py`.
+`AUDIOOUT` WAV, `VRAMAT`); `scenarios/sweep.py` (games in probe and reference, `--side-by-side DIR`), `audio_compare.py`, `build.py` (the test cards: HuC6280 sources in `scenarios/cards/` built with `rcld` from retroclawd-tools, `RCLD=...`; `--compare` checks them byte for byte against the old Python assembler in the same file), `capture_pce_goldens.py`.
 Debugging recipe that found most defects: run the game in both, dump work RAM at the same frame (`libretro_run.py --ram-at`, probe `RAMOUT`) and
 see which zero-page variables differ.

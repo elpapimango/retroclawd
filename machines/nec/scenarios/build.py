@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
-"""Builds the test HuCards the PC Engine scenarios use, with a tiny table-driven assembler (the HuC6280 has no
-`rcasm` target yet). Output goes to the git-ignored `machines/nec/software/scenarios/` folder (git-ignored).
+"""Builds the test HuCards the PC Engine scenarios use. The cards are assembler sources in `cards/` (HuC6280, one `.toml`
+layout each) built with `rcld` from retroclawd-tools (`RCLD=path/to/rcld`, else `rcld` on PATH); without `rcld`, or with `--python`,
+a tiny table-driven assembler in this file builds the same cards. `--compare` builds both and checks that the cards are byte for byte
+the same. Output goes to the git-ignored `machines/nec/software/scenarios/` folder.
 
-    build.py [out_dir]
+    build.py [--python | --compare] [out_dir]
 
 Cards:
   pce-tone.pce    channel 0 plays a 32-step square wave at register value $0FE (440.4 Hz) at full volume.
   pce-input.pce   shows the first pad's eight buttons as eight bars on the background layer (S2).
 """
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
@@ -243,10 +248,73 @@ def input_bars():
     return card(a.finish())
 
 
+# name -> (layout in cards/, -D defines)
+CARDS = {
+    "pce-tone.pce": ("tone", []),
+    "pce-input.pce": ("input", []),
+    "pce-timer0.pce": ("timer", ["RELOAD=0"]),
+    "pce-timer5.pce": ("timer", ["RELOAD=5"]),
+    "pce-timer0i.pce": ("timer", ["RELOAD=0", "IRQ=1"]),
+    "pce-timer5i.pce": ("timer", ["RELOAD=5", "IRQ=1"]),
+    "pce-timer0a.pce": ("timer", ["RELOAD=0", "ACK=1"]),
+    "pce-timer5a.pce": ("timer", ["RELOAD=5", "ACK=1"]),
+}
+
+
+def python_cards():
+    return {
+        "pce-tone.pce": tone(),
+        "pce-input.pce": input_bars(),
+        "pce-timer0.pce": timer_probe(0),
+        "pce-timer5.pce": timer_probe(5),
+        "pce-timer0i.pce": timer_probe(0, True),
+        "pce-timer5i.pce": timer_probe(5, True),
+        "pce-timer0a.pce": timer_probe(0, False, True),
+        "pce-timer5a.pce": timer_probe(5, False, True),
+    }
+
+
+def find_rcld():
+    path = os.environ.get("RCLD")
+    if path and os.path.exists(path):
+        return path
+    return shutil.which("rcld")
+
+
+def tool_cards(rcld):
+    """Builds every card with rcld and returns name -> bytes."""
+    cards = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, (layout, defines) in CARDS.items():
+            out = os.path.join(tmp, name)
+            cmd = [rcld, "build", os.path.join(HERE, "cards", layout + ".toml"), "-o", out, "--force"]
+            for d in defines:
+                cmd += ["-D", d]
+            subprocess.run(cmd, check=True, stderr=subprocess.DEVNULL)
+            with open(out, "rb") as f:
+                cards[name] = f.read()
+    return cards
+
+
 def main():
-    out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "machines", "nec", "software", "scenarios")
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    out = args[0] if args else os.path.join(ROOT, "machines", "nec", "software", "scenarios")
+    use_python = "--python" in sys.argv
+    rcld = None if use_python else find_rcld()
+    if "--compare" in sys.argv:
+        if not rcld:
+            sys.exit("--compare needs rcld (RCLD=path or on PATH)")
+        mine, theirs = python_cards(), tool_cards(rcld)
+        bad = 0
+        for name in sorted(mine):
+            same = mine[name] == theirs[name]
+            print(("same     " if same else "DIFFERENT"), name, len(mine[name]), len(theirs[name]))
+            bad += not same
+        sys.exit(1 if bad else 0)
+    cards = tool_cards(rcld) if rcld else python_cards()
+    print("built with", rcld if rcld else "the Python assembler in build.py")
     os.makedirs(out, exist_ok=True)
-    for name, data in (("pce-tone.pce", tone()), ("pce-input.pce", input_bars()), ("pce-timer0.pce", timer_probe(0)), ("pce-timer5.pce", timer_probe(5)), ("pce-timer0i.pce", timer_probe(0, True)), ("pce-timer5i.pce", timer_probe(5, True)), ("pce-timer0a.pce", timer_probe(0, False, True)), ("pce-timer5a.pce", timer_probe(5, False, True))):
+    for name, data in cards.items():
         with open(os.path.join(out, name), "wb") as f:
             f.write(data)
         print("wrote", os.path.join(out, name))

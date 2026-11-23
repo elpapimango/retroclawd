@@ -45,5 +45,5 @@ Cause unknown unless stated; each was compared with the reference by work-RAM du
   the overall level is calibrated on one channel (P5). Game music through a mixed set of channels was compared only by level.
 - **Multitap**: pads 2-5 are read only with the `multitap` option; the second pad's keys are named `Joy2*`.
 - **Region**: bit 6 of the I/O port's polarity is a guess (fact M5); the `console` option selects it and no card seen cares.
-- **Tools**: `rcasm`, `rcdis` and `rcld` have no HuC6280 target; the test cards are assembled by `scenarios/build.py`.
+- **Tools**: retroclawd-tools 0.2 has the HuC6280 (`rcasm`, `rcdis`) and `rcld` writes HuCards; the test cards are built by them (`scenarios/cards/`).
 - **Save-state compatibility**: states are bincode of the whole machine (`RCPC` v1); there is no versioned migration yet.
