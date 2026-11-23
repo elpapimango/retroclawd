@@ -111,10 +111,7 @@ mod tests {
         );
         assert_eq!(plugin_line(&report.plugins[1]), "old 0.1.0");
         let text = summary(Some(&report));
-        assert!(
-            text.contains("machines:\n  cpc 0.1.0 build 98"),
-            "{text}"
-        );
+        assert!(text.contains("machines:\n  cpc 0.1.0 build 98"), "{text}");
         assert!(
             summary(Some(&StartupReport {
                 plugins: Vec::new(),

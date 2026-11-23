@@ -750,8 +750,12 @@ mod tests {
             audio_channels: 1,
             audio_sample_rate: 44_100,
         };
-        let bytes = bincode::serde::encode_to_vec(&metadata, bincode::config::standard()).expect("encode metadata");
-        let decoded: MachineMetadata = bincode::serde::decode_from_slice(&bytes, bincode::config::standard()).map(|(v, _)| v).expect("decode metadata");
+        let bytes = bincode::serde::encode_to_vec(&metadata, bincode::config::standard())
+            .expect("encode metadata");
+        let decoded: MachineMetadata =
+            bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
+                .map(|(v, _)| v)
+                .expect("decode metadata");
         assert_eq!(decoded, metadata);
     }
     /// Merged (every check kept): `machine_command_round_trip_keeps_nested_debug_payload`, `machine_command_round_trip_keeps_input_and_control_payloads`, `machine_metadata_round_trip_keeps_bitmap_palette_defaults`.

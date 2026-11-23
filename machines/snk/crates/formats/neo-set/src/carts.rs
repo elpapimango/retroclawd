@@ -213,7 +213,8 @@ pub fn pcm2_swap(rom: &mut [u8], kind: usize) -> bool {
         let j = bitswap(
             i,
             &[
-                23, 22, 21, 20, 19, 18, 17, 0, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 16,
+                23, 22, 21, 20, 19, 18, 17, 0, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+                16,
             ],
         ) ^ xor_addr;
         let d = (i.wrapping_add(add) & 0xff_ffff) as usize;
@@ -288,7 +289,10 @@ mod tests {
         ram[0xff8] = 0x0200;
         ram[0xff9] = 0x0001;
         assert_eq!(pvc_bank_base(&mut ram), 0x10_0000 + 0x0102);
-        assert_eq!(ram[0xff8], 0x02a0, "the low byte becomes $A0, the top seven bits stay");
+        assert_eq!(
+            ram[0xff8], 0x02a0,
+            "the low byte becomes $A0, the top seven bits stay"
+        );
         ram[0xff9] = 0x8001;
         pvc_bank_base(&mut ram);
         assert_eq!(ram[0xff9], 0x0001, "bit 15 is cleared");

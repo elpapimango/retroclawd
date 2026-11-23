@@ -199,11 +199,7 @@ pub(crate) fn plugins(
                 out.push_str("  (none found)\n");
             }
             for plugin in &report.plugins {
-                let _ = writeln!(
-                    out,
-                    "  {}",
-                    crate::version::plugin_line(plugin),
-                );
+                let _ = writeln!(out, "  {}", crate::version::plugin_line(plugin),);
                 wrap_into(
                     &mut out,
                     &format!("machines: {}", plugin.machine_ids.join(", ")),

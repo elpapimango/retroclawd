@@ -11,7 +11,15 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use machine::AUDIO_SAMPLE_RATE;
-use plugin_api::{AddressSpaceInfo, BitmapExplorerDefaults, BitmapPaletteColor, ChipSnapshot, CpuFamily, DebugCommand, DebugResponse, DisassemblyLine, FnPlugin, ListProfilesRequest, ListProfilesResponse, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest, MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse, MachineInstanceHandle, MachineMetadata, MachinePlugin, MachineProfile, MachineResponse, MediaKind, MediaSlot, MediaSnapshot, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RegisterField, RegisterSnapshot};
+use plugin_api::{
+    AddressSpaceInfo, BitmapExplorerDefaults, BitmapPaletteColor, ChipSnapshot, CpuFamily,
+    DebugCommand, DebugResponse, DisassemblyLine, FnPlugin, ListProfilesRequest,
+    ListProfilesResponse, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand,
+    MachineCreateRequest, MachineCreateResponse, MachineInstanceCallRequest,
+    MachineInstanceCallResponse, MachineInstanceHandle, MachineMetadata, MachinePlugin,
+    MachineProfile, MachineResponse, MediaKind, MediaSlot, MediaSnapshot,
+    REQUIRED_MACHINE_DEBUG_CAPABILITIES, RegisterField, RegisterSnapshot,
+};
 
 /// The one machine id this plugin offers.
 pub const MACHINE_ID: &str = "stub-machine";

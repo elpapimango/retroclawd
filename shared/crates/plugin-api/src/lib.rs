@@ -7,8 +7,8 @@ pub mod testkit;
 #[cfg(feature = "testkit")]
 pub use testkit::{decode_message, encode_message};
 
-pub use plugin::{FnPlugin, MachineInstanceHandle, MachinePlugin};
 pub use execution_mode::ExecutionMode;
+pub use plugin::{FnPlugin, MachineInstanceHandle, MachinePlugin};
 pub use protocol::{
     AddressSpaceInfo, BinaryBlob, BitmapExplorerDefaults, BitmapPaletteColor, CartridgeStatus,
     ChipSnapshot, CpuFamily, CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine,

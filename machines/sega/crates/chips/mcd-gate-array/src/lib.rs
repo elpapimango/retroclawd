@@ -877,13 +877,18 @@ mod tests {
     }
 
     #[test]
-    fn in_one_megabit_mode_either_value_written_to_dmna_asks_for_a_swap_until_the_sub_cpu_answers() {
+    fn in_one_megabit_mode_either_value_written_to_dmna_asks_for_a_swap_until_the_sub_cpu_answers()
+    {
         let mut g = GateArray::new();
         assert!(g.sub_write_word(0x02, 0x0004)); // 1M mode
         for v in [0x02u8, 0x00] {
             assert_eq!(g.main_read_byte(0x03).unwrap() & 2, 0, "nothing pending");
             assert!(g.main_write_byte(0x03, v));
-            assert_eq!(g.main_read_byte(0x03).unwrap() & 2, 2, "pending after writing {v}");
+            assert_eq!(
+                g.main_read_byte(0x03).unwrap() & 2,
+                2,
+                "pending after writing {v}"
+            );
             let ret = u16::from(g.main_read_byte(0x03).unwrap() & 1 ^ 1);
             assert!(g.sub_write_word(0x02, 0x0004 | ret));
         }

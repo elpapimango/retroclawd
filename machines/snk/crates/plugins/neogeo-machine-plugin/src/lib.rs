@@ -8,7 +8,14 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use neogeo::system::{FRAME_CLOCKS, NeoGeo};
-use plugin_api::{AddressSpaceInfo, CpuFamily, CpuInfo, DebugCommand, DebugResponse, DebugValue, FnPlugin, ListProfilesRequest, ListProfilesResponse, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest, MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse, MachineInstanceHandle, MachineKeyInfo, MachineMetadata, MachineOptionInfo, MachineOptionKind, MachinePlugin, MachineProfile, MachineResponse, MediaKind, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RegisterField, RegisterSnapshot};
+use plugin_api::{
+    AddressSpaceInfo, CpuFamily, CpuInfo, DebugCommand, DebugResponse, DebugValue, FnPlugin,
+    ListProfilesRequest, ListProfilesResponse, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability,
+    MachineCommand, MachineCreateRequest, MachineCreateResponse, MachineInstanceCallRequest,
+    MachineInstanceCallResponse, MachineInstanceHandle, MachineKeyInfo, MachineMetadata,
+    MachineOptionInfo, MachineOptionKind, MachinePlugin, MachineProfile, MachineResponse,
+    MediaKind, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RegisterField, RegisterSnapshot,
+};
 
 const MACHINE_ID: &str = "neogeo";
 const PLUGIN_ID: &str = "retroclawd.neogeo.machine";
@@ -571,7 +578,10 @@ mod tests {
             ("Enter", "Start1"),
             ("ShiftRight", "Select1"),
         ] {
-            let found = names.iter().find(|i| i.matches(host)).map(|i| i.name.as_str());
+            let found = names
+                .iter()
+                .find(|i| i.matches(host))
+                .map(|i| i.name.as_str());
             assert_eq!(found, Some(key), "{host}");
         }
     }

@@ -434,11 +434,7 @@ fn validate_profile_contract_with_version(
         .join(", ");
     Err(format!(
         "profile {} from {} ({}@{}) is missing required debug contract capabilities: {}",
-        profile.machine_id,
-        source,
-        plugin_id,
-        plugin_version,
-        missing_labels
+        profile.machine_id, source, plugin_id, plugin_version, missing_labels
     ))
 }
 
@@ -1857,13 +1853,9 @@ mod tests {
     #[test]
     fn validate_profile_contract_accepts_full_debug_contract() {
         let profile = profile_with_debug_contract();
-        let warning = validate_profile_contract(
-            &profile,
-            "retroclawd.test.machine",
-            "0.1.0",
-            "plugin.dll",
-        )
-        .expect("validation should pass");
+        let warning =
+            validate_profile_contract(&profile, "retroclawd.test.machine", "0.1.0", "plugin.dll")
+                .expect("validation should pass");
         assert!(warning.is_none());
     }
 
@@ -1871,13 +1863,9 @@ mod tests {
         let mut profile = profile_with_debug_contract();
         profile.contract_version = MACHINE_PROFILE_CONTRACT_VERSION + 1;
 
-        let err = validate_profile_contract(
-            &profile,
-            "retroclawd.test.machine",
-            "0.1.0",
-            "plugin.dll",
-        )
-        .expect_err("newer plugin contract must fail against old host");
+        let err =
+            validate_profile_contract(&profile, "retroclawd.test.machine", "0.1.0", "plugin.dll")
+                .expect_err("newer plugin contract must fail against old host");
         assert_eq!(
             err,
             "machine profile contract mismatch for zx81 from plugin.dll (retroclawd.test.machine@0.1.0): host=2, plugin=3"
@@ -1914,13 +1902,9 @@ mod tests {
             .retain(|cap| *cap != MachineCapability::Debug);
         profile.debug_capabilities = vec![MachineDebugCapability::PauseResume];
 
-        let warning = validate_profile_contract(
-            &profile,
-            "retroclawd.test.machine",
-            "0.1.0",
-            "plugin.dll",
-        )
-        .expect("validation should emit warning, not error");
+        let warning =
+            validate_profile_contract(&profile, "retroclawd.test.machine", "0.1.0", "plugin.dll")
+                .expect("validation should emit warning, not error");
         assert_eq!(
             warning,
             Some(
@@ -1937,13 +1921,9 @@ mod tests {
             .debug_capabilities
             .retain(|cap| *cap != MachineDebugCapability::Disassembly);
 
-        let err = validate_profile_contract(
-            &profile,
-            "retroclawd.test.machine",
-            "0.1.0",
-            "plugin.dll",
-        )
-        .expect_err("missing required debug capability must fail");
+        let err =
+            validate_profile_contract(&profile, "retroclawd.test.machine", "0.1.0", "plugin.dll")
+                .expect_err("missing required debug capability must fail");
         assert_eq!(
             err,
             "profile zx81 from plugin.dll (retroclawd.test.machine@0.1.0) is missing required debug contract capabilities: disassembly"

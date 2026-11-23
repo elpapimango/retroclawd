@@ -199,7 +199,10 @@ mod tests {
         let zip = dir.join("game.zip");
         zip_of(&zip, &[("a.p1", b"p"), ("a.c1", b"c")]);
         assert!(!holds_disc_set(&zip));
-        assert_eq!(resolve(&zip.display().to_string()).unwrap(), zip.display().to_string());
+        assert_eq!(
+            resolve(&zip.display().to_string()).unwrap(),
+            zip.display().to_string()
+        );
         let disc = dir.join("disc.zip");
         zip_of(&disc, &[("d.cue", b"x"), ("d.bin", b"y")]);
         assert!(holds_disc_set(&disc));

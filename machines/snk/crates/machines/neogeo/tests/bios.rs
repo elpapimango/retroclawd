@@ -52,7 +52,9 @@ fn first_fetches() {
         s: set.s.clone(),
         c: set.c.clone(),
     };
-    let spr_from: Option<u64> = std::env::var("RC_SPRTRACE").ok().and_then(|v| v.parse().ok());
+    let spr_from: Option<u64> = std::env::var("RC_SPRTRACE")
+        .ok()
+        .and_then(|v| v.parse().ok());
     let mut spr_last_frame = u64::MAX;
     let mut spr_last = [(0u16, 0u16, 0u16); 2];
     let mut machine = NeoGeo::new(Bus::new(bios, set.p, sm1, set.m), graphics);
@@ -144,7 +146,12 @@ fn first_fetches() {
         let c = &machine.graphics.c;
         let zero: Vec<String> = c
             .chunks(0x100_0000)
-            .map(|ch| format!("{:.2}", ch.iter().filter(|b| **b == 0).count() as f64 / ch.len() as f64))
+            .map(|ch| {
+                format!(
+                    "{:.2}",
+                    ch.iter().filter(|b| **b == 0).count() as f64 / ch.len() as f64
+                )
+            })
             .collect();
         println!("zero fraction per 16 MiB of the C data: {zero:?}");
         if std::env::var("RC_TILES").as_deref() == Ok("3") {
@@ -153,22 +160,35 @@ fn first_fetches() {
                     let rows: Vec<String> = (0..6)
                         .map(|r| format!("{:04X}/{:04X}", v[n * 64 + r * 2], v[n * 64 + r * 2 + 1]))
                         .collect();
-                    println!("tall {n}: scb2 {:04X} scb3 {:04X} scb4 {:04X} rows {rows:?}", v[0x8000 + n], v[0x8200 + n], v[0x8400 + n]);
+                    println!(
+                        "tall {n}: scb2 {:04X} scb3 {:04X} scb4 {:04X} rows {rows:?}",
+                        v[0x8000 + n],
+                        v[0x8200 + n],
+                        v[0x8400 + n]
+                    );
                 }
             }
         }
         if let Ok(t) = std::env::var("RC_TILE_AT") {
             let t = usize::from_str_radix(&t, 16).unwrap();
-            let hex: String = c[t * 128..t * 128 + 32].iter().map(|b| format!("{b:02x}")).collect();
+            let hex: String = c[t * 128..t * 128 + 32]
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
             println!("tile {t:X} bytes {hex}");
         }
         if std::env::var("RC_TILES").as_deref() == Ok("5") {
             for row in 26..30usize {
-                let line: Vec<String> = (0..14).map(|col| format!("{:04X}", v[0x7000 + col * 32 + row])).collect();
+                let line: Vec<String> = (0..14)
+                    .map(|col| format!("{:04X}", v[0x7000 + col * 32 + row]))
+                    .collect();
                 println!("fix row {row}: {line:?}");
             }
         }
-        println!("tiles per 0x10000: {hist:?}; c tiles {}", machine.graphics.c.len() / 128);
+        println!(
+            "tiles per 0x10000: {hist:?}; c tiles {}",
+            machine.graphics.c.len() / 128
+        );
     }
     if std::env::var("RC_SPRITES").is_ok() {
         // the sprites with a height: number, shrink word, Y/chain/height word, X word, first tile entry
@@ -196,10 +216,15 @@ fn first_fetches() {
             })
             .collect();
         println!("cartridge header at $100: {hdr}");
-        let v: Vec<String> = (0u32..16).map(|a| format!("{:02X}", machine.bus.peek(a))).collect();
+        let v: Vec<String> = (0u32..16)
+            .map(|a| format!("{:02X}", machine.bus.peek(a)))
+            .collect();
         println!("vectors {v:?}");
     }
-    println!("watchdog resets: {}, latch {:02X}", machine.bus.watchdog_resets, machine.bus.latch);
+    println!(
+        "watchdog resets: {}, latch {:02X}",
+        machine.bus.watchdog_resets, machine.bus.latch
+    );
     if hist_from.is_some() {
         let mut v: Vec<_> = hist.into_iter().collect();
         v.sort_by_key(|(_, n)| std::cmp::Reverse(*n));

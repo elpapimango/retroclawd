@@ -397,7 +397,10 @@ mod tests {
             }
         });
         // map entries at (0,0) to (5,0): plain, flipped, 180 degrees, RT 1, RT 1 flipped, RT 3
-        for (i, e) in [0x0001u16, 0x8001, 0x4001, 0x2001, 0xA001, 0x6001].iter().enumerate() {
+        for (i, e) in [0x0001u16, 0x8001, 0x4001, 0x2001, 0xA001, 0x6001]
+            .iter()
+            .enumerate()
+        {
             put_word(&mut ram, 0x1000 + 2 * i, *e);
         }
         let mut a = Asic::new();

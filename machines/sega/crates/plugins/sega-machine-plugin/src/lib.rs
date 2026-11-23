@@ -9,7 +9,15 @@ use std::sync::{Mutex, OnceLock};
 
 use genesis::{Config, Genesis, Region, Tmss};
 use machine::Machine;
-use plugin_api::{AddressSpaceInfo, CpuFamily, CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine, FnPlugin, HostMouseButton, ListProfilesRequest, ListProfilesResponse, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest, MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse, MachineInstanceHandle, MachineKeyInfo, MachineMetadata, MachineOptionInfo, MachineOptionKind, MachinePlugin, MachineProfile, MachineResponse, MediaKind, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RegisterField, RegisterSnapshot};
+use plugin_api::{
+    AddressSpaceInfo, CpuFamily, CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine,
+    FnPlugin, HostMouseButton, ListProfilesRequest, ListProfilesResponse,
+    MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest,
+    MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse,
+    MachineInstanceHandle, MachineKeyInfo, MachineMetadata, MachineOptionInfo, MachineOptionKind,
+    MachinePlugin, MachineProfile, MachineResponse, MediaKind, REQUIRED_MACHINE_DEBUG_CAPABILITIES,
+    RegisterField, RegisterSnapshot,
+};
 
 const MACHINE_ID: &str = "genesis";
 const SEGACD_ID: &str = "segacd";

@@ -2,7 +2,15 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use machine::{AUDIO_SAMPLE_RATE, Machine, Region};
-use plugin_api::{AddressSpaceInfo, BinaryBlob, BitmapExplorerDefaults, BitmapPaletteColor, ChipSnapshot, CpuFamily, DebugCommand, DebugResponse, DisassemblyLine, FnPlugin, ListProfilesRequest, ListProfilesResponse, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest, MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse, MachineInstanceHandle, MachineMetadata, MachineOptionInfo, MachineOptionKind, MachinePlugin, MachineProfile, MachineResponse, MediaKind, MediaSnapshot, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RegisterField, RegisterSnapshot};
+use plugin_api::{
+    AddressSpaceInfo, BinaryBlob, BitmapExplorerDefaults, BitmapPaletteColor, ChipSnapshot,
+    CpuFamily, DebugCommand, DebugResponse, DisassemblyLine, FnPlugin, ListProfilesRequest,
+    ListProfilesResponse, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand,
+    MachineCreateRequest, MachineCreateResponse, MachineInstanceCallRequest,
+    MachineInstanceCallResponse, MachineInstanceHandle, MachineMetadata, MachineOptionInfo,
+    MachineOptionKind, MachinePlugin, MachineProfile, MachineResponse, MediaKind, MediaSnapshot,
+    REQUIRED_MACHINE_DEBUG_CAPABILITIES, RegisterField, RegisterSnapshot,
+};
 use zx81::{Zx81, Zx81Key};
 
 const PLUGIN_ID: &str = "retroclawd.zx81.machine";
@@ -937,9 +945,7 @@ mod tests {
     use plugin_api::testkit::{RcCallResult, RcSlice, RcStatus, StatusCode};
 
     fn plugin_list_profiles_v1(req: RcSlice) -> RcCallResult {
-        RcCallResult::of(
-            plugin_api::decode_message(req.as_bytes()).and_then(plugin_list_profiles),
-        )
+        RcCallResult::of(plugin_api::decode_message(req.as_bytes()).and_then(plugin_list_profiles))
     }
 
     fn plugin_create_instance_v1(req: RcSlice) -> RcCallResult {

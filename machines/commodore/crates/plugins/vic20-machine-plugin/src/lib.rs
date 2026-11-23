@@ -4,7 +4,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, OnceLock};
 
 use machine::Machine;
-use plugin_api::{AddressSpaceInfo, BitmapExplorerDefaults, BitmapPaletteColor, ChipSnapshot, CpuFamily, CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine, DiskStatus, ExecutionMode, FnPlugin, ListProfilesRequest, ListProfilesResponse, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest, MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse, MachineKeyInfo, MachineMetadata, MachineOptionInfo, MachineOptionKind, MachinePlugin, MachineProfile, MachineResponse, MediaKind, MediaSlot, MediaSnapshot, NamedValue, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RegisterField, RegisterSnapshot, StepResult, TapeStatus};
+use plugin_api::{
+    AddressSpaceInfo, BitmapExplorerDefaults, BitmapPaletteColor, ChipSnapshot, CpuFamily, CpuInfo,
+    DebugCommand, DebugResponse, DebugValue, DisassemblyLine, DiskStatus, ExecutionMode, FnPlugin,
+    ListProfilesRequest, ListProfilesResponse, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability,
+    MachineCommand, MachineCreateRequest, MachineCreateResponse, MachineInstanceCallRequest,
+    MachineInstanceCallResponse, MachineKeyInfo, MachineMetadata, MachineOptionInfo,
+    MachineOptionKind, MachinePlugin, MachineProfile, MachineResponse, MediaKind, MediaSlot,
+    MediaSnapshot, NamedValue, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RegisterField,
+    RegisterSnapshot, StepResult, TapeStatus,
+};
 use serde::{Deserialize, Serialize};
 use vic20::{Expansion, Roms, Standard, Timing, Vic20};
 
@@ -859,25 +868,27 @@ fn list_profiles(_request: ListProfilesRequest) -> Result<ListProfilesResponse, 
 }
 fn create_instance(request: MachineCreateRequest) -> Result<MachineCreateResponse, String> {
     plugin_api::guard::guarded_call("create_instance", || {
-            let instance = Instance::create(request)?;
-            let metadata = instance.metadata();
-            let mut registry = registry()
-                .lock()
-                .map_err(|_| "VIC-20 Plugin registry poisoned".to_string())?;
-            let id = registry.next;
-            registry.next = id
-                .checked_add(1)
-                .ok_or("VIC-20 instance handles exhausted")?;
-            registry.instances.insert(id, instance);
-            Ok(MachineCreateResponse {
-                instance: id,
-                metadata,
-            })
+        let instance = Instance::create(request)?;
+        let metadata = instance.metadata();
+        let mut registry = registry()
+            .lock()
+            .map_err(|_| "VIC-20 Plugin registry poisoned".to_string())?;
+        let id = registry.next;
+        registry.next = id
+            .checked_add(1)
+            .ok_or("VIC-20 instance handles exhausted")?;
+        registry.instances.insert(id, instance);
+        Ok(MachineCreateResponse {
+            instance: id,
+            metadata,
+        })
     })
 }
 fn destroy_instance(id: u64) -> Result<(), String> {
     plugin_api::guard::guarded_call("destroy_instance", || {
-        let mut registry = registry().lock().map_err(|_| "registry poisoned".to_string())?;
+        let mut registry = registry()
+            .lock()
+            .map_err(|_| "registry poisoned".to_string())?;
         if registry.instances.remove(&id).is_some() {
             Ok(())
         } else {

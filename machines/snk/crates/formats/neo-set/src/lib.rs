@@ -235,7 +235,11 @@ fn load_with_limit(zip_bytes: &[u8], limit: u64) -> Result<NeoSet, SetError> {
             let fix_len = if set.s.is_empty() {
                 // Metal Slug 3 and 4: the glyphs are the 128 KiB that starts 384 KiB before the end (observed against FinalBurn Neo:
                 // the last 128 KiB and the 128 KiB before it show other data; fact N54)
-                if matches!(ngh, Some(256 | 263)) { 384 * 1024 } else { 128 * 1024 }
+                if matches!(ngh, Some(256 | 263)) {
+                    384 * 1024
+                } else {
+                    128 * 1024
+                }
             } else {
                 set.s.len()
             };

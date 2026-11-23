@@ -15,7 +15,16 @@ use std::sync::{Mutex, OnceLock};
 use atari_st::serial::{FileSink, FileSource, LinePeer, MIDI_FRAME_CYCLES};
 use atari_st::{Accuracy, AtariSt, Chipset, Config, Monitor, RamSize, Region};
 use machine::Machine;
-use plugin_api::{AddressSpaceInfo, BinaryBlob, CartridgeStatus, ChipSnapshot, CpuFamily, CpuInfo, DebugCommand, DebugResponse, DebugValue, DisassemblyLine, DiskStatus, FnPlugin, HostMouseButton, ListProfilesRequest, ListProfilesResponse, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability, MachineCommand, MachineCreateRequest, MachineCreateResponse, MachineInstanceCallRequest, MachineInstanceCallResponse, MachineInstanceHandle, MachineKeyInfo, MachineMetadata, MachineOptionInfo, MachineOptionKind, MachinePlugin, MachineProfile, MachineResponse, MediaKind, MediaSlot, MediaSnapshot, NamedValue, REQUIRED_MACHINE_DEBUG_CAPABILITIES, RegisterField, RegisterSnapshot};
+use plugin_api::{
+    AddressSpaceInfo, BinaryBlob, CartridgeStatus, ChipSnapshot, CpuFamily, CpuInfo, DebugCommand,
+    DebugResponse, DebugValue, DisassemblyLine, DiskStatus, FnPlugin, HostMouseButton,
+    ListProfilesRequest, ListProfilesResponse, MACHINE_PROFILE_CONTRACT_VERSION, MachineCapability,
+    MachineCommand, MachineCreateRequest, MachineCreateResponse, MachineInstanceCallRequest,
+    MachineInstanceCallResponse, MachineInstanceHandle, MachineKeyInfo, MachineMetadata,
+    MachineOptionInfo, MachineOptionKind, MachinePlugin, MachineProfile, MachineResponse,
+    MediaKind, MediaSlot, MediaSnapshot, NamedValue, REQUIRED_MACHINE_DEBUG_CAPABILITIES,
+    RegisterField, RegisterSnapshot,
+};
 
 const MACHINE_ID: &str = "atari-st";
 const PLUGIN_ID: &str = "retroclawd.atari-st.machine";
@@ -1268,9 +1277,9 @@ fn plugin_list_profiles(_request: ListProfilesRequest) -> Result<ListProfilesRes
     plugin_api::guard::guarded_call("list_profiles", || {
         Ok(ListProfilesResponse {
             profiles: [Chipset::St, Chipset::MegaSt, Chipset::Ste]
-            .into_iter()
-            .map(machine_profile_for)
-            .collect(),
+                .into_iter()
+                .map(machine_profile_for)
+                .collect(),
         })
     })
 }
