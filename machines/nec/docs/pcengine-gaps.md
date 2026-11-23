@@ -1,7 +1,8 @@
 # PC Engine / TurboGrafx-16: what is not done
 
-Status 2026-11-22: HuCards boot and play their title screens; 27 of 30 games sampled across the owner's 417 TurboGrafx-16 files agree
-with Beetle PCE Fast within a mean luminance difference of 8 (most within 1). Everything below is open.
+Status 2026-11-22: HuCards boot and play their title screens; of 84 games sampled across the owner's 417 TurboGrafx-16 files (every 5th,
+`scenarios/sweep.py --step 5`, picture at frame 600) 68 agree with Beetle PCE Fast within a mean luminance difference of 8 and most within 1. The 16 that
+do not are listed below. Everything here is open.
 
 ## Backup memory
 Lady Sword (RomM 7347, a 1 MB card) shows "no backup memory" at start-up and the reference goes on to the title. The card is
@@ -16,6 +17,20 @@ Card (firmware) and no game for the CD platforms (134 has no entries), so nothin
 ## SuperGrafx
 Not emulated: the second video controller (HuC6270), the video priority controller (HuC6202) and 32 KB of RAM. The RomM server has no SuperGrafx
 games (platform 124 is empty).
+
+## Timer counter polling
+Battle Royale (RomM 7178) seeds its random numbers by reading the timer counter in a loop until it is non-zero, with a reload-0 timer running. The reference stores `$7F` within the first frame; here the counter reads 0 for ever and the game waits. The timer's sequence matches the reference on four test cards (`scenarios/build.py` `pce-timer*.pce`) so the difference is in the instant of the underflow and the read (fact M3).
+
+## Games that do not match yet (sweep of 84, frame 600)
+Cause unknown unless stated; each was compared with the reference by work-RAM dumps at the same frames (`probe` `RAMOUT`, `libretro_run.py --ram-at`).
+- Ours stays black or at an earlier screen while the game's zero page keeps pace with the reference (rendering or VRAM-loading path): Turrican (7540: the game
+  clears VRAM from `$4400` up at 512 words every two frames and has not drawn by frame 600; the reference draws at frame 100), Kore ga Pro Yakyuu '90 (7341),
+  Cyber-Core (7226, draws but dark), Heavy Unit (7307), Jack Nicklaus' Golf (7318), Bullfight Ring no Hasha (7204), Walkure no Densetsu (7542),
+  Aoi Blink (7167), Toy Shop Boys (7535), Momotaro Densetsu II (7374), a 'Download' card (7249).
+- Ours waits for an interrupt-driven counter that stops advancing after the first timer interrupt: Drop Off (7257: `$25` stays 1, the reference reaches 58 by
+  frame 60; the timer counts and underflows here, the cause is not found). Battle Royale (7178): the timer-counter seed loop above.
+- Close but a different animation phase or small positional difference (mean 9-14): Galaga '90 (7290), TV Sports Hockey (7512), After Burner II (7160, 36: a
+  different frame of the scene).
 
 ## Other
 - **Populous** (a 256 KB card with 32 KB of battery RAM at banks `$40-$43`) and other cards with save RAM have no RAM bank.

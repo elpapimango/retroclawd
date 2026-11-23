@@ -114,7 +114,11 @@ fn main() {
             w[0], w[1], w[2], w[3]
         );
     }
-    println!("timer reload/enabled: {:?}", e.timer());
+    println!(
+        "timer reload/enabled: {:?}  irq mask/timer-pending: {:?}",
+        e.timer(),
+        e.irq_state()
+    );
     let pal_nz = (0..512u16).filter(|i| e.vce().entry(*i) != 0).count();
     println!(
         "palette nonzero entries: {pal_nz}; first: {:03X?}",
@@ -128,6 +132,24 @@ fn main() {
                 .collect();
             println!("VRAM {:04X}: {}", a + r * 8, w.join(" "));
         }
+    }
+    {
+        // runs of non-zero VRAM words, 256-word blocks
+        let mut line = String::new();
+        for blk in 0..128 {
+            let n = v.vram()[blk * 256..blk * 256 + 256]
+                .iter()
+                .filter(|w| **w != 0)
+                .count();
+            line.push(if n == 0 {
+                '.'
+            } else if n < 64 {
+                'o'
+            } else {
+                '#'
+            });
+        }
+        println!("VRAMMAP {line}");
     }
     let nz = v.vram().iter().filter(|w| **w != 0).count();
     println!("VRAM nonzero words: {nz}; frame {}", v.frame);

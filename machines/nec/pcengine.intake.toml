@@ -6,7 +6,7 @@ default_region = "ntsc"
 [implementation]
 status = "boots-with-gaps"
 boot_verified = true
-note = "2026-11-22: HuCards boot to their title screens through `rcd pcengine`; 27 of 30 sampled games agree with Beetle PCE Fast (see docs/pcengine-gaps.md). The CD-ROM unit, SuperGrafx and backup memory are open."
+note = "2026-11-22: HuCards boot to their title screens through `rcd pcengine`; 68 of 84 sampled games agree with Beetle PCE Fast (see docs/pcengine-gaps.md). The CD-ROM unit, SuperGrafx and backup memory are open."
 
 [core]
 reuse = []

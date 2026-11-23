@@ -71,11 +71,14 @@ class Asm:
         return bytes(self.code)
 
 
-def card(code, size=0x20000):
+def card(code, size=0x20000, timer_vector=None):
     rom = bytearray([0xEA] * size)
     rom[: len(code)] = code
     rom[0x1FFE] = 0x00
     rom[0x1FFF] = 0xE0
+    if timer_vector is not None:
+        rom[0x1FFA] = timer_vector & 0xFF
+        rom[0x1FFB] = timer_vector >> 8
     return bytes(rom)
 
 
@@ -104,6 +107,44 @@ def tone():
     a.sta_abs(0x0804)
     a.label("spin")
     a.branch(0x80, "spin")  # BRA
+    return card(a.finish())
+
+
+def timer_probe(reload, interrupts=False, ack=False):
+    """Starts the timer with the given reload value and stores 48 reads of its counter, ~110 cycles apart, in zero page $20-$4F."""
+    a = Asm()
+    preamble(a)
+    a.lda_abs(0x0C00)
+    a.b(0x85, 0x50)  # STA $50: the counter before the timer is ever started
+    if interrupts:
+        a.lda(0x01)
+        a.sta_abs(0x1402)  # IRQ2 off, IRQ1 and the timer on
+    a.lda(reload)
+    a.sta_abs(0x0C00)
+    a.lda(0x01)
+    a.sta_abs(0x0C01)
+    if ack:
+        a.sta_abs(0x1403)
+    if interrupts:
+        a.b(0x58)  # CLI
+    a.ldx(0x00)
+    a.label("loop")
+    a.lda_abs(0x0C00)
+    a.b(0x95, 0x20)  # STA $20,X
+    a.b(0xA0, 0x18)  # LDY #$18
+    a.label("delay")
+    a.b(0x88)  # DEY
+    a.branch(0xD0, "delay")
+    a.b(0xE8)  # INX
+    a.b(0xE0, 0x30)  # CPX #$30
+    a.branch(0xD0, "loop")
+    a.label("spin")
+    a.branch(0x80, "spin")
+    if interrupts:
+        a.label("isr")
+        a.sta_abs(0x1403)  # acknowledge
+        a.b(0x40)  # RTI
+        return card(a.finish(), timer_vector=a.labels["isr"])
     return card(a.finish())
 
 
@@ -205,7 +246,7 @@ def input_bars():
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "machines", "nec", "software", "scenarios")
     os.makedirs(out, exist_ok=True)
-    for name, data in (("pce-tone.pce", tone()), ("pce-input.pce", input_bars())):
+    for name, data in (("pce-tone.pce", tone()), ("pce-input.pce", input_bars()), ("pce-timer0.pce", timer_probe(0)), ("pce-timer5.pce", timer_probe(5)), ("pce-timer0i.pce", timer_probe(0, True)), ("pce-timer5i.pce", timer_probe(5, True)), ("pce-timer0a.pce", timer_probe(0, False, True)), ("pce-timer5a.pce", timer_probe(5, False, True))):
         with open(os.path.join(out, name), "wb") as f:
             f.write(data)
         print("wrote", os.path.join(out, name))

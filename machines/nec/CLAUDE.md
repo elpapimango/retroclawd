@@ -5,8 +5,8 @@ The NEC family of retroclawd (`machines/nec`): the PC Engine / TurboGrafx-16, Hu
 
 ## Status (2026-11-22)
 
-HuCards boot to their title screens: 27 of 30 games sampled across the owner's 417 files agree with Beetle PCE Fast, Mednafen's PC Engine core
-(libretro), within a mean luminance difference of 8, most within 1 (`scenarios/sweep.py`). `pcengine.manifest.toml`: 10 scenarios pass, one known gap (Lady
+HuCards boot to their title screens: 68 of 84 games sampled across the owner's 417 files agree with Beetle PCE Fast, Mednafen's PC Engine core
+(libretro), within a mean luminance difference of 8, most within 1 (`scenarios/sweep.py`); the 16 that do not are listed in `docs/pcengine-gaps.md`. `pcengine.manifest.toml`: 10 scenarios pass, one known gap (Lady
 Sword wants backup memory). Open: the CD-ROM unit and System Card (none on the server), SuperGrafx, backup memory, see `docs/pcengine-gaps.md`.
 What a reviewer should check first: `docs/review-notes.md`.
 

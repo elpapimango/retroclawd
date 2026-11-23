@@ -220,7 +220,7 @@ impl PcEngine {
                 vce: Vce::new(),
                 psg: Psg::new(),
                 timer_reload: 0,
-                timer_counter: 0,
+                timer_counter: 0x7F,
                 timer_enabled: false,
                 timer_acc: 0,
                 timer_irq: false,
@@ -401,6 +401,16 @@ impl PcEngine {
     #[must_use]
     pub fn timer(&self) -> (u8, bool) {
         (self.hw.timer_reload, self.hw.timer_enabled)
+    }
+
+    /// The interrupt disable mask and whether the timer request is pending (for debuggers).
+    #[must_use]
+    pub fn irq_state(&self) -> (u8, bool, u8) {
+        (
+            self.hw.irq_disable,
+            self.hw.timer_irq,
+            self.hw.timer_counter,
+        )
     }
 
     /// The scan line the beam is on.
