@@ -77,7 +77,7 @@ The repository is one cargo workspace:
 | `shared/` | the shared crates: `machine`, `plugin-api` (the typed machine protocol), the Z80, 6502 and 68000 cores, AY-3-8910, uPD765A, WD1770, `.dsk`, tape formats |
 | `machines/<family>/` | `sinclair`, `amstrad`, `commodore`, `atari`, `sega`, `snk`: machines, chips, formats, ROM tables (`firmware.toml`), documentation, scenario manifests; `roms/` and `software/` hold your own, git-ignored dumps |
 | `crates/` | app-only crates (configuration files, file loading, POK cheats) |
-| `rctools/` | the command-line tools and the integration suites (see Tools) |
+| `rctools/` | the scenario runner and integration suites that drive `rcdd` (the command-line tools are their own project, see Tools) |
 | `tools/` | build, smoke-test and check scripts |
 
 - `tools/smoke_test.sh` builds `rcd`, boots every machine headless and checks the boot screens against recorded
@@ -95,10 +95,7 @@ gamepad support -- Windows and macOS builds don't need anything extra.
 
 ## Tools
 
-`rctools/` (part of this workspace; `tools/build_all.sh --tools` builds it) holds command-line tools on the same
-crates: `rcasm`, a two-pass 6502/Z80/68000 assembler whose symbol files `--symbols` reads, and `rcdis`, a disassembler
-that writes source `rcasm` assembles back to the same bytes, disk, tape and CHD tools (`rcdisk`, `rctape`, `rcchd`),
-a linker (`rcld`), and `rc-scenarios`/`rc-suite`, the scenario runner and integration suites that drive `rcdd`.
+The command-line tools are a separate project, [retroclawd-tools](https://github.com/elpapimango/retroclawd-tools), released on its own: `rcasm`, a two-pass 6502/Z80/68000 assembler whose symbol files `--symbols` reads, `rcdis`, a disassembler that writes source `rcasm` assembles back to the same bytes, disk, tape and CHD tools (`rcdisk`, `rctape`, `rcchd`) and a linker (`rcld`); `tools/build_all.sh --tools` installs them from crates.io. They share the CPU cores and file-format crates with the emulator through [retroclawd-core](https://github.com/elpapimango/retroclawd-core). `rctools/` here holds `rc-scenarios`/`rc-suite`, the scenario runner and integration suites that drive `rcdd`.
 
 ## Running
 

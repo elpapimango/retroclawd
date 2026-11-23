@@ -9,8 +9,7 @@ serde = { version = "1", features = ["derive"] }
 # Opt-in adapter so hosts can use a parsed `.dsk` image directly as the
 # controller's medium (`Fdc<dsk::Disk>`) instead of each writing the same
 # wrapper. Off by default: the chip itself stays disk-format-agnostic.
-dsk = { path = "../../formats/dsk", optional = true }
-
+dsk = { package = "rc-dsk", version = "0.1", optional = true }
 [features]
 dsk = ["dep:dsk"]
 

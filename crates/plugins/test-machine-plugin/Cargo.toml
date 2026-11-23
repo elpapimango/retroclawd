@@ -10,7 +10,7 @@ description = "A do-nothing machine plugin used only by retroclawd's own unit te
 name = "test_machine_plugin_impl"
 
 [dependencies]
-machine = { path = "../../../shared/crates/machine" }
+machine = { package = "rc-machine", version = "0.1" }
 plugin-api = { path = "../../../shared/crates/plugin-api" }
-dsk = { path = "../../../shared/crates/formats/dsk" }
+dsk = { package = "rc-dsk", version = "0.1" }
 serde = { version = "1", features = ["derive"] }

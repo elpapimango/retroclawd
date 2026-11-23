@@ -5,15 +5,15 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-machine = { path = "../../../../../shared/crates/machine" }
-mos6502 = { path = "../../../../../shared/crates/core/6502" }
+machine = { package = "rc-machine", version = "0.1" }
+mos6502 = { package = "rc-mos6502", version = "0.1" }
 vic-i = { path = "../../chips/vic-i" }
 via6522 = { path = "../../chips/via-6522" }
-c64-tape = { path = "../../formats/c64-tape" }
+c64-tape = { package = "rc-c64-tape", version = "0.1" }
 vic20-cartridge = { path = "../../formats/vic20-cartridge" }
 drive-link = { path = "../drive-link" }
 c1541 = { path = "../1541" }
-d64 = { path = "../../formats/d64" }
+d64 = { package = "rc-d64", version = "0.1" }
 serde = { version = "1", features = ["derive"] }
 bincode = { version = "2", features = ["serde"] }
 sha1 = "0.10"

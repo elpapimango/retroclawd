@@ -5,11 +5,11 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-z80 = { path = "../../../../../shared/crates/core/z80" }
-machine = { path = "../../../../../shared/crates/machine" }
+z80 = { package = "rc-z80", version = "0.1" }
+machine = { package = "rc-machine", version = "0.1" }
 sinclair-keyboard = { path = "../../chips/sinclair-keyboard" }
-zx81-snapshot = { path = "../../formats/zx81-snapshot" }
-zx-tape = { path = "../../../../../shared/crates/formats/zx-tape" }
+zx81-snapshot = { package = "rc-zx81-snapshot", version = "0.1" }
+zx-tape = { package = "rc-zx-tape", version = "0.1" }
 serde = { version = "1", features = ["derive"] }
 bincode = { version = "2", features = ["serde"] }
 

@@ -5,13 +5,13 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-machine = { path = "../../../../../shared/crates/machine" }
-mos6502 = { path = "../../../../../shared/crates/core/6502" }
+machine = { package = "rc-machine", version = "0.1" }
+mos6502 = { package = "rc-mos6502", version = "0.1" }
 pia-6520 = { path = "../../../../../shared/crates/chips/pia-6520" }
 antic = { path = "../../chips/antic" }
 gtia = { path = "../../chips/gtia" }
 pokey = { path = "../../chips/pokey" }
-atari-media = { path = "../../formats/atari-media" }
+atari-media = { package = "rc-atari-media", version = "0.1" }
 serde = { version = "1", features = ["derive"] }
 bincode = { version = "2", features = ["serde"] }
 sha1 = "0.10"

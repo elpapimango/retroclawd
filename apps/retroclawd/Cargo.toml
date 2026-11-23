@@ -23,9 +23,9 @@ serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls-native-roots"] }
 # --firmware auto takes a published firmware out of its release zip.
 zip = { version = "2", default-features = false, features = ["deflate"] }
-machine = { path = "../../shared/crates/machine" }
-z80 = { path = "../../shared/crates/core/z80" }
-mos6502 = { path = "../../shared/crates/core/6502" }
+machine = { package = "rc-machine", version = "0.1" }
+z80 = { package = "rc-z80", version = "0.1" }
+mos6502 = { package = "rc-mos6502", version = "0.1" }
 plugin-api = { path = "../../shared/crates/plugin-api" }
 game-config = { path = "../../crates/formats/game-config" }
 app-config = { path = "../../crates/formats/app-config" }
@@ -114,5 +114,5 @@ build-info = { path = "../../shared/crates/build-info" }
 # A do-nothing machine for the unit tests: no machine code lives in this repository.
 test-machine-plugin = { path = "../../crates/plugins/test-machine-plugin" }
 zip = { version = "2", default-features = false, features = ["deflate"] }
-dsk = { path = "../../shared/crates/formats/dsk" }
+dsk = { package = "rc-dsk", version = "0.1" }
 tempfile = "3"

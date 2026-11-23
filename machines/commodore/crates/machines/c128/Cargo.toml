@@ -5,9 +5,9 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-machine = { path = "../../../../../shared/crates/machine" }
-mos6502 = { path = "../../../../../shared/crates/core/6502" }
-z80 = { path = "../../../../../shared/crates/core/z80" }
+machine = { package = "rc-machine", version = "0.1" }
+mos6502 = { package = "rc-mos6502", version = "0.1" }
+z80 = { package = "rc-z80", version = "0.1" }
 vic-ii = { path = "../../chips/vic-ii" }
 sid = { path = "../../chips/sid" }
 cia6526 = { path = "../../chips/cia-6526" }
@@ -17,7 +17,7 @@ bincode = { version = "2", features = ["serde"] }
 
 [dev-dependencies]
 drive-link = { path = "../drive-link" }
-d64 = { path = "../../formats/d64" }
-d71 = { path = "../../formats/d71" }
-d81 = { path = "../../formats/d81" }
+d64 = { package = "rc-d64", version = "0.1" }
+d71 = { package = "rc-d71", version = "0.1" }
+d81 = { package = "rc-d81", version = "0.1" }
 c1541 = { path = "../1541" }

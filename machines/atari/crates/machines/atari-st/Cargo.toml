@@ -6,8 +6,8 @@ license = "GPL-3.0-or-later"
 description = "Atari ST/STF/STFM: memory map, event scheduler and the Machine implementation"
 
 [dependencies]
-machine = { path = "../../../../../shared/crates/machine" }
-mc68000 = { path = "../../../../../shared/crates/core/68000" }
+machine = { package = "rc-machine", version = "0.1" }
+mc68000 = { package = "rc-mc68000", version = "0.1" }
 serde = { version = "1", features = ["derive"] }
 bincode = { version = "2", features = ["serde"] }
 crc32fast = "1"
