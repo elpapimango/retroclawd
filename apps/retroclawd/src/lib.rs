@@ -1929,7 +1929,8 @@ fn run_text_verb(args: &[OsString]) -> ExitCode {
     }
 }
 
-fn main() -> ExitCode {
+/// The program: `rcd`, `rcdd` and the variants are one-line wrappers around this.
+pub fn run() -> ExitCode {
     // No arguments at all (e.g. double-clicked on Windows with no console
     // attached) is not a usage error -- just show how to use it and exit
     // cleanly instead of failing with no visible error message.

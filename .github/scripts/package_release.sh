@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 # Stages and archives a release for the current platform.
 #
-#   package_release.sh [--dev]
+#   package_release.sh [--dev] [--no-variants]
 #
-# Builds `rcd` (the player: every machine, no debugging code) and `rcdd` (the same with the `debug` feature) and
-# lays them out as
+# Builds `rcd` (the player: every machine, no debugging code), `rcdd` (the same with the `debug` feature) and the
+# single-kind players `rcda` (arcade), `rcdc` (console) and `rcdh` (home computers), and lays them out as
 #
 #   retroclawd-<version>-<target>/
-#     rcd[.exe]
-#     rcdd[.exe]
+#     rcd[.exe]  rcdd[.exe]  rcda[.exe]  rcdc[.exe]  rcdh[.exe]
 #     VERSION.txt     what `rcd --list-plugins` reports (the machines inside)
 #     SHA256SUMS
 #
@@ -20,10 +19,12 @@ cd "$(dirname "$0")/../.."
 
 PROFILE=release
 FLAGS=()
+VARIANTS=1
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dev) PROFILE=debug; FLAGS=(--dev); shift ;;
-    *) echo "usage: $0 [--dev]" >&2; exit 2 ;;
+    --no-variants) VARIANTS=0; shift ;;
+    *) echo "usage: $0 [--dev] [--no-variants]" >&2; exit 2 ;;
   esac
 done
 
@@ -34,18 +35,22 @@ case "$TARGET" in
   *)         EXE=;     ARCHIVE=tar ;;
 esac
 
+BINS=(rcd rcdd)
 tools/build_all.sh ${FLAGS[@]+"${FLAGS[@]}"}
+if [[ $VARIANTS -eq 1 ]]; then
+  for v in a c h; do tools/build_all.sh ${FLAGS[@]+"${FLAGS[@]}"} --variant "$v"; BINS+=("rcd$v"); done
+fi
 
 NAME="retroclawd-${VERSION}-${TARGET}"
 STAGE="dist/${NAME}"
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
-cp "target/${PROFILE}/rcd${EXE}" "target/${PROFILE}/rcdd${EXE}" "$STAGE/"
+for b in "${BINS[@]}"; do cp "target/${PROFILE}/${b}${EXE}" "$STAGE/"; done
 
 # The staged executables must work on their own.
 ( cd "$STAGE" && "./rcd${EXE}" --list-plugins ) > "$STAGE/VERSION.txt"
 grep -q '^Host' "$STAGE/VERSION.txt"
-( cd "$STAGE" && "./rcdd${EXE}" --list-plugins >/dev/null )
+for b in "${BINS[@]}"; do ( cd "$STAGE" && "./${b}${EXE}" --list-plugins >/dev/null ); done
 
 ( cd "$STAGE" && find . -type f ! -name SHA256SUMS | sort | xargs sha256sum > SHA256SUMS )
 

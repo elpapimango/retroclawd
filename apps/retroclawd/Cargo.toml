@@ -78,28 +78,32 @@ debug-zrcp = []
 debug-log = ["dep:tracing-subscriber"]
 profiling = ["bevy/trace_tracy"]
 
+[lib]
+name = "retroclawd"
+path = "src/lib.rs"
+
 [[bin]]
 name = "rcd"
-path = "src/main.rs"
+path = "src/bin/rcd.rs"
 
 [[bin]]
 name = "rcdd"
-path = "src/main.rs"
+path = "src/bin/rcdd.rs"
 required-features = ["debug"]
 
 [[bin]]
 name = "rcda"
-path = "src/main.rs"
+path = "src/bin/rcda.rs"
 required-features = ["variant-arcade"]
 
 [[bin]]
 name = "rcdc"
-path = "src/main.rs"
+path = "src/bin/rcdc.rs"
 required-features = ["variant-console"]
 
 [[bin]]
 name = "rcdh"
-path = "src/main.rs"
+path = "src/bin/rcdh.rs"
 required-features = ["variant-home"]
 
 [build-dependencies]

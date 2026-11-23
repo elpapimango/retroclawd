@@ -1,7 +1,7 @@
 name: Release artifacts
 
-# Manual: builds `rcd` (play) and `rcdd` (develop) on each platform and uploads the archives made by
-# .github/scripts/package_release.sh. Each archive holds the two executables and nothing else: every machine
+# Manual: builds `rcd` (play), `rcdd` (develop) and the single-kind `rcda`, `rcdc`, `rcdh` on each platform and uploads the archives made by
+# .github/scripts/package_release.sh. Each archive holds the five executables and nothing else: every machine
 # is linked into them. Only the Linux leg has been run by hand so far; check the Windows and macOS legs the
 # first time they are used.
 on:
