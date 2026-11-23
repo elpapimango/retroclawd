@@ -19,11 +19,11 @@ serde.workspace = true
 toml.workspace = true
 clap.workspace = true
 sha2 = "0.10"
-rcasm = { version = "0.1" }
+rcasm = { version = "0.2" }
 cpc-snapshot.workspace = true
 
 [dev-dependencies]
-rcld = { version = "0.1" }
-rcdisk = { version = "0.1" }
-rcsnap = { version = "0.1" }
+rcld = { version = "0.2" }
+rcdisk = { version = "0.2" }
+rcsnap = { version = "0.2" }
 zx-tape.workspace = true

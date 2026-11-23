@@ -76,7 +76,7 @@ if [[ $TOOLS -eq 1 ]]; then
   if [[ -n ${RC_TOOLS_SRC:-} ]]; then
     for t in "${RCTOOLS[@]}"; do cargo install --path "$RC_TOOLS_SRC/crates/$t" --root "$ROOT/target/rc-tools" --force; done
   else
-    RC_TOOLS_VERSION="${RC_TOOLS_VERSION:-0.1.0}"   # exact version, bump on purpose
+    RC_TOOLS_VERSION="${RC_TOOLS_VERSION:-0.2.0}"   # exact version, bump on purpose
     cargo install "${RCTOOLS[@]/%/@$RC_TOOLS_VERSION}" --root "$ROOT/target/rc-tools" --locked
   fi
   mkdir -p "target/$PROFILE"
