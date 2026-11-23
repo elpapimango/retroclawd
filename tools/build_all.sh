@@ -76,7 +76,8 @@ if [[ $TOOLS -eq 1 ]]; then
   if [[ -n ${RC_TOOLS_SRC:-} ]]; then
     for t in "${RCTOOLS[@]}"; do cargo install --path "$RC_TOOLS_SRC/crates/$t" --root "$ROOT/target/rc-tools" --force; done
   else
-    cargo install "${RCTOOLS[@]}" --root "$ROOT/target/rc-tools" --locked
+    RC_TOOLS_VERSION="${RC_TOOLS_VERSION:-0.1.0}"   # exact version, bump on purpose
+    cargo install "${RCTOOLS[@]/%/@$RC_TOOLS_VERSION}" --root "$ROOT/target/rc-tools" --locked
   fi
   mkdir -p "target/$PROFILE"
   for t in "${RCTOOLS[@]}"; do cp -f "target/rc-tools/bin/$t$EXE" "target/$PROFILE/$t$EXE"; done
