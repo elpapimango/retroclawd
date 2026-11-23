@@ -21,7 +21,9 @@ pub const FRAME_CLOCKS: u32 = LINE_CLOCKS * FRAME_LINES;
 pub const SAMPLE_RATE: u32 = huc6280_psg::SAMPLE_RATE;
 /// The picture is always 512 dots wide: narrower modes are widened.
 pub const CANVAS_W: usize = 512;
-const CANVAS_H: usize = 264;
+const CANVAS_H: usize = 243;
+/// Lines of border shown above the first active line.
+const TOP_OVERSCAN: usize = 3;
 /// Timer: one tick every 1024 high-speed CPU cycles.
 const TIMER_CLOCKS: u32 = 3072;
 
@@ -199,7 +201,6 @@ pub struct PcEngine {
     line: u32,
     line_clock: u32,
     canvas: Vec<u8>,
-    canvas_h: usize,
     line_buf: Vec<u16>,
 }
 
@@ -230,7 +231,6 @@ impl PcEngine {
             line: 0,
             line_clock: 0,
             canvas: vec![0; CANVAS_W * CANVAS_H * 3],
-            canvas_h: 224,
             line_buf: Vec::new(),
         };
         e.reset();
@@ -283,20 +283,29 @@ impl PcEngine {
     }
 
     fn next_line(&mut self) {
-        let lines = u32::from(self.hw.vce.lines());
+        let lines = u32::from(self.hw.vdc.frame_lines());
         let line = self.line;
         let mut buf = std::mem::take(&mut self.line_buf);
-        if self.hw.vdc.start_line(line as u16, &mut buf) {
-            let row = usize::from(line as u16 - self.hw.vdc.active_start());
-            if row < CANVAS_H {
-                let width = buf.len().max(1);
-                let base = row * CANVAS_W * 3;
+        let drew = self.hw.vdc.start_line(line as u16, &mut buf).is_some();
+        // the picture window starts a few lines above the first active line, like the television's overscan
+        let out_row = line as i32 - i32::from(self.hw.vdc.frame_start()) + TOP_OVERSCAN as i32;
+        if (0..CANVAS_H as i32).contains(&out_row) {
+            let base = out_row as usize * CANVAS_W * 3;
+            if drew {
+                // the picture's nominal width for the dot clock; a wider register setting is cropped on the right
+                let nominal = match self.hw.vce.dot_clock() {
+                    0 => 256,
+                    1 => 352,
+                    _ => 512,
+                };
+                let width = buf.len().clamp(1, nominal);
                 for x in 0..CANVAS_W {
                     let src = buf[x * width / CANVAS_W];
-                    let rgb = self.hw.vce.rgb(if src == 0 { 0 } else { src });
+                    let rgb = self.hw.vce.rgb(src);
                     self.canvas[base + x * 3..base + x * 3 + 3].copy_from_slice(&rgb);
                 }
-                self.canvas_h = row + 1;
+            } else {
+                self.canvas[base..base + CANVAS_W * 3].fill(0);
             }
         }
         self.line_buf = buf;
@@ -306,15 +315,11 @@ impl PcEngine {
         }
     }
 
-    /// The picture: 512 dots wide, one row per active line.
+    /// The picture: 512 dots wide and 243 lines, the window the reference emulators show (3 lines above the first
+    /// active line and 240 below it; a taller display is cropped).
     #[must_use]
     pub fn render_rgb(&self) -> (u32, u32, Vec<u8>) {
-        let h = usize::from(self.hw.vdc.display_height()).clamp(1, CANVAS_H);
-        (
-            CANVAS_W as u32,
-            h as u32,
-            self.canvas[..CANVAS_W * h * 3].to_vec(),
-        )
+        (CANVAS_W as u32, CANVAS_H as u32, self.canvas.clone())
     }
 
     pub fn drain_audio(&mut self) -> Vec<f32> {

@@ -2,7 +2,7 @@
 //!
 //! Dumps come as `.pce` (or `.tg16`) files, sometimes with a 512-byte copier header, and some US dumps have the
 //! bits of every byte reversed. The card's mapping depends on its size: sizes that are a power of two repeat
-//! through the 1 MB space, a 384 KB card repeats its last 128 KB, and the 2.5 MB Street Fighter II card has a
+//! through the 1 MB space, a 384 KB card is a 256 KB and a 128 KB chip (bank bit 6 picks the chip), and the 2.5 MB Street Fighter II card has a
 //! switchable 512 KB window. Facts: `machines/nec/docs/hardware-facts.md`, rows M1-M8.
 #![forbid(unsafe_code)]
 
@@ -95,8 +95,12 @@ impl Card {
             };
         }
         if self.rom.len() == 0x6_0000 {
-            let b = bank & 0x3F;
-            return if b < 0x20 { b } else { 0x20 + (b & 0x0F) };
+            // two chips: bank bit 6 picks the 128 KB one (repeated through its half), else the 256 KB one
+            return if bank & 0x40 != 0 {
+                0x20 + (bank & 0x0F)
+            } else {
+                bank & 0x1F
+            };
         }
         if pages.is_power_of_two() {
             bank & (pages - 1)
@@ -179,12 +183,14 @@ mod tests {
     }
 
     #[test]
-    fn a_384k_card_repeats_its_last_128k() {
+    fn a_384k_card_is_two_chips() {
         let c = Card::from_bytes(card(0x6_0000)).unwrap();
         assert_eq!(c.read(0x1F, 0), 31);
-        assert_eq!(c.read(0x20, 0), 32);
-        assert_eq!(c.read(0x30, 0), 32);
-        assert_eq!(c.read(0x4F, 0), 15);
+        assert_eq!(c.read(0x20, 0), 0);
+        assert_eq!(c.read(0x40, 0), 32);
+        assert_eq!(c.read(0x4F, 0), 47);
+        assert_eq!(c.read(0x5F, 0), 47);
+        assert_eq!(c.read(0x6F, 0), 47);
     }
 
     #[test]

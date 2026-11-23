@@ -38,6 +38,7 @@ pub struct Vdc {
     /// The first active line of the frame, and the line counter within the display.
     active_start: u16,
     pub frame: u32,
+    frame_total: u16,
 }
 
 mod serde_words {
@@ -72,6 +73,7 @@ impl Vdc {
             byr_reload: false,
             active_start: 0,
             frame: 0,
+            frame_total: 263,
         }
     }
 
@@ -233,6 +235,19 @@ impl Vdc {
         (self.reg[0x0D] & 0x1FF) + 1
     }
 
+    /// The number of lines in a frame: the lines before the picture, the picture and the `VCR` lines after it.
+    /// Latched at the start of each frame, clamped to what a television can show.
+    #[must_use]
+    pub fn frame_lines(&self) -> u16 {
+        self.frame_total
+    }
+
+    /// The first active line of the frame as latched when the frame began.
+    #[must_use]
+    pub fn frame_start(&self) -> u16 {
+        self.active_start
+    }
+
     /// The first active line of the frame (counted from the first line of the frame).
     #[must_use]
     pub fn active_start(&self) -> u16 {
@@ -243,11 +258,15 @@ impl Vdc {
 
     /// Called at the start of every line of the frame. `line` counts from 0 at the first line of the frame.
     /// Sets the line-based status flags and, for an active line, draws it into `out` (palette indexes, one per
-    /// dot, `display_width()` of them) and returns true.
-    pub fn start_line(&mut self, line: u16, out: &mut Vec<u16>) -> bool {
+    /// dot, `display_width()` of them) and returns its row within the picture (0 for the first active line).
+    pub fn start_line(&mut self, line: u16, out: &mut Vec<u16>) -> Option<u16> {
         if line == 0 {
             self.frame = self.frame.wrapping_add(1);
             self.active_start = self.active_start();
+            let total = u32::from(self.active_start)
+                + u32::from(self.display_height())
+                + u32::from(self.reg[0x0E] & 0xFF);
+            self.frame_total = total.clamp(262, 525) as u16;
         }
         let start = self.active_start;
         let height = self.display_height();
@@ -255,19 +274,21 @@ impl Vdc {
         // raster compare: the counter is 64 on the first active line
         if line >= start {
             let counter = 64 + (line - start);
-            if counter == (self.reg[6] & 0x3FF) {
+            if counter == (self.reg[6] & 0x3FF) && self.reg[5] & 4 != 0 {
                 self.status |= ST_RR;
             }
         }
         if line == start + height {
-            self.status |= ST_VD;
+            if self.reg[5] & 8 != 0 {
+                self.status |= ST_VD;
+            }
             if self.satb_pending || self.reg[0x0F] & 0x10 != 0 {
                 self.satb_pending = false;
                 self.satb_dma();
             }
         }
         if !active {
-            return false;
+            return None;
         }
         if line == start {
             self.bg_y = self.reg[8] & 0x1FF;
@@ -279,7 +300,7 @@ impl Vdc {
             self.bg_y = (self.bg_y + 1) & 0x1FF;
         }
         self.draw_line(line - start, out);
-        true
+        Some(line - start)
     }
 
     fn draw_line(&mut self, row: u16, out: &mut Vec<u16>) {
@@ -346,7 +367,7 @@ impl Vdc {
             cells_used += cells;
             chosen.push(i);
         }
-        if overflow {
+        if overflow && self.reg[5] & 2 != 0 {
             self.status |= ST_OR;
         }
         let bg_line = out.to_vec();
@@ -401,7 +422,9 @@ impl Vdc {
                 if i == 0 {
                     sprite0_mask[d] = true;
                 } else if sprite0_mask[d] {
-                    self.status |= ST_CR;
+                    if self.reg[5] & 1 != 0 {
+                        self.status |= ST_CR;
+                    }
                 }
                 let behind = attr & 0x80 == 0 && bg_opaque[d];
                 // a lower-numbered sprite wins the dot even when it hides behind the background
@@ -454,7 +477,7 @@ mod tests {
         let start = v.active_start();
         for l in 0..=start {
             let drew = v.start_line(l, &mut line);
-            assert_eq!(drew, l == start);
+            assert_eq!(drew.is_some(), l == start);
         }
         assert_eq!(line.len(), 256);
         assert_eq!(line[0], (3 << 4) | 1);
@@ -481,7 +504,7 @@ mod tests {
         for l in 0..start + 13 {
             let drew = v.start_line(l, &mut line);
             if l == start + 11 {
-                assert!(drew);
+                assert!(drew.is_some());
                 assert_eq!(line[8], 256 + (5 << 4) + 1);
                 assert_eq!(line[11], 256 + (5 << 4) + 1);
                 assert_eq!(line[12], 0);
