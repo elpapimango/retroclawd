@@ -1,0 +1,7 @@
+machine = "pcengine"
+name = "timer"
+entry = "start"
+fill = 0xEA
+
+[[input]]
+asm = ["timer.asm"]

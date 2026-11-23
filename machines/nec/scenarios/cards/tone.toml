@@ -1,0 +1,7 @@
+machine = "pcengine"
+name = "tone"
+entry = "start"
+fill = 0xEA
+
+[[input]]
+asm = ["tone.asm"]
