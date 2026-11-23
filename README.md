@@ -241,12 +241,11 @@ batch mode means it spins forever) -- `--max-cycles` caps it, or Ctrl+C.
   `debug-ui[:OPT[:OPT...]]`, `debug-log[:OPT[:OPT...]]`,
   `debug-zrcp[:OPT[:OPT...]]` (legacy alias `debug-tcp[:OPT[:OPT...]]`),
   `debugger[:OPT[:OPT...]]` (legacy alias for `debug-ui`), `machine=<path>`, or plain `<path>` (the debuggers take options, never a path: they are built in)
-- Every machine is a plugin library (`*_machine_plugin.dll` / `.so` / `.dylib`) that `retroclawd`
-  loads at startup from `plugins/` next to the executable, the executable's own folder or `./plugins`
-  (override with `RETROCLAWD_MACHINE_PLUGIN_DIRS`). `cargo build --workspace` builds the app and
-  all the libraries; copy `retroclawd` plus the libraries you want, and delete a library to remove
-  that machine. The debuggers (`debug-ui`, `debug-zrcp`, `debug-log`) are not plugins: they are
-  modules of the app, each behind a cargo feature of the same name (on by default).
+- Every machine is linked into the program (since 2026-11-22 there are no plugin libraries and no `plugins/` folder):
+  `rcd` is the player with every machine, `rcdd` the same program with the debuggers (`debug-ui`, `debug-zrcp`,
+  `debug-log`), `--symbols` and the diagnostic reports. Cargo features choose the machines (`home`, `console`, `arcade`,
+  or one family); `tools/build_all.sh` builds both executables. "Plugin" in the options below means a machine family's
+  options and, for `--plugin debug-ui` and the like, a built-in debugger.
 - `--program <path>` -- optional standalone program to load and run
   instead of booting the ROM, with `--org <0xNNNN>` for its load address
   (default `0x4000`) -- works in both GUI and `--headless` mode; mutually
