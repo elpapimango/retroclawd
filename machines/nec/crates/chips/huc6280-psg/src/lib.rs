@@ -63,6 +63,8 @@ pub struct Psg {
     /// PSG ticks owed (fractional carry, in 1/SAMPLE_RATE units).
     tick_carry: u64,
     out: Vec<f32>,
+    /// The AC-coupling filter's memory (left and right: last input, last output).
+    dc: [(f32, f32); 2],
 }
 
 impl Default for Psg {
@@ -89,6 +91,7 @@ impl Psg {
             phase: 0,
             tick_carry: 0,
             out: Vec::new(),
+            dc: [(0.0, 0.0); 2],
         }
     }
 
@@ -238,7 +241,7 @@ impl Psg {
                 gr
             };
         }
-        (l * 0.5, r * 0.5)
+        (l * 0.1655, r * 0.1655)
     }
 
     /// Advances by `master` master-clock cycles, appending the stereo samples finished meanwhile.
@@ -254,8 +257,13 @@ impl Psg {
                 self.tick();
             }
             let (l, r) = self.mix();
-            self.out.push(l);
-            self.out.push(r);
+            // the output is AC coupled: a channel parked at a non-zero level does not leave an offset
+            for (i, v) in [l, r].into_iter().enumerate() {
+                let (x1, y1) = self.dc[i];
+                let y = v - x1 + 0.998 * y1;
+                self.dc[i] = (v, y);
+                self.out.push(y);
+            }
         }
     }
 

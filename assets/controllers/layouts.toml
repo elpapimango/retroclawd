@@ -91,6 +91,26 @@ start = "Start{n}"
 select = "Coin{n}"
 r1 = "Select{n}"
 
+# PC Engine / TurboGrafx-16: button II on the bottom face button and I on the right, as the two-button pad's II and I sit left to right;
+# Select and Run on the pad's own Select and Start.
+[[layout]]
+machines = ["pcengine"]
+[layout.buttons]
+up = "Joy{n}Up"
+down = "Joy{n}Down"
+left = "Joy{n}Left"
+right = "Joy{n}Right"
+stick_up = "Joy{n}Up"
+stick_down = "Joy{n}Down"
+stick_left = "Joy{n}Left"
+stick_right = "Joy{n}Right"
+south = "Joy{n}II"
+east = "Joy{n}I"
+west = "Joy{n}II"
+north = "Joy{n}I"
+start = "Joy{n}Run"
+select = "Joy{n}Select"
+
 # Every other machine: a joystick with one fire button, which any face or shoulder button presses.
 [[layout]]
 machines = ["*"]

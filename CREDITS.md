@@ -128,3 +128,8 @@ hardware-numbered Gate Array palette from CPCTech, and C64's Pepto palette
 from `vic-ii`. ZX81 exposes its monochrome black/white display colors. The
 Bitmap Explorer receives these through `plugin-api`; it does not read or
 mutate live renderer state.
+
+## NEC PC Engine / TurboGrafx-16 (2026-11-22)
+
+- Reference emulator: Beetle PCE Fast 1.31.0.0, Mednafen's PC Engine core through its libretro build (https://github.com/libretro/beetle-pce-fast-libretro), used as a black box (pictures, RAM, audio, input); its source was not read or copied.
+- Hardware documentation: the HuC6280, HuC6270 and HuC6260 documentation as the author knew it (the community's PC Engine technical notes); each fact is a row of `machines/nec/docs/hardware-facts.md` and rows tagged `[H]` were recalled, not re-fetched, and need a source check (`machines/nec/docs/review-notes.md`).

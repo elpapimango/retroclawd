@@ -25,8 +25,51 @@ fn main() {
         e.step();
     }
     let mut clocks = 0u64;
+    let mut audio: Vec<f32> = Vec::new();
+    // PRESS=frame:Key,frame:Key... holds a key from that frame on (prefix `-` to release)
+    let presses: Vec<(u64, String)> = std::env::var("PRESS")
+        .unwrap_or_default()
+        .split(',')
+        .filter_map(|p| {
+            p.split_once(':')
+                .map(|(f, k)| (f.parse().unwrap_or(0), k.to_string()))
+        })
+        .collect();
     while clocks < frames * u64::from(FRAME_CLOCKS) {
+        for (f, k) in &presses {
+            if clocks / u64::from(FRAME_CLOCKS) == *f && clocks % u64::from(FRAME_CLOCKS) < 400 {
+                match k.strip_prefix('-') {
+                    Some(key) => e.set_key(key, false),
+                    None => e.set_key(k, true),
+                };
+            }
+        }
         clocks += u64::from(e.step());
+        if clocks % 4096 < 16 {
+            audio.extend(e.drain_audio());
+        }
+    }
+    audio.extend(e.drain_audio());
+    if let Ok(out) = std::env::var("AUDIOOUT") {
+        let mut w = Vec::new();
+        let data: Vec<u8> = audio
+            .iter()
+            .flat_map(|s| ((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes())
+            .collect();
+        w.extend(b"RIFF");
+        w.extend((36 + data.len() as u32).to_le_bytes());
+        w.extend(b"WAVEfmt ");
+        w.extend(16u32.to_le_bytes());
+        w.extend(1u16.to_le_bytes());
+        w.extend(2u16.to_le_bytes());
+        w.extend(44_100u32.to_le_bytes());
+        w.extend((44_100u32 * 4).to_le_bytes());
+        w.extend(4u16.to_le_bytes());
+        w.extend(16u16.to_le_bytes());
+        w.extend(b"data");
+        w.extend((data.len() as u32).to_le_bytes());
+        w.extend(data);
+        std::fs::write(out, w).unwrap();
     }
     let tail: usize = std::env::var("RC_TRACE_END")
         .ok()

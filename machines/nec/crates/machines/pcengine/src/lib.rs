@@ -49,6 +49,8 @@ struct Hw {
     io_sel: bool,
     io_clr: bool,
     io_counter: u8,
+    /// A multitap is plugged in: the counter picks the pad. Without one the port reads the first pad always.
+    multitap: bool,
     /// Buttons held per pad (bit set = pressed): I, II, Select, Run, Up, Right, Down, Left.
     pads: [u8; 5],
     console: Console,
@@ -73,11 +75,12 @@ impl Hw {
     }
 
     fn io_read(&self) -> u8 {
-        let pad = if usize::from(self.io_counter) < self.pads.len() {
-            self.pads[usize::from(self.io_counter)]
+        let index = if self.multitap {
+            usize::from(self.io_counter)
         } else {
             0
         };
+        let pad = self.pads.get(index).copied().unwrap_or(0);
         let nibble = if self.io_sel {
             // directions: up, right, down, left
             (pad >> 4) & 0x0F
@@ -225,6 +228,7 @@ impl PcEngine {
                 io_sel: false,
                 io_clr: false,
                 io_counter: 0,
+                multitap: false,
                 pads: [0; 5],
                 console,
             },
@@ -235,6 +239,11 @@ impl PcEngine {
         };
         e.reset();
         Ok(e)
+    }
+
+    /// Plugs in (or removes) a multitap so pads 2-5 can be read.
+    pub fn set_multitap(&mut self, on: bool) {
+        self.hw.multitap = on;
     }
 
     pub fn reset(&mut self) {
@@ -287,7 +296,8 @@ impl PcEngine {
         let line = self.line;
         let mut buf = std::mem::take(&mut self.line_buf);
         let drew = self.hw.vdc.start_line(line as u16, &mut buf).is_some();
-        // the picture window starts a few lines above the first active line, like the television's overscan
+        // the picture window starts a few lines above the first active line, like the television's overscan; the lines
+        // outside the picture show the border colour
         let out_row = line as i32 - i32::from(self.hw.vdc.frame_start()) + TOP_OVERSCAN as i32;
         if (0..CANVAS_H as i32).contains(&out_row) {
             let base = out_row as usize * CANVAS_W * 3;
@@ -305,7 +315,11 @@ impl PcEngine {
                     self.canvas[base + x * 3..base + x * 3 + 3].copy_from_slice(&rgb);
                 }
             } else {
-                self.canvas[base..base + CANVAS_W * 3].fill(0);
+                // outside the picture the border shows palette entry $100
+                let border = self.hw.vce.rgb(0x100);
+                for x in 0..CANVAS_W {
+                    self.canvas[base + x * 3..base + x * 3 + 3].copy_from_slice(&border);
+                }
             }
         }
         self.line_buf = buf;
@@ -412,6 +426,7 @@ impl PcEngine {
                 io_sel: self.hw.io_sel,
                 io_clr: self.hw.io_clr,
                 io_counter: self.hw.io_counter,
+                multitap: self.hw.multitap,
                 pads: self.hw.pads,
                 console: self.hw.console,
             },

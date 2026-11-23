@@ -1,0 +1,132 @@
+machine = "pcengine"
+# The games come from the owner's RomM server (platform 130) by scenarios/capture_pce_goldens.py into software/roms/; the test cards come from
+# scenarios/build.py (software/scenarios/). Neither is committed. The goldens are Beetle PCE Fast's pictures (Mednafen's PC Engine core, through
+# its libretro build), never committed; capture_pce_goldens.py prints their hashes.
+# A HuCard needs no firmware. The CD-ROM unit and the System Card are not emulated (S7 has no hardware test ROM for the HuCard; there is no
+# CD-ROM content or System Card on the server), see docs/pcengine-gaps.md.
+
+[reference]
+emulator = "beetle-pce-fast"
+version = "1.31.0.0 (Mednafen PC Engine, libretro core)"
+command = "machines/nec/scenarios/capture_pce_goldens.py (libretro_run.py with mednafen_pce_fast_libretro, --device 0=1)"
+
+# The reference shows a 256x243 picture where we show 512x243 of the same lines: only the content is compared, by similarity.
+
+# S1: Air Zonk's Hudson legal screen (frame 160: text only, 2 pictures of sprites on black) and its title scene (frame 600: a city skyline, background and
+# sprites, palette fades finished).
+[[scenario]]
+id = "S1-airzonk-160"
+kind = "screen"
+frames = 160
+files = { rom = "nec/software/roms/airzonk.pce" }
+golden = "pcengine/S1-airzonk-160.png"
+golden_sha256 = "26f73b39d19071793b6041975f9fb794933a52dc6f47e7cc3a16c781b058764f"
+compare = { mode = "similarity", max_mad = 1.0, reason = "another emulator's rasterisation: glyph edges are drawn at a different sub-pixel position after scaling 256 to 512 columns" }
+
+[[scenario]]
+id = "S1-airzonk-600"
+kind = "screen"
+frames = 600
+files = { rom = "nec/software/roms/airzonk.pce" }
+golden = "pcengine/S1-airzonk-600.png"
+golden_sha256 = "0c75536dfb0d9ccacec16f946b219667ca576338676930e227cc3d771d6bf610"
+compare = { mode = "similarity", max_mad = 4.0, reason = "another emulator's frame timing: the title scene is animated (the hero's lightning bolt, a flying object) a few frames apart; the building and sky agree" }
+
+# S2: pce-input.pce draws the first pad's eight inputs as eight squares; holding button I and Run lights the first and the fourth. The reference's
+# RetroPad A is button I, B is button II, Start is Run.
+[[scenario]]
+id = "S2-pad"
+kind = "screen"
+frames = 40
+files = { rom = "nec/software/scenarios/pce-input.pce" }
+actions = ["10:key_down=Joy1I", "10:key_down=Joy1Run"]
+golden = "pcengine/S2-pad.png"
+golden_sha256 = "cbde246c7934daa55f9e5c5d6194dd053a34eb90d8cebce670fa9f62a446d3e7"
+compare = { mode = "similarity", max_mad = 0.5, reason = "the squares are 8 dots wide in both; only the scaling differs" }
+
+# S3: four more cards reach their own screens: Gradius (512 KB power-of-two mirroring), Samurai-Ghost, Cadash (a 384 KB card: two chips, bank bit 6 picks
+# the 128 KB one) and Bomberman '93; Street Fighter II' Champion Edition (the 2.5 MB card with the $1FF0 bank window).
+[[scenario]]
+id = "S3-gradius-600"
+kind = "screen"
+frames = 600
+files = { rom = "nec/software/roms/gradius.pce" }
+golden = "pcengine/S3-gradius-600.png"
+golden_sha256 = "fbb6c1fdcd7e7301496254e41591adbacbdab6a886537808c7884cd9bc0e0e3b"
+compare = { mode = "similarity", max_mad = 4.0, reason = "another emulator's frame timing: the title screen scrolls and the pictures are a few frames apart" }
+
+[[scenario]]
+id = "S3-samuraighost-600"
+kind = "screen"
+frames = 600
+files = { rom = "nec/software/roms/samuraighost.pce" }
+golden = "pcengine/S3-samuraighost-600.png"
+golden_sha256 = "60f93715bb736d1e88f49055be79be3843d75fb91cfd391bf413ce7ff5cf27ae"
+compare = { mode = "similarity", max_mad = 1.0, reason = "another emulator's rasterisation after scaling 256 to 512 columns" }
+
+[[scenario]]
+id = "S3-cadash-600"
+kind = "screen"
+frames = 600
+files = { rom = "nec/software/roms/cadash.pce" }
+golden = "pcengine/S3-cadash-600.png"
+golden_sha256 = "0efb34551f89d7d18e15ec35c58fd259fce823f9d76e192b429e109810c67706"
+compare = { mode = "similarity", max_mad = 1.0, reason = "another emulator's rasterisation after scaling 256 to 512 columns" }
+
+[[scenario]]
+id = "S3-bomberman93-600"
+kind = "screen"
+frames = 600
+files = { rom = "nec/software/roms/bomberman93.pce" }
+golden = "pcengine/S3-bomberman93-600.png"
+golden_sha256 = "0c99128c8d308d201b5d0a24e31a6a60e93a9e36ec55802a202e24060a0e337a"
+compare = { mode = "similarity", max_mad = 4.0, reason = "another emulator's frame timing: the title is animated and the pictures are a few frames apart" }
+
+[[scenario]]
+id = "S3-sf2ce-900"
+kind = "screen"
+frames = 900
+files = { rom = "nec/software/roms/sf2ce.pce" }
+golden = "pcengine/S3-sf2ce-900.png"
+golden_sha256 = "68d3373cca799ba657d2db01d4287e6b5841fed50a799658896d2dd7e244b2c9"
+compare = { mode = "similarity", max_mad = 1.0, reason = "another emulator's rasterisation after scaling 256 to 512 columns" }
+
+# S4: pce-tone.pce plays channel 0 as a 32-step square wave at frequency register $0FE and full level. Beetle PCE Fast makes 441 Hz at an RMS
+# of 0.1604 (a full-scale square: amplitude 0.16); so do we (the pitch is 3 579 545 / (32 x 254) = 440.4 Hz).
+[[scenario]]
+id = "S4"
+kind = "audio"
+frames = 180
+files = { rom = "nec/software/scenarios/pce-tone.pce" }
+audio = { from_s = 1.0, to_s = 2.8, tone_hz = 441.0, tone_tolerance_pct = 1.0, min_amplitude = 0.14 }
+
+# S5: a save state taken mid-game and loaded again continues as the same machine.
+[[scenario]]
+id = "S5"
+kind = "state"
+frames = 200
+more_frames = 100
+files = { rom = "nec/software/roms/airzonk.pce" }
+
+# S6: the colour encoder's long frame is 263 lines of 455 CPU cycles (1365 master clocks); Beetle PCE Fast runs 59.82 frames a second
+# (21 477 272 / 59.82 = 359 030 clocks), we 358 995 (59.83).
+[[scenario]]
+id = "S6"
+kind = "timing"
+frames = 100
+files = { rom = "nec/software/roms/airzonk.pce" }
+cycles_per_frame = 358995
+cycles_tolerance = 100
+
+# Known gap: Lady Sword (a 1 MB card) asks for backup memory at start-up and shows a message; the reference goes on to its title. The backup
+# memory ("Tennokoe Bank" style) behind it is not emulated.
+[[scenario]]
+id = "G-ladysword-600"
+kind = "screen"
+status = "known-gap"
+frames = 600
+files = { rom = "nec/software/roms/ladysword.pce" }
+golden = "pcengine/G-ladysword-600.png"
+golden_sha256 = "ae86b34f359f0cc1ca91e0436d4a6d0e04b5714198c017f43f23e16d3778e59c"
+compare = { mode = "similarity", max_mad = 2.0, reason = "see the gap" }
+gap = { reason = "the game finds no backup memory and shows its 'no backup memory' message instead of the title", evidence = "machines/nec/docs/pcengine-gaps.md#backup-memory" }

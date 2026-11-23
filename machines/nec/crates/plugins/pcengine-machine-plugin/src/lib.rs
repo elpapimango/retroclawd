@@ -97,6 +97,15 @@ fn machine_profile() -> MachineProfile {
                 required: false,
                 description: "Which console to be: the I/O port tells the game (pce = Japanese PC Engine, tg16 = American TurboGrafx-16)".to_string(),
             },
+            MachineOptionInfo {
+                key: "multitap".to_string(),
+                flag: "multitap".to_string(),
+                short: None,
+                kind: MachineOptionKind::Bool,
+                default: Some(DebugValue::Bool(false)),
+                required: false,
+                description: "Plug in the five-player multitap so the second pad's keys (Joy2*) and pads 3-5 are read".to_string(),
+            },
         ],
         key_names: key_names(),
         cpus: vec![CpuInfo {
@@ -158,8 +167,10 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         ));
     }
     let mut console = Console::PcEngine;
+    let mut multitap = false;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
+            ("multitap", DebugValue::Bool(v)) => multitap = *v,
             ("console", DebugValue::Text(v)) => {
                 console = match v.as_str() {
                     "pce" => Console::PcEngine,
@@ -191,7 +202,8 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             rom.len()
         ));
     }
-    let machine = PcEngine::from_card(rom, console)?;
+    let mut machine = PcEngine::from_card(rom, console)?;
+    machine.set_multitap(multitap);
     let mut state = state()
         .lock()
         .map_err(|_| "plugin state mutex poisoned".to_string())?;

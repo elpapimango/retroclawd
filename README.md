@@ -31,6 +31,7 @@ Machines:
 | Atari | Experimental 800/800XL/65XE/130XE; ST, Mega ST, STE | 6502, 68000 |
 | Sega | Mega Drive / Genesis, Mega-CD | 68000, Z80 |
 | SNK | Neo Geo (MVS and AES sets) | 68000, Z80 |
+| NEC | PC Engine / TurboGrafx-16 (HuCards; no CD-ROM unit yet) | HuC6280 |
 
 The CPU cores (Z80, validated with ZEXALL/ZEXDOC; NMOS 6502 with the illegal opcodes, validated with Klaus
 Dormann's and Tom Seddon's suites; 68000, validated against SingleStepTests) and the chips several families share
@@ -65,8 +66,8 @@ cargo build --release -p retroclawd --bin rcdd --features debug --target-dir tar
 ```
 
 Smaller builds pick their machines by cargo feature: `--no-default-features --features home` (Sinclair, Amstrad,
-Commodore, Atari), `console` (Sega, SNK), `arcade` (SNK), or one family (`sinclair`, `amstrad`, `commodore`, `atari`,
-`sega`, `snk`). The separate `rcdd` target folder keeps both builds cached. `tools/build_all.sh --variant a|c|h` builds the
+Commodore, Atari), `console` (Sega, SNK, NEC), `arcade` (SNK), or one family (`sinclair`, `amstrad`, `commodore`, `atari`,
+`sega`, `snk`, `nec`). The separate `rcdd` target folder keeps both builds cached. `tools/build_all.sh --variant a|c|h` builds the
 single-kind programs `rcda` (arcade), `rcdc` (console) and `rcdh` (home computers).
 
 The repository is one cargo workspace:
@@ -75,7 +76,7 @@ The repository is one cargo workspace:
 |---|---|
 | `apps/retroclawd` | the application (`rcd`, `rcdd`) |
 | `shared/` | the shared crates: `machine`, `plugin-api` (the typed machine protocol), the Z80, 6502 and 68000 cores, AY-3-8910, uPD765A, WD1770, `.dsk`, tape formats |
-| `machines/<family>/` | `sinclair`, `amstrad`, `commodore`, `atari`, `sega`, `snk`: machines, chips, formats, ROM tables (`firmware.toml`), documentation, scenario manifests; `roms/` and `software/` hold your own, git-ignored dumps |
+| `machines/<family>/` | `sinclair`, `amstrad`, `commodore`, `atari`, `sega`, `snk`, `nec`: machines, chips, formats, ROM tables (`firmware.toml`), documentation, scenario manifests; `roms/` and `software/` hold your own, git-ignored dumps |
 | `crates/` | app-only crates (configuration files, file loading, POK cheats) |
 | `rctools/` | the scenario runner and integration suites that drive `rcdd` (the command-line tools are their own project, see Tools) |
 | `tools/` | build, smoke-test and check scripts |
