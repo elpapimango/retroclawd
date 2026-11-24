@@ -40,6 +40,8 @@ pub(crate) enum DebuggerCommand {
     /// running until the post-instruction fallthrough address is reached (or
     /// another breakpoint fires first).
     StepOverInstruction,
+    /// Step to the next source line (`--source-info`): into calls, or over them when `over`.
+    StepLine { over: bool },
     /// Restore the previous debugger-captured machine state (one instruction
     /// of reverse-stepping history).
     BackstepInstruction,
@@ -252,6 +254,8 @@ pub(crate) struct DebuggerState {
     pub(crate) following_pc: bool,
     pub(crate) port_breakpoints: Vec<PortWatchSpec>,
     pub(crate) last_port_hit: Option<PortHitInfo>,
+    /// `file:line` of the source line at the PC (`--source-info`).
+    pub(crate) source_line: Option<String>,
 }
 
 impl DebuggerState {
@@ -277,6 +281,7 @@ impl DebuggerState {
             bitmap_defaults: None,
             port_breakpoints: Vec::new(),
             last_port_hit: None,
+            source_line: None,
         }
     }
 }
@@ -301,6 +306,8 @@ const MAX_HISTORY_ENTRIES: usize = 512;
 const MAX_PUBLISHED_HISTORY_ENTRIES: usize = 64;
 const MAX_REVERSE_STATES: usize = MAX_HISTORY_ENTRIES;
 const STEP_OVER_MAX_INSTRUCTIONS: usize = 200_000;
+/// The most instructions (or step-overs) one source-line step runs before it gives up.
+const STEP_LINE_MAX_STEPS: usize = 100_000;
 
 /// Everything `emu_thread::tick` needs to support the debugger, bundled as
 /// one `Option` (in `emu_thread.rs`) so the entire feature collapses to a
@@ -319,6 +326,7 @@ pub(crate) struct DebuggerLink {
     addr_bits: u8,
     pending_step: bool,
     pending_step_over: bool,
+    pending_step_line: Option<bool>,
     pending_backstep: bool,
     /// `None` = disassembly follows `pc` every tick (the default). `Some`
     /// = parked at that address by `SetDisassemblyWindow`, until `FollowPc`
@@ -356,6 +364,7 @@ impl DebuggerLink {
             addr_bits: 0,
             pending_step: false,
             pending_step_over: false,
+            pending_step_line: None,
             pending_backstep: false,
             disassembly_addr: None,
             disassembly_lines: DEFAULT_DISASSEMBLY_LINES,
@@ -395,6 +404,11 @@ impl DebuggerLink {
         let was_pending = self.pending_step_over;
         self.pending_step_over = false;
         was_pending
+    }
+
+    /// `Some(over)` when a source-line step is waiting.
+    pub(crate) fn take_pending_step_line(&mut self) -> Option<bool> {
+        self.pending_step_line.take()
     }
 
     pub(crate) fn take_pending_backstep(&mut self) -> bool {
@@ -440,6 +454,11 @@ impl DebuggerLink {
                 DebuggerCommand::StepOverInstruction => {
                     if self.mode == RunMode::Paused {
                         self.pending_step_over = true;
+                    }
+                }
+                DebuggerCommand::StepLine { over } => {
+                    if self.mode == RunMode::Paused {
+                        self.pending_step_line = Some(over);
                     }
                 }
                 DebuggerCommand::BackstepInstruction => {
@@ -661,6 +680,40 @@ impl DebuggerLink {
         total_cycles
     }
 
+    /// Steps until the source line changes (`--source-info`): with `over`, calls count as part of their line. Without debug
+    /// information, or at an address it has no line for, it is one instruction. A breakpoint or a port hit stops it.
+    pub(crate) fn execute_step_line(&mut self, machine: &mut HostedMachine, over: bool) -> u64 {
+        if self.mode != RunMode::Paused {
+            return 0;
+        }
+        let start_pc = machine.pc();
+        let start = crate::debug_source::line_at(start_pc);
+        let mut total: u64 = 0;
+        for _ in 0..STEP_LINE_MAX_STEPS {
+            total = total.saturating_add(if over {
+                self.execute_step_over_instruction(machine)
+            } else {
+                self.execute_step_instruction(machine)
+            });
+            let Some(start) = &start else { break };
+            if self.last_break.is_some() || self.last_port_hit.is_some() {
+                break;
+            }
+            let pc = machine.pc();
+            match crate::debug_source::line_at(pc) {
+                // moved to another line, or back to the start of this one (a loop)
+                Some(now) if now != *start || pc == start_pc => break,
+                Some(_) => {}
+                // between lines (generated code, data): keep going to the next line
+                None => {}
+            }
+        }
+        if let Some((file, line)) = crate::debug_source::line_at(machine.pc()) {
+            self.last_event = Some(format!("at {file}:{line}"));
+        }
+        total
+    }
+
     /// Restores the most recently captured pre-step state.
     pub(crate) fn execute_backstep_instruction(&mut self, machine: &mut HostedMachine) -> u64 {
         if self.mode != RunMode::Paused {
@@ -761,6 +814,8 @@ impl DebuggerLink {
             bitmap_defaults: machine.metadata().bitmap_defaults,
             port_breakpoints: self.port_breakpoints.clone(),
             last_port_hit: self.last_port_hit,
+            source_line: crate::debug_source::line_at(machine.pc())
+                .map(|(file, line)| format!("{file}:{line}")),
         };
     }
 

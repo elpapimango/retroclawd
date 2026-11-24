@@ -143,6 +143,7 @@ struct StateResponse {
     bitmap_defaults: Option<plugin_api::BitmapExplorerDefaults>,
     port_breakpoints: Vec<plugin_api::PortWatchSpec>,
     last_port_hit: Option<plugin_api::PortHitInfo>,
+    source_line: Option<String>,
 }
 
 impl From<DebuggerStateSnapshot> for StateResponse {
@@ -191,6 +192,7 @@ impl From<DebuggerStateSnapshot> for StateResponse {
             bitmap_defaults: state.bitmap_defaults,
             port_breakpoints: state.port_breakpoints,
             last_port_hit: state.last_port_hit,
+            source_line: state.source_line,
         }
     }
 }
@@ -213,6 +215,12 @@ fn full_port_mask() -> u16 {
 #[derive(serde::Deserialize)]
 struct AddrBody {
     addr: Addr,
+}
+
+#[derive(serde::Deserialize)]
+struct SourceBreakpointBody {
+    file: String,
+    line: u32,
 }
 
 #[derive(serde::Deserialize)]
@@ -432,6 +440,42 @@ fn handle_request(mut request: tiny_http::Request, host: &HostBridge, instance_i
             let result = host_command(host, instance_id, DebuggerHostCommand::StepOverInstruction);
             match expect_ack(result) {
                 Ok(()) => respond_ok(request),
+                Err(e) => respond_error(request, e),
+            }
+        }
+        (Method::Post, "/api/step-line") => {
+            let result = host_command(host, instance_id, DebuggerHostCommand::StepLine { over: false });
+            match expect_ack(result) {
+                Ok(()) => respond_ok(request),
+                Err(e) => respond_error(request, e),
+            }
+        }
+        (Method::Post, "/api/next-line") => {
+            let result = host_command(host, instance_id, DebuggerHostCommand::StepLine { over: true });
+            match expect_ack(result) {
+                Ok(()) => respond_ok(request),
+                Err(e) => respond_error(request, e),
+            }
+        }
+        (Method::Post, "/api/breakpoint/source") => {
+            match read_body_json::<SourceBreakpointBody>(&mut request) {
+                Ok(body) => match crate::debug_source::address_of(&body.file, body.line) {
+                    Ok(addr) => {
+                        let result = host_command(
+                            host,
+                            instance_id,
+                            DebuggerHostCommand::SetBreakpoint {
+                                address: addr.into(),
+                                condition: None,
+                            },
+                        );
+                        match expect_ack(result) {
+                            Ok(()) => respond_ok(request),
+                            Err(e) => respond_error(request, e),
+                        }
+                    }
+                    Err(e) => respond_error(request, e),
+                },
                 Err(e) => respond_error(request, e),
             }
         }

@@ -973,6 +973,8 @@ fn tick(
         {
             if dbg.take_pending_backstep() {
                 dbg.execute_backstep_instruction(m);
+            } else if let Some(over) = dbg.take_pending_step_line() {
+                dbg.execute_step_line(m, over);
             } else if dbg.take_pending_step_over() {
                 dbg.execute_step_over_instruction(m);
             } else if dbg.take_pending_step() {

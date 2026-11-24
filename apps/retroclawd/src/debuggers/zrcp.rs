@@ -1210,7 +1210,7 @@ fn host_format_port_hit(hit: &plugin_api::PortHitInfo) -> String {
 fn help_text(command: Option<&str>) -> String {
     match command.map(|cmd| cmd.to_ascii_lowercase()) {
         None => {
-            "OK commands: help [command], ls, about, get-version, get-buildnumber, state, get-os, get-video-driver, pwd, cd <path>, get-current-machine, get-machines, enter-cpu-step, exit-cpu-step, cpu-step, cpu-step-over, run [verbose] [limit] [no-stop-on-data] [update-immediately], get-registers, get-register <name>, set-register <name=value>, disassemble [addr] [lines], list-breakpoints, get-breakpoints, get-breakpointsactions, get-breakpointspasscount, enable-breakpoint, disable-breakpoint, enable-breakpoints, disable-breakpoints, set-breakpoint, set-breakpointaction, set-breakpointpasscount, read-memory [addr] [len], set-memory-zone <zone>, get-memory-zones, get-current-memory-zone, get-io-ports, get-ui-io-ports, set-ui-io-ports <18-hex>, get-tstates, get-tstates-partial, reset-tstates-partial, poke <addr> <hex>, load-binary <file> <addr> <len>, save-binary <file> <addr> <len>, snapshot-load <file>, snapshot-save <file>, get-snapshot, load-state <file>, save-state <file>, get-stack-backtrace [items], cpu-history <action>, send-keys-event <keycode> <0|1>, send-keys-string <pause-ms> <text>, send-keys-ascii <pause-ms> <ascii...>, set-debug-settings <mask>, get-debug-settings, reset-cpu, quit"
+            "OK commands: help [command], ls, about, get-version, get-buildnumber, state, get-os, get-video-driver, pwd, cd <path>, get-current-machine, get-machines, enter-cpu-step, exit-cpu-step, cpu-step, cpu-step-over, step-line, next-line, run [verbose] [limit] [no-stop-on-data] [update-immediately], get-registers, get-register <name>, set-register <name=value>, disassemble [addr] [lines], list-breakpoints, get-breakpoints, get-breakpointsactions, get-breakpointspasscount, enable-breakpoint, disable-breakpoint, enable-breakpoints, disable-breakpoints, set-breakpoint <index> <PC=addr|file:line>, set-breakpointaction, set-breakpointpasscount, read-memory [addr] [len], set-memory-zone <zone>, get-memory-zones, get-current-memory-zone, get-io-ports, get-ui-io-ports, set-ui-io-ports <18-hex>, get-tstates, get-tstates-partial, reset-tstates-partial, poke <addr> <hex>, load-binary <file> <addr> <len>, save-binary <file> <addr> <len>, snapshot-load <file>, snapshot-save <file>, get-snapshot, load-state <file>, save-state <file>, get-stack-backtrace [items], cpu-history <action>, send-keys-event <keycode> <0|1>, send-keys-string <pause-ms> <text>, send-keys-ascii <pause-ms> <ascii...>, set-debug-settings <mask>, get-debug-settings, reset-cpu, quit"
                 .to_string()
         }
         Some(cmd) if cmd == "run" || cmd == "r" => {
@@ -1778,6 +1778,15 @@ fn handle_command(
             ))?;
             Ok(CommandOutcome::Reply("OK".to_string()))
         }
+        "step-line" | "cpu-step-line" | "sl" | "next-line" | "cpu-next-line" | "nl" => {
+            let over = matches!(command.as_str(), "next-line" | "cpu-next-line" | "nl");
+            expect_ack(host_command(
+                host,
+                instance_id,
+                DebuggerHostCommand::StepLine { over },
+            ))?;
+            Ok(CommandOutcome::Reply("OK".to_string()))
+        }
         "step_over" | "cpu-step-over" | "cso" => {
             expect_ack(host_command(
                 host,
@@ -1941,7 +1950,20 @@ fn handle_command(
                 return Ok(CommandOutcome::Reply("OK".to_string()));
             }
             let condition_text = args[1..].join(" ");
-            let (address, condition) = parse_zrcp_breakpoint_condition(&condition_text)?;
+            // `FILE:LINE` with --source-info: the address of the source line
+            let source = (!condition_text.contains('='))
+                .then(|| crate::debug_source::split_spec(condition_text.trim()))
+                .flatten();
+            let (address, condition) = match source {
+                Some((file, line)) => {
+                    let address = crate::debug_source::address_of(file, line)?;
+                    let address = u16::try_from(address).map_err(|_| {
+                        format!("{file}:{line} is at ${address:X}: debug-zrcp has 16-bit addresses")
+                    })?;
+                    (address, None)
+                }
+                None => parse_zrcp_breakpoint_condition(&condition_text)?,
+            };
             let break_action = session
                 .slots
                 .get(&index)
@@ -2850,6 +2872,7 @@ mod tests {
             bitmap_defaults: None,
             port_breakpoints: Vec::new(),
             last_port_hit: None,
+            source_line: None,
         }
     }
 
@@ -2991,6 +3014,7 @@ mod tests {
                         | DebuggerHostCommand::ClearWatches
                         | DebuggerHostCommand::FollowPc
                         | DebuggerHostCommand::StepOverInstruction
+                        | DebuggerHostCommand::StepLine { .. }
                         | DebuggerHostCommand::BackstepInstruction
                         | DebuggerHostCommand::ClearAllBreakpoints
                         | DebuggerHostCommand::SetBreakpointCondition { .. }

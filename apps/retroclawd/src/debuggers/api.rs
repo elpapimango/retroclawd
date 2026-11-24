@@ -68,6 +68,9 @@ pub struct DebuggerStateSnapshot {
     /// (cleared on resume and on the next step), like `last_break`.
     #[serde(default)]
     pub last_port_hit: Option<PortHitInfo>,
+    /// `file:line` of the source line at the PC, when `--source-info` knows it.
+    #[serde(default)]
+    pub source_line: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -82,6 +85,10 @@ pub enum DebuggerHostCommand {
     Resume,
     StepInstruction,
     StepOverInstruction,
+    /// Step to the next source line (see `--source-info`).
+    StepLine {
+        over: bool,
+    },
     BackstepInstruction,
     ResetMachine,
     KeyEvent {
