@@ -5266,6 +5266,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rc-amiga"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99ffd1535baa23ea7def4015611177dec6614506211a4ae4e0ddf29e8d2d72bc"
+
+[[package]]
 name = "rc-atari-media"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5307,9 +5313,9 @@ dependencies = [
 
 [[package]]
 name = "rc-common"
-version = "0.2.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dee4d374a5fed369ac31e548598ed3e3859f73bcd3ed06959c9b319f0e0047e7"
+checksum = "0fd33dc518c8d1543fe8d7f6be74d43b639f8e897abda76629208b08388a0f24"
 
 [[package]]
 name = "rc-cpc-cartridge"
@@ -5378,6 +5384,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rc-ines"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f170f5c625b99b23841b444a864fd040618cc87e999623625f3fd7a47b58982d"
+
+[[package]]
 name = "rc-machine"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5403,12 +5415,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "rc-sfc"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b51472bfad5fdd4647d490f9327df5e35f139f6ab34bec993eadc6769f06e071"
+
+[[package]]
 name = "rc-sna-snapshot"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f536c287418081edf9928e3afae7b65b581a2521a4cf104dc8440ff1934bc3ac"
 dependencies = [
  "rc-z80",
+]
+
+[[package]]
+name = "rc-spc700"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c644428d403e796fc8fb3a965049b1a1e000878b40ba21c57793db9effe80539"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -5437,6 +5464,21 @@ dependencies = [
  "flate2",
  "rc-z80",
 ]
+
+[[package]]
+name = "rc-w65c816"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89e8f106f461c185fafe67f9d04ae2a0148ba2fa6a486d2bfacefe3df78485cd"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "rc-x68k"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e2dde6853b020675e1b392c617e3c68bf35bd3f1863f85238629ade491fef5a"
 
 [[package]]
 name = "rc-z80"
@@ -5475,9 +5517,9 @@ checksum = "acdc748316044913fa9d97c98772e4c21ef9a166a0bc14511a840fb6bb1bb463"
 
 [[package]]
 name = "rcasm"
-version = "0.2.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc88282a100793986f83865d44684be3c3b69cb4990b7fa7a03073c82bc6cd08"
+checksum = "013b9b8b41d229be4963b9f553971dd2aaa6441a08578f3312fdd231e3285896"
 dependencies = [
  "clap",
  "rc-common",
@@ -5485,14 +5527,16 @@ dependencies = [
  "rc-machine",
  "rc-mc68000",
  "rc-mos6502",
+ "rc-spc700",
+ "rc-w65c816",
  "rc-z80",
 ]
 
 [[package]]
 name = "rcdisk"
-version = "0.2.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f4ae221885d5b01a4c59c212fbd11cdf3abad5bfc97794f1c50ca517560b603"
+checksum = "17639d6d3314bebae02f6e033a5a76d6ff4170001c252d58a984485fe68aa7b9"
 dependencies = [
  "clap",
  "rc-atari-media",
@@ -5507,14 +5551,18 @@ dependencies = [
 
 [[package]]
 name = "rcld"
-version = "0.2.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6ba8e0e3fb7bc0543de02cbebc633151858217ff6cf3c6cdd7f1c3361936140"
+checksum = "804f0ddb62ef2c8ae97f7409102a4312a743517b45ed59d44b79a601e82f4cf0"
 dependencies = [
  "clap",
+ "rc-amiga",
  "rc-atari-media",
  "rc-c64-cartridge",
  "rc-common",
+ "rc-ines",
+ "rc-sfc",
+ "rc-x68k",
  "rcasm",
  "rcdisk",
  "rcsnap",
@@ -5525,9 +5573,9 @@ dependencies = [
 
 [[package]]
 name = "rcsnap"
-version = "0.2.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60b202f1df961a76c3dd58fac1c6e7e5b1aa37aad49449b485c5f1448d0f66ab"
+checksum = "63febb356a12d9efb84eeefc486cf221eeed9bf15ca05739002961da1b75eb5a"
 dependencies = [
  "clap",
  "rc-c64-cartridge",
@@ -5543,9 +5591,9 @@ dependencies = [
 
 [[package]]
 name = "rctape"
-version = "0.2.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c382a25361c43e0d8a76f7da12a78930b0c82feeec6fad7583eae1bc82cdba70"
+checksum = "dfb42bfc87e882f5691cb77c6d4ed4be92e0979ef2b82357c27805aba487fb1e"
 dependencies = [
  "clap",
  "rc-c64-tape",
