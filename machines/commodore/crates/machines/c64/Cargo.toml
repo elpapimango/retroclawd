@@ -5,19 +5,19 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-machine = { path = "../../../../../shared/crates/machine" }
-mos6502 = { path = "../../../../../shared/crates/core/6502" }
+machine = { package = "rc-machine", version = "0.1" }
+mos6502 = { package = "rc-mos6502", version = "0.1" }
 vic-ii = { path = "../../chips/vic-ii" }
 sid = { path = "../../chips/sid" }
 cia6526 = { path = "../../chips/cia-6526" }
 acia6551 = { path = "../../chips/acia-6551" }
 cs8900a = { path = "../../chips/cs8900a" }
-c64-tape = { path = "../../formats/c64-tape" }
-c64-cartridge = { path = "../../formats/c64-cartridge" }
-cbm-dos = { path = "../../formats/cbm-dos" }
-d64 = { path = "../../formats/d64" }
-d71 = { path = "../../formats/d71" }
-d81 = { path = "../../formats/d81" }
+c64-tape = { package = "rc-c64-tape", version = "0.1" }
+c64-cartridge = { package = "rc-c64-cartridge", version = "0.1" }
+cbm-dos = { package = "rc-cbm-dos", version = "0.1" }
+d64 = { package = "rc-d64", version = "0.1" }
+d71 = { package = "rc-d71", version = "0.1" }
+d81 = { package = "rc-d81", version = "0.1" }
 serde = { version = "1", features = ["derive"] }
 bincode = { version = "2", features = ["serde"] }
 
@@ -27,4 +27,4 @@ bincode = { version = "2", features = ["serde"] }
 # production dependency on the other in either direction, this is purely a
 # test-time coupling Cargo's own dev-dependency mechanism exists for.
 c1541 = { path = "../1541" }
-c64-tape = { path = "../../formats/c64-tape" }
+c64-tape = { package = "rc-c64-tape", version = "0.1" }

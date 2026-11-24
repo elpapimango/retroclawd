@@ -77,7 +77,7 @@ The repository is one cargo workspace:
 | `shared/` | the shared crates: `machine`, `plugin-api` (the typed machine protocol), the Z80, 6502 and 68000 cores, AY-3-8910, uPD765A, WD1770, `.dsk`, tape formats |
 | `machines/<family>/` | `sinclair`, `amstrad`, `commodore`, `atari`, `sega`, `snk`: machines, chips, formats, ROM tables (`firmware.toml`), documentation, scenario manifests; `roms/` and `software/` hold your own, git-ignored dumps |
 | `crates/` | app-only crates (configuration files, file loading, POK cheats) |
-| `rctools/` | the command-line tools and the integration suites (see Tools) |
+| `rctools/` | the scenario runner and integration suites that drive `rcdd` (the command-line tools are their own project, see Tools) |
 | `tools/` | build, smoke-test and check scripts |
 
 - `tools/smoke_test.sh` builds `rcd`, boots every machine headless and checks the boot screens against recorded
@@ -95,10 +95,7 @@ gamepad support -- Windows and macOS builds don't need anything extra.
 
 ## Tools
 
-`rctools/` (part of this workspace; `tools/build_all.sh --tools` builds it) holds command-line tools on the same
-crates: `rcasm`, a two-pass 6502/Z80/68000 assembler whose symbol files `--symbols` reads, and `rcdis`, a disassembler
-that writes source `rcasm` assembles back to the same bytes, disk, tape and CHD tools (`rcdisk`, `rctape`, `rcchd`),
-a linker (`rcld`), and `rc-scenarios`/`rc-suite`, the scenario runner and integration suites that drive `rcdd`.
+The command-line tools are a separate project, [retroclawd-tools](https://github.com/elpapimango/retroclawd-tools), released on its own: `rcasm`, an assembler for the 6502, Z80, HuC6280, 65816, SPC700 and 68000 (flat images, relocatable objects, ca65-style sources) whose symbol files `--symbols` reads and whose `.rcdbg` debug information `rcdd --source-info` reads, `rcdis`, a disassembler that writes source `rcasm` assembles back to the same bytes, disk, tape and CHD tools (`rcdisk`, `rctape`, `rcchd`), a linker and image writer for every machine (`rcld`), libraries (`rcar`), asset converters (`rcasset`) and the project driver `rcb` (`rcb new`, `build`, `run`, `debug`, with a hardware kit per machine); `tools/build_all.sh --tools` installs them from crates.io. The cores in retroclawd-core now also include the 65816, SPC700, Super FX, SA-1, and the 68000 family up to the 68030 with its FPU (`rc-m68881`) and PMMU (`rc-pmmu`); the emulator does not have machines for them yet. They share the CPU cores and file-format crates with the emulator through [retroclawd-core](https://github.com/elpapimango/retroclawd-core). `rctools/` here holds `rc-scenarios`/`rc-suite`, the scenario runner and integration suites that drive `rcdd`.
 
 ## Running
 
@@ -244,12 +241,11 @@ batch mode means it spins forever) -- `--max-cycles` caps it, or Ctrl+C.
   `debug-ui[:OPT[:OPT...]]`, `debug-log[:OPT[:OPT...]]`,
   `debug-zrcp[:OPT[:OPT...]]` (legacy alias `debug-tcp[:OPT[:OPT...]]`),
   `debugger[:OPT[:OPT...]]` (legacy alias for `debug-ui`), `machine=<path>`, or plain `<path>` (the debuggers take options, never a path: they are built in)
-- Every machine is a plugin library (`*_machine_plugin.dll` / `.so` / `.dylib`) that `retroclawd`
-  loads at startup from `plugins/` next to the executable, the executable's own folder or `./plugins`
-  (override with `RETROCLAWD_MACHINE_PLUGIN_DIRS`). `cargo build --workspace` builds the app and
-  all the libraries; copy `retroclawd` plus the libraries you want, and delete a library to remove
-  that machine. The debuggers (`debug-ui`, `debug-zrcp`, `debug-log`) are not plugins: they are
-  modules of the app, each behind a cargo feature of the same name (on by default).
+- Every machine is linked into the program (since 2026-11-22 there are no plugin libraries and no `plugins/` folder):
+  `rcd` is the player with every machine, `rcdd` the same program with the debuggers (`debug-ui`, `debug-zrcp`,
+  `debug-log`), `--symbols` and the diagnostic reports. Cargo features choose the machines (`home`, `console`, `arcade`,
+  or one family); `tools/build_all.sh` builds both executables. "Plugin" in the options below means a machine family's
+  options and, for `--plugin debug-ui` and the like, a built-in debugger.
 - `--program <path>` -- optional standalone program to load and run
   instead of booting the ROM, with `--org <0xNNNN>` for its load address
   (default `0x4000`) -- works in both GUI and `--headless` mode; mutually

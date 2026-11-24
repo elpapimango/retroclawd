@@ -1,33 +1,20 @@
 [workspace]
 resolver = "2"
-exclude = ["rctools/fuzz"]
 members = [
-  "shared/crates/machine",
   "shared/crates/plugin-api",
-  "shared/crates/core/z80",
-  "shared/crates/core/6502",
-  "shared/crates/core/68000",
   "shared/crates/chips/ay-3-8910",
   "shared/crates/chips/mc6850",
   "shared/crates/chips/nec765",
   "shared/crates/chips/pia-6520",
   "shared/crates/chips/wd1770",
-  "shared/crates/formats/dsk",
-  "shared/crates/formats/zx-tape",
   "shared/crates/build-info",
   "machines/sinclair/crates/machines/zx81",
   "machines/sinclair/crates/machines/zx-spectrum",
   "machines/sinclair/crates/plugins/zx81-machine-plugin",
   "machines/sinclair/crates/plugins/zx-spectrum-machine-plugin",
-  "machines/sinclair/crates/formats/zx81-snapshot",
-  "machines/sinclair/crates/formats/z80-snapshot",
-  "machines/sinclair/crates/formats/sna-snapshot",
-  "machines/sinclair/crates/formats/szx-snapshot",
   "machines/sinclair/crates/chips/sinclair-keyboard",
   "machines/amstrad/crates/machines/cpc",
   "machines/amstrad/crates/plugins/cpc-machine-plugin",
-  "machines/amstrad/crates/formats/cpc-cartridge",
-  "machines/amstrad/crates/formats/cpc-snapshot",
   "machines/amstrad/crates/chips/i8255",
   "machines/commodore/crates/formats/vic20-cartridge",
   "machines/commodore/crates/machines/vic20",
@@ -38,13 +25,6 @@ members = [
   "machines/commodore/crates/plugins/vic20-machine-plugin",
   "machines/commodore/crates/plugins/c64-machine-plugin",
   "machines/commodore/crates/plugins/c128-machine-plugin",
-  "machines/commodore/crates/formats/c64-tape",
-  "machines/commodore/crates/formats/c64-cartridge",
-  "machines/commodore/crates/formats/d64",
-  "machines/commodore/crates/formats/d71",
-  "machines/commodore/crates/formats/d81",
-  "machines/commodore/crates/formats/g64",
-  "machines/commodore/crates/formats/cbm-dos",
   "machines/commodore/crates/chips/sid",
   "machines/commodore/crates/chips/vic-ii",
   "machines/commodore/crates/chips/vic-i",
@@ -65,7 +45,6 @@ members = [
   "machines/atari/crates/chips/pokey",
   "machines/atari/crates/machines/atari-8bit",
   "machines/atari/crates/plugins/atari-8bit-machine-plugin",
-  "machines/atari/crates/formats/atari-media",
   "machines/snk/crates/chips/ym2610",
   "machines/snk/crates/formats/neo-set",
   "machines/snk/crates/machines/neogeo",
@@ -78,18 +57,9 @@ members = [
   "machines/sega/crates/chips/mcd-asic",
   "machines/sega/crates/formats/md-cart",
   "machines/sega/crates/formats/disc",
-  "machines/sega/crates/formats/chd",
   "machines/sega/crates/machines/genesis",
   "machines/sega/crates/machines/segacd",
   "machines/sega/crates/plugins/sega-machine-plugin",
-  "rctools/crates/rc-common",
-  "rctools/crates/rcasm",
-  "rctools/crates/rcdis",
-  "rctools/crates/rcdisk",
-  "rctools/crates/rcchd",
-  "rctools/crates/rctape",
-  "rctools/crates/rcsnap",
-  "rctools/crates/rcld",
   "rctools/crates/rc-suite",
   "crates/plugins/test-machine-plugin",
   "crates/formats/game-config",
@@ -106,27 +76,8 @@ license = "GPL-3.0-or-later"
 publish = false
 
 [workspace.dependencies]
-atari-media = { path = "machines/atari/crates/formats/atari-media" }
-machine = { path = "shared/crates/machine" }
-z80 = { path = "shared/crates/core/z80" }
-mos6502 = { path = "shared/crates/core/6502" }
-mc68000 = { path = "shared/crates/core/68000" }
-cbm-dos = { path = "machines/commodore/crates/formats/cbm-dos" }
-d64 = { path = "machines/commodore/crates/formats/d64" }
-d71 = { path = "machines/commodore/crates/formats/d71" }
-d81 = { path = "machines/commodore/crates/formats/d81" }
-g64 = { path = "machines/commodore/crates/formats/g64" }
-c64-tape = { path = "machines/commodore/crates/formats/c64-tape" }
-dsk = { path = "shared/crates/formats/dsk" }
-zx-tape = { path = "shared/crates/formats/zx-tape" }
-z80-snapshot = { path = "machines/sinclair/crates/formats/z80-snapshot" }
-sna-snapshot = { path = "machines/sinclair/crates/formats/sna-snapshot" }
-szx-snapshot = { path = "machines/sinclair/crates/formats/szx-snapshot" }
-zx81-snapshot = { path = "machines/sinclair/crates/formats/zx81-snapshot" }
-cpc-snapshot = { path = "machines/amstrad/crates/formats/cpc-snapshot" }
-cpc-cartridge = { path = "machines/amstrad/crates/formats/cpc-cartridge" }
-c64-cartridge = { path = "machines/commodore/crates/formats/c64-cartridge" }
-chd = { path = "machines/sega/crates/formats/chd" }
+zx-tape = { package = "rc-zx-tape", version = "0.1" }
+cpc-snapshot = { package = "rc-cpc-snapshot", version = "0.1" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 clap = { version = "4", features = ["derive"] }
@@ -145,7 +96,7 @@ opt-level = 3
 [profile.release.package.atari-8bit]
 opt-level = 3
 
-[profile.release.package.atari-media]
+[profile.release.package.rc-atari-media]
 opt-level = 3
 
 [profile.release.package.atari-st]
@@ -154,7 +105,7 @@ opt-level = 3
 [profile.release.package.ay-3-8910]
 opt-level = 3
 
-[profile.release.package.c64-tape]
+[profile.release.package.rc-c64-tape]
 opt-level = 3
 
 [profile.release.package.genesis]
@@ -166,10 +117,10 @@ opt-level = 3
 [profile.release.package.ikbd]
 opt-level = 3
 
-[profile.release.package.machine]
+[profile.release.package.rc-machine]
 opt-level = 3
 
-[profile.release.package.mc68000]
+[profile.release.package.rc-mc68000]
 opt-level = 3
 
 [profile.release.package.mc6850]
@@ -199,13 +150,13 @@ opt-level = 3
 [profile.release.package.wd1770]
 opt-level = 3
 
-[profile.release.package.z80]
+[profile.release.package.rc-z80]
 opt-level = 3
 
 [profile.release.package.zx-spectrum]
 opt-level = 3
 
-[profile.release.package.zx-tape]
+[profile.release.package.rc-zx-tape]
 opt-level = 3
 
 [profile.release.package.zx81]

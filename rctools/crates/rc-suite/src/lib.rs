@@ -105,7 +105,7 @@ pub fn z80_image(org: u16, source: &str) -> Result<Vec<u8>, String> {
     )
     .map_err(|e| format!("{e:?}"))?;
     let (start, image) = rcasm::flat_image(&asm, 0)?;
-    if start != org {
+    if start != u32::from(org) {
         return Err(format!(
             "the program starts at 0x{start:04X}, not 0x{org:04X}"
         ));
@@ -130,7 +130,7 @@ pub fn z80_program(tag: &str, org: u16, source: &str) -> Result<PathBuf, String>
     )
     .map_err(|e| format!("{e:?}"))?;
     let (start, image) = rcasm::flat_image(&asm, 0)?;
-    if start != org {
+    if start != u32::from(org) {
         return Err(format!(
             "the program starts at 0x{start:04X}, not 0x{org:04X}"
         ));
@@ -712,7 +712,7 @@ pub fn mos6502_image(org: u16, source: &str) -> Result<Vec<u8>, String> {
     )
     .map_err(|e| format!("{e:?}"))?;
     let (start, image) = rcasm::flat_image(&asm, 0)?;
-    if start != org {
+    if start != u32::from(org) {
         return Err(format!(
             "the program starts at 0x{start:04X}, not 0x{org:04X}"
         ));

@@ -5,16 +5,16 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-z80 = { path = "../../../../../shared/crates/core/z80" }
-machine = { path = "../../../../../shared/crates/machine" }
+z80 = { package = "rc-z80", version = "0.1" }
+machine = { package = "rc-machine", version = "0.1" }
 sinclair-keyboard = { path = "../../chips/sinclair-keyboard" }
-z80-snapshot = { path = "../../formats/z80-snapshot" }
-sna-snapshot = { path = "../../formats/sna-snapshot" }
-szx-snapshot = { path = "../../formats/szx-snapshot" }
+z80-snapshot = { package = "rc-z80-snapshot", version = "0.1" }
+sna-snapshot = { package = "rc-sna-snapshot", version = "0.1" }
+szx-snapshot = { package = "rc-szx-snapshot", version = "0.1" }
 ay-3-8910 = { path = "../../../../../shared/crates/chips/ay-3-8910" }
-zx-tape = { path = "../../../../../shared/crates/formats/zx-tape" }
+zx-tape = { package = "rc-zx-tape", version = "0.1" }
 nec765 = { path = "../../../../../shared/crates/chips/nec765", features = ["dsk"] }
-dsk = { path = "../../../../../shared/crates/formats/dsk" }
+dsk = { package = "rc-dsk", version = "0.1" }
 serde = { version = "1", features = ["derive"] }
 bincode = { version = "2", features = ["serde"] }
 

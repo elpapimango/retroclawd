@@ -9,17 +9,16 @@ name = "zx_spectrum_machine_plugin_impl"
 
 [dependencies]
 build-info = { path = "../../../../../shared/crates/build-info" }
-machine = { path = "../../../../../shared/crates/machine" }
+machine = { package = "rc-machine", version = "0.1" }
 plugin-api = { path = "../../../../../shared/crates/plugin-api" }
 serde = { version = "1", features = ["derive"] }
-z80 = { path = "../../../../../shared/crates/core/z80" }
+z80 = { package = "rc-z80", version = "0.1" }
 zx-spectrum = { path = "../../machines/zx-spectrum" }
-z80-snapshot = { path = "../../formats/z80-snapshot" }
-sna-snapshot = { path = "../../formats/sna-snapshot" }
-szx-snapshot = { path = "../../formats/szx-snapshot" }
-zx-tape = { path = "../../../../../shared/crates/formats/zx-tape" }
-dsk = { path = "../../../../../shared/crates/formats/dsk" }
-
+z80-snapshot = { package = "rc-z80-snapshot", version = "0.1" }
+sna-snapshot = { package = "rc-sna-snapshot", version = "0.1" }
+szx-snapshot = { package = "rc-szx-snapshot", version = "0.1" }
+zx-tape = { package = "rc-zx-tape", version = "0.1" }
+dsk = { package = "rc-dsk", version = "0.1" }
 [dev-dependencies]
 plugin-api = { path = "../../../../../shared/crates/plugin-api", features = ["testkit"] }
 toml = "0.8"

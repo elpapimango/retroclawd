@@ -16,7 +16,9 @@
 #                `home` = Sinclair, Amstrad, Commodore, Atari; `console` = Sega, SNK; `arcade` = SNK
 #   --variant K  build only the single-kind program: rcda (arcade: SNK), rcdc (console: Sega, SNK) or rcdh (home
 #                computers: Sinclair, Amstrad, Commodore, Atari); no debug code, like rcd
-#   --tools      also build the retroclawd tools (rcasm, rcdis, rcdisk, rctape, rcchd, rc-scenarios, ...)
+#   --tools      also get the tool suite (rcasm, rcdis, rcdisk, rctape, rcsnap, rcld, rcchd: the separate retroclawd-tools project,
+#                installed from crates.io into target/rc-tools and copied next to rcd; RC_TOOLS_SRC=<checkout> builds a local copy)
+#                and build rc-scenarios (the scenario runner, in this repository)
 #
 # Works in Git Bash on Windows, Linux and macOS.
 set -euo pipefail
@@ -70,7 +72,16 @@ if [[ -z $ONLY || $ONLY == rcdd ]]; then
 fi
 if [[ $TOOLS -eq 1 ]]; then
   echo "== tools ($PROFILE)"
-  cargo build ${FLAGS[@]+"${FLAGS[@]}"} -p rc-common -p rcasm -p rcdis -p rcdisk -p rcchd -p rctape -p rcsnap -p rcld -p rc-suite
+  RCTOOLS=(rcasm rcdis rcdisk rcchd rctape rcsnap rcld rcar rcb rcasset)
+  if [[ -n ${RC_TOOLS_SRC:-} ]]; then
+    for t in "${RCTOOLS[@]}"; do cargo install --path "$RC_TOOLS_SRC/crates/$t" --root "$ROOT/target/rc-tools" --force; done
+  else
+    RC_TOOLS_VERSION="${RC_TOOLS_VERSION:-0.5.0}"   # exact version, bump on purpose
+    cargo install "${RCTOOLS[@]/%/@$RC_TOOLS_VERSION}" --root "$ROOT/target/rc-tools" --locked
+  fi
+  mkdir -p "target/$PROFILE"
+  for t in "${RCTOOLS[@]}"; do cp -f "target/rc-tools/bin/$t$EXE" "target/$PROFILE/$t$EXE"; done
+  cargo build ${FLAGS[@]+"${FLAGS[@]}"} -p rc-suite
 fi
 
 echo

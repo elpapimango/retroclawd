@@ -5,13 +5,13 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-machine = { path = "../../../../../shared/crates/machine" }
-mos6502 = { path = "../../../../../shared/crates/core/6502" }
+machine = { package = "rc-machine", version = "0.1" }
+mos6502 = { package = "rc-mos6502", version = "0.1" }
 via6522 = { path = "../../chips/via-6522" }
-d64 = { path = "../../formats/d64" }
-d71 = { path = "../../formats/d71" }
+d64 = { package = "rc-d64", version = "0.1" }
+d71 = { package = "rc-d71", version = "0.1" }
 cia6526 = { path = "../../chips/cia-6526" }
-d81 = { path = "../../formats/d81" }
+d81 = { package = "rc-d81", version = "0.1" }
 wd1770 = { path = "../../../../../shared/crates/chips/wd1770" }
 serde = { version = "1", features = ["derive"] }
 bincode = { version = "2", features = ["serde"] }

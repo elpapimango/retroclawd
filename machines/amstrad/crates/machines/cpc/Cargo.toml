@@ -5,14 +5,14 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-machine = { path = "../../../../../shared/crates/machine" }
-z80 = { path = "../../../../../shared/crates/core/z80" }
+machine = { package = "rc-machine", version = "0.1" }
+z80 = { package = "rc-z80", version = "0.1" }
 ay-3-8910 = { path = "../../../../../shared/crates/chips/ay-3-8910" }
 i8255 = { path = "../../chips/i8255" }
 nec765 = { path = "../../../../../shared/crates/chips/nec765", features = ["dsk"] }
-dsk = { path = "../../../../../shared/crates/formats/dsk" }
-cpc-snapshot = { path = "../../formats/cpc-snapshot" }
-zx-tape = { path = "../../../../../shared/crates/formats/zx-tape" }
+dsk = { package = "rc-dsk", version = "0.1" }
+cpc-snapshot = { package = "rc-cpc-snapshot", version = "0.1" }
+zx-tape = { package = "rc-zx-tape", version = "0.1" }
 serde = { version = "1", features = ["derive"] }
 bincode = { version = "2", features = ["serde"] }
 tracing = "0.1"

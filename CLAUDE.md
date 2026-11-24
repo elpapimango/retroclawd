@@ -25,7 +25,7 @@ Layout (every directory is a workspace member crate or holds them):
 
 | Path | Holds |
 |---|---|
-| `shared/` | `machine`, `plugin-api` (the machine protocol types and the `MachinePlugin` trait; nothing foreign-function), the `z80`, `mos6502`, `mc68000` cores, `ay-3-8910`, `nec765`, `wd1770`, `mc6850`, `pia-6520`, `dsk`, `zx-tape`, `build-info` |
+| `shared/` | `plugin-api` (the machine protocol types and the `MachinePlugin` trait; nothing foreign-function), `ay-3-8910`, `nec765`, `wd1770`, `mc6850`, `pia-6520`, `build-info` and the `huc6280` core. The `machine` trait crate, the `z80`, `mos6502`, `mc68000` cores and the file formats (`dsk`, `zx-tape`, `d64`, `chd`, the snapshot crates...) moved to retroclawd-core (crates.io `rc-*`, imported under the short names) |
 | `machines/sinclair` | ZX81, ZX Spectrum 48K/128K/+2/+2A/+3, snapshot formats `.z80/.sna/.szx/.p`, Sinclair keyboard |
 | `machines/amstrad` | CPC464/664/6128, CPC+ / GX4000, `.cpr` cartridges, SNA snapshots, i8255 |
 | `machines/commodore` | Experimental VIC-20/VIC-I; C64, C128, 1541/1570/1571/1581, VIC-II, SID, CIAs, VIA, WD1770, VDC, CBM disk formats |
@@ -34,7 +34,7 @@ Layout (every directory is a workspace member crate or holds them):
 | `machines/sega` | Sega Mega Drive / Genesis and Mega-CD |
 | `apps/retroclawd` | The application (`rcd`, `rcdd`): GUI, headless runs, the debuggers. `src/families.rs` links the machine families (and embeds their `firmware.toml`) by cargo feature |
 | `crates/` | App-only crates: `app-config`, `game-config`, `file-loader`, `pok`, and `plugins/test-machine-plugin` (a do-nothing machine for the app's own unit tests) |
-| `rctools/` | The tools (`rcasm`, `rcdis`, `rcdisk`, `rcchd`, `rctape`, `rcsnap`, `rcld`) and `rc-suite` (`rc-scenarios`, the integration suites). Formerly the `rctools` repository |
+| `rctools/` | `rc-suite` (`rc-scenarios`, the integration suites) and `scripts/` (reference-emulator capture scripts). The command-line tools (`rcasm`, `rcdis`, `rcdisk`, `rcchd`, `rctape`, `rcsnap`, `rcld`) are the separate project [retroclawd-tools](https://github.com/elpapimango/retroclawd-tools); the CPU cores and file formats are [retroclawd-core](https://github.com/elpapimango/retroclawd-core). Both come from crates.io (`rc-*`) |
 | `tools/` | Scripts: `build_all.sh`, `smoke_test.sh`, `check_all.sh`, `fetch_*.sh` |
 
 A machine family crate set is `crates/machines/<machine>` (the emulation), `crates/chips/*`, `crates/formats/*` and
