@@ -125,6 +125,10 @@ fn execute_host_command(
             send_command(&ctx.commands, DebuggerCommand::StepOverInstruction)?;
             Ok(DebuggerHostResponse::Ack)
         }
+        DebuggerHostCommand::StepLine { over } => {
+            send_command(&ctx.commands, DebuggerCommand::StepLine { over })?;
+            Ok(DebuggerHostResponse::Ack)
+        }
         DebuggerHostCommand::BackstepInstruction => {
             send_command(&ctx.commands, DebuggerCommand::BackstepInstruction)?;
             Ok(DebuggerHostResponse::Ack)
@@ -531,6 +535,7 @@ fn state_snapshot(state: &DebuggerState) -> DebuggerStateSnapshot {
         bitmap_defaults: state.bitmap_defaults,
         port_breakpoints: state.port_breakpoints.clone(),
         last_port_hit: state.last_port_hit,
+        source_line: state.source_line.clone(),
     }
 }
 

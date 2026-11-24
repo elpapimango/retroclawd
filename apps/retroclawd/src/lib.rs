@@ -1,5 +1,7 @@
 mod builtin_keymaps;
 #[cfg(feature = "debug")]
+mod debug_source;
+#[cfg(feature = "debug")]
 mod debug_symbols;
 #[cfg_attr(
     not(any(feature = "debug-ui", feature = "debug-zrcp")),
@@ -341,6 +343,13 @@ struct CommonArgs {
     /// Added to the machine's built-in names (C64/C128 KERNAL and chips, Spectrum ROM).
     #[arg(long = "symbols", value_name = "FILE")]
     symbols: Vec<String>,
+
+    #[cfg(feature = "debug")]
+    /// Debug information from the assembler (`rcasm --debug-info`, `rcb build`: a `.rcdbg` file): which source line made
+    /// which bytes. The debuggers then show the source line at the PC, set breakpoints by `file:line` and step by
+    /// source line (`step-line`, `next-line` in debug-zrcp; `/api/step-line`, `/api/next-line` in debug-ui).
+    #[arg(long = "source-info", value_name = "FILE")]
+    source_info: Option<String>,
 
     #[cfg(feature = "debug")]
     /// Extra plugin selectors. Repeatable. Accepted forms:
@@ -2424,6 +2433,13 @@ pub fn run() -> ExitCode {
     if let Err(e) = debug_symbols::load_user_files(&overrides::symbol_files(&config, &args.symbols))
     {
         eprintln!("--symbols: {e}");
+        return ExitCode::FAILURE;
+    }
+    #[cfg(feature = "debug")]
+    if let Some(source) = &args.source_info
+        && let Err(e) = debug_source::load(source)
+    {
+        eprintln!("--source-info: {e}");
         return ExitCode::FAILURE;
     }
 
