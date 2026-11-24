@@ -43,6 +43,7 @@ atari-st-machine-plugin = { path = "../../machines/atari/crates/plugins/atari-st
 atari-8bit-machine-plugin = { path = "../../machines/atari/crates/plugins/atari-8bit-machine-plugin", optional = true }
 neogeo-machine-plugin = { path = "../../machines/snk/crates/plugins/neogeo-machine-plugin", optional = true }
 sega-machine-plugin = { path = "../../machines/sega/crates/plugins/sega-machine-plugin", optional = true }
+pcengine-machine-plugin = { path = "../../machines/nec/crates/plugins/pcengine-machine-plugin", optional = true }
 tiny_http = { version = "0.12", optional = true }
 tracing-subscriber = { version = "0.3", features = ["fmt", "time"], optional = true }
 
@@ -53,7 +54,7 @@ default = ["all-machines"]
 all-machines = ["home", "console", "arcade"]
 # The machines, by kind. A family feature links that family's machines into the program.
 home = ["sinclair", "amstrad", "commodore", "atari"]
-console = ["sega", "snk"]
+console = ["sega", "snk", "nec"]
 arcade = ["snk"]
 # The single-kind programs: rcda (arcade), rcdc (console), rcdh (home). Build each with `--no-default-features`
 # and its own feature (tools/build_all.sh --variant a|c|h does); a variant that finds a machine of another kind
@@ -67,11 +68,12 @@ commodore = ["dep:c64-machine-plugin", "dep:c128-machine-plugin", "dep:vic20-mac
 atari = ["dep:atari-st-machine-plugin", "dep:atari-8bit-machine-plugin"]
 snk = ["dep:neogeo-machine-plugin"]
 sega = ["dep:sega-machine-plugin"]
+nec = ["dep:pcengine-machine-plugin"]
 # Everything for developing: the debuggers and every trace/diagnostic hook in the program and the machines.
 debug = [
     "debug-ui", "debug-zrcp", "debug-log", "machine/debug",
     "zx81-machine-plugin?/debug", "zx-spectrum-machine-plugin?/debug", "cpc-machine-plugin?/debug",
-    "atari-st-machine-plugin?/debug", "sega-machine-plugin?/debug", "neogeo-machine-plugin?/debug",
+    "atari-st-machine-plugin?/debug", "sega-machine-plugin?/debug", "neogeo-machine-plugin?/debug", "pcengine-machine-plugin?/debug",
 ]
 debug-ui = ["dep:tiny_http", "dep:pok"]
 debug-zrcp = []

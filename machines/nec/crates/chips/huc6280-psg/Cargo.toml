@@ -1,0 +1,9 @@
+[package]
+name = "huc6280-psg"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "The programmable sound generator inside the Hudson HuC6280 (PC Engine): six wavetable channels, two with noise, LFO"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

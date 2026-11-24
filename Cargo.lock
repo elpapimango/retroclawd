@@ -3515,6 +3515,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
+name = "huc6260"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "huc6270"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "huc6280-psg"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "hyper"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4893,6 +4914,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "pce-card"
+version = "0.1.0"
+
+[[package]]
+name = "pcengine"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "huc6260",
+ "huc6270",
+ "huc6280-psg",
+ "pce-card",
+ "rc-huc6280",
+ "serde",
+]
+
+[[package]]
+name = "pcengine-machine-plugin"
+version = "0.1.0"
+dependencies = [
+ "build-info",
+ "pcengine",
+ "plugin-api",
+ "rc-huc6280",
+ "serde",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5747,6 +5796,7 @@ dependencies = [
  "file-loader",
  "game-config",
  "neogeo-machine-plugin",
+ "pcengine-machine-plugin",
  "plugin-api",
  "png",
  "pok",

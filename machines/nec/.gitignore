@@ -1,0 +1,5 @@
+# ROMs, firmware, oracle cores and downloaded documents are never committed.
+/roms/
+/software/
+__pycache__/
+*.pyc

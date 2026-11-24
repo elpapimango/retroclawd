@@ -1,0 +1,81 @@
+machine = "pcengine"
+display_name = "NEC PC Engine / TurboGrafx-16 (HuCard)"
+family = "nec"
+default_region = "ntsc"
+
+[implementation]
+status = "boots-with-gaps"
+boot_verified = true
+note = "2026-11-22: HuCards boot to their title screens through `rcd pcengine`; 68 of 84 sampled games agree with Beetle PCE Fast (see docs/pcengine-gaps.md). The CD-ROM unit, SuperGrafx and backup memory are open."
+
+[core]
+reuse = []
+variant = "HuC6280 (new core in shared/crates/core/huc6280)"
+tests = ["unit tests of the instruction semantics in the crate (decimal, T flag, block transfers, interrupts, mapping)", "no public instruction-level test suite exists for the HuC6280; correctness is the comparison with the reference over 84 games (scenarios/sweep.py)"]
+note = "A 65C02 superset. The shared mos6502 core is NMOS (no 65C02 opcodes, different decimal mode) so a new core was written rather than adding a variant."
+
+[chips]
+new = ["huc6270 video display controller", "huc6260 video colour encoder", "huc6280-psg programmable sound generator", "timer, interrupt registers and I/O port (in the machine crate: they are peripherals on the CPU's bus)"]
+reuse_candidates = []
+placement = "machines/nec/crates/chips and the shared core crate"
+verified_absent = "No HuC6280, HuC6270 or HuC6260 implementation existed in the repository."
+
+[reference]
+emulator = "Beetle PCE Fast (Mednafen's PC Engine core)"
+version = "1.31.0.0"
+libretro_core = "C:/Users/matti/Workspace/Emulators/RetroArch-Win64/cores/mednafen_pce_fast_libretro.dll"
+others_present = "mednafen_pce_libretro.dll, mednafen_supergrafx_libretro.dll and geargrafx_libretro.dll are in the same folder; only pce_fast was used"
+method = "Black box through rctools/scripts/libretro_run.py (frames, RAM dumps, audio, scripted input; --device 0=1 selects the pad). No code, table or constant copied."
+reference_output = "256x243 picture (352x243 for the 7.16 MHz dot clock), 59.82 fps, 44100 Hz stereo audio"
+
+[timing]
+master_clock_hz = 21477272
+cpu_clock = "HuC6280 at master / 3 (7.16 MHz, fast) or master / 12 (1.79 MHz, slow); timer tick every 3072 master clocks; sound clock master / 6"
+frame = "455 CPU cycles (1365 master clocks) a line; 262 or 263 lines; the video controller's registers set the frame length"
+status = "from the documentation; the reference's 59.82 fps agrees with 263 lines (facts C2, V6)"
+
+[memory]
+note = "docs/hardware-facts.md rows M1-M8: HuCard banks $00-$7F, RAM $F8-$FB, hardware page $FF."
+
+[firmware_policy]
+stock_roms_available = false
+note = "A HuCard needs no firmware. The RomM server holds 417 HuCard games (platform 130: TurboGrafx-16/PC Engine; cards are fetched by RomM id) and no System Card or CD-ROM content. Never committed."
+
+[media]
+formats = [".pce / .tg16 / .bin HuCard images, with or without a 512-byte copier header, bit-reversed US dumps corrected; sizes from 128 KB to 2.5 MB"]
+note = "RomM serves the games as zip files holding one .pce; the host's file loader unpacks them (--rom romm:<id>)."
+
+[[test_game]]
+name = "Air Zonk"
+romm_id = 7161
+reason = "the first game to boot: a legal screen drawn with sprites, a title with background and sprites, a timer-driven sound driver"
+
+[[test_game]]
+name = "Cadash"
+romm_id = 7207
+reason = "a 384 KB card: found the two-chip mapping"
+
+[[test_game]]
+name = "Street Fighter II' Champion Edition"
+romm_id = 7497
+reason = "the 2.5 MB card with the $1FF0 bank window"
+
+[[test_game]]
+name = "Idol Hanafuda Fan Club"
+romm_id = 7312
+reason = "VDW = $FF: found that the frame length comes from the video controller's registers"
+
+[[test_game]]
+name = "Soldier Blade"
+romm_id = 7484
+reason = "found that status flags are raised only with their enable bit"
+
+[[test_game]]
+name = "Final Soldier"
+romm_id = 7280
+reason = "found the one-instruction delay of CLI"
+
+[[test_game]]
+name = "Lady Sword"
+romm_id = 7347
+reason = "needs backup memory (known gap)"

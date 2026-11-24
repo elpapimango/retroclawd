@@ -2,6 +2,12 @@
 resolver = "2"
 members = [
   "shared/crates/plugin-api",
+  "machines/nec/crates/chips/huc6270",
+  "machines/nec/crates/chips/huc6260",
+  "machines/nec/crates/chips/huc6280-psg",
+  "machines/nec/crates/formats/pce-card",
+  "machines/nec/crates/machines/pcengine",
+  "machines/nec/crates/plugins/pcengine-machine-plugin",
   "shared/crates/chips/ay-3-8910",
   "shared/crates/chips/mc6850",
   "shared/crates/chips/nec765",

@@ -1,0 +1,5 @@
+# Which firmware satisfies which machine option (see machines/sinclair/firmware.toml for the format).
+#
+# A HuCard game needs no firmware: the console's own ROM is inside the HuC6280 and the card carries the game.
+# A CD-ROM game would need the System Card (an 256 KB or 256 KB-plus ROM); the CD-ROM unit is not emulated yet,
+# so there is no entry here.
