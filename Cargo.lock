@@ -3529,13 +3529,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "huc6280"
-version = "0.1.0"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "huc6280-psg"
 version = "0.1.0"
 dependencies = [
@@ -4931,9 +4924,9 @@ dependencies = [
  "bincode",
  "huc6260",
  "huc6270",
- "huc6280",
  "huc6280-psg",
  "pce-card",
+ "rc-huc6280",
  "serde",
 ]
 
@@ -4942,9 +4935,9 @@ name = "pcengine-machine-plugin"
 version = "0.1.0"
 dependencies = [
  "build-info",
- "huc6280",
  "pcengine",
  "plugin-api",
+ "rc-huc6280",
  "serde",
 ]
 
