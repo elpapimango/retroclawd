@@ -12,7 +12,7 @@ use mc68000::Cpu;
 const MAGIC: &[u8; 4] = b"RCST";
 const MACHINE_ID: &[u8] = b"neogeo";
 /// The payload layout: bump when a field is added, removed or reordered.
-const SCHEMA: u16 = 2;
+const SCHEMA: u16 = 3;
 /// The most a state may hold (the largest program ROMs are under 10 MB).
 pub const MAX_STATE_BYTES: usize = 64 * 1024 * 1024;
 
@@ -142,7 +142,8 @@ fn check(new: &Bus, old: &Bus) -> Result<(), String> {
         && new.backup.len() == old.backup.len()
         && new.vram.len() == old.vram.len()
         && new.pvc_ram.len() == old.pvc_ram.len()
-        && new.sound.ram.len() == old.sound.ram.len();
+        && new.sound.ram.len() == old.sound.ram.len()
+        && new.card.as_ref().map(Vec::len) == old.card.as_ref().map(Vec::len);
     if !same {
         return Err("the state file is damaged: a memory has the wrong size".to_string());
     }

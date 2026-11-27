@@ -36,7 +36,10 @@
   saved at frame 900 and loaded shows the same picture at 1500 as the run that never stopped. The 64 KB backup RAM is the option `backup_ram`
   (default `saves/neogeo-backup.bin`, one file as one MVS board has one RAM; `none` for no file, which the scenario manifest uses so that its
   runs stay the same): read at start, written at exit when it changed. KOF 2001 formats it on the first run and reads it on the next.
-  Still open: the AES **memory card** (not emulated at all).
+  The **memory card** is in since 2026-11-27 (fact N56): option `memory_card` (a file of 2 to 16 KiB; a missing file is a new 2 KiB
+  card), `memory_card_protect`, written at exit when it changed, part of save states. Checked: the BIOS probes a new card at start-up
+  and Cyber-Lip runs on with it. Not checked: saving and loading a game through the BIOS's card menu, and the banks of cards over 2 KiB
+  (REG_CRDBANK's layout is not documented).
 - **Controllers**: one pad and the coin/start buttons are wired; the arcade `Select` and the second player's keys have no default host keys.
 - **Resolved 2026-10-31 (second round).** Art of Fighting's defect was the C ROM layout: four 2 MiB chips with a small program are two
   halves each (fact N46); Fatal Fury 2's protection answers the challenges its code makes (fact N45); tile numbers past the ROM wrap
