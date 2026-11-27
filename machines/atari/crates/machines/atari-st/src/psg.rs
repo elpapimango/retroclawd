@@ -52,7 +52,10 @@ impl Psg {
     }
 
     pub(crate) fn restore(&mut self, s: PsgState) {
+        // the variant is configuration, not state (`ay-3-8910` never saves it): keep this chip's
+        let variant = self.ym.variant();
         self.ym = s.ym;
+        self.ym.set_variant(variant);
         self.at = s.at;
         self.sample_index = s.sample_index;
         self.samples = s.samples.into_iter().take(MAX_SAMPLES).collect();
@@ -150,5 +153,28 @@ impl Psg {
         } else {
             self.ym.write(value);
         }
+    }
+}
+
+#[cfg(test)]
+mod state_tests {
+    use super::*;
+
+    /// The YM2149 variant is not in a state; a restored chip is still a YM2149 (its envelope and volume curve).
+    #[test]
+    fn a_restored_chip_keeps_the_ym2149_variant() {
+        let psg = Psg::new(2_000_000);
+        let bytes =
+            bincode::serde::encode_to_vec(psg.snapshot(), bincode::config::standard()).unwrap();
+        let (state, _): (PsgState, usize) =
+            bincode::serde::decode_from_slice(&bytes, bincode::config::standard()).unwrap();
+        assert_eq!(
+            state.ym.variant(),
+            Variant::Ay38910,
+            "the variant is not saved"
+        );
+        let mut fresh = Psg::new(2_000_000);
+        fresh.restore(state);
+        assert_eq!(fresh.ym.variant(), Variant::Ym2149);
     }
 }
