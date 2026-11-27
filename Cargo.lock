@@ -8190,6 +8190,7 @@ name = "ym2610"
 version = "0.1.0"
 dependencies = [
  "ay-3-8910",
+ "bincode",
  "serde",
 ]
 

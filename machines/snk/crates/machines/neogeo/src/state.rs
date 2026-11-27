@@ -110,9 +110,7 @@ pub fn load(m: &mut NeoGeo, bytes: &[u8]) -> Result<(), String> {
         return Err("the state file is damaged: bytes after the payload".to_string());
     }
     check(&p.bus, &m.bus)?;
-    if p.z80_clock >= 1 << 60 {
-        return Err("the state file is damaged: a clock is out of range".to_string());
-    }
+    check_z80_clock(p.z80_clock, p.bus.clock)?;
     p.bus
         .sound
         .ym
@@ -145,12 +143,32 @@ fn check(new: &Bus, old: &Bus) -> Result<(), String> {
         && new.vram.len() == old.vram.len()
         && new.pvc_ram.len() == old.pvc_ram.len()
         && new.sound.ram.len() == old.sound.ram.len();
-    // the clocks only grow by small steps from here: far from where an addition could overflow
-    let clocks_ok = new.clock < 1 << 60;
-    if same && clocks_ok {
+    if !same {
+        return Err("the state file is damaged: a memory has the wrong size".to_string());
+    }
+    // the counters the run loop adds to: far from overflowing, and the fractions below their divisors
+    let counters_ok = new.clock < 1 << 60
+        && new.anim_frames < 1 << 60
+        && new.timer_fraction < 4
+        && new.watchdog_last.is_none_or(|w| w <= new.clock);
+    if counters_ok {
         Ok(())
     } else {
-        Err("the state file is damaged: a memory has the wrong size".to_string())
+        Err("the state file is damaged: a counter is out of range".to_string())
+    }
+}
+
+/// The most the Z80 may run ahead of the 68000 (one long instruction, in master clocks) or lag behind it (it is brought
+/// up to date at every 68000 step; a frame is far more than a real state can hold), so a state cannot make the first
+/// catch-up run for long.
+const Z80_LEAD: u64 = 64 * 6;
+const Z80_LAG: u64 = crate::system::FRAME_CLOCKS;
+
+fn check_z80_clock(z80_clock: u64, clock: u64) -> Result<(), String> {
+    if z80_clock <= clock + Z80_LEAD && clock - z80_clock.min(clock) <= Z80_LAG {
+        Ok(())
+    } else {
+        Err("the state file is damaged: the Z80's clock is far from the 68000's".to_string())
     }
 }
 
