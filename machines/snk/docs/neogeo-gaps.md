@@ -89,6 +89,10 @@
 - **Sound level (2026-11-01, fact Y11).** ADPCM-B was half as loud as FinalBurn Neo's; fixed, Metal Slug 4's music now agrees within 2 percent in RMS. Other ADPCM-B users were not re-measured.
 - **Auto-animation (2026-11-01, fact N34).** The attribute bits were swapped (bit 3 is the eight-frame animation, bit 2 the four-frame one): Metal Slug 3's underwater stage showed dark triangle blocks in its rock background; now smooth like FinalBurn Neo's. Other sets were not re-compared by eye; the scenario manifest still passes.
 - **Metal Slug 3 logo (2026-11-01, fact N54).** The "METAL SLUG 3" logo over the demos and the title screen's copyright and SNK logo are fix-layer tiles; they were blank because the fix glyphs were taken from the last 128 KiB of the sprite data instead of the block 384 KiB before the end (as for Metal Slug 4). Fixed; the logo matches FinalBurn Neo. Other 64 MiB CMC games (KOF 99-2003, Garou, ...) probably need the same check when they are added.
-- **SSG-EG and LFO use.** Eleven of the thirteen sets checked write the SSG-EG registers (`$90-$9F`) a few times each at start-up (init
-  writes) and four write the LFO register `$22` only at start-up; none was seen using them in music, so they remain unimplemented.
+- **LFO: in (2026-11-27, fact Y12); SSG-EG: not used.** A survey of 23 sets over 4000 frames (the probe's `RC_YM` line "fm features
+  switched on") found the LFO switched on by Aggressors of Dark Kombat, Art of Fighting 1 and 2, Cyber-Lip, Fatal Fury and Fight Fever,
+  and non-zero AM/PM sensitivities in many; no set switches SSG-EG on (bit 3 of `$90-$9F`), so it stays unimplemented. The LFO now moves
+  pitch (PMS) and the level of operators with AM on (AMS); unit tests pin both. Against FinalBurn Neo on Cyber-Lip (the four windows
+  above) it changes nothing measurable: the averaged-spectrum correlation goes from 0.9065 to 0.9068 in 10-20 s and stays the same
+  elsewhere, as the LFO is on only briefly there. The waveforms are `[H?]`.
 

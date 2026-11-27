@@ -597,6 +597,10 @@ fn first_fetches() {
             .collect();
         println!("ym registers written: {}", seen.join(" "));
         println!("key on log: {:02X?}", bus.sound.key_log);
+        println!(
+            "fm features switched on (lfo, ssg-eg, ams/pms): {:?}",
+            bus.sound.fx_on
+        );
         println!("z80 banks: {:02X?}", bus.sound.banks);
         println!(
             "z80 regs: {:?}; ym status {:02X}",

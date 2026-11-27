@@ -37,6 +37,10 @@ pub struct Sound {
     /// How often each register of the two pairs was written (a debugging aid).
     #[serde(skip, default = "write_counts")]
     pub ym_writes: Vec<u32>,
+    /// Writes that switch on an FM feature the chip does not model yet (a debugging aid): the LFO (`$22` bit 3), an SSG-EG mode
+    /// (`$90-$9F` bit 3) and a non-zero AM or PM sensitivity (`$B4-$B6` bits 5-4 and 2-0).
+    #[serde(skip)]
+    pub fx_on: [u32; 3],
     /// The values written to the key on register (a debugging aid).
     #[serde(skip)]
     pub key_log: Vec<u8>,
@@ -68,6 +72,7 @@ impl Sound {
             v_b: Vec::new(),
             ym_writes: vec![0; 512],
             key_log: Vec::new(),
+            fx_on: [0; 3],
             command_log: Vec::new(),
             ym_addr: [0; 2],
         }
@@ -155,6 +160,12 @@ impl Sound {
                     self.ym_addr[pair] = v;
                 } else {
                     self.ym_writes[pair * 256 + usize::from(self.ym_addr[pair])] += 1;
+                    match self.ym_addr[pair] {
+                        0x22 if pair == 0 && v & 8 != 0 => self.fx_on[0] += 1,
+                        0x90..=0x9F if v & 8 != 0 => self.fx_on[1] += 1,
+                        0xB4..=0xB6 if v & 0x37 != 0 => self.fx_on[2] += 1,
+                        _ => {}
+                    }
                     if pair == 0 && self.ym_addr[0] == 0x28 && self.key_log.len() < 200 {
                         self.key_log.push(v);
                     }
