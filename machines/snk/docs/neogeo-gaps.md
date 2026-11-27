@@ -12,8 +12,7 @@
 - **Raster effects.** The timer interrupt (level 2) is raised (fact N41); the line of the vertical blank interrupt and of the blank reload
   are `[H?]`. Which sets use it (2026-11-27, 3000 frames of each of 23 sets): Metal Slug 2 (about 29 a frame), 8 Man, Aggressors of Dark
   Kombat, Art of Fighting and Double Dragon; the other 18 never enable it. 8 Man and Metal Slug 2 compared with FinalBurn Neo at frames 1200,
-  1800 and 2400: no broken bands or misplaced splits in either; what differs is frame timing (blinking text, the logo animation) and 8 Man's
-  NEO-GEO logo transition, drawn mirrored on white here (the same as Metal Slug 2's, parked below).
+  1800 and 2400: no broken bands or misplaced splits in either; what differs is frame timing (blinking text, the logo animation).
 - **Burning Fight's stop at frame 1527: resolved 2026-11-27 (fact N55).** It read `$3689C2`, in a range no chip decodes; the read now
   answers the last word on the bus and the game runs on (4000 frames). Its first demo matches FinalBurn Neo (frame 2200), but the attract
   sequence then goes another way: at frame 3000 the reference shows the player introduction and this machine a second demo (the subway
@@ -43,7 +42,11 @@
   halves each (fact N46); Fatal Fury 2's protection answers the challenges its code makes (fact N45); tile numbers past the ROM wrap
   (fact N43). Art of Fighting now matches the reference (mean difference 5.2 at frame 1500) and Fatal Fury 2 draws its intro.
   Remaining of the 16-set sweep: V-Liner (a gambling set) stops; Fight Fever runs here but the reference does not (a missing file).
-- **Metal Slug 2 logo transition (parked 2026-11-01).** At the end of its attract loop (ours frames 3952-4060) the NEO-GEO logo is drawn mirrored on a white flash, where FinalBurn Neo shows a wide, squashed, un-mirrored logo on grey. The sprite RAM says the game shows chain 1 (sprites 1-18: tiles in descending order, hflip set, horizontal shrink 0 to 15) while chain 2 (sprites 19-36, ascending, unflipped) has height 0, and swaps them at about frame 4060; the renderer draws that data as written. Whether the reference hides chain 1 or the game takes another path there is not known. Probe aids: `RC_SPRITES=1`, `RC_SPRTRACE=<frame>`.
+- **Metal Slug 2 logo transition: not a defect (closed 2026-11-27).** The mirrored logo on white is the logo turning over (its back
+  side, chain 1 below), and FinalBurn Neo draws it too: 8 Man's end-of-attract logo, captured every 20 frames in both (2300-2560), shows the
+  same sequence (mirrored and shrinking on white, then the grey fade, then the plain logo and "MAX 330 MEGA"), the reference about 20 frames
+  behind this machine. The single frames compared before fell at different moments of that animation. The history:
+  At the end of its attract loop (ours frames 3952-4060) the NEO-GEO logo is drawn mirrored on a white flash, where FinalBurn Neo shows a wide, squashed, un-mirrored logo on grey. The sprite RAM says the game shows chain 1 (sprites 1-18: tiles in descending order, hflip set, horizontal shrink 0 to 15) while chain 2 (sprites 19-36, ascending, unflipped) has height 0, and swaps them at about frame 4060; the renderer draws that data as written. Whether the reference hides chain 1 or the game takes another path there is not known. Probe aids: `RC_SPRITES=1`, `RC_SPRTRACE=<frame>`.
 - **Resolved 2026-11-01: the boot offset and Metal Slug 2's WARNING screen (fact N51).** Both had one cause: the watchdog reset was not modelled. The BIOS formats an unformatted backup RAM and lets the watchdog reboot it; FinalBurn Neo therefore boots KOF 2001 and Metal Slug 2 twice, and the second boot leaves the flag at `$D00100` clear. Now exactly those two sets reset once here, Metal Slug 2 reaches its title and KOF 2001 its attract mode. The notes below on both are kept as the history of the search (the 214-frame offset should be re-measured; the clock length of the watchdog is `[H?]`).
 - **Metal Slug 2 (RomM 7062, 2026-10-31).** Its stop at `$2FFFF0` was the program's bank register (fact N47, done: a program over 2 MiB is
   banked, and the `.sp2` second program file is read). The game then shows its "WARNING: this ROM cartridge is for use with original SNK
