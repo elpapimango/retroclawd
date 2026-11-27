@@ -7,3 +7,7 @@ description = "Yamaha YM2610 (OPNB): timers, the SSG, ADPCM-A and ADPCM-B, FM"
 
 [dependencies]
 ay-3-8910 = { path = "../../../../../shared/crates/chips/ay-3-8910" }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+bincode = { version = "2", features = ["serde"] }

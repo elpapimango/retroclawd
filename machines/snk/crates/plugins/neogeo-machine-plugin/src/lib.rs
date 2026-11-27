@@ -39,9 +39,39 @@ struct InstanceRecord {
     breakpoints: Vec<u64>,
     diag_file: Option<std::path::PathBuf>,
     reported: bool,
+    /// The backup RAM's file and what was read from it (written back at exit when the machine changed it).
+    backup: Option<(std::path::PathBuf, Vec<u8>)>,
 }
 
+/// Where the backup RAM is kept when the `backup_ram` option names no file: one file, as one MVS board keeps one RAM for
+/// all its games.
+const DEFAULT_BACKUP: &str = "saves/neogeo-backup.bin";
+
 impl InstanceRecord {
+    /// Writes the backup RAM to its file when the machine changed it (to a temporary file, then renamed).
+    fn save_backup(&self) {
+        let Some((path, loaded)) = &self.backup else {
+            return;
+        };
+        if self.machine.bus.backup == *loaded {
+            return;
+        }
+        let write = || -> std::io::Result<()> {
+            if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+                std::fs::create_dir_all(dir)?;
+            }
+            let temp = path.with_extension("tmp");
+            std::fs::write(&temp, &self.machine.bus.backup)?;
+            std::fs::rename(&temp, path)
+        };
+        if let Err(e) = write() {
+            eprintln!(
+                "neogeo: cannot save the backup RAM to {}: {e}",
+                path.display()
+            );
+        }
+    }
+
     /// Writes the stop report once, to the diagnostic file or stderr.
     fn after_step(&mut self) {
         if self.reported {
@@ -58,6 +88,12 @@ impl InstanceRecord {
                 None => eprintln!("neogeo: {report}"),
             }
         }
+    }
+}
+
+impl Drop for InstanceRecord {
+    fn drop(&mut self) {
+        self.save_backup();
     }
 }
 
@@ -118,6 +154,7 @@ fn machine_profile() -> MachineProfile {
             MachineCapability::Video,
             MachineCapability::Audio,
             MachineCapability::Debug,
+            MachineCapability::SaveState,
         ],
         media_kinds: vec![MediaKind::Cartridge],
         options: vec![
@@ -139,6 +176,12 @@ fn machine_profile() -> MachineProfile {
                     "The system ROM set: neogeo.zip as a whole (write neogeo.zip#* for a file; --firmware auto finds it on RomM): the 68000 BIOS files, sm1.sm1, sfix.sfix and 000-lo.lo",
                 )
             },
+            option(
+                "backup_ram",
+                MachineOptionKind::Text,
+                None,
+                "Where the board's 64 KB backup RAM (settings, bookkeeping, game saves) is kept between sessions (default saves/neogeo-backup.bin; none: no file, the RAM starts empty each time); read at start, written at exit when it changed",
+            ),
             #[cfg(feature = "debug")]
             option(
                 "diag_file",
@@ -238,11 +281,13 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     #[allow(unused_mut)]
     let mut diag_file: Option<std::path::PathBuf> = None;
     let mut game = None;
+    let mut backup_file = None;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
             #[cfg(feature = "debug")]
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(std::path::PathBuf::from(v)),
             ("rom", DebugValue::Text(v)) => game = Some(read_set("rom", v, MAX_GAME)?),
+            ("backup_ram", DebugValue::Text(v)) => backup_file = Some(std::path::PathBuf::from(v)),
             ("execution_mode", _) => {}
             (key, _) => {
                 return Err(format!(
@@ -264,7 +309,29 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             bios.len()
         ));
     }
-    let machine = NeoGeo::from_sets(bios, &game)?;
+    let mut machine = NeoGeo::from_sets(bios, &game)?;
+    let backup_path = backup_file.unwrap_or_else(|| std::path::PathBuf::from(DEFAULT_BACKUP));
+    let no_file = backup_path.as_os_str() == "none";
+    match std::fs::read(&backup_path) {
+        _ if no_file => {}
+        Ok(bytes) if bytes.len() == machine.bus.backup.len() => machine.bus.backup = bytes,
+        Ok(bytes) => {
+            return Err(format!(
+                "option \"backup_ram\": {} is {} bytes, the backup RAM is {}",
+                backup_path.display(),
+                bytes.len(),
+                machine.bus.backup.len()
+            ));
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            return Err(format!(
+                "option \"backup_ram\": {}: {e}",
+                backup_path.display()
+            ));
+        }
+    }
+    let backup = (!no_file).then(|| (backup_path, machine.bus.backup.clone()));
     let sets = (bios.to_vec(), game);
     let mut state = state()
         .lock()
@@ -278,6 +345,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             breakpoints: Vec::new(),
             diag_file,
             reported: false,
+            backup,
         },
     );
     Ok(MachineCreateResponse {
@@ -394,6 +462,14 @@ fn handle_machine_command(
                 pc: u64::from(record.machine.cpu.pc),
                 halted: record.machine.bus.stop.is_some(),
             }))
+        }
+        MachineCommand::SaveState => Ok(MachineResponse::StateBlob(neogeo::state::save(
+            &record.machine,
+        ))),
+        MachineCommand::LoadState { bytes } => {
+            neogeo::state::load(&mut record.machine, &bytes)?;
+            record.reported = record.machine.bus.stop.is_some();
+            Ok(MachineResponse::Ack)
         }
         MachineCommand::IsHalted => Ok(MachineResponse::Halted(record.machine.bus.stop.is_some())),
         MachineCommand::GetPc => Ok(MachineResponse::Pc(u64::from(record.machine.cpu.pc))),

@@ -4271,10 +4271,13 @@ dependencies = [
 name = "neogeo"
 version = "0.1.0"
 dependencies = [
+ "bincode",
+ "crc32fast",
  "neo-set",
  "rc-machine",
  "rc-mc68000",
  "rc-z80",
+ "serde",
  "ym2610",
  "zip",
 ]
@@ -8187,6 +8190,8 @@ name = "ym2610"
 version = "0.1.0"
 dependencies = [
  "ay-3-8910",
+ "bincode",
+ "serde",
 ]
 
 [[package]]

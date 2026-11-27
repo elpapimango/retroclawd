@@ -20,7 +20,7 @@ const DETUNE: [[u8; 32]; 3] = [
     ],
 ];
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 enum Phase {
     Off,
     Attack,
@@ -29,7 +29,7 @@ enum Phase {
     Release,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
 struct Operator {
     mul: u8,
     /// The detune: bits 6-4 of register `$30`, a magnitude in bits 5-4 and the sign in bit 6 (fact Y9).
@@ -71,7 +71,7 @@ impl Default for Operator {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 pub struct Channel {
     ops: [Operator; 4],
     fnum: u16,
@@ -283,7 +283,7 @@ impl Channel {
 }
 
 /// The four channels and the writes that reach them.
-#[derive(Default)]
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 pub struct Fm {
     pub channels: [Channel; 4],
     /// The frequency high bits wait for the low byte (fact Y6).
@@ -291,6 +291,32 @@ pub struct Fm {
 }
 
 impl Fm {
+    /// For a state read from a file: the block (a shift) and the operator fields are in their register widths.
+    pub fn check_state(&self) -> Result<(), String> {
+        let ok = self.channels.iter().all(|c| {
+            c.block <= 7
+                && c.fnum <= 0x7FF
+                && c.feedback <= 7
+                && c.algorithm <= 7
+                && c.ops.iter().all(|o| {
+                    o.mul <= 15
+                        && o.dt <= 7
+                        && o.tl <= 0x7F
+                        && o.ks <= 3
+                        && o.ar <= 0x1F
+                        && o.d1r <= 0x1F
+                        && o.d2r <= 0x1F
+                        && o.rr <= 15
+                        && o.sl <= 15
+                })
+        });
+        if ok {
+            Ok(())
+        } else {
+            Err("an FM channel is out of range".to_string())
+        }
+    }
+
     pub fn new() -> Fm {
         let mut fm = Fm::default();
         for c in &mut fm.channels {

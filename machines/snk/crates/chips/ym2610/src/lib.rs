@@ -30,7 +30,7 @@ fn step_table() -> [i32; 49] {
 /// How the step index moves for the three magnitude bits of a code (fact Y5).
 const INDEX_STEP: [i32; 8] = [-1, -1, -1, -1, 2, 5, 7, 9];
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 struct AdpcmA {
     /// Sample bytes: where it starts and ends (registers `$10-$15`/`$18-$1D` and `$20-$25`/`$28-$2D`, in units of 256 bytes).
     start: u32,
@@ -46,7 +46,7 @@ struct AdpcmA {
     step_index: i32,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 struct AdpcmB {
     start: u32,
     end: u32,
@@ -64,7 +64,10 @@ struct AdpcmB {
     step: i32,
 }
 
+/// The chip's state is saved whole (save states) except the samples not yet drained and the tables made at start-up.
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Ym2610 {
+    #[serde(with = "pairs")]
     regs: [[u8; 256]; 2],
     addr: [u8; 2],
     timer_a: u16,
@@ -74,6 +77,8 @@ pub struct Ym2610 {
     /// Status bits: 0 timer A flag, 1 timer B flag (fact Y3).
     flags: u8,
     control: u8,
+    /// The variant is not in a state (see `ay-3-8910`): it is set again when one is read.
+    #[serde(deserialize_with = "ssg_ym2149")]
     ssg: Ay3_8910,
     fm: fm::Fm,
     adpcm_phase: u32,
@@ -85,10 +90,43 @@ pub struct Ym2610 {
     /// Chip clocks since the last sample, and the samples made (left, right).
     clocks: u32,
     timer_b_prescale: u32,
+    #[serde(skip)]
     out: Vec<(i16, i16)>,
+    #[serde(skip, default = "step_table")]
     steps: [i32; 49],
     /// A debugging aid: the sources named in the environment variable RC_MUTE (f, s, a, b) are left out of the mix.
+    #[serde(skip, default = "mute_from_env")]
     mute: String,
+}
+
+fn ssg_ym2149<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Ay3_8910, D::Error> {
+    let mut ssg = <Ay3_8910 as serde::Deserialize>::deserialize(d)?;
+    ssg.set_variant(Variant::Ym2149);
+    Ok(ssg)
+}
+
+fn mute_from_env() -> String {
+    std::env::var("RC_MUTE").unwrap_or_default()
+}
+
+/// The two register files as one list of 512 bytes (serde has no arrays longer than 32).
+mod pairs {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+
+    pub fn serialize<S: Serializer>(regs: &[[u8; 256]; 2], s: S) -> Result<S::Ok, S::Error> {
+        regs.concat().serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<[[u8; 256]; 2], D::Error> {
+        let v = Vec::<u8>::deserialize(d)?;
+        if v.len() != 512 {
+            return Err(D::Error::custom("the YM2610 registers are 512 bytes"));
+        }
+        let mut regs = [[0u8; 256]; 2];
+        regs[0].copy_from_slice(&v[..256]);
+        regs[1].copy_from_slice(&v[256..]);
+        Ok(regs)
+    }
 }
 
 impl Default for Ym2610 {
@@ -98,6 +136,39 @@ impl Default for Ym2610 {
 }
 
 impl Ym2610 {
+    /// For a state read from a file: every value the chip indexes or shifts with is in the range its own writes keep it in.
+    pub fn check_state(&self) -> Result<(), String> {
+        // the sample addresses are 24 bits (registers of 16 bits times 256) and a position stays within its sample
+        let sample_ok = |start: u32, end: u32, pos: u32| {
+            start <= 0xFF_FFFF && end <= 0xFF_FFFF && pos <= 2 * (0xFF_FFFF - start + 1)
+        };
+        for a in &self.adpcm_a {
+            if !(0..=48).contains(&a.step_index) || !sample_ok(a.start, a.end, a.pos) {
+                return Err("an ADPCM-A channel is out of range".to_string());
+            }
+        }
+        // the counters the sample loop steps: below the values at which it wraps them
+        let counters_ok = self.clocks < CLOCKS_PER_SAMPLE
+            && self.counter_a <= 1024
+            && self.counter_b <= 256
+            && self.timer_b_prescale < 16
+            && self.adpcm_phase < 3;
+        if !counters_ok {
+            return Err("a YM2610 timer or sample counter is out of range".to_string());
+        }
+        let b = &self.adpcm_b;
+        // the rate accumulator: below one step and its largest increment, so its loop ends at once
+        if b.phase >= 0x2_0000 {
+            return Err("the ADPCM-B channel is out of range".to_string());
+        }
+        // 0 before the first key on, then 127-24576
+        if !(b.step == 0 || (127..=24576).contains(&b.step)) || !sample_ok(b.start, b.end, b.pos) {
+            return Err("the ADPCM-B channel is out of range".to_string());
+        }
+        self.ssg.check_state()?;
+        self.fm.check_state()
+    }
+
     pub fn new() -> Ym2610 {
         Ym2610 {
             regs: [[0; 256]; 2],
@@ -119,7 +190,7 @@ impl Ym2610 {
             timer_b_prescale: 0,
             out: Vec::new(),
             steps: step_table(),
-            mute: std::env::var("RC_MUTE").unwrap_or_default(),
+            mute: mute_from_env(),
         }
     }
 
@@ -409,6 +480,16 @@ impl Ym2610 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_decoded_chip_is_valid_and_its_ssg_a_ym2149() {
+        let chip = super::Ym2610::new();
+        let bytes = bincode::serde::encode_to_vec(&chip, bincode::config::standard()).unwrap();
+        let (back, _): (super::Ym2610, usize) =
+            bincode::serde::decode_from_slice(&bytes, bincode::config::standard()).unwrap();
+        assert_eq!(back.ssg.variant(), ay_3_8910::Variant::Ym2149);
+        assert!(back.check_state().is_ok());
+    }
+
     use super::*;
 
     fn write(chip: &mut Ym2610, pair: u8, reg: u8, value: u8) {

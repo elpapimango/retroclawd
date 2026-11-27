@@ -18,7 +18,7 @@ const FIRST_ANSWERS: [(u32, u8); 4] = [
     (0x2F_F001, 0x00),
 ];
 
-#[derive(Default)]
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 pub struct Protection {
     /// The challenge words last written to `$256782` and `$242812`, and how far the answers have been read.
     written: [u16; 2],

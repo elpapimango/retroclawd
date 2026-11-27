@@ -9,8 +9,14 @@
   Cyber-Lip (RMS of the left channel): the BIOS jingle 546 against 528 (3-8 s), the title and attract music 1255, 1629, 984 against
   1548, 1883, 1218 (10-20, 25-35, 40-50 s): about 80 percent, peaks 7-8 thousand against 12-13 thousand. The envelope rates, the
   ADPCM-A level law and ADPCM-B are `[H?]` (facts Y5-Y7); the scenario S4 only holds the BIOS's silence at start-up.
-- **Raster effects.** The timer interrupt (level 2) is raised (fact N41) but no game with a visible split screen has been compared with
-  the reference yet; the line of the vertical blank interrupt and of the blank reload are `[H?]`.
+- **Raster effects.** The timer interrupt (level 2) is raised (fact N41); the line of the vertical blank interrupt and of the blank reload
+  are `[H?]`. Which sets use it (2026-11-27, 3000 frames of each of 23 sets): Metal Slug 2 (about 29 a frame), 8 Man, Aggressors of Dark
+  Kombat, Art of Fighting and Double Dragon; the other 18 never enable it. 8 Man and Metal Slug 2 compared with FinalBurn Neo at frames 1200,
+  1800 and 2400: no broken bands or misplaced splits in either; what differs is frame timing (blinking text, the logo animation) and 8 Man's
+  NEO-GEO logo transition, drawn mirrored on white here (the same as Metal Slug 2's, parked below).
+- **Burning Fight stops at frame 1527 (found 2026-11-27).** It reads the word at `$3689C2` (pc `$0020C2`), an address in the `$300000`
+  register area that no fact covers, so the machine stops by the project rule. What the board answers there needs a source (a register
+  mirror or open bus); not guessed.
 - **FM details.** In: detune (fact Y9), the envelope rate law, the saturation of a channel's sum and the output scales (fact Y10). The levels
   now agree with FinalBurn Neo's within 7 percent in all four windows of Cyber-Lip (jingle 574 against 570, music 1518/1574, 1993/1865,
   1150/1225 RMS), and several partials agree within half a percent (197/196 Hz, 1753/1755, 519/518, jingle 390/391). Not done: the LFO
@@ -24,7 +30,12 @@
   right); the sprite chains are 20 columns by 16 tiles; not yet understood (not auto-animation, not the shrink). The other pictures were
   judged by eye against the reference (Baseball Stars 2, Aggressors of Dark Kombat differ only in the moment of the transition).
 - **uPD4990A clock** is a fixed one-second pulse; no time or date is kept.
-- **Save states, backup RAM and memory card files** are not written (the backup RAM is lost at exit).
+- **Save states and the backup RAM file: done (2026-11-27).** Save states (`RCST`, `crates/machines/neogeo/src/state.rs`: both CPUs, the bus with
+  the program ROM, the sound side and the YM2610; the BIOS and the S/C/V/M ROMs stay out and are identified by a CRC) resume exactly: Cyber-Lip
+  saved at frame 900 and loaded shows the same picture at 1500 as the run that never stopped. The 64 KB backup RAM is the option `backup_ram`
+  (default `saves/neogeo-backup.bin`, one file as one MVS board has one RAM; `none` for no file, which the scenario manifest uses so that its
+  runs stay the same): read at start, written at exit when it changed. KOF 2001 formats it on the first run and reads it on the next.
+  Still open: the AES **memory card** (not emulated at all).
 - **Controllers**: one pad and the coin/start buttons are wired; the arcade `Select` and the second player's keys have no default host keys.
 - **Resolved 2026-10-31 (second round).** Art of Fighting's defect was the C ROM layout: four 2 MiB chips with a small program are two
   halves each (fact N46); Fatal Fury 2's protection answers the challenges its code makes (fact N45); tile numbers past the ROM wrap

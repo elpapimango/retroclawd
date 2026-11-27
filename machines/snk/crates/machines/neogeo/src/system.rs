@@ -36,8 +36,8 @@ pub struct NeoGeo {
     pub z80: z80::Cpu,
     pub bus: Bus,
     /// Master clocks the Z80 has run up to.
-    z80_clock: u64,
-    nmi_was_high: bool,
+    pub(crate) z80_clock: u64,
+    pub(crate) nmi_was_high: bool,
     /// A debugging aid: with `trace_nth_nmi` set, the Z80 program counters from the entry of that NMI on (up to 600).
     pub trace_nth_nmi: Option<usize>,
     pub z80_trace: Vec<u16>,

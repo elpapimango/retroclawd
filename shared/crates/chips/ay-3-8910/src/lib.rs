@@ -322,6 +322,34 @@ impl Default for Ay3_8910 {
 }
 
 impl Ay3_8910 {
+    /// For a state read from a file: every field is in the range the chip's own register writes and ticks keep it in,
+    /// so nothing indexes past a table, overflows or loops for long when the state runs. A counter may be above its
+    /// period (the period was lowered while it ran), never above the largest period.
+    pub fn check_state(&self) -> Result<(), String> {
+        let tone_ok = self.channels.iter().all(|c| {
+            c.period <= 0xFFF
+                && c.counter <= 0xFFF
+                && c.prescale_counter < TONE_PRESCALE
+                && c.volume <= 15
+        });
+        let n = &self.noise;
+        let noise_ok = n.period <= 0x1F
+            && n.counter <= 0x1F
+            && n.prescale_counter < NOISE_PRESCALE
+            && n.lfsr < 1 << 17;
+        let e = &self.envelope;
+        // a held envelope keeps the cycles left when it stopped; a retrigger clears them
+        let envelope_ok = e.counter <= 0xFFFF
+            && (e.holding || e.prescale_counter < ENVELOPE_PRESCALE)
+            && e.position <= 31
+            && e.shape <= 15;
+        if self.selected_register <= 15 && tone_ok && noise_ok && envelope_ok {
+            Ok(())
+        } else {
+            Err("the SSG (AY-3-8910) state is out of range".to_string())
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             selected_register: 0,

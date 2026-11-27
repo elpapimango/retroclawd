@@ -6,6 +6,7 @@
 pub mod protection;
 pub mod rtc;
 pub mod sound;
+pub mod state;
 pub mod system;
 pub mod video;
 
@@ -30,7 +31,7 @@ pub const WATCHDOG_CLOCKS: u64 = 3_120_000;
 const TP_HALF_PERIOD: u64 = 24_000_000 / 2;
 
 /// The video processor's registers as the 68000 sees them (facts N12, N13). Nothing is drawn yet.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Lspc {
     pub vram_addr: u16,
     pub vram_mod: u16,
@@ -57,8 +58,11 @@ fn swap_words(data: &mut [u8]) {
     }
 }
 
-/// What the 68000 sees. The cartridge's P ROM is `p`.
+/// What the 68000 sees. The cartridge's P ROM is `p`. A save state holds all of it except the BIOS, the board kind and the
+/// debugging logs (the program ROM is kept: Metal Slug 4 writes into it).
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Bus {
+    #[serde(skip)]
     pub bios: Vec<u8>,
     pub p: Vec<u8>,
     pub work: Vec<u8>,
@@ -96,6 +100,7 @@ pub struct Bus {
     pub rtc: rtc::Rtc,
     pub rtc_start: ((u32, u32, u32, u32, u32, u32), u32),
     /// The writes to REG_RTCCTRL (value, pc) and the reads of REG_STATUS_A (value, pc), in order (a debugging aid).
+    #[serde(skip)]
     pub rtc_log: Vec<(char, u8, u32)>,
     /// A debugging aid: the vertical blanks raised, the timer interrupts raised and the acknowledgements written for bits 0-2.
     pub irq_counts: [u64; 5],
@@ -104,6 +109,7 @@ pub struct Bus {
     /// Where the window at `$200000` starts in the program when a chip picked it (SMA, PVC), else the 1 MiB banks of `p_bank` (fact N53).
     pub p_window: Option<usize>,
     /// The protection board and the PVC chip's 8 KiB of RAM (fact N53).
+    #[serde(skip)]
     pub board: neo_set::carts::Board,
     pub pvc_ram: Vec<u16>,
     /// The cartridge's challenge and response chip, as far as seen (fact N45).
@@ -111,6 +117,7 @@ pub struct Bus {
     /// A debugging aid: when set, an access no fact covers is logged in `access_log` (with the 68000's pc) and answered with `$FF` or
     /// ignored, instead of stopping the machine.
     pub lenient: bool,
+    #[serde(skip)]
     pub access_log: Vec<(u32, bool, u32, u32)>,
     pub current_pc: u32,
     pub lspc: Lspc,

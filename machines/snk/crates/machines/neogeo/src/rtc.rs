@@ -68,7 +68,7 @@ pub fn add_seconds(start: (u32, u32, u32, u32, u32, u32), weekday0: u32, seconds
 }
 
 /// The chip's serial side.
-#[derive(Default)]
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 pub struct Rtc {
     command: u8,
     bits_in: u8,
