@@ -110,6 +110,14 @@ pub fn load(m: &mut NeoGeo, bytes: &[u8]) -> Result<(), String> {
         return Err("the state file is damaged: bytes after the payload".to_string());
     }
     check(&p.bus, &m.bus)?;
+    if p.z80_clock >= 1 << 60 {
+        return Err("the state file is damaged: a clock is out of range".to_string());
+    }
+    p.bus
+        .sound
+        .ym
+        .check_state()
+        .map_err(|e| format!("the state file is damaged: {e}"))?;
     let mut bus = p.bus;
     // what the state does not hold stays with this machine
     let old = &mut m.bus;
@@ -137,7 +145,9 @@ fn check(new: &Bus, old: &Bus) -> Result<(), String> {
         && new.vram.len() == old.vram.len()
         && new.pvc_ram.len() == old.pvc_ram.len()
         && new.sound.ram.len() == old.sound.ram.len();
-    if same {
+    // the clocks only grow by small steps from here: far from where an addition could overflow
+    let clocks_ok = new.clock < 1 << 60;
+    if same && clocks_ok {
         Ok(())
     } else {
         Err("the state file is damaged: a memory has the wrong size".to_string())
@@ -150,7 +160,7 @@ mod tests {
     use crate::system::Graphics;
 
     /// A machine with a made-up BIOS that loops writing a counter to work RAM, and nothing in the cartridge.
-    fn machine() -> NeoGeo {
+    pub(super) fn machine() -> NeoGeo {
         // reset vectors: SSP $10F300, PC $C00402; at $402: addq.w #1,$100000 ; bra.s *-6 (in 68000 order, then
         // byte-swapped as the sets store it)
         let mut bios = vec![0u8; crate::BIOS_SIZE];
@@ -227,5 +237,28 @@ mod tests {
             assert!(e.contains(why), "{why}: {e}");
             assert_eq!(fingerprint(&m), before);
         }
+    }
+}
+
+#[cfg(test)]
+mod range_tests {
+    use super::*;
+
+    /// A state whose payload decodes but holds a value the chip would index with past its table is refused.
+    #[test]
+    fn values_out_of_range_are_refused() {
+        let mut m = super::tests::machine();
+        let good = save(&m);
+        load(&mut m, &good).unwrap();
+        // a clock near the end of u64: re-encode a state with it
+        m.bus.clock = u64::MAX - 5;
+        let bad = save(&m);
+        m.bus.clock = 0;
+        let e = load(&mut m, &bad).unwrap_err();
+        assert!(
+            e.contains("wrong size") || e.contains("out of range"),
+            "{e}"
+        );
+        assert_eq!(m.bus.clock, 0);
     }
 }

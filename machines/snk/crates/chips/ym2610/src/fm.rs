@@ -291,6 +291,32 @@ pub struct Fm {
 }
 
 impl Fm {
+    /// For a state read from a file: the block (a shift) and the operator fields are in their register widths.
+    pub fn check_state(&self) -> Result<(), String> {
+        let ok = self.channels.iter().all(|c| {
+            c.block <= 7
+                && c.fnum <= 0x7FF
+                && c.feedback <= 7
+                && c.algorithm <= 7
+                && c.ops.iter().all(|o| {
+                    o.mul <= 15
+                        && o.dt <= 7
+                        && o.tl <= 0x7F
+                        && o.ks <= 3
+                        && o.ar <= 0x1F
+                        && o.d1r <= 0x1F
+                        && o.d2r <= 0x1F
+                        && o.rr <= 15
+                        && o.sl <= 15
+                })
+        });
+        if ok {
+            Ok(())
+        } else {
+            Err("an FM channel is out of range".to_string())
+        }
+    }
+
     pub fn new() -> Fm {
         let mut fm = Fm::default();
         for c in &mut fm.channels {

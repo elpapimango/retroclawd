@@ -128,6 +128,25 @@ impl Default for Ym2610 {
 }
 
 impl Ym2610 {
+    /// For a state read from a file: every value the chip indexes or shifts with is in the range its own writes keep it in.
+    pub fn check_state(&self) -> Result<(), String> {
+        // the sample addresses are 24 bits (registers of 16 bits times 256) and a position stays within its sample
+        let sample_ok = |start: u32, end: u32, pos: u32| {
+            start <= 0xFF_FFFF && end <= 0xFF_FFFF && pos <= 2 * (0xFF_FFFF - start + 1)
+        };
+        for a in &self.adpcm_a {
+            if !(0..=48).contains(&a.step_index) || !sample_ok(a.start, a.end, a.pos) {
+                return Err("an ADPCM-A channel is out of range".to_string());
+            }
+        }
+        let b = &self.adpcm_b;
+        // 0 before the first key on, then 127-24576
+        if !(b.step == 0 || (127..=24576).contains(&b.step)) || !sample_ok(b.start, b.end, b.pos) {
+            return Err("the ADPCM-B channel is out of range".to_string());
+        }
+        self.fm.check_state()
+    }
+
     pub fn new() -> Ym2610 {
         Ym2610 {
             regs: [[0; 256]; 2],
