@@ -5362,9 +5362,9 @@ dependencies = [
 
 [[package]]
 name = "rc-common"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fd33dc518c8d1543fe8d7f6be74d43b639f8e897abda76629208b08388a0f24"
+checksum = "d8f4d43cf59dd8e31fc8b0cba0d64e56011b3fe1bcca4d77c897637c34dab6bc"
 
 [[package]]
 name = "rc-cpc-cartridge"
@@ -5566,9 +5566,9 @@ checksum = "acdc748316044913fa9d97c98772e4c21ef9a166a0bc14511a840fb6bb1bb463"
 
 [[package]]
 name = "rcasm"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "013b9b8b41d229be4963b9f553971dd2aaa6441a08578f3312fdd231e3285896"
+checksum = "102eabbdb908b62864be0c635dcd183fc623421bd581d86e11515bbf7d8dd00b"
 dependencies = [
  "clap",
  "rc-common",
@@ -5583,9 +5583,9 @@ dependencies = [
 
 [[package]]
 name = "rcdisk"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17639d6d3314bebae02f6e033a5a76d6ff4170001c252d58a984485fe68aa7b9"
+checksum = "a273fc8cf89b00e9a4e9151571bac804f6b45ecb31269c370f6fb18ae2e0a54e"
 dependencies = [
  "clap",
  "rc-atari-media",
@@ -5600,9 +5600,9 @@ dependencies = [
 
 [[package]]
 name = "rcld"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "804f0ddb62ef2c8ae97f7409102a4312a743517b45ed59d44b79a601e82f4cf0"
+checksum = "bccad43b783812744623cd1f1332bd9671c8481df1f6a5960263e709df221180"
 dependencies = [
  "clap",
  "rc-amiga",
@@ -5622,9 +5622,9 @@ dependencies = [
 
 [[package]]
 name = "rcsnap"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63febb356a12d9efb84eeefc486cf221eeed9bf15ca05739002961da1b75eb5a"
+checksum = "9246d4a47e1ed658e0b5d5c45f7f41fae92ae36006e126c2764be4c0a283ef15"
 dependencies = [
  "clap",
  "rc-c64-cartridge",
@@ -5640,9 +5640,9 @@ dependencies = [
 
 [[package]]
 name = "rctape"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfb42bfc87e882f5691cb77c6d4ed4be92e0979ef2b82357c27805aba487fb1e"
+checksum = "bd2a03ce0e01f1d189359ce4317cf1643fe41523b0c071151009c234e92b33c9"
 dependencies = [
  "clap",
  "rc-c64-tape",
