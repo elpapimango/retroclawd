@@ -15,6 +15,8 @@ pub const ST_CR: u8 = 0x01;
 pub const ST_OR: u8 = 0x02;
 pub const ST_RR: u8 = 0x04;
 pub const ST_DS: u8 = 0x08;
+/// Lines from the start of the sprite table transfer to its end flag (fact V15).
+const SATB_DMA_LINES: u8 = 4;
 pub const ST_DV: u8 = 0x10;
 pub const ST_VD: u8 = 0x20;
 
@@ -31,6 +33,8 @@ pub struct Vdc {
     low_latch: u8,
     /// A write to the SATB register asks for a transfer at the next vertical blank.
     satb_pending: bool,
+    /// Lines until the sprite table transfer started at the blank ends (its end flag and interrupt), 0 = none running.
+    satb_busy: u8,
     /// The background's line counter (the row of the virtual screen drawn on the current line).
     bg_y: u16,
     /// BYR was written: the next line starts from it instead of counting on.
@@ -69,6 +73,7 @@ impl Vdc {
             read_buf: 0,
             low_latch: 0,
             satb_pending: false,
+            satb_busy: 0,
             bg_y: 0,
             byr_reload: false,
             active_start: 0,
@@ -163,7 +168,10 @@ impl Vdc {
             }
             2 => {
                 let word = (u16::from(v) << 8) | u16::from(self.low_latch);
-                self.vram[usize::from(self.reg[0]) & (VRAM_WORDS - 1)] = word;
+                // there is no VRAM at $8000-$FFFF: a write there is lost, it does not wrap to $0000 (fact V14)
+                if let Some(cell) = self.vram.get_mut(usize::from(self.reg[0])) {
+                    *cell = word;
+                }
                 self.reg[0] = self.reg[0].wrapping_add(self.increment());
             }
             8 => self.byr_reload = true,
@@ -180,7 +188,9 @@ impl Vdc {
         let count = u32::from(self.reg[0x12]) + 1;
         for _ in 0..count {
             let w = self.vram[usize::from(src) & (VRAM_WORDS - 1)];
-            self.vram[usize::from(dst) & (VRAM_WORDS - 1)] = w;
+            if let Some(cell) = self.vram.get_mut(usize::from(dst)) {
+                *cell = w;
+            }
             src = if dcr & 4 != 0 {
                 src.wrapping_sub(1)
             } else {
@@ -204,9 +214,9 @@ impl Vdc {
         for i in 0..256 {
             self.satb[i] = self.vram[(base + i) & (VRAM_WORDS - 1)];
         }
-        if self.reg[0x0F] & 1 != 0 {
-            self.status |= ST_DS;
-        }
+        // the transfer takes a few lines: its end flag comes after the vertical-blank flag, so a game whose handler
+        // reads the status once sees two interrupts (fact V15)
+        self.satb_busy = SATB_DMA_LINES;
     }
 
     /// Whether the interrupt line to the CPU (`IRQ1`) is asserted.
@@ -267,6 +277,12 @@ impl Vdc {
                 + u32::from(self.display_height())
                 + u32::from(self.reg[0x0E] & 0xFF);
             self.frame_total = total.clamp(262, 525) as u16;
+        }
+        if self.satb_busy > 0 {
+            self.satb_busy -= 1;
+            if self.satb_busy == 0 && self.reg[0x0F] & 1 != 0 {
+                self.status |= ST_DS;
+            }
         }
         let start = self.active_start;
         let height = self.display_height();
@@ -445,6 +461,21 @@ mod tests {
         v.write(0, r);
         v.write(2, value as u8);
         v.write(3, (value >> 8) as u8);
+    }
+
+    /// Turrican clears from $4400 on for 16K words: the writes past $7FFF must not wrap onto the map at $0000 (fact V14).
+    #[test]
+    fn writes_past_the_end_of_vram_are_lost() {
+        let mut v = Vdc::new();
+        setup_reg(&mut v, 0, 0x0000);
+        v.write(0, 2);
+        v.write(2, 0x40);
+        v.write(3, 0x04);
+        setup_reg(&mut v, 0, 0x8000);
+        v.write(0, 2);
+        v.write(2, 0);
+        v.write(3, 0);
+        assert_eq!(v.vram()[0], 0x0440);
     }
 
     #[test]

@@ -22,17 +22,17 @@ Beetle PCE (the accurate core; Beetle PCE Fast does not run a card as a SuperGra
 0.3-1.8). Not checked: games, mid-line changes of the priority controller, what `$0018-$001F` and the controller registers read back, timing
 differences between the two controllers. The machine is chosen by the option, not by the `.sgx` file name.
 
-## Games that do not match yet (sweep of 84, frame 600; 2026-11-27: 77 of 84 within 8, was 68)
-Fixed 2026-11-27: Battle Royale's timer seed loop (the counter shows `$7F` for a cycle at an underflow, fact M11), narrow pictures
-centred instead of stretched (Galaga '90, TV Sports Hockey, Toy Shop Boys; fact C5), the picture window fixed in the frame (Heavy Unit, Jack
-Nicklaus' Golf, Aoi Blink; fact C3), and the vertical blank of a picture that runs past the frame's end (Drop Off, Bullfight Ring no Hasha;
-fact V13). Still different, cause unknown unless stated (compare by work-RAM dumps at the same frames, `libretro_run.py --ram-at`, probe `RAMOUT`):
-- Black where the reference shows its title: Turrican (7540: at frame 100 the tile data is in VRAM but the background map at `$0000-$07FF` is
-  empty), Kore ga Pro Yakyuu '90 (7341), a 'Download' card (7249).
-- Cyber-Core (7226): the logo is drawn broken and the blue background is missing.
-- Another moment of the same scene: After Burner II (7160), Walkure no Densetsu (7542, scrolled elsewhere), Momotaro Densetsu II (7374).
-- Battle Royale's demo goes another way from the reference's (the seed read's first underflow comes at another time: the prescaler's phase
-  at the timer's start is not known).
+## Games that do not match yet (sweep of 84, frame 600; 2026-11-27: 82 of 84 within 8, was 68)
+Fixed 2026-11-27, each with the fact it needed: Battle Royale's timer seed loop (M11), narrow pictures centred (C5: Galaga '90, TV Sports
+Hockey, Toy Shop Boys), the picture window fixed in the frame (C3: Heavy Unit, Jack Nicklaus' Golf, Aoi Blink), the vertical blank of a
+picture that runs past the frame's end (V13: Drop Off, Bullfight Ring no Hasha), VRAM writes past `$7FFF` lost instead of wrapped (V14:
+Turrican), the sprite table transfer's end flag some lines after the blank (V15: Kore ga Pro Yakyuu '90, Walkure no Densetsu) and the CPU's
+port buffer (M12: the 'Download' card, Cyber-Core). Debugging aids added: probe `VRAMOUT`, `libretro_run.py --vram-at` (Beetle PCE Fast's
+VRAM), the `timerpoll` and `hpos` test cards. Still different:
+- After Burner II (7160): another moment of the same scene (timing).
+- Momotaro Densetsu II (7374): the same big text, a few lines apart.
+- Battle Royale's demo goes another way (the phase of the timer's prescaler at its start is not known, M11), within the threshold.
+- V15's 4 lines are a guess.
 
 ## Other
 - **Populous** (a 256 KB card with 32 KB of battery RAM at banks `$40-$43`) and other cards with save RAM have no RAM bank.

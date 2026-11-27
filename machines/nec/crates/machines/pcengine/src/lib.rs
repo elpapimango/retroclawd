@@ -65,6 +65,9 @@ struct Hw {
     timer_irq: bool,
     /// The last tick was an underflow (fact M11).
     timer_underflowed: bool,
+    /// The CPU's buffer for its own ports (`$0800-$17FF`): the last byte written or read there; the bits a register
+    /// does not drive read from it (fact M12).
+    io_buffer: u8,
     /// Master clocks from the start of the instruction running to its timer read (fact M11).
     #[serde(skip)]
     read_delay: u32,
@@ -223,20 +226,31 @@ impl Hw {
             },
             0 => self.vdc.read((offset & 3) as u8),
             1 => self.vce.read((offset & 7) as u8),
-            2 => self.psg.read((offset & 15) as u8),
+            // the sound chip's registers are write-only: a read gives the buffer (fact M12)
+            2 => self.io_buffer,
             3 => {
-                if offset & 1 == 0 {
-                    self.timer_read()
+                let v = if offset & 1 == 0 {
+                    (self.io_buffer & 0x80) | self.timer_read()
                 } else {
-                    u8::from(self.timer_enabled)
-                }
+                    (self.io_buffer & 0xFE) | u8::from(self.timer_enabled)
+                };
+                self.io_buffer = v;
+                v
             }
-            4 => self.io_read(),
-            5 => match offset & 3 {
-                2 => self.irq_disable,
-                3 => self.irq_request(),
-                _ => 0xFF,
-            },
+            4 => {
+                let v = self.io_read();
+                self.io_buffer = v;
+                v
+            }
+            5 => {
+                let v = match offset & 3 {
+                    2 => (self.io_buffer & 0xF8) | self.irq_disable,
+                    3 => (self.io_buffer & 0xF8) | self.irq_request(),
+                    _ => self.io_buffer,
+                };
+                self.io_buffer = v;
+                v
+            }
             6 => {
                 // a read of `$1803` locks the backup RAM (fact M9); what the registers read is not known here
                 if self.backup_unit && offset & 0x0F == 3 {
@@ -249,6 +263,9 @@ impl Hw {
     }
 
     fn hw_write(&mut self, offset: u16, v: u8) {
+        if (2..=5).contains(&(offset >> 10)) {
+            self.io_buffer = v;
+        }
         match offset >> 10 {
             0 if let Some(s) = &mut self.sgx => match (offset >> 3) & 3 {
                 0 => self.vdc.write((offset & 3) as u8, v),
@@ -413,6 +430,7 @@ impl PcEngine {
                 timer_acc: 0,
                 timer_irq: false,
                 timer_underflowed: false,
+                io_buffer: 0,
                 read_delay: 0,
                 irq_disable: 0,
                 io_sel: false,
@@ -691,6 +709,7 @@ impl PcEngine {
                 timer_acc: self.hw.timer_acc,
                 timer_irq: self.hw.timer_irq,
                 timer_underflowed: self.hw.timer_underflowed,
+                io_buffer: self.hw.io_buffer,
                 read_delay: 0,
                 irq_disable: self.hw.irq_disable,
                 io_sel: self.hw.io_sel,
@@ -879,6 +898,23 @@ mod tests {
         bus.write((0xFF << 13) | 0x000E, 0x01);
         let s = e.hw.sgx.as_ref().unwrap();
         assert_eq!((s.prio[1], s.win[0], s.st_vdc2), (0x37, 0x300, true));
+    }
+
+    /// The Download card stores the video status in `$1403` and reads bit 5 back from it (fact M12).
+    #[test]
+    fn undriven_port_bits_read_the_last_byte_on_the_cpu_s_ports() {
+        let mut e = PcEngine::from_card(tiny_card(), Console::PcEngine).unwrap();
+        let mut bus = SysBus {
+            card: &mut e.card,
+            hw: &mut e.hw,
+        };
+        let page = 0xFF << 13;
+        bus.write(page | 0x1403, 0x20);
+        assert_eq!(bus.read(page | 0x1403) & 0xF8, 0x20);
+        bus.write(page | 0x1402, 0xF8 | 0x02);
+        assert_eq!(bus.read(page | 0x1402), 0xF8 | 0x02);
+        bus.write(page | 0x0800, 0x5A);
+        assert_eq!(bus.read(page | 0x0800), 0x5A);
     }
 
     #[test]

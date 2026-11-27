@@ -323,6 +323,7 @@ def main():
     ap.add_argument("--out-ram")
     ap.add_argument("--out-save", help="write RETRO_MEMORY_SAVE_RAM (battery or backup RAM) after the last frame")
     ap.add_argument("--save-at", action="append", default=[], help="N:file: write RETRO_MEMORY_SAVE_RAM after frame N")
+    ap.add_argument("--vram-at", action="append", default=[], help="N:file: write RETRO_MEMORY_VIDEO_RAM after frame N (if the core exposes it)")
     ap.add_argument("--out-audio")
     ap.add_argument("--out-state")
     ap.add_argument("--frame-at", action="append", default=[])
@@ -385,6 +386,7 @@ def main():
     frame_at = {int(s.split(":", 1)[0]): s.split(":", 1)[1] for s in args.frame_at}
     ram_at = {int(s.split(":", 1)[0]): s.split(":", 1)[1] for s in args.ram_at}
     save_at = {int(s.split(":", 1)[0]): s.split(":", 1)[1] for s in args.save_at}
+    vram_at = {int(s.split(":", 1)[0]): s.split(":", 1)[1] for s in args.vram_at}
     for n in range(1, args.frames + 1):
         for frame, mask in steps:
             if frame <= n:
@@ -399,6 +401,8 @@ def main():
             write(ram_at[n], fe.ram())
         if n in save_at:
             write(save_at[n], fe.ram(MEMORY_SAVE_RAM))
+        if n in vram_at:
+            write(vram_at[n], fe.ram(MEMORY_VIDEO_RAM))
     if args.out_frame and fe.frame:
         write(args.out_frame, png_bytes(*fe.frame[:2], fe.frame[2]))
     if args.out_ram:
