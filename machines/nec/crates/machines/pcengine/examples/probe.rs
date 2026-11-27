@@ -10,6 +10,7 @@ fn main() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(60);
     let mut e = PcEngine::from_card(rom, Console::PcEngine).unwrap();
+    e.set_supergrafx(std::env::var("SUPERGRAFX").is_ok());
     let trace: usize = std::env::var("RC_TRACE")
         .ok()
         .and_then(|v| v.parse().ok())

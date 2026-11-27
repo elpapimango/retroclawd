@@ -257,7 +257,7 @@ are done, and since 2026-10-29 so are Codemasters J-Cart pads, cheat codes (opti
 length comes from the video controller's registers) and the picture (512 x 243: the 3 border lines above the first active line plus 240, the reference's
 window; 68 of 84 sampled games match the reference, `machines/nec/docs/pcengine-gaps.md`). Run: `rcd pcengine --rom romm:7161` (any of the 417 HuCards on RomM platform 130; a `.zip` is unpacked by the file loader). Options: `console`
 (`pce`/`tg16`), `multitap`. Facts: `machines/nec/docs/hardware-facts.md` (tags `[H]` documentation recalled, `[O]`/`[T]` observed); what is open:
-`docs/pcengine-gaps.md` (CD-ROM, SuperGrafx; the backup unit is in since 2026-11-27, option `backup_ram`). Reference: Beetle PCE Fast 1.31 (libretro), black box. Probe:
+`docs/pcengine-gaps.md` (CD-ROM; since 2026-11-27 the backup unit, option `backup_ram`, and the SuperGrafx, option `supergrafx`). Reference: Beetle PCE Fast 1.31 (libretro), black box. Probe:
 `cargo run --release -p pcengine --example probe` (env `ROM`, `FRAMES`, `OUT`, `PRESS`, `RC_TRACE`, `RC_TRACE_END`, `RAMOUT`, `AUDIOOUT`, `VRAMAT`);
 `machines/nec/scenarios/sweep.py` boots a spread of the owner's games in the probe and the reference and compares the pictures;
 `build.py` builds the test cards (tone, pad) and `capture_pce_goldens.py` the goldens for `machines/nec/pcengine.manifest.toml`.

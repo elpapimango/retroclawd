@@ -136,6 +136,15 @@ fn machine_profile() -> MachineProfile {
                 description: "Plug in the five-player multitap so the second pad's keys (Joy2*) and pads 3-5 are read".to_string(),
             },
             MachineOptionInfo {
+                key: "supergrafx".to_string(),
+                flag: "supergrafx".to_string(),
+                short: None,
+                kind: MachineOptionKind::Bool,
+                default: Some(DebugValue::Bool(false)),
+                required: false,
+                description: "Be a SuperGrafx: a second video controller, the video priority controller and 32 KB of RAM (for .sgx cards)".to_string(),
+            },
+            MachineOptionInfo {
                 key: "backup_ram".to_string(),
                 flag: "backup-ram".to_string(),
                 short: None,
@@ -207,9 +216,11 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let mut console = Console::PcEngine;
     let mut multitap = false;
     let mut backup_option: Option<String> = None;
+    let mut supergrafx = false;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
             ("multitap", DebugValue::Bool(v)) => multitap = *v,
+            ("supergrafx", DebugValue::Bool(v)) => supergrafx = *v,
             ("backup_ram", DebugValue::Text(v)) => backup_option = Some(v.clone()),
             ("console", DebugValue::Text(v)) => {
                 console = match v.as_str() {
@@ -244,6 +255,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     }
     let mut machine = PcEngine::from_card(rom, console)?;
     machine.set_multitap(multitap);
+    machine.set_supergrafx(supergrafx);
     let backup = match backup_option.as_deref() {
         Some("off") => {
             machine.set_backup_ram(None)?;

@@ -15,9 +15,12 @@ Not known: what `$1800-$1BFF` read back with only a backup unit attached (`$FF` 
 Not emulated: the CD interface, the ADPCM chip, the CD-DA player and the System Card. The owner's RomM server holds no System
 Card (firmware) and no game for the CD platforms (134 has no entries), so nothing could be tried. HuCards need no firmware.
 
-## SuperGrafx
-Not emulated: the second video controller (HuC6270), the video priority controller (HuC6202) and 32 KB of RAM. The RomM server has no SuperGrafx
-games (platform 124 is empty).
+## SuperGrafx: in (2026-11-27), checked with a test card only
+Option `supergrafx` (facts S1-S3): the second video controller, the priority controller (modes, windows, the ST target) and 32 KB of RAM. The
+RomM server has no SuperGrafx games (platform 124 is empty), so it was checked with the `sgx` test card (`scenarios/cards/sgx.asm`) against
+Beetle PCE (the accurate core; Beetle PCE Fast does not run a card as a SuperGrafx): five manifest scenarios (`SGX-*`, mean difference
+0.3-1.8). Not checked: games, mid-line changes of the priority controller, what `$0018-$001F` and the controller registers read back, timing
+differences between the two controllers. The machine is chosen by the option, not by the `.sgx` file name.
 
 ## Timer counter polling
 Battle Royale (RomM 7178) seeds its random numbers by reading the timer counter in a loop until it is non-zero, with a reload-0 timer running. The reference stores `$7F` within the first frame; here the counter reads 0 for ever and the game waits. The timer's sequence matches the reference on four test cards (`scenarios/build.py` `pce-timer*.pce`) so the difference is in the instant of the underflow and the read (fact M3).

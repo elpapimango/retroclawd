@@ -70,6 +70,87 @@ struct Hw {
     backup_unit: bool,
     bram: Vec<u8>,
     bram_unlocked: bool,
+    /// A SuperGrafx: its second video controller and priority controller (`ram` is then 32 KB).
+    sgx: Option<Box<Sgx>>,
+}
+
+/// The SuperGrafx's additions (facts S1-S3): a second video controller and the video priority controller.
+#[derive(Clone, Serialize, Deserialize)]
+struct Sgx {
+    vdc2: Vdc,
+    /// `$0008`, `$0009`: four priority nibbles, one per window region.
+    prio: [u8; 2],
+    /// `$000A-$000B` and `$000C-$000D`: the two windows' widths (10 bits).
+    win: [u16; 2],
+    /// `$000E` bit 0: the ST0/ST1/ST2 instructions go to the second controller.
+    st_vdc2: bool,
+}
+
+impl Sgx {
+    fn new() -> Self {
+        Self {
+            vdc2: Vdc::new(),
+            prio: [0; 2],
+            win: [0; 2],
+            st_vdc2: false,
+        }
+    }
+
+    fn read(&self, port: u16) -> u8 {
+        match port & 7 {
+            0 => self.prio[0],
+            1 => self.prio[1],
+            2 => self.win[0] as u8,
+            3 => (self.win[0] >> 8) as u8,
+            4 => self.win[1] as u8,
+            5 => (self.win[1] >> 8) as u8,
+            6 => u8::from(self.st_vdc2),
+            _ => 0xFF,
+        }
+    }
+
+    fn write(&mut self, port: u16, v: u8) {
+        let set_lo = |w: &mut u16| *w = (*w & 0x300) | u16::from(v);
+        let set_hi = |w: &mut u16| *w = (*w & 0xFF) | (u16::from(v & 3) << 8);
+        match port & 7 {
+            0 => self.prio[0] = v,
+            1 => self.prio[1] = v,
+            2 => set_lo(&mut self.win[0]),
+            3 => set_hi(&mut self.win[0]),
+            4 => set_lo(&mut self.win[1]),
+            5 => set_hi(&mut self.win[1]),
+            6 => self.st_vdc2 = v & 1 != 0,
+            _ => {}
+        }
+    }
+
+    /// Combines the two controllers' lines dot by dot (facts S2, S3). A dot value is a palette index: 0 is
+    /// transparent (the backdrop), `$100` and up a sprite.
+    fn mix(&self, line1: &mut [u16], line2: &[u16]) {
+        for (x, p) in line1.iter_mut().enumerate() {
+            // inside a window when x < width - 64; the region picks one of the four nibbles
+            let inside = |w: u16| (x as i32) < i32::from(w) - 64;
+            let region = usize::from(!inside(self.win[0])) | (usize::from(!inside(self.win[1])) << 1);
+            let nibble = (self.prio[region >> 1] >> ((region & 1) * 4)) & 0x0F;
+            let a = if nibble & 1 != 0 { *p } else { 0 };
+            let b = if nibble & 2 != 0 {
+                line2.get(x).copied().unwrap_or(0)
+            } else {
+                0
+            };
+            let opaque = |v: u16| v & 0x0F != 0;
+            let sprite = |v: u16| v >= 0x100;
+            *p = match (nibble >> 2) & 3 {
+                // the second controller's sprites in front of the first's background
+                1 if opaque(b) && sprite(b) && !(opaque(a) && sprite(a)) => b,
+                // the second controller's background in front of the first's sprites
+                2 if opaque(a) && sprite(a) && opaque(b) && !sprite(b) => b,
+                _ if opaque(a) => a,
+                _ if opaque(b) => b,
+                _ => 0,
+            };
+        }
+    }
 }
 
 /// What the CPU sees on its bus: the card, plus everything in `Hw`.
@@ -81,7 +162,7 @@ struct SysBus<'a> {
 impl Hw {
     fn irq_request(&self) -> u8 {
         let mut r = 0;
-        if self.vdc.irq() {
+        if self.vdc.irq() || self.sgx.as_ref().is_some_and(|s| s.vdc2.irq()) {
             r |= IRQ1;
         }
         if self.timer_irq {
@@ -111,8 +192,24 @@ impl Hw {
         (!nibble & 0x0F) | 0x30 | region | 0x80
     }
 
+    /// The RAM index of an address in banks `$F8-$FB`: one 8 KB repeated, or 32 KB on a SuperGrafx (fact S1).
+    fn ram_index(&self, bank: u8, off: u16) -> usize {
+        if self.sgx.is_some() {
+            usize::from(bank - 0xF8) * 0x2000 + usize::from(off)
+        } else {
+            usize::from(off)
+        }
+    }
+
     fn hw_read(&mut self, offset: u16) -> u8 {
         match offset >> 10 {
+            // a SuperGrafx decodes A3-A4: first controller, priority controller, second controller (fact S1)
+            0 if let Some(s) = &mut self.sgx => match (offset >> 3) & 3 {
+                0 => self.vdc.read((offset & 3) as u8),
+                1 => s.read(offset),
+                2 => s.vdc2.read((offset & 3) as u8),
+                _ => 0xFF,
+            },
             0 => self.vdc.read((offset & 3) as u8),
             1 => self.vce.read((offset & 7) as u8),
             2 => self.psg.read((offset & 15) as u8),
@@ -142,6 +239,12 @@ impl Hw {
 
     fn hw_write(&mut self, offset: u16, v: u8) {
         match offset >> 10 {
+            0 if let Some(s) = &mut self.sgx => match (offset >> 3) & 3 {
+                0 => self.vdc.write((offset & 3) as u8, v),
+                1 => s.write(offset, v),
+                2 => s.vdc2.write((offset & 3) as u8, v),
+                _ => {}
+            },
             0 => self.vdc.write((offset & 3) as u8, v),
             1 => self.vce.write((offset & 7) as u8, v),
             2 => self.psg.write((offset & 15) as u8, v),
@@ -198,7 +301,7 @@ impl Bus for SysBus<'_> {
         match bank {
             0x00..=0x7F => self.card.read(bank, off),
             BRAM_BANK => self.hw.bram_slot(off).map_or(0xFF, |b| *b),
-            0xF8..=0xFB => self.hw.ram[usize::from(off)],
+            0xF8..=0xFB => self.hw.ram[self.hw.ram_index(bank, off)],
             0xFF => self.hw.hw_read(off),
             _ => 0xFF,
         }
@@ -214,7 +317,10 @@ impl Bus for SysBus<'_> {
                     *b = v;
                 }
             }
-            0xF8..=0xFB => self.hw.ram[usize::from(off)] = v,
+            0xF8..=0xFB => {
+                let i = self.hw.ram_index(bank, off);
+                self.hw.ram[i] = v;
+            }
             0xFF => self.hw.hw_write(off, v),
             _ => {}
         }
@@ -225,7 +331,10 @@ impl Bus for SysBus<'_> {
     }
 
     fn st(&mut self, port: u8, v: u8) {
-        self.hw.vdc.write(port, v);
+        match &mut self.hw.sgx {
+            Some(s) if s.st_vdc2 => s.vdc2.write(port, v),
+            _ => self.hw.vdc.write(port, v),
+        }
     }
 }
 
@@ -279,6 +388,7 @@ impl PcEngine {
                 backup_unit: true,
                 bram: formatted_bram(),
                 bram_unlocked: false,
+                sgx: None,
             },
             line: 0,
             line_clock: 0,
@@ -292,6 +402,24 @@ impl PcEngine {
     /// Plugs in (or removes) a multitap so pads 2-5 can be read.
     pub fn set_multitap(&mut self, on: bool) {
         self.hw.multitap = on;
+    }
+
+    /// Makes the console a SuperGrafx (or a plain PC Engine again): the second video controller, the priority
+    /// controller and 32 KB of RAM (fact S1). Done before running; it starts the RAM afresh.
+    pub fn set_supergrafx(&mut self, on: bool) {
+        if on {
+            self.hw.sgx = Some(Box::new(Sgx::new()));
+            self.hw.ram = vec![0; 0x8000];
+        } else {
+            self.hw.sgx = None;
+            self.hw.ram = vec![0; 0x2000];
+        }
+    }
+
+    /// Whether the console is a SuperGrafx.
+    #[must_use]
+    pub fn is_supergrafx(&self) -> bool {
+        self.hw.sgx.is_some()
     }
 
     /// Plugs in the backup unit with this RAM (`BRAM_SIZE` bytes), or removes it (`None`).
@@ -370,6 +498,14 @@ impl PcEngine {
         let line = self.line;
         let mut buf = std::mem::take(&mut self.line_buf);
         let drew = self.hw.vdc.start_line(line as u16, &mut buf).is_some();
+        if let Some(s) = &mut self.hw.sgx {
+            // both controllers run from the same timing; the second one's line is laid under or over the first's
+            let mut buf2 = Vec::new();
+            s.vdc2.start_line(line as u16, &mut buf2);
+            if drew {
+                s.mix(&mut buf, &buf2);
+            }
+        }
         // the picture window starts a few lines above the first active line, like the television's overscan; the lines
         // outside the picture show the border colour
         let out_row = line as i32 - i32::from(self.hw.vdc.frame_start()) + TOP_OVERSCAN as i32;
@@ -453,7 +589,7 @@ impl PcEngine {
             BRAM_BANK if self.hw.backup_unit => {
                 self.hw.bram.get(usize::from(off)).copied().unwrap_or(0xFF)
             }
-            0xF8..=0xFB => self.hw.ram[usize::from(off)],
+            0xF8..=0xFB => self.hw.ram[self.hw.ram_index(bank, off)],
             _ => 0xFF,
         }
     }
@@ -519,6 +655,7 @@ impl PcEngine {
                 backup_unit: self.hw.backup_unit,
                 bram: self.hw.bram.clone(),
                 bram_unlocked: self.hw.bram_unlocked,
+                sgx: self.hw.sgx.clone(),
             },
             line: self.line,
             line_clock: self.line_clock,
@@ -547,6 +684,9 @@ impl PcEngine {
                 .map_err(|e| format!("corrupt save state: {e}"))?;
         if state.card_len != self.card.len() {
             return Err("the save state is for a different card".to_string());
+        }
+        if state.hw.sgx.is_some() != self.hw.sgx.is_some() {
+            return Err("the save state is for the other console (PC Engine / SuperGrafx)".to_string());
         }
         self.cpu = state.cpu;
         self.hw = state.hw;
@@ -639,6 +779,59 @@ mod tests {
         };
         bus.write((0xFF << 13) | 0x1807, 0x80);
         assert_eq!(bus.read(bram), 0xFF);
+    }
+
+    /// The priority controller's four modes on one dot each (fact S2) and the window regions (fact S3).
+    #[test]
+    fn the_supergrafx_mixes_two_lines() {
+        let mut s = Sgx::new();
+        let bg1 = 0x001;
+        let spr1 = 0x101;
+        let bg2 = 0x011;
+        let spr2 = 0x111;
+        let one = |s: &Sgx, a: u16, b: u16| {
+            let mut l = [a];
+            s.mix(&mut l, &[b]);
+            l[0]
+        };
+        // both windows 0: every dot is in region 3, the high nibble of $0009
+        s.prio = [0, 0x30];
+        assert_eq!(one(&s, bg1, spr2), bg1);
+        assert_eq!(one(&s, 0, spr2), spr2);
+        s.prio = [0, 0x70];
+        assert_eq!(one(&s, bg1, spr2), spr2, "mode 1: VDC 2 sprites over VDC 1 background");
+        assert_eq!(one(&s, spr1, spr2), spr1);
+        assert_eq!(one(&s, bg1, bg2), bg1);
+        s.prio = [0, 0xB0];
+        assert_eq!(one(&s, spr1, bg2), bg2, "mode 2: VDC 2 background over VDC 1 sprites");
+        assert_eq!(one(&s, spr1, spr2), spr1);
+        assert_eq!(one(&s, bg1, spr2), bg1);
+        s.prio = [0, 0x10];
+        assert_eq!(one(&s, 0, spr2), 0, "VDC 2 off");
+        // windows: dot 0 inside window 1 only (width $41) -> region 2, the low nibble of $0009
+        s.win = [0x41, 0];
+        s.prio = [0x00, 0x02];
+        assert_eq!(one(&s, bg1, bg2), bg2);
+    }
+
+    #[test]
+    fn supergrafx_ram_is_four_banks() {
+        let mut e = PcEngine::from_card(tiny_card(), Console::PcEngine).unwrap();
+        e.set_supergrafx(true);
+        let mut bus = SysBus {
+            card: &mut e.card,
+            hw: &mut e.hw,
+        };
+        bus.write(0xF8 << 13, 1);
+        bus.write(0xF9 << 13, 2);
+        assert_eq!(bus.read(0xF8 << 13), 1);
+        assert_eq!(bus.read(0xF9 << 13), 2);
+        // the priority controller answers at $0008-$000E, the first controller still at $0000
+        bus.write((0xFF << 13) | 0x0009, 0x37);
+        bus.write((0xFF << 13) | 0x000B, 0xFF);
+        bus.write((0xFF << 13) | 0x000E, 0x01);
+        let s = e.hw.sgx.as_ref().unwrap();
+        assert_eq!((s.prio[1], s.win[0], s.st_vdc2), (0x37, 0x300, true));
     }
 
     #[test]

@@ -1,0 +1,7 @@
+machine = "pcengine"
+name = "sgx"
+entry = "start"
+fill = 0xEA
+
+[[input]]
+asm = ["sgx.asm"]

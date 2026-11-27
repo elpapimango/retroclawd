@@ -56,6 +56,14 @@ reference, `[H?]` unresolved. No code, table or constant is copied from any emul
 | C4 | The lines outside the picture (and the dots beside it) show palette entry `$100`, the first colour of the first sprite palette: a card that never sets it shows the encoder's power-on content (white in the reference, black here) | [O] the reference's overscan rows on the test card `pce-input.pce`, which sets only entries 0 and 1 | `pcengine` |
 | C3 | The reference shows a 243-line window: 3 lines above the first active line and 240 below it (a taller display is cut), 256 dots for the 5.37 MHz clock and 352 for 7.16 MHz, nothing wider than the clock's nominal width (a display register asking for 264 dots shows 256) | [O] picture sizes of 30 games, the row of Air Zonk's text (3 lines lower in the reference) | `pcengine` |
 
+## SuperGrafx
+
+| ID | Fact | Source | Used by |
+|---|---|---|---|
+| S1 | The SuperGrafx adds a second HuC6270 and the HuC6202 video priority controller, and has 32 KB of RAM: banks `$F8-$FB` are four different 8 KB pages instead of one repeated. In the hardware page, address bits 3-4 pick the device: `$0000-$0007` the first video controller, `$0008-$000F` the priority controller, `$0010-$0017` the second video controller (`$0018-$001F` reads `$FF` here, `[H?]`). Both controllers run from the same timing and either raises IRQ1. Priority controller registers: `$0008`/`$0009` four priority nibbles, `$000A-$000B` and `$000C-$000D` the widths of windows 1 and 2 (10 bits), `$000E` bit 0 sends the ST0/ST1/ST2 instructions to the second controller | `[H]` SuperGrafx hardware notes, recalled; `[O]` the `sgx` test card in Beetle PCE draws both controllers' pictures from those ports | `pcengine` `Sgx`, `Hw::ram_index` |
+| S2 | A priority nibble: bit 0 shows the first controller, bit 1 the second; bits 2-3 the mode. Each controller's own dot (its sprite over or under its background as usual) is combined: mode 0 (and 3) the first controller's opaque dot wins; mode 1 the second controller's sprite dot also wins over the first's background dot (not over its sprite dot); mode 2 the second controller's background dot also wins over the first's sprite dot. Colour 0 is transparent | `[O]` the `sgx` card with all 16 nibble values in Beetle PCE (2026-11-27) | `Sgx::mix` |
+| S3 | The windows: a dot at `x` (from the left edge of the picture) is inside window N when `x < width_N - 64`. The nibble used is number `(outside window 1) + 2 * (outside window 2)`, counting the low nibble of `$0008` as 0 and the high nibble of `$0009` as 3: both windows 0 puts every dot outside both (nibble 3) | `[O]` the `sgx` card with window widths `$80/$C0`, `$C0/$80`, `$40/$140`, `$100/$3FF` in Beetle PCE (2026-11-27) | `Sgx::mix` |
+
 ## Sound (HuC6280 PSG)
 
 | ID | Fact | Source | Used by |
