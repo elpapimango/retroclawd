@@ -688,6 +688,7 @@ impl DebuggerLink {
         if self.mode != RunMode::Paused {
             return 0;
         }
+        crate::debug_source::locate(&|a| machine.read_memory(Addr::from(a)));
         let start_pc = machine.pc();
         let start = crate::debug_source::line_at(start_pc);
         let mut total: u64 = 0;
@@ -764,6 +765,9 @@ impl DebuggerLink {
     pub(crate) fn publish(&mut self, machine: &HostedMachine) {
         if self.addr_bits == 0 {
             self.addr_bits = machine.address_bits();
+        }
+        if self.mode == RunMode::Paused {
+            crate::debug_source::locate(&|a| machine.read_memory(Addr::from(a)));
         }
         let (addr, len) = self.memory_window;
         let memory = (0..len)

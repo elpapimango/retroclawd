@@ -81,6 +81,19 @@ fn parse_hex_u16(s: &str) -> Result<u16, String> {
     u16::from_str_radix(s.trim_start_matches("0x"), 16).map_err(|e| e.to_string())
 }
 
+/// `--source-base`: hex with `0x` or `$`, else decimal.
+#[cfg(feature = "debug")]
+fn parse_source_base(s: &str) -> Result<u32, String> {
+    let hex = s
+        .strip_prefix("0x")
+        .or_else(|| s.strip_prefix("0X"))
+        .or_else(|| s.strip_prefix('$'));
+    match hex {
+        Some(h) => u32::from_str_radix(h, 16).map_err(|e| format!("{s}: {e}")),
+        None => s.parse().map_err(|e| format!("{s}: {e}")),
+    }
+}
+
 /// The most `--dump-memory` prints: a 24-bit machine's whole work RAM is 64 KB, its address space 16 MB.
 const MAX_DUMP_BYTES: u32 = 16 * 1024 * 1024;
 
@@ -350,6 +363,12 @@ struct CommonArgs {
     /// source line (`step-line`, `next-line` in debug-zrcp; `/api/step-line`, `/api/next-line` in debug-ui).
     #[arg(long = "source-info", value_name = "FILE")]
     source_info: Option<String>,
+
+    #[cfg(feature = "debug")]
+    /// The address of the program's text, for `--source-info` of a program the system loads where it likes (an Atari ST
+    /// `.PRG`): without it the debugger finds the program in memory by the debug information's anchor.
+    #[arg(long = "source-base", value_name = "ADDR", value_parser = parse_source_base)]
+    source_base: Option<u32>,
 
     #[cfg(feature = "debug")]
     /// Extra plugin selectors. Repeatable. Accepted forms:
@@ -2441,6 +2460,10 @@ pub fn run() -> ExitCode {
     {
         eprintln!("--source-info: {e}");
         return ExitCode::FAILURE;
+    }
+    #[cfg(feature = "debug")]
+    if let Some(base) = args.source_base {
+        debug_source::set_base(base);
     }
 
     let keymaps = match load_keymaps(&args, &app_config, &resolved.machine_id) {
