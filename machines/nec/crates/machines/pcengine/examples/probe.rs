@@ -157,6 +157,9 @@ fn main() {
         let ram: Vec<u8> = (0..0x2000u32).map(|a| e.peek((0xF8 << 13) | a)).collect();
         std::fs::write(out, ram).unwrap();
     }
+    if let (Ok(out), Some(bram)) = (std::env::var("BRAMOUT"), e.backup_ram()) {
+        std::fs::write(out, bram).unwrap();
+    }
     if let Ok(out) = std::env::var("OUT") {
         let (w, h, rgb) = e.render_rgb();
         let mut f = format!("P6\n{w} {h}\n255\n").into_bytes();

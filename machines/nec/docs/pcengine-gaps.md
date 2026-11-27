@@ -4,11 +4,12 @@ Status 2026-11-22: HuCards boot and play their title screens; of 84 games sample
 `scenarios/sweep.py --step 5`, picture at frame 600) 68 agree with Beetle PCE Fast within a mean luminance difference of 8 and most within 1. The 16 that
 do not are listed below. Everything here is open.
 
-## Backup memory
-Lady Sword (RomM 7347, a 1 MB card) shows "no backup memory" at start-up and the reference goes on to the title. The card is
-meant to be used with a backup unit (Tennokoe-style memory or the System Card's), which is not emulated: banks `$F7` (2 KB of backup RAM
-behind a lock) and the unit's registers in `$1800-$1BFF` read `$FF`. Manifest scenario `G-ladysword-600` is a known gap; it will start
-passing when a backup RAM bank exists.
+## Backup memory: done (2026-11-27)
+The backup unit is in (facts M9, M10): 2 KB at bank `$F7` behind the `$1807`/`$1803` lock, a newly formatted RAM when there is no file,
+option `backup_ram` (default `saves/pcengine-backup.bin`; `none` keeps no file, `off` removes the unit), written at exit when it changed, part
+of save states (format `RCPC` 2; a format 1 state is refused with a message). Lady Sword (RomM 7347) now saves its record and reaches its title:
+after 600 frames its backup RAM equals the reference's byte for byte and the picture is 0.18 apart; manifest scenario `G-ladysword-600` passes.
+Not known: what `$1800-$1BFF` read back with only a backup unit attached (`$FF` here).
 
 ## CD-ROM² and Super CD-ROM²
 Not emulated: the CD interface, the ADPCM chip, the CD-DA player and the System Card. The owner's RomM server holds no System

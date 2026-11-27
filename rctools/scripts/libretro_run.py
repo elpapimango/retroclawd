@@ -6,7 +6,8 @@ RetroArch installation), and usable with any libretro core.
 
     libretro_run.py CORE.dll ROM --frames N [--system-dir D] [--option key=value ...]
         [--input script.txt] [--out-frame F.png] [--out-ram R.bin] [--out-audio A.wav]
-        [--out-state S.bin] [--frame-at N:file.png ...] [--ram-at N:file.bin ...] [--info] [--unload]
+        [--out-state S.bin] [--frame-at N:file.png ...] [--ram-at N:file.bin ...] [--out-save F] [--save-at N:F ...]
+        [--info] [--unload]
 
 The input script has one line per change: `FRAME BUTTON[,BUTTON...]` (RetroPad names: b y select start up down left right
 a x l r; `-` for none). The buttons stay held from FRAME until the next line. Port 1 only.
@@ -320,6 +321,8 @@ def main():
     ap.add_argument("--input")
     ap.add_argument("--out-frame")
     ap.add_argument("--out-ram")
+    ap.add_argument("--out-save", help="write RETRO_MEMORY_SAVE_RAM (battery or backup RAM) after the last frame")
+    ap.add_argument("--save-at", action="append", default=[], help="N:file: write RETRO_MEMORY_SAVE_RAM after frame N")
     ap.add_argument("--out-audio")
     ap.add_argument("--out-state")
     ap.add_argument("--frame-at", action="append", default=[])
@@ -381,6 +384,7 @@ def main():
     steps = parse_input(args.input)
     frame_at = {int(s.split(":", 1)[0]): s.split(":", 1)[1] for s in args.frame_at}
     ram_at = {int(s.split(":", 1)[0]): s.split(":", 1)[1] for s in args.ram_at}
+    save_at = {int(s.split(":", 1)[0]): s.split(":", 1)[1] for s in args.save_at}
     for n in range(1, args.frames + 1):
         for frame, mask in steps:
             if frame <= n:
@@ -393,10 +397,14 @@ def main():
             write(frame_at[n], png_bytes(*fe.frame[:2], fe.frame[2]))
         if n in ram_at:
             write(ram_at[n], fe.ram())
+        if n in save_at:
+            write(save_at[n], fe.ram(MEMORY_SAVE_RAM))
     if args.out_frame and fe.frame:
         write(args.out_frame, png_bytes(*fe.frame[:2], fe.frame[2]))
     if args.out_ram:
         write(args.out_ram, fe.ram())
+    if args.out_save:
+        write(args.out_save, fe.ram(MEMORY_SAVE_RAM))
     if args.out_audio:
         write(args.out_audio, wav_bytes(fe.audio, int(fe.av.timing.sample_rate)))
     if args.out_state:

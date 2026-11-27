@@ -26,6 +26,18 @@ const CANVAS_H: usize = 243;
 const TOP_OVERSCAN: usize = 3;
 /// Timer: one tick every 1024 high-speed CPU cycles.
 const TIMER_CLOCKS: u32 = 3072;
+/// The backup unit's RAM: 2 KB at the start of bank `$F7` (fact M9).
+pub const BRAM_SIZE: usize = 0x800;
+const BRAM_BANK: u8 = 0xF7;
+
+/// A backup RAM as the System Card's format leaves it empty: `HUBM`, the end of the RAM (`$8800` in the window the
+/// card maps it to) and the first free byte (`$8010`) (fact M10).
+#[must_use]
+pub fn formatted_bram() -> Vec<u8> {
+    let mut b = vec![0; BRAM_SIZE];
+    b[..8].copy_from_slice(&[b'H', b'U', b'B', b'M', 0x00, 0x88, 0x10, 0x80]);
+    b
+}
 
 /// Which console to be: the I/O port reports it to the game.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,6 +66,10 @@ struct Hw {
     /// Buttons held per pad (bit set = pressed): I, II, Select, Run, Up, Right, Down, Left.
     pads: [u8; 5],
     console: Console,
+    /// The backup unit (fact M9): plugged in, its RAM, and whether the RAM is unlocked.
+    backup_unit: bool,
+    bram: Vec<u8>,
+    bram_unlocked: bool,
 }
 
 /// What the CPU sees on its bus: the card, plus everything in `Hw`.
@@ -113,6 +129,13 @@ impl Hw {
                 3 => self.irq_request(),
                 _ => 0xFF,
             },
+            6 => {
+                // a read of `$1803` locks the backup RAM (fact M9); what the registers read is not known here
+                if self.backup_unit && offset & 0x0F == 3 {
+                    self.bram_unlocked = false;
+                }
+                0xFF
+            }
             _ => 0xFF,
         }
     }
@@ -150,7 +173,20 @@ impl Hw {
                 3 => self.timer_irq = false,
                 _ => {}
             },
+            // a write of `$1807` with bit 7 set unlocks the backup RAM (fact M9)
+            6 if self.backup_unit && offset & 0x0F == 7 && v & 0x80 != 0 => {
+                self.bram_unlocked = true;
+            }
             _ => {}
+        }
+    }
+
+    /// The backup RAM byte at `off` of bank `$F7`, when the unit is there and unlocked (fact M9).
+    fn bram_slot(&mut self, off: u16) -> Option<&mut u8> {
+        if self.backup_unit && self.bram_unlocked {
+            self.bram.get_mut(usize::from(off))
+        } else {
+            None
         }
     }
 }
@@ -161,6 +197,7 @@ impl Bus for SysBus<'_> {
         let off = (addr & 0x1FFF) as u16;
         match bank {
             0x00..=0x7F => self.card.read(bank, off),
+            BRAM_BANK => self.hw.bram_slot(off).map_or(0xFF, |b| *b),
             0xF8..=0xFB => self.hw.ram[usize::from(off)],
             0xFF => self.hw.hw_read(off),
             _ => 0xFF,
@@ -172,6 +209,11 @@ impl Bus for SysBus<'_> {
         let off = (addr & 0x1FFF) as u16;
         match bank {
             0x00..=0x7F => self.card.write(bank, off, v),
+            BRAM_BANK => {
+                if let Some(b) = self.hw.bram_slot(off) {
+                    *b = v;
+                }
+            }
             0xF8..=0xFB => self.hw.ram[usize::from(off)] = v,
             0xFF => self.hw.hw_write(off, v),
             _ => {}
@@ -186,6 +228,9 @@ impl Bus for SysBus<'_> {
         self.hw.vdc.write(port, v);
     }
 }
+
+/// The save state's magic and format: 2 since the backup unit.
+const STATE_MAGIC: &[u8] = b"RCPC\x02";
 
 #[derive(Serialize, Deserialize)]
 struct SaveState {
@@ -231,6 +276,9 @@ impl PcEngine {
                 multitap: false,
                 pads: [0; 5],
                 console,
+                backup_unit: true,
+                bram: formatted_bram(),
+                bram_unlocked: false,
             },
             line: 0,
             line_clock: 0,
@@ -244,6 +292,32 @@ impl PcEngine {
     /// Plugs in (or removes) a multitap so pads 2-5 can be read.
     pub fn set_multitap(&mut self, on: bool) {
         self.hw.multitap = on;
+    }
+
+    /// Plugs in the backup unit with this RAM (`BRAM_SIZE` bytes), or removes it (`None`).
+    pub fn set_backup_ram(&mut self, bram: Option<Vec<u8>>) -> Result<(), String> {
+        match bram {
+            Some(b) if b.len() != BRAM_SIZE => Err(format!(
+                "the backup RAM is {BRAM_SIZE} bytes, not {}",
+                b.len()
+            )),
+            Some(b) => {
+                self.hw.backup_unit = true;
+                self.hw.bram = b;
+                Ok(())
+            }
+            None => {
+                self.hw.backup_unit = false;
+                self.hw.bram = formatted_bram();
+                Ok(())
+            }
+        }
+    }
+
+    /// The backup unit's RAM, when one is plugged in.
+    #[must_use]
+    pub fn backup_ram(&self) -> Option<&[u8]> {
+        self.hw.backup_unit.then_some(&self.hw.bram[..])
     }
 
     pub fn reset(&mut self) {
@@ -376,6 +450,9 @@ impl PcEngine {
         let off = (addr & 0x1FFF) as u16;
         match bank {
             0x00..=0x7F => self.card.read(bank, off),
+            BRAM_BANK if self.hw.backup_unit => {
+                self.hw.bram.get(usize::from(off)).copied().unwrap_or(0xFF)
+            }
             0xF8..=0xFB => self.hw.ram[usize::from(off)],
             _ => 0xFF,
         }
@@ -439,13 +516,16 @@ impl PcEngine {
                 multitap: self.hw.multitap,
                 pads: self.hw.pads,
                 console: self.hw.console,
+                backup_unit: self.hw.backup_unit,
+                bram: self.hw.bram.clone(),
+                bram_unlocked: self.hw.bram_unlocked,
             },
             line: self.line,
             line_clock: self.line_clock,
             block: self.card.block(),
             card_len: self.card.len(),
         };
-        let mut out = b"RCPC\x01".to_vec();
+        let mut out = STATE_MAGIC.to_vec();
         out.extend(
             bincode::serde::encode_to_vec(&state, bincode::config::standard())
                 .expect("state encodes"),
@@ -454,8 +534,13 @@ impl PcEngine {
     }
 
     pub fn load_state(&mut self, bytes: &[u8]) -> Result<(), String> {
+        if bytes.starts_with(b"RCPC\x01") {
+            return Err(
+                "the save state was made before the backup unit (format 1) and cannot be read".to_string(),
+            );
+        }
         let body = bytes
-            .strip_prefix(b"RCPC\x01")
+            .strip_prefix(STATE_MAGIC)
             .ok_or_else(|| "not a PC Engine save state".to_string())?;
         let (state, _): (SaveState, usize) =
             bincode::serde::decode_from_slice(body, bincode::config::standard())
@@ -524,6 +609,36 @@ mod tests {
             e.step();
         }
         assert!(e.hw.timer_irq);
+    }
+
+    /// Bank `$F7` reads `$FF` until `$1807` is written with bit 7 set; a read of `$1803` locks it again (fact M9).
+    #[test]
+    fn the_backup_ram_is_behind_a_lock() {
+        let mut e = PcEngine::from_card(tiny_card(), Console::PcEngine).unwrap();
+        let bram = 0xF7 << 13;
+        let mut bus = SysBus {
+            card: &mut e.card,
+            hw: &mut e.hw,
+        };
+        assert_eq!(bus.read(bram), 0xFF);
+        bus.write(bram + 0x20, 0x55);
+        bus.write((0xFF << 13) | 0x1807, 0x80);
+        assert_eq!(bus.read(bram), b'H');
+        assert_eq!(bus.read(bram + 0x20), 0, "the write while locked was lost");
+        bus.write(bram + 0x20, 0x55);
+        assert_eq!(bus.read(bram + 0x20), 0x55);
+        assert_eq!(bus.read(bram + 0x800), 0xFF, "past the 2 KB");
+        bus.read((0xFF << 13) | 0x1803);
+        assert_eq!(bus.read(bram + 0x20), 0xFF);
+        assert_eq!(e.backup_ram().unwrap()[0x20], 0x55);
+        // without the unit nothing unlocks
+        e.set_backup_ram(None).unwrap();
+        let mut bus = SysBus {
+            card: &mut e.card,
+            hw: &mut e.hw,
+        };
+        bus.write((0xFF << 13) | 0x1807, 0x80);
+        assert_eq!(bus.read(bram), 0xFF);
     }
 
     #[test]
