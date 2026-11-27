@@ -18,7 +18,7 @@ SNK = HERE.parent
 REPO = SNK.parent.parent
 CORES = Path(os.environ.get("RC_ORACLE_CORES", r"C:\Users\matti\Workspace\Emulators\RetroArch-Win64\cores"))
 SYSTEM = Path(os.environ.get("RC_ORACLE_SYSTEM", r"C:\Users\matti\Workspace\Emulators\RetroArch-Win64\system"))
-RUNNER = REPO.parent / "rctools" / "scripts" / "libretro_run.py"
+RUNNER = REPO / "rctools" / "scripts" / "libretro_run.py"
 SETS = SNK / "software" / "sets"
 
 # (golden file, set below software/sets, frame)
