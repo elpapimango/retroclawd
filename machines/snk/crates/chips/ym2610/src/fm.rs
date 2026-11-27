@@ -20,7 +20,7 @@ const DETUNE: [[u8; 32]; 3] = [
     ],
 ];
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 enum Phase {
     Off,
     Attack,
@@ -29,7 +29,7 @@ enum Phase {
     Release,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
 struct Operator {
     mul: u8,
     /// The detune: bits 6-4 of register `$30`, a magnitude in bits 5-4 and the sign in bit 6 (fact Y9).
@@ -71,7 +71,7 @@ impl Default for Operator {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 pub struct Channel {
     ops: [Operator; 4],
     fnum: u16,
@@ -283,7 +283,7 @@ impl Channel {
 }
 
 /// The four channels and the writes that reach them.
-#[derive(Default)]
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 pub struct Fm {
     pub channels: [Channel; 4],
     /// The frequency high bits wait for the low byte (fact Y6).

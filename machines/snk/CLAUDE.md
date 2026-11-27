@@ -21,7 +21,8 @@ length). Goldens are FinalBurn Neo's, made by `scenarios/capture_neogeo_goldens.
 
 Probe: `crates/machines/neogeo/tests/bios.rs` (ignored; env `RC_NEOGEO_ZIP`, `RC_GAME`, `RC_FRAMES`, `RC_OUT` (a PPM), `RC_LIST`, `RC_AT`).
 The LSPC timer interrupt is in (fact N41). Next: the Art of Fighting defect, Fatal Fury 2's protection chip, the real envelope and FM details
-(detune, LFO, SSG-EG), the level laws, save states, backup RAM and memory card files, more games; see `docs/neogeo-gaps.md`.
+(detune, LFO, SSG-EG), the level laws, the memory card, more games; see `docs/neogeo-gaps.md`. Save states and the backup RAM file
+(`backup_ram`, default `saves/neogeo-backup.bin`, `none` for no file) are in since 2026-11-27.
 
 ## Rules (same as the other families)
 

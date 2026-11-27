@@ -30,7 +30,7 @@ fn step_table() -> [i32; 49] {
 /// How the step index moves for the three magnitude bits of a code (fact Y5).
 const INDEX_STEP: [i32; 8] = [-1, -1, -1, -1, 2, 5, 7, 9];
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 struct AdpcmA {
     /// Sample bytes: where it starts and ends (registers `$10-$15`/`$18-$1D` and `$20-$25`/`$28-$2D`, in units of 256 bytes).
     start: u32,
@@ -46,7 +46,7 @@ struct AdpcmA {
     step_index: i32,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 struct AdpcmB {
     start: u32,
     end: u32,
@@ -64,7 +64,10 @@ struct AdpcmB {
     step: i32,
 }
 
+/// The chip's state is saved whole (save states) except the samples not yet drained and the tables made at start-up.
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Ym2610 {
+    #[serde(with = "pairs")]
     regs: [[u8; 256]; 2],
     addr: [u8; 2],
     timer_a: u16,
@@ -85,10 +88,37 @@ pub struct Ym2610 {
     /// Chip clocks since the last sample, and the samples made (left, right).
     clocks: u32,
     timer_b_prescale: u32,
+    #[serde(skip)]
     out: Vec<(i16, i16)>,
+    #[serde(skip, default = "step_table")]
     steps: [i32; 49],
     /// A debugging aid: the sources named in the environment variable RC_MUTE (f, s, a, b) are left out of the mix.
+    #[serde(skip, default = "mute_from_env")]
     mute: String,
+}
+
+fn mute_from_env() -> String {
+    std::env::var("RC_MUTE").unwrap_or_default()
+}
+
+/// The two register files as one list of 512 bytes (serde has no arrays longer than 32).
+mod pairs {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+
+    pub fn serialize<S: Serializer>(regs: &[[u8; 256]; 2], s: S) -> Result<S::Ok, S::Error> {
+        regs.concat().serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<[[u8; 256]; 2], D::Error> {
+        let v = Vec::<u8>::deserialize(d)?;
+        if v.len() != 512 {
+            return Err(D::Error::custom("the YM2610 registers are 512 bytes"));
+        }
+        let mut regs = [[0u8; 256]; 2];
+        regs[0].copy_from_slice(&v[..256]);
+        regs[1].copy_from_slice(&v[256..]);
+        Ok(regs)
+    }
 }
 
 impl Default for Ym2610 {
@@ -119,7 +149,7 @@ impl Ym2610 {
             timer_b_prescale: 0,
             out: Vec::new(),
             steps: step_table(),
-            mute: std::env::var("RC_MUTE").unwrap_or_default(),
+            mute: mute_from_env(),
         }
     }
 

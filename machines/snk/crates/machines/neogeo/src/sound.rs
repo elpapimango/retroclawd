@@ -5,14 +5,18 @@ pub const M1_BANK_RAM: usize = 0x800;
 
 /// The Z80 half of the Neo Geo: its program ROM (the BIOS's `sm1`, or the cartridge's M1), 2 KiB of RAM and the
 /// four bank windows.
+/// A save state holds the RAM, latches, banks and the chip; the ROMs and the debugging logs stay with the machine.
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Sound {
     /// The BIOS's sound program (`sm1.sm1`).
+    #[serde(skip)]
     pub m1_board: Vec<u8>,
     /// The cartridge's sound program.
+    #[serde(skip)]
     pub m1_cart: Vec<u8>,
     /// True when the cartridge's M1 is selected (REG_CRTFIX), false for the board's (REG_BRDFIX) (fact N14).
     pub use_cart: bool,
-    ram: Vec<u8>,
+    pub(crate) ram: Vec<u8>,
     /// The bank number of the windows at `$F000`, `$E000`, `$C000` and `$8000` (fact N24).
     pub banks: [u8; 4],
     /// The last command byte the 68000 wrote (read by Z80 port 0) and the Z80's reply (read by the 68000).
@@ -25,16 +29,25 @@ pub struct Sound {
     pub reset_requested: bool,
     /// The sound chip (facts N26, Y1-Y5) and the sample ROM of ADPCM-A.
     pub ym: ym2610::Ym2610,
+    #[serde(skip)]
     pub v_a: Vec<u8>,
     /// The ADPCM-B sample ROM; empty when the cartridge has none, and then ADPCM-B reads the first (fact Y8).
+    #[serde(skip)]
     pub v_b: Vec<u8>,
     /// How often each register of the two pairs was written (a debugging aid).
+    #[serde(skip, default = "write_counts")]
     pub ym_writes: Vec<u32>,
     /// The values written to the key on register (a debugging aid).
+    #[serde(skip)]
     pub key_log: Vec<u8>,
     /// The commands the 68000 sent and the replies the Z80 gave, in order (a debugging aid).
+    #[serde(skip)]
     pub command_log: Vec<(char, u8)>,
     ym_addr: [u8; 2],
+}
+
+fn write_counts() -> Vec<u32> {
+    vec![0; 512]
 }
 
 impl Sound {

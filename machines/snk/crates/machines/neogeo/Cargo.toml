@@ -12,5 +12,8 @@ machine = { package = "rc-machine", version = "0.1" }
 z80 = { package = "rc-z80", version = "0.1" }
 neo-set = { path = "../../formats/neo-set" }
 ym2610 = { path = "../../chips/ym2610" }
+serde = { version = "1", features = ["derive"] }
+bincode = { version = "2", features = ["serde"] }
+crc32fast = "1"
 
 [dev-dependencies]

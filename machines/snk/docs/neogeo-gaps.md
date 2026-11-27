@@ -24,7 +24,12 @@
   right); the sprite chains are 20 columns by 16 tiles; not yet understood (not auto-animation, not the shrink). The other pictures were
   judged by eye against the reference (Baseball Stars 2, Aggressors of Dark Kombat differ only in the moment of the transition).
 - **uPD4990A clock** is a fixed one-second pulse; no time or date is kept.
-- **Save states, backup RAM and memory card files** are not written (the backup RAM is lost at exit).
+- **Save states and the backup RAM file: done (2026-11-27).** Save states (`RCST`, `crates/machines/neogeo/src/state.rs`: both CPUs, the bus with
+  the program ROM, the sound side and the YM2610; the BIOS and the S/C/V/M ROMs stay out and are identified by a CRC) resume exactly: Cyber-Lip
+  saved at frame 900 and loaded shows the same picture at 1500 as the run that never stopped. The 64 KB backup RAM is the option `backup_ram`
+  (default `saves/neogeo-backup.bin`, one file as one MVS board has one RAM; `none` for no file, which the scenario manifest uses so that its
+  runs stay the same): read at start, written at exit when it changed. KOF 2001 formats it on the first run and reads it on the next.
+  Still open: the AES **memory card** (not emulated at all).
 - **Controllers**: one pad and the coin/start buttons are wired; the arcade `Select` and the second player's keys have no default host keys.
 - **Resolved 2026-10-31 (second round).** Art of Fighting's defect was the C ROM layout: four 2 MiB chips with a small program are two
   halves each (fact N46); Fatal Fury 2's protection answers the challenges its code makes (fact N45); tile numbers past the ROM wrap
