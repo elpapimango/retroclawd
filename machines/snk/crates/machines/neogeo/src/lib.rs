@@ -130,6 +130,14 @@ pub struct Bus {
     pub watchdog_resets: u64,
     /// The first report of an access no fact covers; the machine is stopped once it is set.
     pub stop: Option<String>,
+    /// The last word a read put on the 68000's data bus: what a read of an address no chip decodes sees (fact N55).
+    pub open_bus: u16,
+    /// The memory card in the slot: an 8-bit card's bytes, `None` for an empty slot (fact N56).
+    pub card: Option<Vec<u8>>,
+    /// The card's write-protect switch (REG_STATUS_B bit 6).
+    pub card_protect: bool,
+    /// The last value written to REG_CRDBANK (not used by a 2 KiB card; the bank layout is not documented).
+    pub card_bank: u8,
 }
 
 impl Bus {
@@ -176,6 +184,10 @@ impl Bus {
             watchdog_last: None,
             watchdog_resets: 0,
             stop: None,
+            open_bus: 0,
+            card: None,
+            card_protect: false,
+            card_bank: 0,
         }
     }
 
@@ -349,8 +361,19 @@ impl Bus {
             // REG_STATUS_A: coin 1, coin 2 and service are active low and not pressed; bit 6 is the clock's time pulse (facts N18, N19)
             // REG_STATUS_B: start and select buttons, memory card status (active low), bit 7 set on an MVS (fact N22)
             0x38_0000..=0x38_FFFF if a & 1 == 0 && a & 0xFE_00F1 == 0x38_0000 => {
-                Some(!self.pressed_b)
+                // bits 4-5: the card detect lines, 0 when a card is in; bit 6: the card's write protect (fact N56)
+                let card = match &self.card {
+                    Some(_) => u8::from(self.card_protect) << 6,
+                    None => 0x70,
+                };
+                Some(!self.pressed_b & 0x8F | card)
             }
+            // the memory card: an 8-bit card answers on the odd bytes, card byte n at `$800001 + 2n` (fact N56)
+            0x80_0000..=0xBF_FFFF => Some(match &self.card {
+                Some(c) if a & 1 == 1 && !c.is_empty() => c[((a - 0x80_0000) >> 1) % c.len()],
+                Some(_) => 0xFF,
+                None => (self.open_bus >> if a & 1 == 0 { 8 } else { 0 }) as u8,
+            }),
             // the joypad ports (fact N28)
             _ if a & 0xFE_0001 == 0x30_0000 => Some(self.pads[0]),
             _ if a & 0xFE_0001 == 0x34_0000 => Some(self.pads[1]),
@@ -386,9 +409,26 @@ impl Bus {
         }
     }
 
+    /// Card writes are enabled while both REG_CRDUNLOCK1 (latch bit 2 clear) and REG_CRDUNLOCK2 (latch bit 3 set) hold (fact N56).
+    pub fn card_writable(&self) -> bool {
+        self.latch & 0x04 == 0 && self.latch & 0x08 != 0 && !self.card_protect
+    }
+
     fn put(&mut self, addr: u32, v: u8) -> bool {
         let a = (addr & 0xFF_FFFF) as usize;
         match a {
+            // the memory card: odd bytes, only while writes are unlocked; anything else is ignored (fact N56)
+            0x80_0000..=0xBF_FFFF => {
+                let writable = self.card_writable();
+                if let Some(c) = &mut self.card
+                    && a & 1 == 1
+                    && writable
+                    && !c.is_empty()
+                {
+                    let n = c.len();
+                    c[((a - 0x80_0000) >> 1) % n] = v;
+                }
+            }
             // REG_SOUND written: a command for the Z80 (fact N25)
             _ if a & 0xFE_0001 == 0x32_0000 => self.sound.send_command(v),
             // REG_DIPSW written: any value kicks the watchdog (fact N11)
@@ -419,6 +459,8 @@ impl Bus {
                 0x38_0021 => self.ctrl[1] = v,
                 0x38_0031 => self.ctrl[2] = v,
                 0x38_0041 => self.ctrl[3] = v,
+                // REG_CRDBANK (fact N56)
+                0x38_0011 => self.card_bank = v,
                 0x38_0051 => {
                     self.ctrl[4] = v;
                     let now = rtc::add_seconds(
@@ -510,6 +552,15 @@ impl M68kBus for Bus {
         {
             return Ok(u32::from(v));
         }
+        // no chip decodes `$360000-$37FFFF`: the bus keeps the last word read (fact N55)
+        if (0x36_0000..0x38_0000).contains(&addr) {
+            let w = self.open_bus;
+            return Ok(match size {
+                Size::Word => u32::from(w),
+                Size::Byte if addr & 1 == 0 => u32::from(w >> 8),
+                Size::Byte => u32::from(w & 0xFF),
+            });
+        }
         if size == Size::Word && (addr & 0xFF_FFF0) == 0x3C_0000 {
             return match self.lspc_read(addr & 0xF) {
                 Some(v) => Ok(u32::from(v)),
@@ -527,7 +578,12 @@ impl M68kBus for Bus {
             },
         };
         match value {
-            Some(v) => Ok(v),
+            Some(v) => {
+                if size == Size::Word {
+                    self.open_bus = v as u16;
+                }
+                Ok(v)
+            }
             None => {
                 self.report("read", addr, size, None);
                 Ok(if self.lenient { 0xFFFF } else { 0 })
@@ -634,6 +690,52 @@ mod tests {
     use super::*;
 
     const FC: FunctionCode = FunctionCode::SUPERVISOR_DATA;
+
+    /// Nothing decodes `$360000-$37FFFF`: a read there sees the last word on the bus (fact N55), and does not stop the machine.
+    #[test]
+    fn the_undecoded_range_reads_the_last_word_on_the_bus() {
+        let mut b = bus();
+        b.work[0] = 0xAB;
+        b.work[1] = 0xCD;
+        assert_eq!(b.read(0x10_0000, Size::Word, FC).unwrap(), 0xABCD);
+        assert_eq!(b.read(0x36_89C2, Size::Word, FC).unwrap(), 0xABCD);
+        assert_eq!(b.read(0x37_FFFF, Size::Byte, FC).unwrap(), 0xCD);
+        assert_eq!(b.read(0x36_0000, Size::Byte, FC).unwrap(), 0xAB);
+        assert!(b.stop.is_none());
+    }
+
+    /// The memory card: detect and protect bits, odd-byte data, writes only while both unlock latches hold (fact N56).
+    #[test]
+    fn the_memory_card_reads_and_writes_on_odd_bytes_when_unlocked() {
+        let mut b = bus();
+        // empty slot: both detect lines high
+        assert_eq!(b.read(0x38_0000, Size::Byte, FC).unwrap() & 0x70, 0x70);
+        b.card = Some(vec![0u8; 0x800]);
+        assert_eq!(b.read(0x38_0000, Size::Byte, FC).unwrap() & 0x70, 0x00);
+        // locked after reset: a write is ignored
+        b.write(0x80_0000, Size::Word, 0x1234, FC).unwrap();
+        assert_eq!(b.card.as_ref().unwrap()[0], 0);
+        // REG_CRDUNLOCK1 ($3A0005) and REG_CRDUNLOCK2 ($3A0017)
+        b.write(0x3A_0005, Size::Byte, 0, FC).unwrap();
+        b.write(0x3A_0017, Size::Byte, 0, FC).unwrap();
+        assert!(b.card_writable());
+        b.write(0x80_0000, Size::Word, 0x1234, FC).unwrap();
+        b.write(0x80_0002, Size::Word, 0x0056, FC).unwrap();
+        assert_eq!(&b.card.as_ref().unwrap()[..2], &[0x34, 0x56]);
+        assert_eq!(b.read(0x80_0000, Size::Word, FC).unwrap(), 0xFF34);
+        // the card repeats over its size
+        assert_eq!(b.read(0x80_1001, Size::Byte, FC).unwrap(), 0x34);
+        // REG_CRDLOCK1 ($3A0015) locks it again; the protect switch too
+        b.write(0x3A_0015, Size::Byte, 0, FC).unwrap();
+        b.write(0x80_0000, Size::Word, 0x0099, FC).unwrap();
+        assert_eq!(b.card.as_ref().unwrap()[0], 0x34);
+        b.card_protect = true;
+        assert_eq!(b.read(0x38_0000, Size::Byte, FC).unwrap() & 0x40, 0x40);
+        // REG_CRDBANK is kept, and nothing stopped
+        b.write(0x38_0011, Size::Byte, 3, FC).unwrap();
+        assert_eq!(b.card_bank, 3);
+        assert!(b.stop.is_none());
+    }
 
     fn bus() -> Bus {
         // words stored byte-swapped: the BIOS's first word is $1234, the cartridge's $5678

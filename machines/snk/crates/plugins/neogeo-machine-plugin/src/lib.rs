@@ -41,6 +41,30 @@ struct InstanceRecord {
     reported: bool,
     /// The backup RAM's file and what was read from it (written back at exit when the machine changed it).
     backup: Option<(std::path::PathBuf, Vec<u8>)>,
+    /// The memory card's file and what was read from it, the same way.
+    card: Option<(std::path::PathBuf, Vec<u8>)>,
+}
+
+/// The card sizes the BIOS handles: 2 to 16 KiB in steps of 2 KiB (NeoGeo dev wiki, Memory card). A new card is 2 KiB, SNK's own.
+const CARD_SIZES: std::ops::RangeInclusive<usize> = 0x800..=0x4000;
+const NEW_CARD: usize = 0x800;
+
+/// Writes `data` to `path` when it differs from `loaded` (a temporary file, then renamed).
+fn write_back(path: &std::path::Path, loaded: &[u8], data: &[u8], what: &str) {
+    if data == loaded {
+        return;
+    }
+    let write = || -> std::io::Result<()> {
+        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir)?;
+        }
+        let temp = path.with_extension("tmp");
+        std::fs::write(&temp, data)?;
+        std::fs::rename(&temp, path)
+    };
+    if let Err(e) = write() {
+        eprintln!("neogeo: cannot save the {what} to {}: {e}", path.display());
+    }
 }
 
 /// Where the backup RAM is kept when the `backup_ram` option names no file: one file, as one MVS board keeps one RAM for
@@ -50,25 +74,11 @@ const DEFAULT_BACKUP: &str = "saves/neogeo-backup.bin";
 impl InstanceRecord {
     /// Writes the backup RAM to its file when the machine changed it (to a temporary file, then renamed).
     fn save_backup(&self) {
-        let Some((path, loaded)) = &self.backup else {
-            return;
-        };
-        if self.machine.bus.backup == *loaded {
-            return;
+        if let Some((path, loaded)) = &self.backup {
+            write_back(path, loaded, &self.machine.bus.backup, "backup RAM");
         }
-        let write = || -> std::io::Result<()> {
-            if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
-                std::fs::create_dir_all(dir)?;
-            }
-            let temp = path.with_extension("tmp");
-            std::fs::write(&temp, &self.machine.bus.backup)?;
-            std::fs::rename(&temp, path)
-        };
-        if let Err(e) = write() {
-            eprintln!(
-                "neogeo: cannot save the backup RAM to {}: {e}",
-                path.display()
-            );
+        if let (Some((path, loaded)), Some(card)) = (&self.card, &self.machine.bus.card) {
+            write_back(path, loaded, card, "memory card");
         }
     }
 
@@ -182,6 +192,18 @@ fn machine_profile() -> MachineProfile {
                 None,
                 "Where the board's 64 KB backup RAM (settings, bookkeeping, game saves) is kept between sessions (default saves/neogeo-backup.bin; none: no file, the RAM starts empty each time); read at start, written at exit when it changed",
             ),
+            option(
+                "memory_card",
+                MachineOptionKind::Text,
+                None,
+                "A memory card in the slot: its file (an 8-bit card of 2 to 16 KiB; a missing file is a new, unformatted 2 KiB card the BIOS offers to format). Written at exit when it changed. Without it the slot is empty",
+            ),
+            option(
+                "memory_card_protect",
+                MachineOptionKind::Bool,
+                Some(DebugValue::Bool(false)),
+                "The memory card's write-protect switch",
+            ),
             #[cfg(feature = "debug")]
             option(
                 "diag_file",
@@ -282,12 +304,16 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let mut diag_file: Option<std::path::PathBuf> = None;
     let mut game = None;
     let mut backup_file = None;
+    let mut card_file: Option<std::path::PathBuf> = None;
+    let mut card_protect = false;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
             #[cfg(feature = "debug")]
             ("diag_file", DebugValue::Text(v)) => diag_file = Some(std::path::PathBuf::from(v)),
             ("rom", DebugValue::Text(v)) => game = Some(read_set("rom", v, MAX_GAME)?),
             ("backup_ram", DebugValue::Text(v)) => backup_file = Some(std::path::PathBuf::from(v)),
+            ("memory_card", DebugValue::Text(v)) => card_file = Some(std::path::PathBuf::from(v)),
+            ("memory_card_protect", DebugValue::Bool(v)) => card_protect = *v,
             ("execution_mode", _) => {}
             (key, _) => {
                 return Err(format!(
@@ -332,6 +358,34 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         }
     }
     let backup = (!no_file).then(|| (backup_path, machine.bus.backup.clone()));
+    let card = match card_file {
+        None => None,
+        Some(path) => {
+            let data = match std::fs::read(&path) {
+                Ok(bytes) if CARD_SIZES.contains(&bytes.len()) && bytes.len() % 0x800 == 0 => bytes,
+                Ok(bytes) => {
+                    return Err(format!(
+                        "option \"memory_card\": {} is {} bytes; a card is 2 to 16 KiB in steps of 2 KiB",
+                        path.display(),
+                        bytes.len()
+                    ));
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => vec![0; NEW_CARD],
+                Err(e) => {
+                    return Err(format!("option \"memory_card\": {}: {e}", path.display()));
+                }
+            };
+            // a new card is written at exit even when nothing changed it, so the file exists from then on
+            let loaded = if path.exists() {
+                data.clone()
+            } else {
+                Vec::new()
+            };
+            machine.bus.card = Some(data);
+            machine.bus.card_protect = card_protect;
+            Some((path, loaded))
+        }
+    };
     let sets = (bios.to_vec(), game);
     let mut state = state()
         .lock()
@@ -346,6 +400,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             diag_file,
             reported: false,
             backup,
+            card,
         },
     );
     Ok(MachineCreateResponse {
@@ -450,6 +505,8 @@ fn handle_machine_command(
             // the reset button: the machine starts again from its BIOS; the battery-backed RAM keeps what it held
             let mut fresh = NeoGeo::from_sets(&record.sets.0, &record.sets.1)?;
             fresh.bus.backup = std::mem::take(&mut record.machine.bus.backup);
+            fresh.bus.card = record.machine.bus.card.take();
+            fresh.bus.card_protect = record.machine.bus.card_protect;
             record.machine = fresh;
             record.reported = false;
             Ok(MachineResponse::Ack)

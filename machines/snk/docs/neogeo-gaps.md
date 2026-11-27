@@ -12,11 +12,12 @@
 - **Raster effects.** The timer interrupt (level 2) is raised (fact N41); the line of the vertical blank interrupt and of the blank reload
   are `[H?]`. Which sets use it (2026-11-27, 3000 frames of each of 23 sets): Metal Slug 2 (about 29 a frame), 8 Man, Aggressors of Dark
   Kombat, Art of Fighting and Double Dragon; the other 18 never enable it. 8 Man and Metal Slug 2 compared with FinalBurn Neo at frames 1200,
-  1800 and 2400: no broken bands or misplaced splits in either; what differs is frame timing (blinking text, the logo animation) and 8 Man's
-  NEO-GEO logo transition, drawn mirrored on white here (the same as Metal Slug 2's, parked below).
-- **Burning Fight stops at frame 1527 (found 2026-11-27).** It reads the word at `$3689C2` (pc `$0020C2`), an address in the `$300000`
-  register area that no fact covers, so the machine stops by the project rule. What the board answers there needs a source (a register
-  mirror or open bus); not guessed.
+  1800 and 2400: no broken bands or misplaced splits in either; what differs is frame timing (blinking text, the logo animation).
+- **Burning Fight's stop at frame 1527: resolved 2026-11-27 (fact N55).** It read `$3689C2`, in a range no chip decodes; the read now
+  answers the last word on the bus and the game runs on (4000 frames). Its first demo matches FinalBurn Neo (frame 2200), but the attract
+  sequence then goes another way: at frame 3000 the reference shows the player introduction and this machine a second demo (the subway
+  stage, frames 3050-3300); at frame 1600 the escalator scene shows a dim background here and black there. The value of the open bus read
+  does not change frame 1600 (answering `$0000` or `$FFFF` gives the same picture), so the cause is elsewhere; open.
 - **FM details.** In: detune (fact Y9), the envelope rate law, the saturation of a channel's sum and the output scales (fact Y10). The levels
   now agree with FinalBurn Neo's within 7 percent in all four windows of Cyber-Lip (jingle 574 against 570, music 1518/1574, 1993/1865,
   1150/1225 RMS), and several partials agree within half a percent (197/196 Hz, 1753/1755, 519/518, jingle 390/391). Not done: the LFO
@@ -35,13 +36,20 @@
   saved at frame 900 and loaded shows the same picture at 1500 as the run that never stopped. The 64 KB backup RAM is the option `backup_ram`
   (default `saves/neogeo-backup.bin`, one file as one MVS board has one RAM; `none` for no file, which the scenario manifest uses so that its
   runs stay the same): read at start, written at exit when it changed. KOF 2001 formats it on the first run and reads it on the next.
-  Still open: the AES **memory card** (not emulated at all).
+  The **memory card** is in since 2026-11-27 (fact N56): option `memory_card` (a file of 2 to 16 KiB; a missing file is a new 2 KiB
+  card), `memory_card_protect`, written at exit when it changed, part of save states. Checked: the BIOS probes a new card at start-up
+  and Cyber-Lip runs on with it. Not checked: saving and loading a game through the BIOS's card menu, and the banks of cards over 2 KiB
+  (REG_CRDBANK's layout is not documented).
 - **Controllers**: one pad and the coin/start buttons are wired; the arcade `Select` and the second player's keys have no default host keys.
 - **Resolved 2026-10-31 (second round).** Art of Fighting's defect was the C ROM layout: four 2 MiB chips with a small program are two
   halves each (fact N46); Fatal Fury 2's protection answers the challenges its code makes (fact N45); tile numbers past the ROM wrap
   (fact N43). Art of Fighting now matches the reference (mean difference 5.2 at frame 1500) and Fatal Fury 2 draws its intro.
   Remaining of the 16-set sweep: V-Liner (a gambling set) stops; Fight Fever runs here but the reference does not (a missing file).
-- **Metal Slug 2 logo transition (parked 2026-11-01).** At the end of its attract loop (ours frames 3952-4060) the NEO-GEO logo is drawn mirrored on a white flash, where FinalBurn Neo shows a wide, squashed, un-mirrored logo on grey. The sprite RAM says the game shows chain 1 (sprites 1-18: tiles in descending order, hflip set, horizontal shrink 0 to 15) while chain 2 (sprites 19-36, ascending, unflipped) has height 0, and swaps them at about frame 4060; the renderer draws that data as written. Whether the reference hides chain 1 or the game takes another path there is not known. Probe aids: `RC_SPRITES=1`, `RC_SPRTRACE=<frame>`.
+- **Metal Slug 2 logo transition: not a defect (closed 2026-11-27).** The mirrored logo on white is the logo turning over (its back
+  side, chain 1 below), and FinalBurn Neo draws it too: 8 Man's end-of-attract logo, captured every 20 frames in both (2300-2560), shows the
+  same sequence (mirrored and shrinking on white, then the grey fade, then the plain logo and "MAX 330 MEGA"), the reference about 20 frames
+  behind this machine. The single frames compared before fell at different moments of that animation. The history:
+  At the end of its attract loop (ours frames 3952-4060) the NEO-GEO logo is drawn mirrored on a white flash, where FinalBurn Neo shows a wide, squashed, un-mirrored logo on grey. The sprite RAM says the game shows chain 1 (sprites 1-18: tiles in descending order, hflip set, horizontal shrink 0 to 15) while chain 2 (sprites 19-36, ascending, unflipped) has height 0, and swaps them at about frame 4060; the renderer draws that data as written. Whether the reference hides chain 1 or the game takes another path there is not known. Probe aids: `RC_SPRITES=1`, `RC_SPRTRACE=<frame>`.
 - **Resolved 2026-11-01: the boot offset and Metal Slug 2's WARNING screen (fact N51).** Both had one cause: the watchdog reset was not modelled. The BIOS formats an unformatted backup RAM and lets the watchdog reboot it; FinalBurn Neo therefore boots KOF 2001 and Metal Slug 2 twice, and the second boot leaves the flag at `$D00100` clear. Now exactly those two sets reset once here, Metal Slug 2 reaches its title and KOF 2001 its attract mode. The notes below on both are kept as the history of the search (the 214-frame offset should be re-measured; the clock length of the watchdog is `[H?]`).
 - **Metal Slug 2 (RomM 7062, 2026-10-31).** Its stop at `$2FFFF0` was the program's bank register (fact N47, done: a program over 2 MiB is
   banked, and the `.sp2` second program file is read). The game then shows its "WARNING: this ROM cartridge is for use with original SNK
@@ -81,6 +89,10 @@
 - **Sound level (2026-11-01, fact Y11).** ADPCM-B was half as loud as FinalBurn Neo's; fixed, Metal Slug 4's music now agrees within 2 percent in RMS. Other ADPCM-B users were not re-measured.
 - **Auto-animation (2026-11-01, fact N34).** The attribute bits were swapped (bit 3 is the eight-frame animation, bit 2 the four-frame one): Metal Slug 3's underwater stage showed dark triangle blocks in its rock background; now smooth like FinalBurn Neo's. Other sets were not re-compared by eye; the scenario manifest still passes.
 - **Metal Slug 3 logo (2026-11-01, fact N54).** The "METAL SLUG 3" logo over the demos and the title screen's copyright and SNK logo are fix-layer tiles; they were blank because the fix glyphs were taken from the last 128 KiB of the sprite data instead of the block 384 KiB before the end (as for Metal Slug 4). Fixed; the logo matches FinalBurn Neo. Other 64 MiB CMC games (KOF 99-2003, Garou, ...) probably need the same check when they are added.
-- **SSG-EG and LFO use.** Eleven of the thirteen sets checked write the SSG-EG registers (`$90-$9F`) a few times each at start-up (init
-  writes) and four write the LFO register `$22` only at start-up; none was seen using them in music, so they remain unimplemented.
+- **LFO: in (2026-11-27, fact Y12); SSG-EG: not used.** A survey of 23 sets over 4000 frames (the probe's `RC_YM` line "fm features
+  switched on") found the LFO switched on by Aggressors of Dark Kombat, Art of Fighting 1 and 2, Cyber-Lip, Fatal Fury and Fight Fever,
+  and non-zero AM/PM sensitivities in many; no set switches SSG-EG on (bit 3 of `$90-$9F`), so it stays unimplemented. The LFO now moves
+  pitch (PMS) and the level of operators with AM on (AMS); unit tests pin both. Against FinalBurn Neo on Cyber-Lip (the four windows
+  above) it changes nothing measurable: the averaged-spectrum correlation goes from 0.9065 to 0.9068 in 10-20 s and stays the same
+  elsewhere, as the LFO is on only briefly there. The waveforms are `[H?]`.
 

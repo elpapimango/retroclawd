@@ -249,7 +249,7 @@ impl Ym2610 {
             0x1B => self.adpcm_b.level = value,
             // the end flags are reset by writing their bits here (fact Y7)
             0x1C => self.adpcm_flags &= !value,
-            0x28 | 0x30..=0xB7 => self.fm.write(0, reg, value),
+            0x22 | 0x28 | 0x30..=0xB7 => self.fm.write(0, reg, value),
             0x24 => self.timer_a = (self.timer_a & 3) | u16::from(value) << 2,
             0x25 => self.timer_a = (self.timer_a & !3) | u16::from(value & 3),
             0x26 => self.timer_b = value,

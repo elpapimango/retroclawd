@@ -17,7 +17,7 @@ HERE = Path(__file__).resolve().parent
 SEGA = HERE.parent
 REPO = SEGA.parent.parent
 CORES = Path(os.environ.get("RC_ORACLE_CORES", r"C:\Users\matti\Workspace\Emulators\RetroArch-Win64\cores"))
-RUNNER = REPO.parent / "rctools" / "scripts" / "libretro_run.py"
+RUNNER = REPO / "rctools" / "scripts" / "libretro_run.py"
 SYSTEM = SEGA / "software" / "oracles" / "system_cd"
 DISCS = SEGA / "software" / "discs"
 
