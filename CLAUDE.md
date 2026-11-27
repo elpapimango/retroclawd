@@ -11,7 +11,7 @@ to find its machines.
 | Executable | What it is |
 |---|---|
 | `rcd` | The player: every machine, no debugging code at all. |
-| `rcdd` | The same program built with the `debug` feature: debuggers (`debug-ui`, `debug-zrcp`, `debug-log`), `--show-overlay`, `--symbols`, port and memory watch points, instruction history and the diagnostic reports. Source-level debugging: `--source-info FILE.rcdbg` (what `rcasm --debug-info` and `rcb build` write) shows the source line at the PC, sets breakpoints by `file:line` (debug-zrcp `set-breakpoint N file:line`, debug-ui `POST /api/breakpoint/source`) and steps by line (`step-line` / `next-line`, `/api/step-line` / `/api/next-line`); `apps/retroclawd/src/debug_source.rs`. |
+| `rcdd` | The same program built with the `debug` feature: debuggers (`debug-ui`, `debug-zrcp`, `debug-log`), `--show-overlay`, `--symbols`, port and memory watch points, instruction history and the diagnostic reports. Source-level debugging: `--source-info FILE.rcdbg` (what `rcasm --debug-info` and `rcb build` write) shows the source line at the PC, sets breakpoints by `file:line` (debug-zrcp `set-breakpoint N file:line`, debug-ui `POST /api/breakpoint/source`) and steps by line (`step-line` / `next-line`, `/api/step-line` / `/api/next-line`); `apps/retroclawd/src/debug_source.rs`. A program the system loads where it likes (Atari ST `.PRG`: `base text gemdos` plus an `anchor` in the `.rcdbg`) is found in memory while paused (`--source-base ADDR` names it instead). |
 
 Build both with `tools/build_all.sh` (`--tools` adds the assemblers and test tools; `--features home|console|arcade|<family>`
 selects machines; `--dev` is a debug-profile build). `rcdd` is built in `target/<profile>-debug/` and copied next to `rcd`, so
