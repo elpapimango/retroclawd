@@ -109,7 +109,9 @@ impl SourceInfo {
             .map(|(i, _)| i)
             .collect();
         if candidates.is_empty() {
-            return Err(format!("no source file \"{file}\" in the debug information"));
+            return Err(format!(
+                "no source file \"{file}\" in the debug information"
+            ));
         }
         self.lines
             .iter()
@@ -165,17 +167,33 @@ mod tests {
         assert_eq!(info.line_at(0xE005), None);
         assert_eq!(info.line_at(0xF000), Some(("src/lib.asm", 9)));
         assert_eq!(info.address_of("src/main.asm", 4), Ok(0xE002));
-        assert_eq!(info.address_of("main.asm", 4), Ok(0xE002), "a file name is enough");
+        assert_eq!(
+            info.address_of("main.asm", 4),
+            Ok(0xE002),
+            "a file name is enough"
+        );
         assert_eq!(info.address_of("lib.asm", 9), Ok(0xF000));
-        assert!(info.address_of("main.asm", 99).unwrap_err().contains("no code"));
-        assert!(info.address_of("other.asm", 1).unwrap_err().contains("no source file"));
+        assert!(
+            info.address_of("main.asm", 99)
+                .unwrap_err()
+                .contains("no code")
+        );
+        assert!(
+            info.address_of("other.asm", 1)
+                .unwrap_err()
+                .contains("no source file")
+        );
     }
 
     #[test]
     fn bad_files_are_errors_not_panics() {
         assert!(SourceInfo::parse("").is_err());
         assert!(SourceInfo::parse("rcdbg 2\n").is_err());
-        assert!(SourceInfo::parse("rcdbg 1\nline 0 1 0 1\n").unwrap_err().contains("not listed"));
+        assert!(
+            SourceInfo::parse("rcdbg 1\nline 0 1 0 1\n")
+                .unwrap_err()
+                .contains("not listed")
+        );
         assert!(SourceInfo::parse("rcdbg 1\nfile 3 x\n").is_err());
         assert!(SourceInfo::parse("rcdbg 1\nbogus\n").is_err());
         assert!(SourceInfo::parse("rcdbg 1\nfile 0 a\nline 0 x\n").is_err());
