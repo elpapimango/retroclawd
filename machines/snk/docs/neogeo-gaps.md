@@ -1,9 +1,15 @@
 # Known gaps of the Neo Geo machine (2026-10-31)
 
-- **Horizontal shrink pattern.** The vertical shrink uses the real table (`000-lo.lo`); the 16-pixel columns kept by a horizontal shrink are spread
-  evenly, not the hardware's pattern (fact N36). Only matters for a sprite narrower than 16 pixels.
+- **Horizontal shrink pattern: in (2026-11-27, fact N57).** The columns a shrunk sprite keeps follow the wiki's table instead of being
+  spread evenly. Open: whether the pattern applies before or after a horizontal flip (`[H?]`, taken before here).
 - **Frame timing.** The game's own clock starts a few frames from FinalBurn Neo's (the plane of Aero Fighters 2 is about 4 pixels apart at
   frame 1200), so S3 compares the still part of that picture.
+- **Boot offset: found, left as it is (2026-11-27).** The 14 frames this machine is ahead of FinalBurn Neo on Cyber-Lip come almost all from one
+  loop: the BIOS (`sp-s2`, ver. 6, the reference's default too) sums its own 128 KiB at `$C11C4E` (`move.b d0,$300001` / `add.b (a0)+,d0` /
+  `subq.l #1,d7` / `bne`, 131 070 times, 42 cycles each). Work RAM is equal in both up to frame 207, where the loop starts; it ends at frame
+  234 line 79 here (27.2 frames, as 42 cycles a byte gives) and between frames 246 and 248 in the reference (39-41 frames, 60-63 cycles a
+  byte). The wiki's memory map gives the system ROM and the I/O area (`$300001`) no wait cycles (fact N58), so this machine keeps the
+  documented timing and the reference's longer loop stays unexplained. Probe aid: `RC_DUMP_EVERY=DIR:N`.
 - **Sound.** The YM2610 makes FM (four channels, computed sine and envelope: no detune, LFO, SSG-EG or channel 3 split), the SSG,
   six ADPCM-A channels and ADPCM-B, and the timers; the Z80 runs the BIOS's and the cartridge's drivers. Compared with FinalBurn Neo on
   Cyber-Lip (RMS of the left channel): the BIOS jingle 546 against 528 (3-8 s), the title and attract music 1255, 1629, 984 against
