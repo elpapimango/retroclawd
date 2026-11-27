@@ -14,9 +14,11 @@
   Kombat, Art of Fighting and Double Dragon; the other 18 never enable it. 8 Man and Metal Slug 2 compared with FinalBurn Neo at frames 1200,
   1800 and 2400: no broken bands or misplaced splits in either; what differs is frame timing (blinking text, the logo animation) and 8 Man's
   NEO-GEO logo transition, drawn mirrored on white here (the same as Metal Slug 2's, parked below).
-- **Burning Fight stops at frame 1527 (found 2026-11-27).** It reads the word at `$3689C2` (pc `$0020C2`), an address in the `$300000`
-  register area that no fact covers, so the machine stops by the project rule. What the board answers there needs a source (a register
-  mirror or open bus); not guessed.
+- **Burning Fight's stop at frame 1527: resolved 2026-11-27 (fact N55).** It read `$3689C2`, in a range no chip decodes; the read now
+  answers the last word on the bus and the game runs on (4000 frames). Its first demo matches FinalBurn Neo (frame 2200), but the attract
+  sequence then goes another way: at frame 3000 the reference shows the player introduction and this machine a second demo (the subway
+  stage, frames 3050-3300); at frame 1600 the escalator scene shows a dim background here and black there. The value of the open bus read
+  does not change frame 1600 (answering `$0000` or `$FFFF` gives the same picture), so the cause is elsewhere; open.
 - **FM details.** In: detune (fact Y9), the envelope rate law, the saturation of a channel's sum and the output scales (fact Y10). The levels
   now agree with FinalBurn Neo's within 7 percent in all four windows of Cyber-Lip (jingle 574 against 570, music 1518/1574, 1993/1865,
   1150/1225 RMS), and several partials agree within half a percent (197/196 Hz, 1753/1755, 519/518, jingle 390/391). Not done: the LFO

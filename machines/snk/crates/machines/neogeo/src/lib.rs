@@ -130,6 +130,8 @@ pub struct Bus {
     pub watchdog_resets: u64,
     /// The first report of an access no fact covers; the machine is stopped once it is set.
     pub stop: Option<String>,
+    /// The last word a read put on the 68000's data bus: what a read of an address no chip decodes sees (fact N55).
+    pub open_bus: u16,
 }
 
 impl Bus {
@@ -176,6 +178,7 @@ impl Bus {
             watchdog_last: None,
             watchdog_resets: 0,
             stop: None,
+            open_bus: 0,
         }
     }
 
@@ -510,6 +513,15 @@ impl M68kBus for Bus {
         {
             return Ok(u32::from(v));
         }
+        // no chip decodes `$360000-$37FFFF`: the bus keeps the last word read (fact N55)
+        if (0x36_0000..0x38_0000).contains(&addr) {
+            let w = self.open_bus;
+            return Ok(match size {
+                Size::Word => u32::from(w),
+                Size::Byte if addr & 1 == 0 => u32::from(w >> 8),
+                Size::Byte => u32::from(w & 0xFF),
+            });
+        }
         if size == Size::Word && (addr & 0xFF_FFF0) == 0x3C_0000 {
             return match self.lspc_read(addr & 0xF) {
                 Some(v) => Ok(u32::from(v)),
@@ -527,7 +539,12 @@ impl M68kBus for Bus {
             },
         };
         match value {
-            Some(v) => Ok(v),
+            Some(v) => {
+                if size == Size::Word {
+                    self.open_bus = v as u16;
+                }
+                Ok(v)
+            }
             None => {
                 self.report("read", addr, size, None);
                 Ok(if self.lenient { 0xFFFF } else { 0 })
@@ -634,6 +651,19 @@ mod tests {
     use super::*;
 
     const FC: FunctionCode = FunctionCode::SUPERVISOR_DATA;
+
+    /// Nothing decodes `$360000-$37FFFF`: a read there sees the last word on the bus (fact N55), and does not stop the machine.
+    #[test]
+    fn the_undecoded_range_reads_the_last_word_on_the_bus() {
+        let mut b = bus();
+        b.work[0] = 0xAB;
+        b.work[1] = 0xCD;
+        assert_eq!(b.read(0x10_0000, Size::Word, FC).unwrap(), 0xABCD);
+        assert_eq!(b.read(0x36_89C2, Size::Word, FC).unwrap(), 0xABCD);
+        assert_eq!(b.read(0x37_FFFF, Size::Byte, FC).unwrap(), 0xCD);
+        assert_eq!(b.read(0x36_0000, Size::Byte, FC).unwrap(), 0xAB);
+        assert!(b.stop.is_none());
+    }
 
     fn bus() -> Bus {
         // words stored byte-swapped: the BIOS's first word is $1234, the cartridge's $5678
