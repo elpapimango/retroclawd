@@ -22,10 +22,16 @@ pub const SAMPLE_RATE: u32 = huc6280_psg::SAMPLE_RATE;
 /// The picture is always 512 dots wide: narrower modes are widened.
 pub const CANVAS_W: usize = 512;
 const CANVAS_H: usize = 243;
-/// Lines of border shown above the first active line.
-const TOP_OVERSCAN: usize = 3;
+/// The first frame line in the picture window: 3 lines above the first active line of the usual vertical registers
+/// (`VPR` $0F02: sync 2, start 15, first active line 2 + 15 + 2 = 19) (fact C3).
+const WINDOW_FIRST_LINE: i32 = 16;
 /// Timer: one tick every 1024 high-speed CPU cycles.
 const TIMER_CLOCKS: u32 = 3072;
+/// A read of the timer counter falls this many CPU cycles after the start of its instruction (the last cycle of
+/// `LDA abs`) (fact M11).
+const TIMER_READ_CYCLES: u32 = 4;
+/// For this many master clocks after an underflow the counter reads `$7F` before the reload value is in (fact M11).
+const TIMER_UNDERFLOW_SHOWN: u32 = 3;
 /// The backup unit's RAM: 2 KB at the start of bank `$F7` (fact M9).
 pub const BRAM_SIZE: usize = 0x800;
 const BRAM_BANK: u8 = 0xF7;
@@ -57,6 +63,11 @@ struct Hw {
     timer_enabled: bool,
     timer_acc: u32,
     timer_irq: bool,
+    /// The last tick was an underflow (fact M11).
+    timer_underflowed: bool,
+    /// Master clocks from the start of the instruction running to its timer read (fact M11).
+    #[serde(skip)]
+    read_delay: u32,
     irq_disable: u8,
     io_sel: bool,
     io_clr: bool,
@@ -215,7 +226,7 @@ impl Hw {
             2 => self.psg.read((offset & 15) as u8),
             3 => {
                 if offset & 1 == 0 {
-                    self.timer_counter & 0x7F
+                    self.timer_read()
                 } else {
                     u8::from(self.timer_enabled)
                 }
@@ -282,6 +293,29 @@ impl Hw {
             }
             _ => {}
         }
+    }
+
+    /// The counter as a read sees it, at its cycle inside the instruction: a tick due before that cycle has happened,
+    /// and just after an underflow the counter shows `$7F` (fact M11).
+    fn timer_read(&self) -> u8 {
+        if !self.timer_enabled {
+            return self.timer_counter & 0x7F;
+        }
+        let t = self.timer_acc + self.read_delay;
+        if t >= TIMER_CLOCKS {
+            let since = t - TIMER_CLOCKS;
+            return if self.timer_counter != 0 {
+                self.timer_counter - 1
+            } else if since < TIMER_UNDERFLOW_SHOWN {
+                0x7F
+            } else {
+                self.timer_reload
+            };
+        }
+        if self.timer_underflowed && t < TIMER_UNDERFLOW_SHOWN {
+            return 0x7F;
+        }
+        self.timer_counter & 0x7F
     }
 
     /// The backup RAM byte at `off` of bank `$F7`, when the unit is there and unlocked (fact M9).
@@ -378,6 +412,8 @@ impl PcEngine {
                 timer_enabled: false,
                 timer_acc: 0,
                 timer_irq: false,
+                timer_underflowed: false,
+                read_delay: 0,
                 irq_disable: 0,
                 io_sel: false,
                 io_clr: false,
@@ -461,6 +497,7 @@ impl PcEngine {
 
     /// Runs one instruction (or interrupt entry); returns the master clocks it took.
     pub fn step(&mut self) -> u32 {
+        self.hw.read_delay = TIMER_READ_CYCLES * if self.cpu.fast { 3 } else { 12 };
         let mut bus = SysBus {
             card: &mut self.card,
             hw: &mut self.hw,
@@ -478,6 +515,7 @@ impl PcEngine {
             hw.timer_acc += master;
             while hw.timer_acc >= TIMER_CLOCKS {
                 hw.timer_acc -= TIMER_CLOCKS;
+                hw.timer_underflowed = hw.timer_counter == 0;
                 if hw.timer_counter == 0 {
                     hw.timer_counter = hw.timer_reload;
                     hw.timer_irq = true;
@@ -506,22 +544,29 @@ impl PcEngine {
                 s.mix(&mut buf, &buf2);
             }
         }
-        // the picture window starts a few lines above the first active line, like the television's overscan; the lines
+        // the picture window is a fixed stretch of the frame's lines (fact C3): it starts 3 lines above where the usual
+        // vertical registers (`VPR` $0F02) put the first active line, wherever a game puts its picture; the lines
         // outside the picture show the border colour
-        let out_row = line as i32 - i32::from(self.hw.vdc.frame_start()) + TOP_OVERSCAN as i32;
+        let out_row = line as i32 - WINDOW_FIRST_LINE;
         if (0..CANVAS_H as i32).contains(&out_row) {
             let base = out_row as usize * CANVAS_W * 3;
             if drew {
-                // the picture's nominal width for the dot clock; a wider register setting is cropped on the right
-                let nominal = match self.hw.vce.dot_clock() {
+                // the window is the dot clock's nominal width; a narrower picture sits in its middle with the border on
+                // both sides, a wider one starts at the left edge and is cropped on the right (fact C5)
+                let nominal: usize = match self.hw.vce.dot_clock() {
                     0 => 256,
                     1 => 352,
                     _ => 512,
                 };
-                let width = buf.len().clamp(1, nominal);
+                let width = buf.len();
+                let left = nominal.saturating_sub(width) / 2;
+                let border = self.hw.vce.rgb(0x100);
                 for x in 0..CANVAS_W {
-                    let src = buf[x * width / CANVAS_W];
-                    let rgb = self.hw.vce.rgb(src);
+                    let dot = x * nominal / CANVAS_W;
+                    let rgb = match dot.checked_sub(left) {
+                        Some(i) if i < width => self.hw.vce.rgb(buf[i]),
+                        _ => border,
+                    };
                     self.canvas[base + x * 3..base + x * 3 + 3].copy_from_slice(&rgb);
                 }
             } else {
@@ -645,6 +690,8 @@ impl PcEngine {
                 timer_enabled: self.hw.timer_enabled,
                 timer_acc: self.hw.timer_acc,
                 timer_irq: self.hw.timer_irq,
+                timer_underflowed: self.hw.timer_underflowed,
+                read_delay: 0,
                 irq_disable: self.hw.irq_disable,
                 io_sel: self.hw.io_sel,
                 io_clr: self.hw.io_clr,

@@ -278,7 +278,10 @@ impl Vdc {
                 self.status |= ST_RR;
             }
         }
-        if line == start + height {
+        // the vertical blank starts after the last active line, or on the frame's last line when the display registers
+        // would carry the picture past the end of the frame (Drop Off: start 23 + 240 lines in a 263-line frame) (fact V13)
+        let blank_line = (start + height).min(self.frame_total.saturating_sub(1));
+        if line == blank_line {
             if self.reg[5] & 8 != 0 {
                 self.status |= ST_VD;
             }

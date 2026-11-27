@@ -1,0 +1,7 @@
+machine = "pcengine"
+name = "timerpoll"
+entry = "start"
+fill = 0xEA
+
+[[input]]
+asm = ["timerpoll.asm"]

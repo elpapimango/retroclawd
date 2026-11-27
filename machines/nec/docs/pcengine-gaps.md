@@ -22,26 +22,24 @@ Beetle PCE (the accurate core; Beetle PCE Fast does not run a card as a SuperGra
 0.3-1.8). Not checked: games, mid-line changes of the priority controller, what `$0018-$001F` and the controller registers read back, timing
 differences between the two controllers. The machine is chosen by the option, not by the `.sgx` file name.
 
-## Timer counter polling
-Battle Royale (RomM 7178) seeds its random numbers by reading the timer counter in a loop until it is non-zero, with a reload-0 timer running. The reference stores `$7F` within the first frame; here the counter reads 0 for ever and the game waits. The timer's sequence matches the reference on four test cards (`scenarios/build.py` `pce-timer*.pce`) so the difference is in the instant of the underflow and the read (fact M3).
-
-## Games that do not match yet (sweep of 84, frame 600)
-Cause unknown unless stated; each was compared with the reference by work-RAM dumps at the same frames (`probe` `RAMOUT`, `libretro_run.py --ram-at`).
-- Ours stays black or at an earlier screen while the game's zero page keeps pace with the reference (rendering or VRAM-loading path): Turrican (7540: the game
-  clears VRAM from `$4400` up at 512 words every two frames and has not drawn by frame 600; the reference draws at frame 100), Kore ga Pro Yakyuu '90 (7341),
-  Cyber-Core (7226, draws but dark), Heavy Unit (7307), Jack Nicklaus' Golf (7318), Bullfight Ring no Hasha (7204), Walkure no Densetsu (7542),
-  Aoi Blink (7167), Toy Shop Boys (7535), Momotaro Densetsu II (7374), a 'Download' card (7249).
-- Ours waits for an interrupt-driven counter that stops advancing after the first timer interrupt: Drop Off (7257: `$25` stays 1, the reference reaches 58 by
-  frame 60; the timer counts and underflows here, the cause is not found). Battle Royale (7178): the timer-counter seed loop above.
-- Close but a different animation phase or small positional difference (mean 9-14): Galaga '90 (7290), TV Sports Hockey (7512), After Burner II (7160, 36: a
-  different frame of the scene).
+## Games that do not match yet (sweep of 84, frame 600; 2026-11-27: 77 of 84 within 8, was 68)
+Fixed 2026-11-27: Battle Royale's timer seed loop (the counter shows `$7F` for a cycle at an underflow, fact M11), narrow pictures
+centred instead of stretched (Galaga '90, TV Sports Hockey, Toy Shop Boys; fact C5), the picture window fixed in the frame (Heavy Unit, Jack
+Nicklaus' Golf, Aoi Blink; fact C3), and the vertical blank of a picture that runs past the frame's end (Drop Off, Bullfight Ring no Hasha;
+fact V13). Still different, cause unknown unless stated (compare by work-RAM dumps at the same frames, `libretro_run.py --ram-at`, probe `RAMOUT`):
+- Black where the reference shows its title: Turrican (7540: at frame 100 the tile data is in VRAM but the background map at `$0000-$07FF` is
+  empty), Kore ga Pro Yakyuu '90 (7341), a 'Download' card (7249).
+- Cyber-Core (7226): the logo is drawn broken and the blue background is missing.
+- Another moment of the same scene: After Burner II (7160), Walkure no Densetsu (7542, scrolled elsewhere), Momotaro Densetsu II (7374).
+- Battle Royale's demo goes another way from the reference's (the seed read's first underflow comes at another time: the prescaler's phase
+  at the timer's start is not known).
 
 ## Other
 - **Populous** (a 256 KB card with 32 KB of battery RAM at banks `$40-$43`) and other cards with save RAM have no RAM bank.
 - **Sprite collision** is raised for sprite 0 only; the reference was not probed for the other pairs (fact V10).
 - **VRAM DMA and the sprite DMA** finish at once (their real duration is a few hundred cycles); a game that polls the busy bit sees it clear.
-- **Display start and end** (`HSR`, `HDR` bits 8-14) are not used: the picture always starts at the first dot and is cut to the dot clock's nominal
-  width. A game that centres a narrow picture in the border is drawn at the left. CG mode (`MWR` bit 7) is ignored.
+- **Display start and end** (`HSR`, `HDR` bits 8-14) are not used for the position, as in the reference (fact C5); a picture narrower than the
+  window is centred. CG mode (`MWR` bit 7) is ignored.
 - **Mid-line effects**: palette, scroll and register writes take effect at the next line, never mid-line.
 - **Frame-rate dependent games**: the frame length follows the video controller's registers (fact V6) but the machine always reports 59.83 Hz to the
   host's pacing.
