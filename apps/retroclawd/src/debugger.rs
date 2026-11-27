@@ -41,7 +41,9 @@ pub(crate) enum DebuggerCommand {
     /// another breakpoint fires first).
     StepOverInstruction,
     /// Step to the next source line (`--source-info`): into calls, or over them when `over`.
-    StepLine { over: bool },
+    StepLine {
+        over: bool,
+    },
     /// Restore the previous debugger-captured machine state (one instruction
     /// of reverse-stepping history).
     BackstepInstruction,
@@ -1009,8 +1011,10 @@ fn assemble_for(family: &CpuFamily, text: &str, addr: Addr) -> Result<Vec<u8>, S
 
 fn is_step_over_candidate(text: &str) -> bool {
     let upper = text.trim_start().to_ascii_uppercase();
-    // Z80 CALL/RST, 6502 JSR
-    upper.starts_with("CALL") || upper.starts_with("RST") || upper.starts_with("JSR")
+    // Z80 CALL/RST, 6502/68000 JSR, 68000/HuC6280 BSR, 65816 JSL, 68000 TRAP (a system call returns after it)
+    ["CALL", "RST", "JSR", "BSR", "JSL", "TRAP"]
+        .iter()
+        .any(|m| upper.starts_with(m))
 }
 
 fn normalize_optional_text(value: Option<String>) -> Option<String> {
@@ -1371,10 +1375,22 @@ mod tests {
             "RST 0x38",
             "JSR $FFD2",
             "jsr $c000",
+            "bsr.s $20E",
+            "BSR.W $1000",
+            "jsl $808000",
+            "trap #1",
         ] {
             assert!(is_step_over_candidate(text), "{text}");
         }
-        for text in ["JP 0x1234", "JMP $C000", "RTS", "LDA #$01", "NOP"] {
+        for text in [
+            "JP 0x1234",
+            "JMP $C000",
+            "RTS",
+            "LDA #$01",
+            "NOP",
+            "bra.s $206",
+            "BSET #1,d0",
+        ] {
             assert!(!is_step_over_candidate(text), "{text}");
         }
     }
