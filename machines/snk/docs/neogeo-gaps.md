@@ -42,8 +42,12 @@
   runs stay the same): read at start, written at exit when it changed. KOF 2001 formats it on the first run and reads it on the next.
   The **memory card** is in since 2026-11-27 (fact N56): option `memory_card` (a file of 2 to 16 KiB; a missing file is a new 2 KiB
   card), `memory_card_protect`, written at exit when it changed, part of save states. Checked: the BIOS probes a new card at start-up
-  and Cyber-Lip runs on with it. Not checked: saving and loading a game through the BIOS's card menu, and the banks of cards over 2 KiB
-  (REG_CRDBANK's layout is not documented).
+  and Cyber-Lip runs on with it. Against FinalBurn Neo (2026-11-27; its option `fbneo-memcard-mode=per-game`, the card written to
+  `<system>/fbneo/<set>.memcard` when `libretro_run.py --unload` unloads the game; the file is a 32-byte header and then one 16-bit word
+  per card byte, the card byte in the low half): a new card, Cyber-Lip, a coin at frame 1500, start at 1600 and no input until the game
+  is over and the attract mode is back gives the same 2 KiB in both, byte for byte. That content is the BIOS's probe pattern (each pair
+  of bytes the big-endian offset times two); neither machine saves anything for Cyber-Lip in that run. Not checked: a game that saves
+  to the card and loads from it (none found yet), and the banks of cards over 2 KiB (REG_CRDBANK's layout is not documented).
 - **Controllers**: one pad and the coin/start buttons are wired; the arcade `Select` and the second player's keys have no default host keys.
 - **Resolved 2026-10-31 (second round).** Art of Fighting's defect was the C ROM layout: four 2 MiB chips with a small program are two
   halves each (fact N46); Fatal Fury 2's protection answers the challenges its code makes (fact N45); tile numbers past the ROM wrap
