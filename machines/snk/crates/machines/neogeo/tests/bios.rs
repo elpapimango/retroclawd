@@ -110,6 +110,26 @@ fn first_fetches() {
                 machine.bus.clock / (neogeo::LINE_CLOCKS * neogeo::FRAME_LINES)
             );
         }
+        // RC_STACK_AT=PC[:ADDR]: at PC (an interrupt handler's first instruction) print the frame, the line, the interrupted
+        // program counter (the long at a7+2) and, with ADDR, the byte of work RAM there
+        if let Ok(v) = std::env::var("RC_STACK_AT") {
+            let mut parts = v.split(':');
+            let pc = u32::from_str_radix(parts.next().unwrap(), 16).unwrap();
+            if machine.cpu.pc == pc {
+                let sp = machine.cpu.ssp; // in the handler: supervisor mode
+                let ret = (0..4).fold(0u32, |acc, i| (acc << 8) | u32::from(machine.bus.peek(sp + 2 + i)));
+                let byte = parts
+                    .next()
+                    .map(|a| format!(" byte {:02X}", machine.bus.peek(u32::from_str_radix(a, 16).unwrap())))
+                    .unwrap_or_default();
+                let line = machine.bus.clock / neogeo::LINE_CLOCKS;
+                println!(
+                    "frame {} line {} from {ret:06X}{byte}",
+                    line / neogeo::FRAME_LINES,
+                    line % neogeo::FRAME_LINES
+                );
+            }
+        }
         machine.step();
         steps += 1;
         if let Some(from) = spr_from {

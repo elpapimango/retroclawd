@@ -14,10 +14,14 @@
   Kombat, Art of Fighting and Double Dragon; the other 18 never enable it. 8 Man and Metal Slug 2 compared with FinalBurn Neo at frames 1200,
   1800 and 2400: no broken bands or misplaced splits in either; what differs is frame timing (blinking text, the logo animation).
 - **Burning Fight's stop at frame 1527: resolved 2026-11-27 (fact N55).** It read `$3689C2`, in a range no chip decodes; the read now
-  answers the last word on the bus and the game runs on (4000 frames). Its first demo matches FinalBurn Neo (frame 2200), but the attract
-  sequence then goes another way: at frame 3000 the reference shows the player introduction and this machine a second demo (the subway
-  stage, frames 3050-3300); at frame 1600 the escalator scene shows a dim background here and black there. The value of the open bus read
-  does not change frame 1600 (answering `$0000` or `$FFFF` gives the same picture), so the cause is elsewhere; open.
+  answers the last word on the bus and the game runs on (4000 frames). **Its attract sequence: not a defect (closed 2026-11-27).** This
+  machine runs the game 14 frames ahead of FinalBurn Neo (the boot offset below); compared at the same point of the game (our frame N
+  against the reference's N + 13 or 14) the work RAM agrees at frames 1000-2950 except the main loop's busy flag `$10000E` and a sprite
+  buffer toggle at `$106200` (where in the frame each dump is taken), and the pictures at 3000-3700 are the same (player introduction,
+  subway demo, street stage). The lag frames agree too: the palette fade at `$3526` takes the main loop past the vertical blank, so the
+  game's loop counter `$100010` advances every second frame in the escalator scene (1527-1640 here, 1544-1654 there) and stalls for two
+  frames at 2776-2778 (2790-2792 there). The "dim background at frame 1600" was the fade 14 frames apart. Probe aid: `RC_STACK_AT=PC[:ADDR]`
+  prints the interrupted program counter (and a RAM byte) whenever the 68000 reaches an interrupt handler.
 - **FM details.** In: detune (fact Y9), the envelope rate law, the saturation of a channel's sum and the output scales (fact Y10). The levels
   now agree with FinalBurn Neo's within 7 percent in all four windows of Cyber-Lip (jingle 574 against 570, music 1518/1574, 1993/1865,
   1150/1225 RMS), and several partials agree within half a percent (197/196 Hz, 1753/1755, 519/518, jingle 390/391). Not done: the LFO

@@ -137,7 +137,7 @@ the BIOS jingle and the games' music (FM with detune and the LFO, fact Y12; no S
 interrupt (N41), the watchdog reset (N51), program banking (N47), Fatal Fury 2's protection chip (N45), NEO-CMC and the scrambled boards (N49, N53), the undecoded `$360000-$37FFFF` reading
 the open bus (N55), save states (RCST schema 4, `crates/machines/neogeo/src/state.rs`), the backup RAM file (option `backup_ram`, `none`
 to keep it in memory) and the memory card (options `memory_card FILE`, `memory_card_protect`; N56). Open (`machines/snk/docs/neogeo-gaps.md`):
-the horizontal shrink pattern, exact envelopes, raster interrupt lines, the uPD4990A's time keeping, Burning Fight's attract order.
+the horizontal shrink pattern, exact envelopes, raster interrupt lines, the uPD4990A's time keeping.
 Manifest `machines/snk/neogeo.manifest.toml`: 5 pass, no gap.
 
 ## Atari 8-bit experimental support
