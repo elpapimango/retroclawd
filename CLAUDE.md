@@ -133,11 +133,11 @@ Run: `retroclawd neogeo --firmware auto --rom romm:7017` (`--rom` is a text opti
 by `--firmware auto` or given as `--rom-bios neogeo.zip#*`, where `#*` is the file loader's selector for the whole archive). The real BIOS runs its self test (calendar
 check, Z80 handshake), draws the NEO-GEO logo and starts the cartridge: Cyber-Lip's title and attract mode match FinalBurn Neo (S1), Fatal Fury
 and Aero Fighters 2 show their screens. Sprites are shrunk with the system ROM's table and the YM2610 (`machines/snk/crates/chips/ym2610`: timers, SSG, FM, ADPCM-A and B) plays
-the BIOS jingle and the games' music (FM with detune and the LFO, fact Y12; no SSG-EG, which no set checked uses). Also in: the timer
+the BIOS jingle and the games' music (FM with detune, the LFO and the exact OPN envelope generator with SSG-EG, facts Y12-Y13). Also in: the timer
 interrupt (N41), the watchdog reset (N51), program banking (N47), Fatal Fury 2's protection chip (N45), NEO-CMC and the scrambled boards (N49, N53), the undecoded `$360000-$37FFFF` reading
-the open bus (N55), save states (RCST schema 4, `crates/machines/neogeo/src/state.rs`), the backup RAM file (option `backup_ram`, `none`
+the open bus (N55), save states (RCST schema 5, `crates/machines/neogeo/src/state.rs`), the backup RAM file (option `backup_ram`, `none`
 to keep it in memory) and the memory card (options `memory_card FILE`, `memory_card_protect`; N56). Open (`machines/snk/docs/neogeo-gaps.md`):
-the horizontal shrink pattern, exact envelopes, raster interrupt lines, the uPD4990A's time keeping.
+raster interrupt lines, the uPD4990A's time keeping.
 Manifest `machines/snk/neogeo.manifest.toml`: 5 pass, no gap.
 
 ## Atari 8-bit experimental support

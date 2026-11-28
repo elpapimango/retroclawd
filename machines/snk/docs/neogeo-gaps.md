@@ -30,10 +30,8 @@
   prints the interrupted program counter (and a RAM byte) whenever the 68000 reaches an interrupt handler.
 - **FM details.** In: detune (fact Y9), the envelope rate law, the saturation of a channel's sum and the output scales (fact Y10). The levels
   now agree with FinalBurn Neo's within 7 percent in all four windows of Cyber-Lip (jingle 574 against 570, music 1518/1574, 1993/1865,
-  1150/1225 RMS), and several partials agree within half a percent (197/196 Hz, 1753/1755, 519/518, jingle 390/391). Not done: the LFO
-  (register `$22`, the AM and PM sensitivities), SSG-EG (registers `$90-$9F`) and separate frequencies for channel 3 (bits 6-7 of `$27`):
-  Cyber-Lip writes `$22` three times at start-up and never uses the other two, so they could not be checked and their tables were not
-  guessed. The envelope law and the detune table are from memory (`[H?]`); a game that uses the LFO or SSG-EG will sound different. The
+  1150/1225 RMS), and several partials agree within half a percent (197/196 Hz, 1753/1755, 519/518, jingle 390/391). **Exact envelopes: in (2026-11-28, fact Y13):** the integer OPN envelope generator (counter, rate steps, the attack curve, SSG-EG) replaced the averaged law; the match with FinalBurn Neo stays where it was (the spectra correlate 0.907, 0.941, 0.844 in the music windows), so the remaining difference is not the envelope. The LFO is in since 2026-11-27 (fact Y12). Not done: the
+  separate frequencies for channel 3 (bits 6-7 of `$27`), which no set checked uses. The detune table is from memory (`[H?]`). The
   reference's bass partial at 76 Hz is still about three times ours and its high partials stronger, which the checks above did not explain.
 - **Sweep of 16 sets (2026-10-31, 1500 frames, headless).** 14 run to their attract mode with no stop. Stops: Fatal Fury 2 writes
   `$5555` to `$255552` (a protection chip in the cartridge, not modelled) and V-Liner (a gambling set that is not a normal cartridge) reads
