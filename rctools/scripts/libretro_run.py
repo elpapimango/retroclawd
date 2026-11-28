@@ -6,7 +6,8 @@ RetroArch installation), and usable with any libretro core.
 
     libretro_run.py CORE.dll ROM --frames N [--system-dir D] [--option key=value ...]
         [--input script.txt] [--out-frame F.png] [--out-ram R.bin] [--out-audio A.wav]
-        [--out-state S.bin] [--frame-at N:file.png ...] [--ram-at N:file.bin ...] [--info]
+        [--out-state S.bin] [--frame-at N:file.png ...] [--ram-at N:file.bin ...] [--out-save F] [--save-at N:F ...]
+        [--info] [--unload]
 
 The input script has one line per change: `FRAME BUTTON[,BUTTON...]` (RetroPad names: b y select start up down left right
 a x l r; `-` for none). The buttons stay held from FRAME until the next line. Port 1 only.
@@ -320,6 +321,9 @@ def main():
     ap.add_argument("--input")
     ap.add_argument("--out-frame")
     ap.add_argument("--out-ram")
+    ap.add_argument("--out-save", help="write RETRO_MEMORY_SAVE_RAM (battery or backup RAM) after the last frame")
+    ap.add_argument("--save-at", action="append", default=[], help="N:file: write RETRO_MEMORY_SAVE_RAM after frame N")
+    ap.add_argument("--vram-at", action="append", default=[], help="N:file: write RETRO_MEMORY_VIDEO_RAM after frame N (if the core exposes it)")
     ap.add_argument("--out-audio")
     ap.add_argument("--out-state")
     ap.add_argument("--frame-at", action="append", default=[])
@@ -331,6 +335,9 @@ def main():
                     "pixel X,Y of a WIDTH x HEIGHT picture (default 256x224); buttons are letters t a b for trigger, aux a, aux b")
     ap.add_argument("--mouse", action="append", default=[],
                     help="FRAME:DX,DY[:lrm]: the mouse moves by DX,DY during that frame; letters l r m hold buttons then")
+    ap.add_argument("--unload", action="store_true",
+                    help="unload the game and deinit the core at the end, as a frontend does on exit (cores write their "
+                         "save files then, e.g. FinalBurn Neo's memory card, into --system-dir)")
     ap.add_argument("--list-options", action="store_true", help="print the core options the core declares and exit")
     ap.add_argument("--swap16", action="store_true",
                     help="swap the two bytes of every word of the RAM dumps (the Mega Drive cores expose the big-endian "
@@ -378,6 +385,8 @@ def main():
     steps = parse_input(args.input)
     frame_at = {int(s.split(":", 1)[0]): s.split(":", 1)[1] for s in args.frame_at}
     ram_at = {int(s.split(":", 1)[0]): s.split(":", 1)[1] for s in args.ram_at}
+    save_at = {int(s.split(":", 1)[0]): s.split(":", 1)[1] for s in args.save_at}
+    vram_at = {int(s.split(":", 1)[0]): s.split(":", 1)[1] for s in args.vram_at}
     for n in range(1, args.frames + 1):
         for frame, mask in steps:
             if frame <= n:
@@ -390,14 +399,23 @@ def main():
             write(frame_at[n], png_bytes(*fe.frame[:2], fe.frame[2]))
         if n in ram_at:
             write(ram_at[n], fe.ram())
+        if n in save_at:
+            write(save_at[n], fe.ram(MEMORY_SAVE_RAM))
+        if n in vram_at:
+            write(vram_at[n], fe.ram(MEMORY_VIDEO_RAM))
     if args.out_frame and fe.frame:
         write(args.out_frame, png_bytes(*fe.frame[:2], fe.frame[2]))
     if args.out_ram:
         write(args.out_ram, fe.ram())
+    if args.out_save:
+        write(args.out_save, fe.ram(MEMORY_SAVE_RAM))
     if args.out_audio:
         write(args.out_audio, wav_bytes(fe.audio, int(fe.av.timing.sample_rate)))
     if args.out_state:
         write(args.out_state, fe.state())
+    if args.unload:
+        fe.core.retro_unload_game()
+        fe.core.retro_deinit()
 
 
 if __name__ == "__main__":

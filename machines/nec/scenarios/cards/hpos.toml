@@ -1,0 +1,7 @@
+machine = "pcengine"
+name = "hpos"
+entry = "start"
+fill = 0xEA
+
+[[input]]
+asm = ["hpos.asm"]

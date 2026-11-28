@@ -19,7 +19,7 @@ N1-N35. `neogeo.manifest.toml`: 5 scenarios pass, no gap (S1 Cyber-Lip title, S3
 length). Goldens are FinalBurn Neo's, made by `scenarios/capture_neogeo_goldens.py` (needs `roms/neogeo.zip` and the sets in
 `software/sets/`, both git-ignored).
 
-Probe: `crates/machines/neogeo/tests/bios.rs` (ignored; env `RC_NEOGEO_ZIP`, `RC_GAME`, `RC_FRAMES`, `RC_OUT` (a PPM), `RC_LIST`, `RC_AT`).
+Probe: `crates/machines/neogeo/tests/bios.rs` (ignored; env `RC_NEOGEO_ZIP`, `RC_GAME`, `RC_FRAMES`, `RC_OUT` (a PPM), `RC_LIST`, `RC_AT`, `RC_STACK_AT`, `RC_DUMP_WORK`).
 The LSPC timer interrupt is in (fact N41). Next: the Art of Fighting defect, Fatal Fury 2's protection chip, the real envelope and FM details
 (detune, LFO, SSG-EG), the level laws, more games; see `docs/neogeo-gaps.md`. Save states, the backup RAM file (`backup_ram`, default
 `saves/neogeo-backup.bin`, `none` for no file) and the memory card (`memory_card FILE`, `memory_card_protect`) are in since 2026-11-27.

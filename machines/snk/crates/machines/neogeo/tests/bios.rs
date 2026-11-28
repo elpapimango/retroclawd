@@ -82,6 +82,7 @@ fn first_fetches() {
     let hist_from: Option<u64> = std::env::var("RC_PCHIST").ok().and_then(|v| v.parse().ok());
     let mut hist: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
     let frames_wanted: Option<u64> = std::env::var("RC_FRAMES").ok().and_then(|v| v.parse().ok());
+    let mut dump_last = u64::MAX;
     while machine.bus.stop.is_none()
         && steps < limit
         && frames_wanted
@@ -110,8 +111,47 @@ fn first_fetches() {
                 machine.bus.clock / (neogeo::LINE_CLOCKS * neogeo::FRAME_LINES)
             );
         }
+        // RC_STACK_AT=PC[:ADDR]: at PC (an interrupt handler's first instruction) print the frame, the line, the interrupted
+        // program counter (the long at a7+2) and, with ADDR, the byte of work RAM there
+        if let Ok(v) = std::env::var("RC_STACK_AT") {
+            let mut parts = v.split(':');
+            let pc = u32::from_str_radix(parts.next().unwrap(), 16).unwrap();
+            if machine.cpu.pc == pc {
+                let sp = machine.cpu.ssp; // in the handler: supervisor mode
+                let ret = (0..4).fold(0u32, |acc, i| {
+                    (acc << 8) | u32::from(machine.bus.peek(sp + 2 + i))
+                });
+                let byte = parts
+                    .next()
+                    .map(|a| {
+                        format!(
+                            " byte {:02X}",
+                            machine.bus.peek(u32::from_str_radix(a, 16).unwrap())
+                        )
+                    })
+                    .unwrap_or_default();
+                let line = machine.bus.clock / neogeo::LINE_CLOCKS;
+                println!(
+                    "frame {} line {} from {ret:06X}{byte}",
+                    line / neogeo::FRAME_LINES,
+                    line % neogeo::FRAME_LINES
+                );
+            }
+        }
         machine.step();
         steps += 1;
+        // RC_DUMP_EVERY=DIR:N: the work RAM after every N-th frame, as DIR/w<frame>.bin (frame boundaries as RC_FRAMES counts them)
+        if let Ok(v) = std::env::var("RC_DUMP_EVERY")
+            && let Some((dir, n)) = v.rsplit_once(':')
+            && let Ok(n) = n.parse::<u64>()
+        {
+            let frame_clocks = neogeo::LINE_CLOCKS * neogeo::FRAME_LINES;
+            let frame = machine.bus.clock / frame_clocks;
+            if frame != dump_last && frame % n == 0 {
+                dump_last = frame;
+                std::fs::write(format!("{dir}/w{frame}.bin"), &machine.bus.work[..]).unwrap();
+            }
+        }
         if let Some(from) = spr_from {
             let frame = machine.bus.clock / (neogeo::LINE_CLOCKS * neogeo::FRAME_LINES);
             if frame >= from && frame != spr_last_frame {

@@ -10,6 +10,7 @@ fn main() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(60);
     let mut e = PcEngine::from_card(rom, Console::PcEngine).unwrap();
+    e.set_supergrafx(std::env::var("SUPERGRAFX").is_ok());
     let trace: usize = std::env::var("RC_TRACE")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -124,6 +125,16 @@ fn main() {
         "palette nonzero entries: {pal_nz}; first: {:03X?}",
         (0..32u16).map(|i| e.vce().entry(i)).collect::<Vec<_>>()
     );
+    // VRAMOUT=file: the 32K words of VRAM, little-endian (as Beetle PCE Fast's RETRO_MEMORY_VIDEO_RAM)
+    if let Ok(out) = std::env::var("VRAMOUT") {
+        let bytes: Vec<u8> = e
+            .vdc()
+            .vram()
+            .iter()
+            .flat_map(|w| w.to_le_bytes())
+            .collect();
+        std::fs::write(out, bytes).unwrap();
+    }
     if let Ok(a) = std::env::var("VRAMAT") {
         let a = usize::from_str_radix(&a, 16).unwrap();
         for r in 0..8 {
@@ -156,6 +167,9 @@ fn main() {
     if let Ok(out) = std::env::var("RAMOUT") {
         let ram: Vec<u8> = (0..0x2000u32).map(|a| e.peek((0xF8 << 13) | a)).collect();
         std::fs::write(out, ram).unwrap();
+    }
+    if let (Ok(out), Some(bram)) = (std::env::var("BRAMOUT"), e.backup_ram()) {
+        std::fs::write(out, bram).unwrap();
     }
     if let Ok(out) = std::env::var("OUT") {
         let (w, h, rgb) = e.render_rgb();

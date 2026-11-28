@@ -31,6 +31,38 @@ struct PluginState {
 struct InstanceRecord {
     machine: PcEngine,
     breakpoints: Vec<u64>,
+    /// The backup RAM's file and the contents read from it (written back at exit when they changed).
+    backup: Option<(std::path::PathBuf, Vec<u8>)>,
+}
+
+/// Where the backup unit's RAM is kept when the `backup_ram` option names no file: one file, as one backup unit
+/// serves every card.
+const DEFAULT_BACKUP: &str = "saves/pcengine-backup.bin";
+
+impl Drop for InstanceRecord {
+    /// Writes the backup RAM to its file when the machine changed it (to a temporary file, then renamed).
+    fn drop(&mut self) {
+        let (Some((path, loaded)), Some(now)) = (&self.backup, self.machine.backup_ram()) else {
+            return;
+        };
+        if now == &loaded[..] {
+            return;
+        }
+        let write = || -> std::io::Result<()> {
+            if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+                std::fs::create_dir_all(dir)?;
+            }
+            let temp = path.with_extension("tmp");
+            std::fs::write(&temp, now)?;
+            std::fs::rename(&temp, path)
+        };
+        if let Err(e) = write() {
+            eprintln!(
+                "pcengine: could not write the backup RAM to {}: {e}",
+                path.display()
+            );
+        }
+    }
 }
 
 impl PluginState {
@@ -106,6 +138,24 @@ fn machine_profile() -> MachineProfile {
                 required: false,
                 description: "Plug in the five-player multitap so the second pad's keys (Joy2*) and pads 3-5 are read".to_string(),
             },
+            MachineOptionInfo {
+                key: "supergrafx".to_string(),
+                flag: "supergrafx".to_string(),
+                short: None,
+                kind: MachineOptionKind::Bool,
+                default: Some(DebugValue::Bool(false)),
+                required: false,
+                description: "Be a SuperGrafx: a second video controller, the video priority controller and 32 KB of RAM (for .sgx cards)".to_string(),
+            },
+            MachineOptionInfo {
+                key: "backup_ram".to_string(),
+                flag: "backup-ram".to_string(),
+                short: None,
+                kind: MachineOptionKind::Text,
+                default: None,
+                required: false,
+                description: "The backup unit's 2 KB RAM (game saves): its file (default saves/pcengine-backup.bin; a missing file is a newly formatted RAM), read at start and written at exit when it changed; none: the unit with no file; off: no backup unit".to_string(),
+            },
         ],
         key_names: key_names(),
         cpus: vec![CpuInfo {
@@ -168,9 +218,13 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     }
     let mut console = Console::PcEngine;
     let mut multitap = false;
+    let mut backup_option: Option<String> = None;
+    let mut supergrafx = false;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
             ("multitap", DebugValue::Bool(v)) => multitap = *v,
+            ("supergrafx", DebugValue::Bool(v)) => supergrafx = *v,
+            ("backup_ram", DebugValue::Text(v)) => backup_option = Some(v.clone()),
             ("console", DebugValue::Text(v)) => {
                 console = match v.as_str() {
                     "pce" => Console::PcEngine,
@@ -204,6 +258,26 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     }
     let mut machine = PcEngine::from_card(rom, console)?;
     machine.set_multitap(multitap);
+    machine.set_supergrafx(supergrafx);
+    let backup = match backup_option.as_deref() {
+        Some("off") => {
+            machine.set_backup_ram(None)?;
+            None
+        }
+        Some("none") => None,
+        other => {
+            let path = std::path::PathBuf::from(other.unwrap_or(DEFAULT_BACKUP));
+            match std::fs::read(&path) {
+                Ok(bytes) => machine
+                    .set_backup_ram(Some(bytes))
+                    .map_err(|e| format!("option \"backup_ram\": {}: {e}", path.display()))?,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(format!("option \"backup_ram\": {}: {e}", path.display())),
+            }
+            let loaded = machine.backup_ram().map(<[u8]>::to_vec).unwrap_or_default();
+            Some((path, loaded))
+        }
+    };
     let mut state = state()
         .lock()
         .map_err(|_| "plugin state mutex poisoned".to_string())?;
@@ -213,6 +287,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         InstanceRecord {
             machine,
             breakpoints: Vec::new(),
+            backup,
         },
     );
     Ok(MachineCreateResponse {

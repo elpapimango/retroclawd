@@ -123,18 +123,22 @@ fast loader now returns through the KERNAL's own SEARCHING/LOADING routines, and
 frame through `Machine::frame_rate` / `MachineMetadata::frame_rate` (ZX81 312 x 207 T-states, its line corrected from 208 to 207; CPC
 79872; C64/C128 one raster frame, 19656 PAL), and the host paces and budgets by it. Details and the compare options are in `rctools/CLAUDE.md`.
 
-## SNK Neo Geo (2026-10-31)
+## SNK Neo Geo (2026-10-31, updated 2026-11-27)
 
-`machines/snk` (`elpapimango/retroclawd-snk`, public) builds `neogeo_machine_plugin` with one machine id, `neogeo`. Reference: FinalBurn Neo
+`machines/snk` builds the `neogeo` machine (linked in like every family). Reference: FinalBurn Neo
 v1.0.0.03 GIT2b0c1c0 through its libretro core (`RetroArch-Win64/cores/fbneo_libretro.dll`, the BIOS in the system folder), read as a black
-box; the facts are rows of `machines/snk/docs/hardware-facts.md` (N1-N35, the Neo Geo wiki found by search plus what the reference shows).
+box; the facts are rows of `machines/snk/docs/hardware-facts.md` (N1-N56 and the YM2610's Y1-Y12, the Neo Geo wiki found by search plus what the reference shows).
 Run: `retroclawd neogeo --firmware auto --rom romm:7017` (`--rom` is a text option, a path or `romm:<id>`: the games are RomM platform 79 and a
 `.zip` that holds no disc image is handed on whole by `media_set.rs`; the system set `neogeo.zip` is the file option `rom_bios`, RomM firmware 259, found
 by `--firmware auto` or given as `--rom-bios neogeo.zip#*`, where `#*` is the file loader's selector for the whole archive). The real BIOS runs its self test (calendar
 check, Z80 handshake), draws the NEO-GEO logo and starts the cartridge: Cyber-Lip's title and attract mode match FinalBurn Neo (S1), Fatal Fury
 and Aero Fighters 2 show their screens. Sprites are shrunk with the system ROM's table and the YM2610 (`machines/snk/crates/chips/ym2610`: timers, SSG, FM, ADPCM-A and B) plays
-the BIOS jingle and the games' music at about 80 percent of FinalBurn Neo's level. Open (`machines/snk/docs/neogeo-gaps.md`): the timer
-interrupt, exact envelopes and FM details, save states, backup RAM files. Manifest `machines/snk/neogeo.manifest.toml`: 5 pass, no gap.
+the BIOS jingle and the games' music (FM with detune and the LFO, fact Y12; no SSG-EG, which no set checked uses). Also in: the timer
+interrupt (N41), the watchdog reset (N51), program banking (N47), Fatal Fury 2's protection chip (N45), NEO-CMC and the scrambled boards (N49, N53), the undecoded `$360000-$37FFFF` reading
+the open bus (N55), save states (RCST schema 4, `crates/machines/neogeo/src/state.rs`), the backup RAM file (option `backup_ram`, `none`
+to keep it in memory) and the memory card (options `memory_card FILE`, `memory_card_protect`; N56). Open (`machines/snk/docs/neogeo-gaps.md`):
+the horizontal shrink pattern, exact envelopes, raster interrupt lines, the uPD4990A's time keeping.
+Manifest `machines/snk/neogeo.manifest.toml`: 5 pass, no gap.
 
 ## Atari 8-bit experimental support
 
@@ -251,9 +255,9 @@ are done, and since 2026-10-29 so are Codemasters J-Cart pads, cheat codes (opti
 (`huc6260`) and sound generator (`huc6280-psg`) are chips in the family and the HuCard layouts are `pce-card`. `crates/machines/pcengine` holds the bus
 (8 KB RAM, the card, the hardware page at bank `$FF`), the timer, interrupt registers and joypad port, the line scheduler (1365 master clocks a line; the frame
 length comes from the video controller's registers) and the picture (512 x 243: the 3 border lines above the first active line plus 240, the reference's
-window; 68 of 84 sampled games match the reference, `machines/nec/docs/pcengine-gaps.md`). Run: `rcd pcengine --rom romm:7161` (any of the 417 HuCards on RomM platform 130; a `.zip` is unpacked by the file loader). Options: `console`
-(`pce`/`tg16`), `multitap`. Facts: `machines/nec/docs/hardware-facts.md` (tags `[H]` documentation recalled, `[O]`/`[T]` observed); what is open:
-`docs/pcengine-gaps.md` (CD-ROM, SuperGrafx, backup memory). Reference: Beetle PCE Fast 1.31 (libretro), black box. Probe:
+window; 82 of 84 sampled games match the reference (2026-11-27), `machines/nec/docs/pcengine-gaps.md`). Run: `rcd pcengine --rom romm:7161` (any of the 417 HuCards on RomM platform 130; a `.zip` is unpacked by the file loader). Options: `console`
+(`pce`/`tg16`), `multitap`, `supergrafx`, `backup_ram`. Facts: `machines/nec/docs/hardware-facts.md` (tags `[H]` documentation recalled, `[O]`/`[T]` observed); what is open:
+`docs/pcengine-gaps.md` (CD-ROM; since 2026-11-27 the backup unit, option `backup_ram`, and the SuperGrafx, option `supergrafx`). Reference: Beetle PCE Fast 1.31 (libretro), black box. Probe:
 `cargo run --release -p pcengine --example probe` (env `ROM`, `FRAMES`, `OUT`, `PRESS`, `RC_TRACE`, `RC_TRACE_END`, `RAMOUT`, `AUDIOOUT`, `VRAMAT`);
 `machines/nec/scenarios/sweep.py` boots a spread of the owner's games in the probe and the reference and compares the pictures;
 `build.py` builds the test cards (tone, pad) and `capture_pce_goldens.py` the goldens for `machines/nec/pcengine.manifest.toml`.

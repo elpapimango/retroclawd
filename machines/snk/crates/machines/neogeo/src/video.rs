@@ -179,8 +179,8 @@ fn draw_sprites(src: &Sources, y: usize, line: &mut [u32]) {
             if !(0..WIDTH as i32).contains(&screen) {
                 continue;
             }
-            // the columns kept of the 16 (fact N36: spread evenly, the hardware's pattern is not known)
-            let x = dx * 16 / width;
+            // the columns kept of the 16 for this horizontal shrink (fact N57)
+            let x = kept_column(width, dx);
             let px = sprite_pixel(
                 src.sprites,
                 &src.layout,
@@ -195,9 +195,59 @@ fn draw_sprites(src: &Sources, y: usize, line: &mut [u32]) {
     }
 }
 
+/// For each horizontal shrink value (a sprite `value + 1` pixels wide) the 16 columns of a tile it draws: the
+/// leftmost bit is column 0 (fact N57).
+const HSHRINK: [u16; 16] = [
+    0b0000000010000000,
+    0b0000100010000000,
+    0b0000100010001000,
+    0b0010100010001000,
+    0b0010100010001010,
+    0b0010101010001010,
+    0b0010101010101010,
+    0b1010101010101010,
+    0b1010101011101010,
+    0b1011101011101010,
+    0b1011101011101011,
+    0b1011101111101011,
+    0b1011101111101111,
+    0b1111101111101111,
+    0b1111101111111111,
+    0b1111111111111111,
+];
+
+/// The tile column drawn as the `n`-th pixel of a sprite `width` pixels wide (1-16) (fact N57).
+fn kept_column(width: usize, n: usize) -> usize {
+    let mask = HSHRINK[width.clamp(1, 16) - 1];
+    (0..16)
+        .filter(|c| mask & (0x8000 >> c) != 0)
+        .nth(n)
+        .unwrap_or(15)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_shrunk_sprite_keeps_the_hardware_s_columns() {
+        assert_eq!(kept_column(1, 0), 8);
+        assert_eq!(
+            (0..2).map(|n| kept_column(2, n)).collect::<Vec<_>>(),
+            [4, 8]
+        );
+        assert_eq!(
+            (0..8).map(|n| kept_column(8, n)).collect::<Vec<_>>(),
+            [0, 2, 4, 6, 8, 10, 12, 14]
+        );
+        assert_eq!(
+            (0..16).map(|n| kept_column(16, n)).collect::<Vec<_>>(),
+            (0..16).collect::<Vec<_>>()
+        );
+        for (w, mask) in HSHRINK.iter().enumerate() {
+            assert_eq!(mask.count_ones() as usize, w + 1);
+        }
+    }
 
     #[test]
     fn the_backdrop_is_the_last_colour_of_the_last_palette() {

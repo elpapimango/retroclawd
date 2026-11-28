@@ -1,4 +1,6 @@
 machine = "pcengine"
+# every run starts with a newly formatted backup RAM and keeps no file (the default file would carry saves from run to run)
+args = ["--backup-ram", "none"]
 # The games come from the owner's RomM server (platform 130) by scenarios/capture_pce_goldens.py into software/roms/; the test cards come from
 # scenarios/build.py (software/scenarios/). Neither is committed. The goldens are Beetle PCE Fast's pictures (Mednafen's PC Engine core, through
 # its libretro build), never committed; capture_pce_goldens.py prints their hashes.
@@ -118,15 +120,70 @@ files = { rom = "nec/software/roms/airzonk.pce" }
 cycles_per_frame = 358995
 cycles_tolerance = 100
 
-# Known gap: Lady Sword (a 1 MB card) asks for backup memory at start-up and shows a message; the reference goes on to its title. The backup
-# memory ("Tennokoe Bank" style) behind it is not emulated.
+# Lady Sword (a 1 MB card) wants backup memory at start-up: with the backup unit (facts M9, M10) it saves its record there and goes on to its
+# title like the reference (closed 2026-11-27; the backup RAM after 600 frames is byte for byte the reference's).
 [[scenario]]
 id = "G-ladysword-600"
 kind = "screen"
-status = "known-gap"
 frames = 600
 files = { rom = "nec/software/roms/ladysword.pce" }
 golden = "pcengine/G-ladysword-600.png"
 golden_sha256 = "ae86b34f359f0cc1ca91e0436d4a6d0e04b5714198c017f43f23e16d3778e59c"
-compare = { mode = "similarity", max_mad = 2.0, reason = "see the gap" }
-gap = { reason = "the game finds no backup memory and shows its 'no backup memory' message instead of the title", evidence = "machines/nec/docs/pcengine-gaps.md#backup-memory" }
+compare = { mode = "similarity", max_mad = 2.0, reason = "another emulator's rasterisation after scaling 256 to 512 columns (measured 0.18)" }
+
+# SuperGrafx (facts S1-S3): the sgx test card (scenarios/cards/sgx.asm, built by build.py) with the priority controller set per card.
+# The goldens are Beetle PCE's (Mednafen's accurate core, v1.29: Beetle PCE Fast does not run a card as a SuperGrafx); see capture_pce_goldens.py.
+[[scenario]]
+id = "SGX-mode0"
+kind = "screen"
+frames = 30
+args = ["--supergrafx"]
+files = { rom = "nec/software/scenarios/pce-sgx-mode0.sgx" }
+golden = "pcengine/SGX-mode0.png"
+golden_sha256 = "5330360a01336835b443a084fce3e899710d157d41477ed19aa2aaac9b36b2ac"
+compare = { mode = "similarity", max_mad = 2.5, reason = "another emulator's rasterisation after scaling 256 to 512 columns: sprite and window edges fall on other dots (measured 0.3-1.8)" }
+# priority mode 0: VDC 1's background and sprites in front of everything of VDC 2
+
+[[scenario]]
+id = "SGX-mode1"
+kind = "screen"
+frames = 30
+args = ["--supergrafx"]
+files = { rom = "nec/software/scenarios/pce-sgx-mode1.sgx" }
+golden = "pcengine/SGX-mode1.png"
+golden_sha256 = "d243d82618495aeef86bf15ab12918e8f59d1512f858ec93da1af3996db1c802"
+compare = { mode = "similarity", max_mad = 2.5, reason = "another emulator's rasterisation after scaling 256 to 512 columns: sprite and window edges fall on other dots (measured 0.3-1.8)" }
+# mode 1: VDC 2's sprites in front of VDC 1's background, behind VDC 1's sprites
+
+[[scenario]]
+id = "SGX-mode2"
+kind = "screen"
+frames = 30
+args = ["--supergrafx"]
+files = { rom = "nec/software/scenarios/pce-sgx-mode2.sgx" }
+golden = "pcengine/SGX-mode2.png"
+golden_sha256 = "48eee718958767df75ee6c7d3447ae539dde0177aa481895e055b706ab4ef93c"
+compare = { mode = "similarity", max_mad = 2.5, reason = "another emulator's rasterisation after scaling 256 to 512 columns: sprite and window edges fall on other dots (measured 0.3-1.8)" }
+# mode 2: VDC 2's background in front of VDC 1's sprites
+
+[[scenario]]
+id = "SGX-win-a"
+kind = "screen"
+frames = 30
+args = ["--supergrafx"]
+files = { rom = "nec/software/scenarios/pce-sgx-win-a.sgx" }
+golden = "pcengine/SGX-win-a.png"
+golden_sha256 = "6398eab5a57bed1944c96e48ed47cf63d0622a60cb60d79091ac80583de2727b"
+compare = { mode = "similarity", max_mad = 2.5, reason = "another emulator's rasterisation after scaling 256 to 512 columns: sprite and window edges fall on other dots (measured 0.3-1.8)" }
+# windows $80/$C0: the four regions show nothing, VDC 1, VDC 2 or both
+
+[[scenario]]
+id = "SGX-win-b"
+kind = "screen"
+frames = 30
+args = ["--supergrafx"]
+files = { rom = "nec/software/scenarios/pce-sgx-win-b.sgx" }
+golden = "pcengine/SGX-win-b.png"
+golden_sha256 = "f78318c9552937133f9a21fd5cb355ff0485f51578c9cb6581673a80aa82a7cd"
+compare = { mode = "similarity", max_mad = 2.5, reason = "another emulator's rasterisation after scaling 256 to 512 columns: sprite and window edges fall on other dots (measured 0.3-1.8)" }
+# windows $C0/$80: the same regions the other way round

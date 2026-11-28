@@ -53,6 +53,10 @@ PICTURES = [
     ("G-ladysword-600.png", ROMS / "ladysword.pce", 600, None),
 ]
 
+# SuperGrafx cards: Beetle PCE Fast does not run a card as a SuperGrafx, so these come from Beetle PCE (Mednafen's
+# accurate PC Engine core, which takes a `.sgx` file as one)
+SGX_PICTURES = [(f"SGX-{v}.png", SCEN / f"pce-sgx-{v}.sgx", 30) for v in ("mode0", "mode1", "mode2", "win-a", "win-b")]
+
 
 def fetch(name, game_id):
     target = ROMS / f"{name}.pce"
@@ -92,6 +96,13 @@ def main():
             script.write_text(inputs + "\n")
             cmd += ["--input", str(script)]
         subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=900)
+        print(f"{golden:28} {hashlib.sha256(target.read_bytes()).hexdigest()}")
+    accurate = CORES / "mednafen_pce_libretro.dll"
+    for golden, card, frame in SGX_PICTURES:
+        target = out / golden
+        subprocess.run([sys.executable, "-I", str(RUNNER), str(accurate), str(card), "--frames", str(frame),
+                        "--system-dir", str(SYSTEM), "--out-frame", str(target)],
+                       check=True, capture_output=True, text=True, timeout=900)
         print(f"{golden:28} {hashlib.sha256(target.read_bytes()).hexdigest()}")
 
 

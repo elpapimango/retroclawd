@@ -1,9 +1,15 @@
 # Known gaps of the Neo Geo machine (2026-10-31)
 
-- **Horizontal shrink pattern.** The vertical shrink uses the real table (`000-lo.lo`); the 16-pixel columns kept by a horizontal shrink are spread
-  evenly, not the hardware's pattern (fact N36). Only matters for a sprite narrower than 16 pixels.
+- **Horizontal shrink pattern: in (2026-11-27, fact N57).** The columns a shrunk sprite keeps follow the wiki's table instead of being
+  spread evenly. Open: whether the pattern applies before or after a horizontal flip (`[H?]`, taken before here).
 - **Frame timing.** The game's own clock starts a few frames from FinalBurn Neo's (the plane of Aero Fighters 2 is about 4 pixels apart at
   frame 1200), so S3 compares the still part of that picture.
+- **Boot offset: found, left as it is (2026-11-27).** The 14 frames this machine is ahead of FinalBurn Neo on Cyber-Lip come almost all from one
+  loop: the BIOS (`sp-s2`, ver. 6, the reference's default too) sums its own 128 KiB at `$C11C4E` (`move.b d0,$300001` / `add.b (a0)+,d0` /
+  `subq.l #1,d7` / `bne`, 131 070 times, 42 cycles each). Work RAM is equal in both up to frame 207, where the loop starts; it ends at frame
+  234 line 79 here (27.2 frames, as 42 cycles a byte gives) and between frames 246 and 248 in the reference (39-41 frames, 60-63 cycles a
+  byte). The wiki's memory map gives the system ROM and the I/O area (`$300001`) no wait cycles (fact N58), so this machine keeps the
+  documented timing and the reference's longer loop stays unexplained. Probe aid: `RC_DUMP_EVERY=DIR:N`.
 - **Sound.** The YM2610 makes FM (four channels, computed sine and envelope: no detune, LFO, SSG-EG or channel 3 split), the SSG,
   six ADPCM-A channels and ADPCM-B, and the timers; the Z80 runs the BIOS's and the cartridge's drivers. Compared with FinalBurn Neo on
   Cyber-Lip (RMS of the left channel): the BIOS jingle 546 against 528 (3-8 s), the title and attract music 1255, 1629, 984 against
@@ -14,10 +20,14 @@
   Kombat, Art of Fighting and Double Dragon; the other 18 never enable it. 8 Man and Metal Slug 2 compared with FinalBurn Neo at frames 1200,
   1800 and 2400: no broken bands or misplaced splits in either; what differs is frame timing (blinking text, the logo animation).
 - **Burning Fight's stop at frame 1527: resolved 2026-11-27 (fact N55).** It read `$3689C2`, in a range no chip decodes; the read now
-  answers the last word on the bus and the game runs on (4000 frames). Its first demo matches FinalBurn Neo (frame 2200), but the attract
-  sequence then goes another way: at frame 3000 the reference shows the player introduction and this machine a second demo (the subway
-  stage, frames 3050-3300); at frame 1600 the escalator scene shows a dim background here and black there. The value of the open bus read
-  does not change frame 1600 (answering `$0000` or `$FFFF` gives the same picture), so the cause is elsewhere; open.
+  answers the last word on the bus and the game runs on (4000 frames). **Its attract sequence: not a defect (closed 2026-11-27).** This
+  machine runs the game 14 frames ahead of FinalBurn Neo (the boot offset below); compared at the same point of the game (our frame N
+  against the reference's N + 13 or 14) the work RAM agrees at frames 1000-2950 except the main loop's busy flag `$10000E` and a sprite
+  buffer toggle at `$106200` (where in the frame each dump is taken), and the pictures at 3000-3700 are the same (player introduction,
+  subway demo, street stage). The lag frames agree too: the palette fade at `$3526` takes the main loop past the vertical blank, so the
+  game's loop counter `$100010` advances every second frame in the escalator scene (1527-1640 here, 1544-1654 there) and stalls for two
+  frames at 2776-2778 (2790-2792 there). The "dim background at frame 1600" was the fade 14 frames apart. Probe aid: `RC_STACK_AT=PC[:ADDR]`
+  prints the interrupted program counter (and a RAM byte) whenever the 68000 reaches an interrupt handler.
 - **FM details.** In: detune (fact Y9), the envelope rate law, the saturation of a channel's sum and the output scales (fact Y10). The levels
   now agree with FinalBurn Neo's within 7 percent in all four windows of Cyber-Lip (jingle 574 against 570, music 1518/1574, 1993/1865,
   1150/1225 RMS), and several partials agree within half a percent (197/196 Hz, 1753/1755, 519/518, jingle 390/391). Not done: the LFO
@@ -38,8 +48,12 @@
   runs stay the same): read at start, written at exit when it changed. KOF 2001 formats it on the first run and reads it on the next.
   The **memory card** is in since 2026-11-27 (fact N56): option `memory_card` (a file of 2 to 16 KiB; a missing file is a new 2 KiB
   card), `memory_card_protect`, written at exit when it changed, part of save states. Checked: the BIOS probes a new card at start-up
-  and Cyber-Lip runs on with it. Not checked: saving and loading a game through the BIOS's card menu, and the banks of cards over 2 KiB
-  (REG_CRDBANK's layout is not documented).
+  and Cyber-Lip runs on with it. Against FinalBurn Neo (2026-11-27; its option `fbneo-memcard-mode=per-game`, the card written to
+  `<system>/fbneo/<set>.memcard` when `libretro_run.py --unload` unloads the game; the file is a 32-byte header and then one 16-bit word
+  per card byte, the card byte in the low half): a new card, Cyber-Lip, a coin at frame 1500, start at 1600 and no input until the game
+  is over and the attract mode is back gives the same 2 KiB in both, byte for byte. That content is the BIOS's probe pattern (each pair
+  of bytes the big-endian offset times two); neither machine saves anything for Cyber-Lip in that run. Not checked: a game that saves
+  to the card and loads from it (none found yet), and the banks of cards over 2 KiB (REG_CRDBANK's layout is not documented).
 - **Controllers**: one pad and the coin/start buttons are wired; the arcade `Select` and the second player's keys have no default host keys.
 - **Resolved 2026-10-31 (second round).** Art of Fighting's defect was the C ROM layout: four 2 MiB chips with a small program are two
   halves each (fact N46); Fatal Fury 2's protection answers the challenges its code makes (fact N45); tile numbers past the ROM wrap

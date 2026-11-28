@@ -9,6 +9,8 @@ the same. Output goes to the git-ignored `machines/nec/software/scenarios/` fold
 Cards:
   pce-tone.pce    channel 0 plays a 32-step square wave at register value $0FE (440.4 Hz) at full volume.
   pce-input.pce   shows the first pad's eight buttons as eight bars on the background layer (S2).
+  pce-sgx-*.sgx   SuperGrafx cards (`cards/sgx.asm`): both video controllers draw, the priority controller's mode and windows
+                  differ per card. Built with rcld only (the Python assembler has no SuperGrafx card).
 """
 import os
 import shutil
@@ -258,6 +260,13 @@ CARDS = {
     "pce-timer5i.pce": ("timer", ["RELOAD=5", "IRQ=1"]),
     "pce-timer0a.pce": ("timer", ["RELOAD=0", "ACK=1"]),
     "pce-timer5a.pce": ("timer", ["RELOAD=5", "ACK=1"]),
+    # SuperGrafx: modes 0, 1 and 2 everywhere (region 3, both windows 0), then two window layouts with the four
+    # regions showing nothing / VDC 1 / VDC 2 / both
+    "pce-sgx-mode0.sgx": ("sgx", ["VPC8=0", "VPC9=0x30"]),
+    "pce-sgx-mode1.sgx": ("sgx", ["VPC8=0", "VPC9=0x70"]),
+    "pce-sgx-mode2.sgx": ("sgx", ["VPC8=0", "VPC9=0xB0"]),
+    "pce-sgx-win-a.sgx": ("sgx", ["VPC8=0x10", "VPC9=0x32", "WIN1=0x80", "WIN2=0xC0"]),
+    "pce-sgx-win-b.sgx": ("sgx", ["VPC8=0x10", "VPC9=0x32", "WIN1=0xC0", "WIN2=0x80"]),
 }
 
 
@@ -286,7 +295,8 @@ def tool_cards(rcld):
     cards = {}
     with tempfile.TemporaryDirectory() as tmp:
         for name, (layout, defines) in CARDS.items():
-            out = os.path.join(tmp, name)
+            # rcld writes a HuCard as .pce; a SuperGrafx card is the same bytes named .sgx
+            out = os.path.join(tmp, os.path.splitext(name)[0] + ".pce")
             cmd = [rcld, "build", os.path.join(HERE, "cards", layout + ".toml"), "-o", out, "--force"]
             for d in defines:
                 cmd += ["-D", d]
@@ -307,6 +317,8 @@ def main():
         mine, theirs = python_cards(), tool_cards(rcld)
         bad = 0
         for name in sorted(mine):
+            if name not in theirs:
+                continue
             same = mine[name] == theirs[name]
             print(("same     " if same else "DIFFERENT"), name, len(mine[name]), len(theirs[name]))
             bad += not same

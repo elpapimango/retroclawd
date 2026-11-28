@@ -4,40 +4,42 @@ Status 2026-11-22: HuCards boot and play their title screens; of 84 games sample
 `scenarios/sweep.py --step 5`, picture at frame 600) 68 agree with Beetle PCE Fast within a mean luminance difference of 8 and most within 1. The 16 that
 do not are listed below. Everything here is open.
 
-## Backup memory
-Lady Sword (RomM 7347, a 1 MB card) shows "no backup memory" at start-up and the reference goes on to the title. The card is
-meant to be used with a backup unit (Tennokoe-style memory or the System Card's), which is not emulated: banks `$F7` (2 KB of backup RAM
-behind a lock) and the unit's registers in `$1800-$1BFF` read `$FF`. Manifest scenario `G-ladysword-600` is a known gap; it will start
-passing when a backup RAM bank exists.
+## Backup memory: done (2026-11-27)
+The backup unit is in (facts M9, M10): 2 KB at bank `$F7` behind the `$1807`/`$1803` lock, a newly formatted RAM when there is no file,
+option `backup_ram` (default `saves/pcengine-backup.bin`; `none` keeps no file, `off` removes the unit), written at exit when it changed, part
+of save states (format `RCPC` 2; a format 1 state is refused with a message). Lady Sword (RomM 7347) now saves its record and reaches its title:
+after 600 frames its backup RAM equals the reference's byte for byte and the picture is 0.18 apart; manifest scenario `G-ladysword-600` passes.
+Not known: what `$1800-$1BFF` read back with only a backup unit attached (`$FF` here).
 
 ## CD-ROM² and Super CD-ROM²
 Not emulated: the CD interface, the ADPCM chip, the CD-DA player and the System Card. The owner's RomM server holds no System
 Card (firmware) and no game for the CD platforms (134 has no entries), so nothing could be tried. HuCards need no firmware.
 
-## SuperGrafx
-Not emulated: the second video controller (HuC6270), the video priority controller (HuC6202) and 32 KB of RAM. The RomM server has no SuperGrafx
-games (platform 124 is empty).
+## SuperGrafx: in (2026-11-27), checked with a test card only
+Option `supergrafx` (facts S1-S3): the second video controller, the priority controller (modes, windows, the ST target) and 32 KB of RAM. The
+RomM server has no SuperGrafx games (platform 124 is empty), so it was checked with the `sgx` test card (`scenarios/cards/sgx.asm`) against
+Beetle PCE (the accurate core; Beetle PCE Fast does not run a card as a SuperGrafx): five manifest scenarios (`SGX-*`, mean difference
+0.3-1.8). Not checked: games, mid-line changes of the priority controller, what `$0018-$001F` and the controller registers read back, timing
+differences between the two controllers. The machine is chosen by the option, not by the `.sgx` file name.
 
-## Timer counter polling
-Battle Royale (RomM 7178) seeds its random numbers by reading the timer counter in a loop until it is non-zero, with a reload-0 timer running. The reference stores `$7F` within the first frame; here the counter reads 0 for ever and the game waits. The timer's sequence matches the reference on four test cards (`scenarios/build.py` `pce-timer*.pce`) so the difference is in the instant of the underflow and the read (fact M3).
-
-## Games that do not match yet (sweep of 84, frame 600)
-Cause unknown unless stated; each was compared with the reference by work-RAM dumps at the same frames (`probe` `RAMOUT`, `libretro_run.py --ram-at`).
-- Ours stays black or at an earlier screen while the game's zero page keeps pace with the reference (rendering or VRAM-loading path): Turrican (7540: the game
-  clears VRAM from `$4400` up at 512 words every two frames and has not drawn by frame 600; the reference draws at frame 100), Kore ga Pro Yakyuu '90 (7341),
-  Cyber-Core (7226, draws but dark), Heavy Unit (7307), Jack Nicklaus' Golf (7318), Bullfight Ring no Hasha (7204), Walkure no Densetsu (7542),
-  Aoi Blink (7167), Toy Shop Boys (7535), Momotaro Densetsu II (7374), a 'Download' card (7249).
-- Ours waits for an interrupt-driven counter that stops advancing after the first timer interrupt: Drop Off (7257: `$25` stays 1, the reference reaches 58 by
-  frame 60; the timer counts and underflows here, the cause is not found). Battle Royale (7178): the timer-counter seed loop above.
-- Close but a different animation phase or small positional difference (mean 9-14): Galaga '90 (7290), TV Sports Hockey (7512), After Burner II (7160, 36: a
-  different frame of the scene).
+## Games that do not match yet (sweep of 84, frame 600; 2026-11-27: 82 of 84 within 8, was 68)
+Fixed 2026-11-27, each with the fact it needed: Battle Royale's timer seed loop (M11), narrow pictures centred (C5: Galaga '90, TV Sports
+Hockey, Toy Shop Boys), the picture window fixed in the frame (C3: Heavy Unit, Jack Nicklaus' Golf, Aoi Blink), the vertical blank of a
+picture that runs past the frame's end (V13: Drop Off, Bullfight Ring no Hasha), VRAM writes past `$7FFF` lost instead of wrapped (V14:
+Turrican), the sprite table transfer's end flag some lines after the blank (V15: Kore ga Pro Yakyuu '90, Walkure no Densetsu) and the CPU's
+port buffer (M12: the 'Download' card, Cyber-Core). Debugging aids added: probe `VRAMOUT`, `libretro_run.py --vram-at` (Beetle PCE Fast's
+VRAM), the `timerpoll` and `hpos` test cards. Still different:
+- After Burner II (7160): another moment of the same scene (timing).
+- Momotaro Densetsu II (7374): the same big text, a few lines apart.
+- Battle Royale's demo goes another way (the phase of the timer's prescaler at its start is not known, M11), within the threshold.
+- V15's 4 lines are a guess.
 
 ## Other
 - **Populous** (a 256 KB card with 32 KB of battery RAM at banks `$40-$43`) and other cards with save RAM have no RAM bank.
 - **Sprite collision** is raised for sprite 0 only; the reference was not probed for the other pairs (fact V10).
 - **VRAM DMA and the sprite DMA** finish at once (their real duration is a few hundred cycles); a game that polls the busy bit sees it clear.
-- **Display start and end** (`HSR`, `HDR` bits 8-14) are not used: the picture always starts at the first dot and is cut to the dot clock's nominal
-  width. A game that centres a narrow picture in the border is drawn at the left. CG mode (`MWR` bit 7) is ignored.
+- **Display start and end** (`HSR`, `HDR` bits 8-14) are not used for the position, as in the reference (fact C5); a picture narrower than the
+  window is centred. CG mode (`MWR` bit 7) is ignored.
 - **Mid-line effects**: palette, scroll and register writes take effect at the next line, never mid-line.
 - **Frame-rate dependent games**: the frame length follows the video controller's registers (fact V6) but the machine always reports 59.83 Hz to the
   host's pacing.
