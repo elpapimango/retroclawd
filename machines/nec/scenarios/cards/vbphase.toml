@@ -1,0 +1,7 @@
+machine = "pcengine"
+name = "vbphase"
+entry = "start"
+fill = 0xEA
+
+[[input]]
+asm = ["vbphase.asm"]

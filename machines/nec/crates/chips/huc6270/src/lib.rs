@@ -43,6 +43,9 @@ pub struct Vdc {
     active_start: u16,
     pub frame: u32,
     frame_total: u16,
+    /// The colour encoder's frame (262 or 263 lines): a frame is never shorter (fact V16). Set by the machine every line.
+    #[serde(skip)]
+    min_lines: u16,
 }
 
 mod serde_words {
@@ -79,6 +82,7 @@ impl Vdc {
             active_start: 0,
             frame: 0,
             frame_total: 263,
+            min_lines: 262,
         }
     }
 
@@ -266,6 +270,11 @@ impl Vdc {
         vsw + vds + 2
     }
 
+    /// The colour encoder's frame length in lines (262 or 263), the shortest frame (fact V16).
+    pub fn set_min_lines(&mut self, lines: u16) {
+        self.min_lines = lines;
+    }
+
     /// Called at the start of every line of the frame. `line` counts from 0 at the first line of the frame.
     /// Sets the line-based status flags and, for an active line, draws it into `out` (palette indexes, one per
     /// dot, `display_width()` of them) and returns its row within the picture (0 for the first active line).
@@ -276,7 +285,8 @@ impl Vdc {
             let total = u32::from(self.active_start)
                 + u32::from(self.display_height())
                 + u32::from(self.reg[0x0E] & 0xFF);
-            self.frame_total = total.clamp(262, 525) as u16;
+            // the colour encoder's sync sets the shortest frame (fact V16)
+            self.frame_total = total.clamp(u32::from(self.min_lines.max(262)), 525) as u16;
         }
         if self.satb_busy > 0 {
             self.satb_busy -= 1;
@@ -461,6 +471,22 @@ mod tests {
         v.write(0, r);
         v.write(2, value as u8);
         v.write(3, (value >> 8) as u8);
+    }
+
+    /// After Burner II's registers add up to 259 lines; the frame is the colour encoder's 263 (fact V16).
+    #[test]
+    fn a_frame_is_never_shorter_than_the_colour_encoder_s() {
+        let mut v = Vdc::new();
+        setup_reg(&mut v, 0x0C, 0x1B02);
+        setup_reg(&mut v, 0x0D, 0x00DF);
+        setup_reg(&mut v, 0x0E, 0x0004);
+        let mut out = Vec::new();
+        v.set_min_lines(263);
+        v.start_line(0, &mut out);
+        assert_eq!(v.frame_lines(), 263);
+        v.set_min_lines(262);
+        v.start_line(0, &mut out);
+        assert_eq!(v.frame_lines(), 262);
     }
 
     /// Turrican clears from $4400 on for 16K words: the writes past $7FFF must not wrap onto the map at $0000 (fact V14).

@@ -1,6 +1,7 @@
 //! The calendar chip (uPD4990A) as the BIOS drives it through REG_RTCCTRL and REG_STATUS_A (fact N48): a command of four bits is
 //! clocked in (data on bit 0, clock on bit 1, strobe on bit 2 of the control register), the time register is loaded by the command
-//! "time read" and its bits come out one clock at a time on the data-out line.
+//! "time read" and its bits come out one clock at a time on the data-out line. In shift mode the data-in line enters at the
+//! other end, and "time set" makes the register the clock's time (fact N59); the time pulse runs at the rate a command picks.
 
 /// Seconds, minutes, hours, days, weekday, month and a two-digit year, all as the chip holds them: binary coded decimal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -14,7 +15,7 @@ pub struct DateTime {
     pub second: u8,
 }
 
-fn from_bcd(v: u8) -> u8 {
+pub fn from_bcd(v: u8) -> u8 {
     (v >> 4) * 10 + (v & 0xF)
 }
 
@@ -67,6 +68,44 @@ pub fn add_seconds(start: (u32, u32, u32, u32, u32, u32), weekday0: u32, seconds
     }
 }
 
+/// The day of the week (0 is Sunday) of a date of the years 2000 to 2099 (2000-01-01 was a Saturday).
+pub fn weekday(year: u32, month: u32, day: u32) -> u32 {
+    let mut days = 0u32;
+    for y in 0..year {
+        days += if y.is_multiple_of(4) { 366 } else { 365 };
+    }
+    for m in 1..month {
+        days += days_in(m, 2000 + year);
+    }
+    (6 + days + day - 1) % 7
+}
+
+/// Reads `YYYY-MM-DD HH:MM:SS` (2000 to 2099) as the start of `add_seconds`: the two-digit year, month, day, hour, minute,
+/// second, and the weekday of that day.
+pub fn parse_time(s: &str) -> Result<((u32, u32, u32, u32, u32, u32), u32), String> {
+    let bad = || format!("{s:?} is not YYYY-MM-DD HH:MM:SS between 2000 and 2099");
+    let (date, time) = s.trim().split_once(' ').ok_or_else(bad)?;
+    let n: Vec<u32> = date
+        .split('-')
+        .chain(time.split(':'))
+        .map(|p| p.parse().map_err(|_| bad()))
+        .collect::<Result<_, _>>()?;
+    let [y, mo, d, h, mi, sec] = n[..] else {
+        return Err(bad());
+    };
+    if !(2000..=2099).contains(&y)
+        || !(1..=12).contains(&mo)
+        || d == 0
+        || d > days_in(mo, y)
+        || h > 23
+        || mi > 59
+        || sec > 59
+    {
+        return Err(bad());
+    }
+    Ok(((y - 2000, mo, d, h, mi, sec), weekday(y - 2000, mo, d)))
+}
+
 /// The chip's serial side.
 #[derive(Default, serde::Serialize, serde::Deserialize)]
 pub struct Rtc {
@@ -78,6 +117,11 @@ pub struct Rtc {
     last_strobe: bool,
     /// The level on the data-out line.
     pub data_out: bool,
+    /// The time pulse's rate in Hz as the last command picked it; 0 is the one-second pulse of power-on and command 8.
+    pub tp_hz: u32,
+    /// A "time set" command was given: the register's date and time, for the bus to take as the clock's new time.
+    #[serde(skip)]
+    pub time_set: Option<DateTime>,
 }
 
 impl Rtc {
@@ -85,13 +129,14 @@ impl Rtc {
     pub fn write(&mut self, value: u8, now: &DateTime) {
         let (data, clock, strobe) = (value & 1 != 0, value & 2 != 0, value & 4 != 0);
         if clock && !self.last_clock {
+            // one chain: data in, the 4-bit command register, then (in shift mode) the 48-bit time register and data out; the
+            // command register's oldest bit moves on into the time register (facts N48, N59)
+            let carried = self.command & 1;
+            self.command = (self.command >> 1) | u8::from(data) << 3;
+            self.bits_in = (self.bits_in + 1).min(4);
             if self.shifting {
-                // the register moves one bit toward the data-out line (fact N48)
-                self.register >>= 1;
+                self.register = (self.register >> 1) | u64::from(carried) << 47;
                 self.data_out = self.register & 1 != 0;
-            } else {
-                self.command = (self.command >> 1) | u8::from(data) << 3;
-                self.bits_in = (self.bits_in + 1).min(4);
             }
         }
         if strobe && !self.last_strobe {
@@ -110,17 +155,26 @@ impl Rtc {
                 self.shifting = true;
                 self.data_out = self.register & 1 != 0;
             }
+            // time set: the register becomes the clock's time (fact N59)
+            2 => {
+                self.shifting = false;
+                self.time_set = Some(unpack(self.register));
+            }
             // time read: the current time is loaded; the register stops shifting until told to
             3 => {
                 self.register = pack(now);
                 self.shifting = false;
                 self.data_out = self.register & 1 != 0;
             }
-            // the time pulse and interval commands change nothing that is modelled
+            // the time pulse: 64, 256 or 2048 Hz (fact N59), and the one-second pulse the BIOS asks for (fact N48)
+            4 => self.tp_hz = 64,
+            5 => self.tp_hz = 256,
+            6 => self.tp_hz = 2048,
+            8 => self.tp_hz = 0,
+            // the other interval and test commands are not modelled (`[H?]`, fact N59)
             _ => {}
         }
         self.bits_in = 0;
-        self.command = 0;
     }
 }
 
@@ -134,6 +188,21 @@ fn pack(t: &DateTime) -> u64 {
         | u64::from(t.weekday & 0xF) << 32
         | u64::from(from_bcd(t.month)) << 36
         | u64::from(t.year) << 40
+}
+
+/// The register's 48 bits as a date and time (the inverse of `pack`).
+fn unpack(r: u64) -> DateTime {
+    let byte = |n: u32| (r >> n) as u8;
+    let month = byte(36) & 0xF;
+    DateTime {
+        second: byte(0),
+        minute: byte(8),
+        hour: byte(16),
+        day: byte(24),
+        weekday: byte(32) & 0xF,
+        month: bcd(u32::from(month)),
+        year: byte(40),
+    }
 }
 
 #[cfg(test)]
@@ -200,5 +269,57 @@ mod tests {
         // 2000 is a leap year: the 28th of February plus a day is the 29th
         let t = add_seconds((0, 2, 28, 0, 0, 0), 0, 86_400);
         assert_eq!((t.month, t.day), (2, 0x29));
+    }
+
+    /// Shifting a date in and giving "time set" hands it to the bus; reading it back gives it out (fact N59).
+    #[test]
+    fn a_time_shifted_in_and_set_is_the_clock_s_new_time() {
+        let mut rtc = Rtc::default();
+        let t = DateTime {
+            year: 0x27,
+            month: 0x03,
+            day: 0x14,
+            weekday: 0,
+            hour: 0x09,
+            minute: 0x26,
+            second: 0x53,
+        };
+        command(&mut rtc, 1);
+        // 48 bits of the time, then the command, all through the chain; the strobe latches the command
+        let bits = pack(&t) | 2 << 48;
+        for i in 0..52 {
+            let d = ((bits >> i) & 1) as u8;
+            rtc.write(d, &now());
+            rtc.write(d | 2, &now());
+            rtc.write(d, &now());
+        }
+        rtc.write(4, &now());
+        rtc.write(0, &now());
+        assert_eq!(rtc.time_set, Some(t));
+    }
+
+    #[test]
+    fn the_time_pulse_commands_pick_the_rate() {
+        let mut rtc = Rtc::default();
+        assert_eq!(rtc.tp_hz, 0);
+        command(&mut rtc, 5);
+        assert_eq!(rtc.tp_hz, 256);
+        command(&mut rtc, 8);
+        assert_eq!(rtc.tp_hz, 0);
+    }
+
+    #[test]
+    fn a_start_time_is_read_with_its_weekday() {
+        assert_eq!(
+            parse_time("2000-01-01 00:00:00"),
+            Ok(((0, 1, 1, 0, 0, 0), 6))
+        );
+        // 2026-11-28 is a Saturday
+        assert_eq!(
+            parse_time("2026-11-28 10:30:00"),
+            Ok(((26, 11, 28, 10, 30, 0), 6))
+        );
+        assert!(parse_time("2026-02-29 00:00:00").is_err());
+        assert!(parse_time("1999-12-31 23:59:59").is_err());
     }
 }

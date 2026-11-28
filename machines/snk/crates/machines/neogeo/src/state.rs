@@ -12,7 +12,7 @@ use mc68000::Cpu;
 const MAGIC: &[u8; 4] = b"RCST";
 const MACHINE_ID: &[u8] = b"neogeo";
 /// The payload layout: bump when a field is added, removed or reordered.
-const SCHEMA: u16 = 4;
+const SCHEMA: u16 = 5;
 /// The most a state may hold (the largest program ROMs are under 10 MB).
 pub const MAX_STATE_BYTES: usize = 64 * 1024 * 1024;
 

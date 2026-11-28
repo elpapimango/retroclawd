@@ -1,0 +1,7 @@
+machine = "pcengine"
+name = "vdcwait"
+entry = "start"
+fill = 0xEA
+
+[[input]]
+asm = ["vdcwait.asm"]

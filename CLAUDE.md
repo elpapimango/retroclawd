@@ -133,11 +133,11 @@ Run: `retroclawd neogeo --firmware auto --rom romm:7017` (`--rom` is a text opti
 by `--firmware auto` or given as `--rom-bios neogeo.zip#*`, where `#*` is the file loader's selector for the whole archive). The real BIOS runs its self test (calendar
 check, Z80 handshake), draws the NEO-GEO logo and starts the cartridge: Cyber-Lip's title and attract mode match FinalBurn Neo (S1), Fatal Fury
 and Aero Fighters 2 show their screens. Sprites are shrunk with the system ROM's table and the YM2610 (`machines/snk/crates/chips/ym2610`: timers, SSG, FM, ADPCM-A and B) plays
-the BIOS jingle and the games' music (FM with detune and the LFO, fact Y12; no SSG-EG, which no set checked uses). Also in: the timer
+the BIOS jingle and the games' music (FM with detune, the LFO and the exact OPN envelope generator with SSG-EG, facts Y12-Y13). Also in: the timer
 interrupt (N41), the watchdog reset (N51), program banking (N47), Fatal Fury 2's protection chip (N45), NEO-CMC and the scrambled boards (N49, N53), the undecoded `$360000-$37FFFF` reading
-the open bus (N55), save states (RCST schema 4, `crates/machines/neogeo/src/state.rs`), the backup RAM file (option `backup_ram`, `none`
+the open bus (N55), save states (RCST schema 5, `crates/machines/neogeo/src/state.rs`), the backup RAM file (option `backup_ram`, `none`
 to keep it in memory) and the memory card (options `memory_card FILE`, `memory_card_protect`; N56). Open (`machines/snk/docs/neogeo-gaps.md`):
-the horizontal shrink pattern, exact envelopes, raster interrupt lines, the uPD4990A's time keeping.
+the raster interrupt lines. The calendar chip keeps time from the option `rtc_time` (fact N59).
 Manifest `machines/snk/neogeo.manifest.toml`: 5 pass, no gap.
 
 ## Atari 8-bit experimental support
@@ -255,7 +255,7 @@ are done, and since 2026-10-29 so are Codemasters J-Cart pads, cheat codes (opti
 (`huc6260`) and sound generator (`huc6280-psg`) are chips in the family and the HuCard layouts are `pce-card`. `crates/machines/pcengine` holds the bus
 (8 KB RAM, the card, the hardware page at bank `$FF`), the timer, interrupt registers and joypad port, the line scheduler (1365 master clocks a line; the frame
 length comes from the video controller's registers) and the picture (512 x 243: the 3 border lines above the first active line plus 240, the reference's
-window; 82 of 84 sampled games match the reference (2026-11-27), `machines/nec/docs/pcengine-gaps.md`). Run: `rcd pcengine --rom romm:7161` (any of the 417 HuCards on RomM platform 130; a `.zip` is unpacked by the file loader). Options: `console`
+window; 83 of 84 sampled games match the reference (2026-11-28; the other is a reference deviation), `machines/nec/docs/pcengine-gaps.md`). Run: `rcd pcengine --rom romm:7161` (any of the 417 HuCards on RomM platform 130; a `.zip` is unpacked by the file loader). Options: `console`
 (`pce`/`tg16`), `multitap`, `supergrafx`, `backup_ram`. Facts: `machines/nec/docs/hardware-facts.md` (tags `[H]` documentation recalled, `[O]`/`[T]` observed); what is open:
 `docs/pcengine-gaps.md` (CD-ROM; since 2026-11-27 the backup unit, option `backup_ram`, and the SuperGrafx, option `supergrafx`). Reference: Beetle PCE Fast 1.31 (libretro), black box. Probe:
 `cargo run --release -p pcengine --example probe` (env `ROM`, `FRAMES`, `OUT`, `PRESS`, `RC_TRACE`, `RC_TRACE_END`, `RAMOUT`, `AUDIOOUT`, `VRAMAT`);

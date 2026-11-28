@@ -1,0 +1,7 @@
+machine = "pcengine"
+name = "vbslow"
+entry = "start"
+fill = 0xEA
+
+[[input]]
+asm = ["vbslow.asm"]

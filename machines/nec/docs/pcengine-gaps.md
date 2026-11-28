@@ -22,16 +22,21 @@ Beetle PCE (the accurate core; Beetle PCE Fast does not run a card as a SuperGra
 0.3-1.8). Not checked: games, mid-line changes of the priority controller, what `$0018-$001F` and the controller registers read back, timing
 differences between the two controllers. The machine is chosen by the option, not by the `.sgx` file name.
 
-## Games that do not match yet (sweep of 84, frame 600; 2026-11-27: 82 of 84 within 8, was 68)
+## Games that do not match yet (sweep of 84, frame 600; 2026-11-28: 83 of 84 within 8, was 68 on 2026-11-27 morning)
 Fixed 2026-11-27, each with the fact it needed: Battle Royale's timer seed loop (M11), narrow pictures centred (C5: Galaga '90, TV Sports
 Hockey, Toy Shop Boys), the picture window fixed in the frame (C3: Heavy Unit, Jack Nicklaus' Golf, Aoi Blink), the vertical blank of a
 picture that runs past the frame's end (V13: Drop Off, Bullfight Ring no Hasha), VRAM writes past `$7FFF` lost instead of wrapped (V14:
 Turrican), the sprite table transfer's end flag some lines after the blank (V15: Kore ga Pro Yakyuu '90, Walkure no Densetsu) and the CPU's
-port buffer (M12: the 'Download' card, Cyber-Core). Debugging aids added: probe `VRAMOUT`, `libretro_run.py --vram-at` (Beetle PCE Fast's
-VRAM), the `timerpoll` and `hpos` test cards. Still different:
-- After Burner II (7160): another moment of the same scene (timing).
-- Momotaro Densetsu II (7374): the same big text, a few lines apart.
-- Battle Royale's demo goes another way (the phase of the timer's prescaler at its start is not known, M11), within the threshold.
+port buffer (M12: the 'Download' card, Cyber-Core). Fixed 2026-11-28: After Burner II's crash (an interrupt handler that unmasks itself
+nested until the stack wrapped; M13: a mask write reaches the interrupt decision one instruction late) and its frame length (V16: never
+shorter than the colour encoder's); Momotaro Densetsu II's one-frame lead (C6: the first vertical blank after power-on is 259 lines
+away). Measured with test cards in both and added: the extra cycle of every access to the video chips (M14, `vdcwait`). Debugging aids:
+probe `VRAMOUT`, `libretro_run.py --vram-at`, the `timerpoll`, `hpos`, `vdcwait`, `vbphase` and `vbslow` test cards. Still different:
+- Neutopia II (7395): the same fade 46 frames later. Not a defect here: its start-up delay loop runs in slow mode, which the reference
+  does not slow down (fact H5); without the extra video cycle of M14 it was 35 frames later and just within the threshold.
+- Battle Royale's demo goes another way (its random seed comes from the timer; the timer's first interval after a start differs: 480
+  polls there, 660 here on the `timerpoll` card; a start phase of 3060 master clocks gives 480 but breaks the `timer5` cards, so the
+  cause is something else), within the threshold.
 - V15's 4 lines are a guess.
 
 ## Other

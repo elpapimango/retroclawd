@@ -1,6 +1,7 @@
 //! The four FM channels of the YM2610: four sine operators each, with envelopes, joined by the eight algorithms (fact Y6).
-//! A first implementation: the sine and the envelope are computed (not read from the chip's tables), detune, the LFO, the
-//! SSG-EG and the third channel's separate frequencies are not done.
+//! The sine is computed (not read from the chip's tables). The envelope generator is the OPN family's integer one (fact Y13:
+//! a 10-bit attenuation stepped by a 12-bit counter every three samples, with SSG-EG), as the family's YM2612 crate models it.
+//! The third channel's separate frequencies are not done.
 
 use std::f32::consts::TAU;
 
@@ -27,13 +28,25 @@ const AMS_DB: [f32; 4] = [0.0, 1.4, 5.9, 11.8];
 /// The pitch modulation depth of PMS 0-7 (register `$B4` bits 2-0), in cents either way (fact Y12).
 const PMS_CENTS: [f32; 8] = [0.0, 3.4, 6.7, 10.0, 14.0, 20.0, 40.0, 80.0];
 
-#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-enum Phase {
-    Off,
+/// The envelope's state (fact Y13).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+enum State {
     Attack,
     Decay,
     Sustain,
     Release,
+}
+
+/// The step of the fastest rates (48 and up) by the low two bits of the rate and the low two bits of the envelope counter.
+const EG_STEP_HIGH: [[u8; 4]; 4] = [[0, 0, 0, 0], [1, 0, 0, 0], [1, 0, 1, 0], [1, 1, 1, 0]];
+
+/// What the envelope counter gives the operators on a sample: on one sample of three the counter has moved, and then the
+/// number of its lowest set bit plus one (0 when it is 0) and its low two bits (fact Y13).
+#[derive(Clone, Copy, Default)]
+struct Tick {
+    on: bool,
+    shift: u8,
+    low: u8,
 }
 
 #[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
@@ -48,11 +61,27 @@ struct Operator {
     d2r: u8,
     sl: u8,
     rr: u8,
-    phase: Phase,
+    /// SSG-EG: register `$90` bits 3-0 (bit 3 on, bit 2 attack, bit 1 alternate, bit 0 hold).
+    ssg: u8,
     /// Amplitude modulation by the LFO (register `$60` bit 7).
     am: bool,
+    /// The key as written (`$28`) and as the envelope saw it on the last sample.
+    kon_latch: bool,
+    kon: bool,
+    state: State,
     /// Attenuation in the chip's units of 0.09375 dB: 0 is full volume, 1023 silent.
-    att: f32,
+    level: u16,
+    ssg_dir: bool,
+    ssg_inv: bool,
+    ssg_enable: bool,
+    ssg_pgrst: bool,
+    ssg_repeat: bool,
+    ssg_hold: bool,
+    /// The phase starts again on this sample (a key on, or an SSG-EG restart).
+    reset: bool,
+    /// The attenuation of this sample, from the envelope (worked out before the operators each sample).
+    #[serde(skip)]
+    att: u16,
     /// The position in the sine, in cycles.
     pos: f32,
     out: f32,
@@ -71,9 +100,20 @@ impl Default for Operator {
             d2r: 0,
             sl: 0,
             rr: 0,
-            phase: Phase::Off,
+            ssg: 0,
             am: false,
-            att: 1023.0,
+            kon_latch: false,
+            kon: false,
+            state: State::Release,
+            level: 0x3FF,
+            ssg_dir: false,
+            ssg_inv: false,
+            ssg_enable: false,
+            ssg_pgrst: false,
+            ssg_repeat: false,
+            ssg_hold: false,
+            reset: false,
+            att: 0x3FF,
             pos: 0.0,
             out: 0.0,
             prev: 0.0,
@@ -95,16 +135,6 @@ pub struct Channel {
     pms: u8,
 }
 
-/// The attenuation change an envelope rate (0-63) makes per sample (fact Y10): zero for rate 0, else on average (4 + rate mod 4)
-/// times two to the power (rate / 4 - 14) for every envelope tick, which comes every third sample.
-fn rate_step(rate: u32) -> f32 {
-    if rate == 0 {
-        return 0.0;
-    }
-    let r = rate.min(63);
-    (4 + (r & 3)) as f32 * 2f32.powi((r >> 2) as i32 - 14) / 3.0
-}
-
 impl Channel {
     /// The key code: the block and two bits made of the top bits of the frequency number (fact Y9).
     fn keycode(&self) -> u32 {
@@ -118,78 +148,151 @@ impl Channel {
         u32::from(self.block) << 2 | f11 << 1 | n3
     }
 
-    fn effective_rate(&self, op: &Operator, r: u8, release: bool) -> u32 {
-        if r == 0 && !release {
-            return 0;
-        }
-        let base = if release {
-            u32::from(r) * 2 + 1
-        } else {
-            u32::from(r) * 2
-        };
-        (base + (self.keycode() >> (3 - u32::from(op.ks)))).min(63)
-    }
-
     fn key(&mut self, slot: usize, on: bool) {
-        let op = &mut self.ops[slot];
-        if on {
-            if op.phase == Phase::Off || op.phase == Phase::Release {
-                op.pos = 0.0;
-                op.phase = Phase::Attack;
-                if op.ar >= 31 {
-                    op.att = 0.0;
-                    op.phase = Phase::Decay;
-                }
-            }
-        } else if op.phase != Phase::Off {
-            op.phase = Phase::Release;
-        }
+        self.ops[slot].kon_latch = on;
     }
 
-    fn step_envelope(&mut self) {
-        for i in 0..4 {
-            let op = self.ops[i];
-            let sl_att = if op.sl >= 15 {
-                992.0
-            } else {
-                f32::from(op.sl) * 32.0
-            };
-            let mut att = op.att;
-            let mut phase = op.phase;
-            match phase {
-                Phase::Off => {}
-                Phase::Attack => {
-                    let r = self.effective_rate(&op, op.ar, false);
-                    // the attack closes the gap to full volume faster the more is left
-                    att -= att * rate_step(r) * 3.0 / 16.0 + 0.01;
-                    if att <= 0.5 {
-                        att = 0.0;
-                        phase = Phase::Decay;
-                    }
+    /// The SSG-EG stage of operator `i`: direction, inversion and the restart, hold and phase reset latches (fact Y13).
+    fn ssg_eg(&mut self, i: usize) {
+        let op = &mut self.ops[i];
+        let ssg = op.ssg;
+        let mut direction = false;
+        op.ssg_pgrst = false;
+        op.ssg_repeat = false;
+        op.ssg_hold = false;
+        if ssg & 8 != 0 {
+            direction = op.ssg_dir;
+            if op.level & 0x200 != 0 {
+                if ssg & 3 == 0 {
+                    op.ssg_pgrst = true;
                 }
-                Phase::Decay => {
-                    att += rate_step(self.effective_rate(&op, op.d1r, false));
-                    if att >= sl_att {
-                        att = att.max(sl_att);
-                        phase = Phase::Sustain;
-                    }
+                if ssg & 1 == 0 {
+                    op.ssg_repeat = true;
                 }
-                Phase::Sustain => {
-                    att += rate_step(self.effective_rate(&op, op.d2r, false));
+                if ssg & 3 == 2 {
+                    direction = !direction;
                 }
-                Phase::Release => {
-                    att += rate_step(self.effective_rate(&op, op.rr, true));
+                if ssg & 3 == 3 {
+                    direction = true;
                 }
             }
-            if att >= 1023.0 {
-                att = 1023.0;
-                if phase == Phase::Release || phase == Phase::Sustain {
-                    phase = Phase::Off;
-                }
+            if op.kon_latch && (ssg & 7 == 5 || ssg & 7 == 3) {
+                op.ssg_hold = true;
             }
-            self.ops[i].att = att;
-            self.ops[i].phase = phase;
+            direction &= op.kon;
         }
+        op.ssg_dir = direction;
+        op.ssg_enable = ssg & 8 != 0;
+        op.ssg_inv = (direction ^ (ssg & 0x0C == 0x0C)) && op.kon;
+    }
+
+    /// The step of operator `i`'s envelope on this sample: the rate from its state, the key scale and the counter (fact Y13).
+    /// Returns the step (0-4) and whether the rate is the fastest (62 or 63), which reaches full volume at once.
+    fn eg_step(&self, i: usize, tick: Tick) -> (u8, bool) {
+        let op = &self.ops[i];
+        let attack = (op.kon && op.ssg_repeat) || (!op.kon && op.kon_latch);
+        let r = match if attack { State::Attack } else { op.state } {
+            State::Attack => op.ar,
+            State::Decay => op.d1r,
+            State::Sustain => op.d2r,
+            State::Release => op.rr << 1 | 1,
+        };
+        let ksv = (self.keycode() >> (op.ks ^ 3)) as u8;
+        let rate = ((r << 1) + ksv).min(63);
+        let mut inc = 0;
+        if r != 0 && tick.on {
+            if rate < 48 {
+                inc = match ((rate >> 2) + tick.shift) & 15 {
+                    12 => 1,
+                    13 => (rate >> 1) & 1,
+                    14 => rate & 1,
+                    _ => 0,
+                };
+            } else {
+                let step = EG_STEP_HIGH[usize::from(rate & 3)][usize::from(tick.low)];
+                inc = (step + (rate >> 2)).saturating_sub(11).min(4);
+            }
+        }
+        (inc, rate >> 1 == 31)
+    }
+
+    /// One sample of operator `i`'s envelope (fact Y13). Returns the attenuation the operator plays with on this sample: the
+    /// level (inverted by SSG-EG) plus the total level, at most 1023.
+    fn envelope(&mut self, i: usize, tick: Tick) -> u16 {
+        self.ssg_eg(i);
+        let (eg_inc, ratemax) = self.eg_step(i, tick);
+        let op = &mut self.ops[i];
+        let shown = if op.ssg_inv {
+            512u16.wrapping_sub(op.level) & 0x3FF
+        } else {
+            op.level
+        };
+        let out = (shown + (u16::from(op.tl) << 3)).min(0x3FF);
+
+        let (nkon, okon) = (op.kon_latch, op.kon);
+        op.reset = (nkon && !okon) || op.ssg_pgrst;
+        let kon_event = (nkon && !okon) || (okon && op.ssg_repeat);
+        let koff_event = okon && !nkon;
+        let mut level = i32::from(op.level);
+        if koff_event {
+            level = i32::from(shown);
+        }
+        let eg_off = if op.ssg_enable {
+            level >> 9 != 0
+        } else {
+            level & 0x3F0 == 0x3F0
+        };
+        let mut next_state = op.state;
+        let mut next = level;
+        let mut inc = 0i32;
+        // sustain level 15 means 31 of 32 steps of 32 units
+        let sl = u16::from(op.sl) | (u16::from(op.sl) + 1) & 0x10;
+        let decay_step = |ssg: bool| {
+            let s = 1i32 << (eg_inc - 1);
+            if ssg { s << 2 } else { s }
+        };
+        if kon_event {
+            next_state = State::Attack;
+            if ratemax {
+                next = 0;
+            } else if op.state == State::Attack && level != 0 && eg_inc != 0 && nkon {
+                inc = (!level << eg_inc) >> 5;
+            }
+        } else {
+            match op.state {
+                State::Attack => {
+                    if level == 0 {
+                        next_state = State::Decay;
+                    } else if eg_inc != 0 && !ratemax && nkon {
+                        inc = (!level << eg_inc) >> 5;
+                    }
+                }
+                State::Decay => {
+                    if level >> 4 == i32::from(sl) << 1 {
+                        next_state = State::Sustain;
+                    } else if !eg_off && eg_inc != 0 {
+                        inc = decay_step(op.ssg_enable);
+                    }
+                }
+                State::Sustain | State::Release => {
+                    if !eg_off && eg_inc != 0 {
+                        inc = decay_step(op.ssg_enable);
+                    }
+                }
+            }
+            if !nkon {
+                next_state = State::Release;
+            }
+        }
+        if !kon_event && !op.ssg_hold && op.state != State::Attack && eg_off {
+            next_state = State::Release;
+            next = 0x3FF;
+        }
+        next += inc;
+        op.kon = nkon;
+        op.level = (next & 0x3FF) as u16;
+        op.state = next_state;
+        out
     }
 
     /// One operator's next output (-1..1) given the phase modulation in cycles.
@@ -215,15 +318,14 @@ impl Channel {
         };
         let inc = (base + dt) / 1_048_576.0 * mul * lfo.pitch;
         let op = &mut self.ops[i];
-        op.pos = (op.pos + inc).fract();
-        if op.phase == Phase::Off {
-            op.prev = op.out;
-            op.out = 0.0;
-            return 0.0;
-        }
+        op.pos = if op.reset {
+            0.0
+        } else {
+            (op.pos + inc).fract()
+        };
         // the LFO's attenuation, in the same units of 0.09375 dB, on operators with AM on (fact Y12)
         let am = if op.am { lfo.am_db / 0.09375 } else { 0.0 };
-        let total = op.att + f32::from(op.tl) * 8.0 + am;
+        let total = f32::from(op.att) + am;
         let amp = 10f32.powf(-total.min(1023.0) * 0.09375 / 20.0);
         let v = ((op.pos + modulation) * TAU).sin() * amp;
         op.prev = op.out;
@@ -233,8 +335,10 @@ impl Channel {
 
     /// One sample of the channel as (left, right), full scale about 1. `tri` is the LFO's triangle (-1 to 1) and `ramp` its
     /// unipolar form (0 to 1), both 0 when the LFO is off.
-    fn sample(&mut self, tri: f32, ramp: f32) -> (f32, f32) {
-        self.step_envelope();
+    fn sample(&mut self, tri: f32, ramp: f32, tick: Tick) -> (f32, f32) {
+        for i in 0..4 {
+            self.ops[i].att = self.envelope(i, tick);
+        }
         let lfo = Lfo {
             pitch: 2f32.powf(PMS_CENTS[usize::from(self.pms & 7)] * tri / 1200.0),
             am_db: AMS_DB[usize::from(self.ams & 3)] * ramp,
@@ -319,6 +423,9 @@ pub struct Fm {
     lfo_on: bool,
     lfo_rate: u8,
     lfo_pos: f32,
+    /// The envelope counter (12 bits) and which of the three samples it moves on (fact Y13).
+    eg_timer: u16,
+    eg_quotient: u8,
 }
 
 impl Fm {
@@ -341,9 +448,14 @@ impl Fm {
                         && o.d2r <= 0x1F
                         && o.rr <= 15
                         && o.sl <= 15
+                        && o.ssg <= 15
+                        && o.level <= 0x3FF
                 })
         });
-        let lfo_ok = self.lfo_rate <= 7 && (0.0..1.0).contains(&self.lfo_pos);
+        let lfo_ok = self.lfo_rate <= 7
+            && (0.0..1.0).contains(&self.lfo_pos)
+            && self.eg_timer <= 0xFFF
+            && self.eg_quotient <= 2;
         if ok && lfo_ok {
             Ok(())
         } else {
@@ -415,6 +527,7 @@ impl Fm {
                 c.ops[slot].am = value & 0x80 != 0;
             }
             0x70..=0x7F => c.ops[slot].d2r = value & 0x1F,
+            0x90..=0x9F => c.ops[slot].ssg = value & 0x0F,
             0x80..=0x8F => {
                 c.ops[slot].rr = value & 0xF;
                 c.ops[slot].sl = value >> 4;
@@ -458,9 +571,25 @@ impl Fm {
         } else {
             (0.0, 0.0)
         };
+        // the envelope counter moves on one sample of three (fact Y13)
+        self.eg_quotient = (self.eg_quotient + 1) % 3;
+        let mut tick = Tick::default();
+        if self.eg_quotient == 2 {
+            let t = self.eg_timer;
+            tick = Tick {
+                on: true,
+                shift: if t == 0 {
+                    0
+                } else {
+                    t.trailing_zeros() as u8 + 1
+                },
+                low: (t & 3) as u8,
+            };
+            self.eg_timer = (t + 1) & 0xFFF;
+        }
         let (mut l, mut r) = (0.0, 0.0);
         for c in &mut self.channels {
-            let (cl, cr) = c.sample(tri, ramp);
+            let (cl, cr) = c.sample(tri, ramp, tick);
             l += cl;
             r += cr;
         }
@@ -582,16 +711,84 @@ mod tests {
         assert!(up - flat < flat / 40, "a small amount: {up} {flat}");
     }
 
+    /// Operator 1 of channel 1 keyed on at block 0 (key code 0, so no key scaling) with the given attack and first decay rate
+    /// and sustain level 15; returns the levels after each of `samples` samples.
+    fn levels(ar: u8, d1r: u8, samples: usize) -> Vec<u16> {
+        let mut fm = Fm::new();
+        fm.write(0, 0xA5, 0);
+        fm.write(0, 0xA1, 0x10);
+        fm.write(0, 0x51, ar);
+        fm.write(0, 0x61, d1r);
+        fm.write(0, 0x81, 0xF0);
+        fm.write(0, 0x28, 0x11);
+        (0..samples)
+            .map(|_| {
+                fm.sample();
+                fm.channels[0].ops[0].level
+            })
+            .collect()
+    }
+
+    /// Rate 48 (a first decay of 24 at key code 0) adds one unit on every envelope tick, which is one sample of three; rate 52
+    /// two, rate 60 eight (fact Y13).
     #[test]
-    fn an_envelope_rate_moves_the_attenuation_by_the_published_average_per_tick() {
-        // one envelope tick is three samples; below rate 48 an update of 4 + (rate mod 4) eighths comes every 2^(11 - rate / 4) ticks
-        let per_tick = |r: u32| rate_step(r) * 3.0;
-        assert_eq!(rate_step(0), 0.0);
-        assert!((per_tick(47) - 0.875).abs() < 1e-6);
-        assert!((per_tick(48) - 1.0).abs() < 1e-6);
-        assert!((per_tick(52) - 2.0).abs() < 1e-6);
-        assert!((per_tick(60) - 8.0).abs() < 1e-6);
-        assert!((per_tick(4) - 4.0 / 8192.0).abs() < 1e-9);
+    fn a_decay_rate_of_48_and_up_steps_on_every_third_sample() {
+        let l = levels(31, 24, 601);
+        assert_eq!(l[0], 0, "attack rate 31 reaches full volume at once");
+        assert_eq!(l[600] - l[300], 100, "{:?}", &l[..12]);
+        let l = levels(31, 26, 601);
+        assert_eq!(l[600] - l[300], 200);
+        let l = levels(31, 30, 61);
+        assert_eq!(l[60] - l[30], 80);
+    }
+
+    /// Below rate 48 a step of one comes on a fraction of the ticks: rate 44 on every second (4 + 0 of 8 eighths), rate 4 once in
+    /// 2048 ticks (fact Y13).
+    #[test]
+    fn a_slow_decay_rate_steps_on_a_fraction_of_the_ticks() {
+        let l = levels(31, 22, 1201);
+        assert_eq!(l[1200] - l[600], 100);
+        let l = levels(31, 2, 3 * 4096 * 3 + 1);
+        assert_eq!(l[3 * 4096 * 3] - l[3 * 4096], 4);
+    }
+
+    /// The attack closes a sixteenth of the remaining distance (more for higher rates) on each step and ends at 0, then the
+    /// decay starts; the first steps are the biggest (fact Y13).
+    #[test]
+    fn the_attack_falls_exponentially_to_full_volume() {
+        let l = levels(20, 0, 3000);
+        assert!(l[60] < 0x3FF);
+        let first = 0x3FF - l[60];
+        assert!(first > 0);
+        let zero = l.iter().position(|v| *v == 0).expect("reaches full volume");
+        assert!(zero > 30, "{zero}");
+        let mid = l[zero / 2];
+        assert!(
+            mid < 0x3FF / 4,
+            "the exponential approach is quick at first: {mid}"
+        );
+        assert_eq!(l[zero + 10], 0, "a decay rate of 0 holds the level");
+    }
+
+    /// SSG-EG 8 (repeat a falling saw): the decay runs from 0 to the end, the envelope starts again from the attack; without it
+    /// the level stays at the end (fact Y13).
+    #[test]
+    fn ssg_eg_repeats_the_envelope() {
+        let mut fm = Fm::new();
+        fm.write(0, 0x51, 31);
+        fm.write(0, 0x61, 28); // fast first decay
+        fm.write(0, 0x71, 28);
+        fm.write(0, 0x81, 0xF0);
+        fm.write(0, 0x91, 0x08);
+        fm.write(0, 0x28, 0x11);
+        let l: Vec<u16> = (0..2000)
+            .map(|_| {
+                fm.sample();
+                fm.channels[0].ops[0].level
+            })
+            .collect();
+        let restarts = l.windows(2).filter(|w| w[1] + 0x100 < w[0]).count();
+        assert!(restarts >= 3, "{restarts}");
     }
 
     #[test]

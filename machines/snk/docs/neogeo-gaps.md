@@ -16,7 +16,7 @@
   1548, 1883, 1218 (10-20, 25-35, 40-50 s): about 80 percent, peaks 7-8 thousand against 12-13 thousand. The envelope rates, the
   ADPCM-A level law and ADPCM-B are `[H?]` (facts Y5-Y7); the scenario S4 only holds the BIOS's silence at start-up.
 - **Raster effects.** The timer interrupt (level 2) is raised (fact N41); the line of the vertical blank interrupt and of the blank reload
-  are `[H?]`. Which sets use it (2026-11-27, 3000 frames of each of 23 sets): Metal Slug 2 (about 29 a frame), 8 Man, Aggressors of Dark
+  are `[H?]`, and stay so (2026-11-28): no set seen shows them (below), and a test program would have to pass as a set the reference knows by name (FinalBurn Neo identifies sets by name and checksums; not tried). Which sets use it (2026-11-27, 3000 frames of each of 23 sets): Metal Slug 2 (about 29 a frame), 8 Man, Aggressors of Dark
   Kombat, Art of Fighting and Double Dragon; the other 18 never enable it. 8 Man and Metal Slug 2 compared with FinalBurn Neo at frames 1200,
   1800 and 2400: no broken bands or misplaced splits in either; what differs is frame timing (blinking text, the logo animation).
 - **Burning Fight's stop at frame 1527: resolved 2026-11-27 (fact N55).** It read `$3689C2`, in a range no chip decodes; the read now
@@ -30,17 +30,15 @@
   prints the interrupted program counter (and a RAM byte) whenever the 68000 reaches an interrupt handler.
 - **FM details.** In: detune (fact Y9), the envelope rate law, the saturation of a channel's sum and the output scales (fact Y10). The levels
   now agree with FinalBurn Neo's within 7 percent in all four windows of Cyber-Lip (jingle 574 against 570, music 1518/1574, 1993/1865,
-  1150/1225 RMS), and several partials agree within half a percent (197/196 Hz, 1753/1755, 519/518, jingle 390/391). Not done: the LFO
-  (register `$22`, the AM and PM sensitivities), SSG-EG (registers `$90-$9F`) and separate frequencies for channel 3 (bits 6-7 of `$27`):
-  Cyber-Lip writes `$22` three times at start-up and never uses the other two, so they could not be checked and their tables were not
-  guessed. The envelope law and the detune table are from memory (`[H?]`); a game that uses the LFO or SSG-EG will sound different. The
+  1150/1225 RMS), and several partials agree within half a percent (197/196 Hz, 1753/1755, 519/518, jingle 390/391). **Exact envelopes: in (2026-11-28, fact Y13):** the integer OPN envelope generator (counter, rate steps, the attack curve, SSG-EG) replaced the averaged law; the match with FinalBurn Neo stays where it was (the spectra correlate 0.907, 0.941, 0.844 in the music windows), so the remaining difference is not the envelope. The LFO is in since 2026-11-27 (fact Y12). Not done: the
+  separate frequencies for channel 3 (bits 6-7 of `$27`), which no set checked uses. The detune table is from memory (`[H?]`). The
   reference's bass partial at 76 Hz is still about three times ours and its high partials stronger, which the checks above did not explain.
 - **Sweep of 16 sets (2026-10-31, 1500 frames, headless).** 14 run to their attract mode with no stop. Stops: Fatal Fury 2 writes
   `$5555` to `$255552` (a protection chip in the cartridge, not modelled) and V-Liner (a gambling set that is not a normal cartridge) reads
   `$200000`. Defect: Art of Fighting draws its cutscene with the background gone and blocks of wrong tiles with hex digits (the fix layer is
   right); the sprite chains are 20 columns by 16 tiles; not yet understood (not auto-animation, not the shrink). The other pictures were
   judged by eye against the reference (Baseball Stars 2, Aggressors of Dark Kombat differ only in the moment of the transition).
-- **uPD4990A clock** is a fixed one-second pulse; no time or date is kept.
+- **uPD4990A clock: keeps time (2026-11-28, facts N48, N59).** It starts at the option `rtc_time` (default 2000-01-01 00:00:00), counts machine time, can be set by the program (time set, the BIOS's calendar menu), and its time pulse runs at 1 s, 64, 256 or 2048 Hz as commanded. Not modelled: the interval-timer and test commands (codes not confirmed). Not checked against FinalBurn Neo: a time set by the BIOS's menu.
 - **Save states and the backup RAM file: done (2026-11-27).** Save states (`RCST`, `crates/machines/neogeo/src/state.rs`: both CPUs, the bus with
   the program ROM, the sound side and the YM2610; the BIOS and the S/C/V/M ROMs stay out and are identified by a CRC) resume exactly: Cyber-Lip
   saved at frame 900 and loaded shows the same picture at 1500 as the run that never stopped. The 64 KB backup RAM is the option `backup_ram`
