@@ -25,6 +25,9 @@ const CANVAS_H: usize = 243;
 /// The first frame line in the picture window: 3 lines above the first active line of the usual vertical registers
 /// (`VPR` $0F02: sync 2, start 15, first active line 2 + 15 + 2 = 19) (fact C3).
 const WINDOW_FIRST_LINE: i32 = 16;
+/// The line the machine starts on at power-on and reset: with the cleared registers the vertical blank is line 3 of a
+/// 262-line frame, so the first one comes 259 lines after the start, as in the reference (fact C6).
+const POWER_ON_LINE: u32 = 6;
 /// Timer: one tick every 1024 high-speed CPU cycles.
 const TIMER_CLOCKS: u32 = 3072;
 /// A read of the timer counter falls this many CPU cycles after the start of its instruction (the last cycle of
@@ -72,6 +75,17 @@ struct Hw {
     #[serde(skip)]
     read_delay: u32,
     irq_disable: u8,
+    /// The disable mask as it was before a write to `$1402` in the instruction running, and the mask the CPU's interrupt
+    /// poll at the start of this instruction uses: a write in an instruction's last cycle is seen by the poll after the
+    /// next instruction (fact M13).
+    #[serde(skip)]
+    mask_written: Option<u8>,
+    #[serde(skip)]
+    poll_mask: Option<u8>,
+    /// CPU cycles the instruction running has waited for the video chips: one for every access to `$0000-$07FF` of the
+    /// hardware page (fact M14).
+    #[serde(skip)]
+    video_waits: u32,
     io_sel: bool,
     io_clr: bool,
     io_counter: u8,
@@ -217,6 +231,9 @@ impl Hw {
     }
 
     fn hw_read(&mut self, offset: u16) -> u8 {
+        if offset >> 10 <= 1 {
+            self.video_waits += 1;
+        }
         match offset >> 10 {
             // a SuperGrafx decodes A3-A4: first controller, priority controller, second controller (fact S1)
             0 if let Some(s) = &mut self.sgx => match (offset >> 3) & 3 {
@@ -267,6 +284,9 @@ impl Hw {
         if (2..=5).contains(&(offset >> 10)) {
             self.io_buffer = v;
         }
+        if offset >> 10 <= 1 {
+            self.video_waits += 1;
+        }
         match offset >> 10 {
             0 if let Some(s) = &mut self.sgx => match (offset >> 3) & 3 {
                 0 => self.vdc.write((offset & 3) as u8, v),
@@ -301,7 +321,10 @@ impl Hw {
                 self.io_clr = clr;
             }
             5 => match offset & 3 {
-                2 => self.irq_disable = v & 7,
+                2 => {
+                    self.mask_written.get_or_insert(self.irq_disable);
+                    self.irq_disable = v & 7;
+                }
                 3 => self.timer_irq = false,
                 _ => {}
             },
@@ -379,7 +402,8 @@ impl Bus for SysBus<'_> {
     }
 
     fn irq_lines(&self) -> u8 {
-        self.hw.irq_request() & !self.hw.irq_disable & (IRQ1 | TIMER | IRQ2)
+        let mask = self.hw.poll_mask.unwrap_or(self.hw.irq_disable);
+        self.hw.irq_request() & !mask & (IRQ1 | TIMER | IRQ2)
     }
 
     fn st(&mut self, port: u8, v: u8) {
@@ -434,6 +458,9 @@ impl PcEngine {
                 io_buffer: 0,
                 read_delay: 0,
                 irq_disable: 0,
+                mask_written: None,
+                poll_mask: None,
+                video_waits: 0,
                 io_sel: false,
                 io_clr: false,
                 io_counter: 0,
@@ -445,7 +472,7 @@ impl PcEngine {
                 bram_unlocked: false,
                 sgx: None,
             },
-            line: 0,
+            line: POWER_ON_LINE,
             line_clock: 0,
             canvas: vec![0; CANVAS_W * CANVAS_H * 3],
             line_buf: Vec::new(),
@@ -510,18 +537,20 @@ impl PcEngine {
         };
         self.cpu = Cpu::new();
         self.cpu.reset(&mut bus);
-        self.line = 0;
+        self.line = POWER_ON_LINE;
         self.line_clock = 0;
     }
 
     /// Runs one instruction (or interrupt entry); returns the master clocks it took.
     pub fn step(&mut self) -> u32 {
         self.hw.read_delay = TIMER_READ_CYCLES * if self.cpu.fast { 3 } else { 12 };
+        // a mask written by the last instruction reaches the interrupt poll one instruction later (fact M13)
+        self.hw.poll_mask = self.hw.mask_written.take();
         let mut bus = SysBus {
             card: &mut self.card,
             hw: &mut self.hw,
         };
-        let cycles = self.cpu.step(&mut bus);
+        let cycles = self.cpu.step(&mut bus) + std::mem::take(&mut self.hw.video_waits);
         let master = cycles * if self.cpu.fast { 3 } else { 12 };
         self.advance(master);
         master
@@ -554,9 +583,12 @@ impl PcEngine {
         let lines = u32::from(self.hw.vdc.frame_lines());
         let line = self.line;
         let mut buf = std::mem::take(&mut self.line_buf);
+        let vce_lines = self.hw.vce.lines();
+        self.hw.vdc.set_min_lines(vce_lines);
         let drew = self.hw.vdc.start_line(line as u16, &mut buf).is_some();
         if let Some(s) = &mut self.hw.sgx {
             // both controllers run from the same timing; the second one's line is laid under or over the first's
+            s.vdc2.set_min_lines(vce_lines);
             let mut buf2 = Vec::new();
             s.vdc2.start_line(line as u16, &mut buf2);
             if drew {
@@ -713,6 +745,9 @@ impl PcEngine {
                 io_buffer: self.hw.io_buffer,
                 read_delay: 0,
                 irq_disable: self.hw.irq_disable,
+                mask_written: None,
+                poll_mask: None,
+                video_waits: 0,
                 io_sel: self.hw.io_sel,
                 io_clr: self.hw.io_clr,
                 io_counter: self.hw.io_counter,
@@ -913,6 +948,64 @@ mod tests {
     }
 
     /// The Download card stores the video status in `$1403` and reads bit 5 back from it (fact M12).
+    /// A store to the video controller takes a cycle more than one to the CPU's own ports (fact M14).
+    #[test]
+    fn an_access_to_the_video_chips_takes_one_more_cycle() {
+        let mut rom = vec![0xEAu8; 0x20000];
+        // CSH; LDA #$FF; TAM #$01; STZ $0002; STZ $0800; JMP *
+        let code: &[u8] = &[
+            0xD4, 0xA9, 0xFF, 0x53, 0x01, 0x9C, 0x02, 0x00, 0x9C, 0x00, 0x08, 0x4C, 0x0B, 0xE0,
+        ];
+        rom[..code.len()].copy_from_slice(code);
+        rom[0x1FFE] = 0x00;
+        rom[0x1FFF] = 0xE0;
+        let mut e = PcEngine::from_card(rom, Console::PcEngine).unwrap();
+        for _ in 0..3 {
+            e.step();
+        }
+        let video = e.step();
+        let port = e.step();
+        assert_eq!(port, 5 * 3);
+        assert_eq!(video, 6 * 3);
+    }
+
+    /// A write of the disable mask is seen by the interrupt decision one instruction later (fact M13).
+    #[test]
+    fn a_mask_write_reaches_the_interrupt_poll_one_instruction_late() {
+        let mut e = PcEngine::from_card(tiny_card(), Console::PcEngine).unwrap();
+        e.hw.timer_irq = true;
+        e.hw.irq_disable = TIMER;
+        let page = 0xFF << 13;
+        {
+            let mut bus = SysBus {
+                card: &mut e.card,
+                hw: &mut e.hw,
+            };
+            bus.write(page | 0x1402, 0);
+        }
+        // the poll of the next instruction still uses the old mask
+        e.hw.poll_mask = e.hw.mask_written.take();
+        let bus = SysBus {
+            card: &mut e.card,
+            hw: &mut e.hw,
+        };
+        assert_eq!(bus.irq_lines() & TIMER, 0);
+        // and the one after that the new one
+        e.hw.poll_mask = e.hw.mask_written.take();
+        let bus = SysBus {
+            card: &mut e.card,
+            hw: &mut e.hw,
+        };
+        assert_eq!(bus.irq_lines() & TIMER, TIMER);
+    }
+
+    /// The machine starts on line 6, so the first vertical blank (line 3 with the cleared registers) is 259 lines away (fact C6).
+    #[test]
+    fn power_on_starts_a_few_lines_after_the_cleared_registers_blank() {
+        let e = PcEngine::from_card(tiny_card(), Console::PcEngine).unwrap();
+        assert_eq!(e.line(), POWER_ON_LINE);
+    }
+
     #[test]
     fn undriven_port_bits_read_the_last_byte_on_the_cpu_s_ports() {
         let mut e = PcEngine::from_card(tiny_card(), Console::PcEngine).unwrap();
