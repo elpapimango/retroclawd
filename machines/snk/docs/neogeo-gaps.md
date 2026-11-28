@@ -16,7 +16,7 @@
   1548, 1883, 1218 (10-20, 25-35, 40-50 s): about 80 percent, peaks 7-8 thousand against 12-13 thousand. The envelope rates, the
   ADPCM-A level law and ADPCM-B are `[H?]` (facts Y5-Y7); the scenario S4 only holds the BIOS's silence at start-up.
 - **Raster effects.** The timer interrupt (level 2) is raised (fact N41); the line of the vertical blank interrupt and of the blank reload
-  are `[H?]`. Which sets use it (2026-11-27, 3000 frames of each of 23 sets): Metal Slug 2 (about 29 a frame), 8 Man, Aggressors of Dark
+  are `[H?]`, and stay so (2026-11-28): no set seen shows them (below), and a test program would have to pass as a set the reference knows by name (FinalBurn Neo identifies sets by name and checksums; not tried). Which sets use it (2026-11-27, 3000 frames of each of 23 sets): Metal Slug 2 (about 29 a frame), 8 Man, Aggressors of Dark
   Kombat, Art of Fighting and Double Dragon; the other 18 never enable it. 8 Man and Metal Slug 2 compared with FinalBurn Neo at frames 1200,
   1800 and 2400: no broken bands or misplaced splits in either; what differs is frame timing (blinking text, the logo animation).
 - **Burning Fight's stop at frame 1527: resolved 2026-11-27 (fact N55).** It read `$3689C2`, in a range no chip decodes; the read now
@@ -38,7 +38,7 @@
   `$200000`. Defect: Art of Fighting draws its cutscene with the background gone and blocks of wrong tiles with hex digits (the fix layer is
   right); the sprite chains are 20 columns by 16 tiles; not yet understood (not auto-animation, not the shrink). The other pictures were
   judged by eye against the reference (Baseball Stars 2, Aggressors of Dark Kombat differ only in the moment of the transition).
-- **uPD4990A clock** is a fixed one-second pulse; no time or date is kept.
+- **uPD4990A clock: keeps time (2026-11-28, facts N48, N59).** It starts at the option `rtc_time` (default 2000-01-01 00:00:00), counts machine time, can be set by the program (time set, the BIOS's calendar menu), and its time pulse runs at 1 s, 64, 256 or 2048 Hz as commanded. Not modelled: the interval-timer and test commands (codes not confirmed). Not checked against FinalBurn Neo: a time set by the BIOS's menu.
 - **Save states and the backup RAM file: done (2026-11-27).** Save states (`RCST`, `crates/machines/neogeo/src/state.rs`: both CPUs, the bus with
   the program ROM, the sound side and the YM2610; the BIOS and the S/C/V/M ROMs stay out and are identified by a CRC) resume exactly: Cyber-Lip
   saved at frame 900 and loaded shows the same picture at 1500 as the run that never stopped. The 64 KB backup RAM is the option `backup_ram`

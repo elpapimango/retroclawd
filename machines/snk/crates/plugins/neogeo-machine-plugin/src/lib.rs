@@ -193,6 +193,12 @@ fn machine_profile() -> MachineProfile {
                 "Where the board's 64 KB backup RAM (settings, bookkeeping, game saves) is kept between sessions (default saves/neogeo-backup.bin; none: no file, the RAM starts empty each time); read at start, written at exit when it changed",
             ),
             option(
+                "rtc_time",
+                MachineOptionKind::Text,
+                None,
+                "The calendar chip's date and time at power-on, YYYY-MM-DD HH:MM:SS (2000 to 2099; default 2000-01-01 00:00:00); it counts machine time from there, and the BIOS can set it",
+            ),
+            option(
                 "memory_card",
                 MachineOptionKind::Text,
                 None,
@@ -306,6 +312,7 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
     let mut backup_file = None;
     let mut card_file: Option<std::path::PathBuf> = None;
     let mut card_protect = false;
+    let mut rtc_time = None;
     for option in &req.options {
         match (option.key.as_str(), &option.value) {
             #[cfg(feature = "debug")]
@@ -314,6 +321,11 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
             ("backup_ram", DebugValue::Text(v)) => backup_file = Some(std::path::PathBuf::from(v)),
             ("memory_card", DebugValue::Text(v)) => card_file = Some(std::path::PathBuf::from(v)),
             ("memory_card_protect", DebugValue::Bool(v)) => card_protect = *v,
+            ("rtc_time", DebugValue::Text(v)) => {
+                rtc_time = Some(
+                    neogeo::rtc::parse_time(v).map_err(|e| format!("option \"rtc_time\": {e}"))?,
+                );
+            }
             ("execution_mode", _) => {}
             (key, _) => {
                 return Err(format!(
@@ -336,6 +348,9 @@ fn create_machine(req: MachineCreateRequest) -> Result<MachineCreateResponse, St
         ));
     }
     let mut machine = NeoGeo::from_sets(bios, &game)?;
+    if let Some(t) = rtc_time {
+        machine.bus.rtc_start = t;
+    }
     let backup_path = backup_file.unwrap_or_else(|| std::path::PathBuf::from(DEFAULT_BACKUP));
     let no_file = backup_path.as_os_str() == "none";
     match std::fs::read(&backup_path) {

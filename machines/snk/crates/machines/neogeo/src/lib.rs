@@ -27,8 +27,8 @@ pub const FRAME_LINES: u64 = 264;
 const VBLANK_LINE: u64 = 248;
 /// Master clocks the watchdog waits without a kick before it resets the machine: about 0.13 s (fact N51).
 pub const WATCHDOG_CLOCKS: u64 = 3_120_000;
-/// Half a period of the clock chip's time pulse in master clocks: one second a period from 24 MHz (fact N19).
-const TP_HALF_PERIOD: u64 = 24_000_000 / 2;
+/// The master clock, which the clock chip's time counts in (fact N19).
+const MASTER_HZ: u64 = 24_000_000;
 
 /// The video processor's registers as the 68000 sees them (facts N12, N13). Nothing is drawn yet.
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -99,6 +99,9 @@ pub struct Bus {
     /// The calendar chip, and the date and time it starts at (year, month, day, hour, minute, second) with the weekday of that day (fact N48).
     pub rtc: rtc::Rtc,
     pub rtc_start: ((u32, u32, u32, u32, u32, u32), u32),
+    /// The master clock at which the clock chip's time was `rtc_start` (power-on, or its last "time set", fact N59).
+    #[serde(default)]
+    pub rtc_base: u64,
     /// The writes to REG_RTCCTRL (value, pc) and the reads of REG_STATUS_A (value, pc), in order (a debugging aid).
     #[serde(skip)]
     pub rtc_log: Vec<(char, u8, u32)>,
@@ -168,6 +171,7 @@ impl Bus {
             vram_oob: 0,
             rtc: rtc::Rtc::default(),
             rtc_start: ((0, 1, 1, 0, 0, 0), 6),
+            rtc_base: 0,
             rtc_log: Vec::new(),
             p_bank: 0,
             p_window: None,
@@ -402,7 +406,7 @@ impl Bus {
             _ if a & 0xFE_0001 == 0x32_0000 => Some(self.sound.reply),
             _ if a & 0xFE_0001 == 0x32_0001 => Some(
                 (0x07 & !self.pressed_a)
-                    | (((self.clock / TP_HALF_PERIOD) & 1) as u8) << 6
+                    | (((self.clock / self.tp_half_period()) & 1) as u8) << 6
                     | u8::from(self.rtc.data_out) << 7,
             ),
             _ => None,
@@ -466,9 +470,25 @@ impl Bus {
                     let now = rtc::add_seconds(
                         self.rtc_start.0,
                         self.rtc_start.1,
-                        self.clock / 24_000_000,
+                        self.clock.saturating_sub(self.rtc_base) / MASTER_HZ,
                     );
                     self.rtc.write(v, &now);
+                    // "time set": the clock counts on from the date the program shifted in (fact N59)
+                    if let Some(t) = self.rtc.time_set.take() {
+                        let d = |v: u8| u32::from(rtc::from_bcd(v));
+                        self.rtc_start = (
+                            (
+                                d(t.year),
+                                d(t.month),
+                                d(t.day),
+                                d(t.hour),
+                                d(t.minute),
+                                d(t.second),
+                            ),
+                            u32::from(t.weekday % 7),
+                        );
+                        self.rtc_base = self.clock;
+                    }
                     if self.rtc_log.len() < 6000 {
                         self.rtc_log.push(('W', v, self.current_pc));
                     }
@@ -487,6 +507,15 @@ impl Bus {
 }
 
 impl Bus {
+    /// Half a period of the clock chip's time pulse in master clocks: one second at power-on and after command 8 (fact N19),
+    /// else the rate a command picked (fact N59).
+    fn tp_half_period(&self) -> u64 {
+        match self.rtc.tp_hz {
+            0 => MASTER_HZ / 2,
+            hz => MASTER_HZ / (2 * u64::from(hz)),
+        }
+    }
+
     /// A word access to the video processor's registers `$3C0000-$3C000F`; `None` for a register no fact covers.
     fn lspc_read(&mut self, reg: u32) -> Option<u16> {
         // the registers at `$3C0008-$3C000E` read like the ones four below them (fact N42)
