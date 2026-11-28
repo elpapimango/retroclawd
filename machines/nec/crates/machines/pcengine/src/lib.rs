@@ -144,7 +144,8 @@ impl Sgx {
         for (x, p) in line1.iter_mut().enumerate() {
             // inside a window when x < width - 64; the region picks one of the four nibbles
             let inside = |w: u16| (x as i32) < i32::from(w) - 64;
-            let region = usize::from(!inside(self.win[0])) | (usize::from(!inside(self.win[1])) << 1);
+            let region =
+                usize::from(!inside(self.win[0])) | (usize::from(!inside(self.win[1])) << 1);
             let nibble = (self.prio[region >> 1] >> ((region & 1) * 4)) & 0x0F;
             let a = if nibble & 1 != 0 { *p } else { 0 };
             let b = if nibble & 2 != 0 {
@@ -739,7 +740,8 @@ impl PcEngine {
     pub fn load_state(&mut self, bytes: &[u8]) -> Result<(), String> {
         if bytes.starts_with(b"RCPC\x01") {
             return Err(
-                "the save state was made before the backup unit (format 1) and cannot be read".to_string(),
+                "the save state was made before the backup unit (format 1) and cannot be read"
+                    .to_string(),
             );
         }
         let body = bytes
@@ -752,7 +754,9 @@ impl PcEngine {
             return Err("the save state is for a different card".to_string());
         }
         if state.hw.sgx.is_some() != self.hw.sgx.is_some() {
-            return Err("the save state is for the other console (PC Engine / SuperGrafx)".to_string());
+            return Err(
+                "the save state is for the other console (PC Engine / SuperGrafx)".to_string(),
+            );
         }
         self.cpu = state.cpu;
         self.hw = state.hw;
@@ -865,11 +869,19 @@ mod tests {
         assert_eq!(one(&s, bg1, spr2), bg1);
         assert_eq!(one(&s, 0, spr2), spr2);
         s.prio = [0, 0x70];
-        assert_eq!(one(&s, bg1, spr2), spr2, "mode 1: VDC 2 sprites over VDC 1 background");
+        assert_eq!(
+            one(&s, bg1, spr2),
+            spr2,
+            "mode 1: VDC 2 sprites over VDC 1 background"
+        );
         assert_eq!(one(&s, spr1, spr2), spr1);
         assert_eq!(one(&s, bg1, bg2), bg1);
         s.prio = [0, 0xB0];
-        assert_eq!(one(&s, spr1, bg2), bg2, "mode 2: VDC 2 background over VDC 1 sprites");
+        assert_eq!(
+            one(&s, spr1, bg2),
+            bg2,
+            "mode 2: VDC 2 background over VDC 1 sprites"
+        );
         assert_eq!(one(&s, spr1, spr2), spr1);
         assert_eq!(one(&s, bg1, spr2), bg1);
         s.prio = [0, 0x10];

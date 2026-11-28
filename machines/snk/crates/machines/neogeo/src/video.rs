@@ -232,9 +232,18 @@ mod tests {
     #[test]
     fn a_shrunk_sprite_keeps_the_hardware_s_columns() {
         assert_eq!(kept_column(1, 0), 8);
-        assert_eq!((0..2).map(|n| kept_column(2, n)).collect::<Vec<_>>(), [4, 8]);
-        assert_eq!((0..8).map(|n| kept_column(8, n)).collect::<Vec<_>>(), [0, 2, 4, 6, 8, 10, 12, 14]);
-        assert_eq!((0..16).map(|n| kept_column(16, n)).collect::<Vec<_>>(), (0..16).collect::<Vec<_>>());
+        assert_eq!(
+            (0..2).map(|n| kept_column(2, n)).collect::<Vec<_>>(),
+            [4, 8]
+        );
+        assert_eq!(
+            (0..8).map(|n| kept_column(8, n)).collect::<Vec<_>>(),
+            [0, 2, 4, 6, 8, 10, 12, 14]
+        );
+        assert_eq!(
+            (0..16).map(|n| kept_column(16, n)).collect::<Vec<_>>(),
+            (0..16).collect::<Vec<_>>()
+        );
         for (w, mask) in HSHRINK.iter().enumerate() {
             assert_eq!(mask.count_ones() as usize, w + 1);
         }

@@ -57,7 +57,10 @@ impl Drop for InstanceRecord {
             std::fs::rename(&temp, path)
         };
         if let Err(e) = write() {
-            eprintln!("pcengine: could not write the backup RAM to {}: {e}", path.display());
+            eprintln!(
+                "pcengine: could not write the backup RAM to {}: {e}",
+                path.display()
+            );
         }
     }
 }

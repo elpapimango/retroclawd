@@ -118,10 +118,17 @@ fn first_fetches() {
             let pc = u32::from_str_radix(parts.next().unwrap(), 16).unwrap();
             if machine.cpu.pc == pc {
                 let sp = machine.cpu.ssp; // in the handler: supervisor mode
-                let ret = (0..4).fold(0u32, |acc, i| (acc << 8) | u32::from(machine.bus.peek(sp + 2 + i)));
+                let ret = (0..4).fold(0u32, |acc, i| {
+                    (acc << 8) | u32::from(machine.bus.peek(sp + 2 + i))
+                });
                 let byte = parts
                     .next()
-                    .map(|a| format!(" byte {:02X}", machine.bus.peek(u32::from_str_radix(a, 16).unwrap())))
+                    .map(|a| {
+                        format!(
+                            " byte {:02X}",
+                            machine.bus.peek(u32::from_str_radix(a, 16).unwrap())
+                        )
+                    })
                     .unwrap_or_default();
                 let line = machine.bus.clock / neogeo::LINE_CLOCKS;
                 println!(

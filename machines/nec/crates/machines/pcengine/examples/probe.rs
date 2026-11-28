@@ -127,7 +127,12 @@ fn main() {
     );
     // VRAMOUT=file: the 32K words of VRAM, little-endian (as Beetle PCE Fast's RETRO_MEMORY_VIDEO_RAM)
     if let Ok(out) = std::env::var("VRAMOUT") {
-        let bytes: Vec<u8> = e.vdc().vram().iter().flat_map(|w| w.to_le_bytes()).collect();
+        let bytes: Vec<u8> = e
+            .vdc()
+            .vram()
+            .iter()
+            .flat_map(|w| w.to_le_bytes())
+            .collect();
         std::fs::write(out, bytes).unwrap();
     }
     if let Ok(a) = std::env::var("VRAMAT") {
